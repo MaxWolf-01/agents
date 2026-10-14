@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro"]
 # ///
-"""Check CONTEXT.md glossary entries against the mechanical rules of CONTEXT-FORMAT.md.
+"""Check GLOSSARY.md glossary entries against the mechanical rules of GLOSSARY-FORMAT.md.
 
 An entry is a `**Term**:` line, its definition lines up to the next blank line, and the
 optional `_Avoid_:` and `_In code_:` lines. Only the definition is checked; the two
@@ -26,8 +26,8 @@ JSON schema (--json):
 
 Examples:
 
-    glossary-lint                      # ./CONTEXT.md
-    glossary-lint CONTEXT.md src/billing/CONTEXT.md
+    glossary-lint                      # ./GLOSSARY.md
+    glossary-lint GLOSSARY.md src/billing/GLOSSARY.md
     glossary-lint --json | jq '.[] | select(.kind == "code")'
 """
 
@@ -98,7 +98,7 @@ def check(path: Path, max_words: int, max_sentences: int) -> list[Finding]:
 
 @dataclass
 class Args:
-    paths: Annotated[list[Path], tyro.conf.Positional] = field(default_factory=lambda: [Path("CONTEXT.md")])
+    paths: Annotated[list[Path], tyro.conf.Positional] = field(default_factory=lambda: [Path("GLOSSARY.md")])
     """Glossary files to check."""
     max_words: int = 40
     """Words a definition may run to."""

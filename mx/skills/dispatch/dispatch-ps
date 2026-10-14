@@ -6,106 +6,127 @@
 #
 # Row, tab-separated:
 #   <repo>/<base>  ticket  state  age  idle  session  pane  detail
-#     ticket   the ticket's slug, or `fuzz` for the repo's fuzz run
+#     ticket   the ticket's slug
 #     state    running | exited | gone, from that scratch dir's own
-#              `dispatch-ctl probe`, or for the fuzz run from its `job`;
-#              `unreadable`, with ticket `-`, where that probe failed
+#              `dispatch-ctl probe`; `unreadable`, with ticket `-`, where
+#              that probe failed
 #     age      seconds since the run was spawned
-#     idle     seconds since its worklog last changed, `-` when it has none;
-#              for the fuzz run, since its Hypothesis database last did
+#     idle     seconds since its worklog last changed, `-` when it has none
 #     pane     y while its tmux session is there, n once it is gone
 #     detail   a running worker's last worklog line, `(nothing written yet)`
 #              when the worklog is empty and `(no worklog)` when there is
-#              none; a finished run's status line, less its session id. The
-#              fuzz run's log stands in for a worklog.
-# A scratch dir with no run in its manifest and no fuzz run gives no row.
+#              none; a finished run's status line, less its session id.
+# A scratch dir with no run in its manifest gives no row.
 #
-# Usage: dispatch-ps <root>   (a relative root is under $HOME)
+# With --follow it runs until its output is closed. It prints the rows as a
+# frame, which is the rows followed by an empty line: one frame at the start,
+# and another whenever something the rows are read from has changed. A row's
+# age and idle are as of the moment its frame is sent. Between frames it prints
+# a `.` line every couple of seconds, which is how it notices that its reader
+# has gone.
+#
+# Usage: dispatch-ps <root> [--follow]   (a relative root is under $HOME)
 set -u
 
-root=${1:?usage: dispatch-ps <root>}
+root=${1:?usage: dispatch-ps <root> [--follow]}
 case $root in /*) ;; *) root=$HOME/$root ;; esac
-now=$(date +%s)
-# One listing answers every session question below; with no tmux server it is
-# empty and every pane reads `n`, which is the truth.
-sessions=$(tmux ls -F '#{session_name}' 2>/dev/null)
+# A repo named `.dotfiles` stages `.dotfiles-<base>`, which a plain glob skips.
+shopt -s dotglob
 
 pane_of() { awk -v n="$1" 'BEGIN { s = "n" } $1 == n { s = "y" } END { print s }' <<<"$sessions"; }
 
-for dir in "$root"/*/; do
-    dir=${dir%/}
-    [ -f "$dir/config" ] || continue
-    repo=$(sed -n 's/^repo=//p' "$dir/config" | head -1)
-    # A scratch dir staged before v1.0 is per feature, not per base branch, and
-    # its worktrees carry the feature's name after the repo's.
-    feature=$(sed -n 's/^feature=//p' "$dir/config" | head -1)
-    base=$(sed -n 's/^base=//p' "$dir/config" | head -1)
-    base=${base:-$feature}
+scan() {
+    now=$(date +%s)
+    # One listing answers every session question below; with no tmux server it
+    # is empty and every pane reads `n`, which is the truth.
+    sessions=$(tmux ls -F '#{session_name}' 2>/dev/null)
+    for dir in "$root"/*/; do
+        dir=${dir%/}
+        [ -f "$dir/config" ] || continue
+        repo=$(sed -n 's/^repo=//p' "$dir/config" | head -1)
+        # A scratch dir staged before v1.0 is per feature, not per base branch, and
+        # its worktrees carry the feature's name after the repo's.
+        feature=$(sed -n 's/^feature=//p' "$dir/config" | head -1)
+        base=$(sed -n 's/^base=//p' "$dir/config" | head -1)
+        base=${base:-$feature}
 
-    # The scratch dir's own dispatch-ctl, the version its runners started with,
-    # is the authority on state. Its line is name, state, run id and the rest;
-    # everything else on the row is derived here. With no manifest there is no
-    # run to probe; a probe that fails over one leaves runs unread, which is a
-    # row of its own rather than a scratch dir that reads as empty.
-    probe= rc=0
-    [ -f "$dir/manifest" ] && { probe=$(bash "$dir/dispatch-ctl" probe 2>/dev/null) || rc=$?; }
-    if [ "$rc" -ne 0 ]; then
-        printf '%s/%s\t-\tunreadable\t-\t-\t-\tn\tdispatch-ctl probe failed in %s (exit %s)\n' \
-            "$repo" "$base" "$dir" "$rc"
-        probe=
-    fi
-    [ -z "$probe" ] || printf '%s\n' "$probe" |
-        awk '{ name = $1; state = $2; run = $3; sub(/^run=/, "", run)
-               $1 = $2 = $3 = ""; sub(/^ +/, "")
-               print name "\t" state "\t" run "\t" $0 }' |
-    while IFS=$'\t' read -r name state run detail; do
-        worktree=$(tac "$dir/manifest" | awk -F'\t' -v n="$name" '$1 == n { print $3; exit }')
-        ticket=${worktree##*/}
-        ticket=${ticket#"$repo-"}
-        [ -z "$feature" ] || ticket=${ticket#"$feature-"}
-        # The run id ends in the second it was spawned.
-        started=${run##*-}
-        case $started in ''|*[!0-9]*) age=- ;; *) age=$((now - started)) ;; esac
-        log=$dir/$run.log
-        if [ -f "$log" ]; then idle=$((now - $(stat -c %Y "$log"))); else idle=-; fi
-        # The session id is the resume's business, and `log:` the probe line's
-        # furniture; the column keeps what the worker or its runner said.
-        [[ $detail =~ ^(.*)\ session=[^\ ]*(.*)$ ]] && detail=${BASH_REMATCH[1]}${BASH_REMATCH[2]}
-        if [ "$state" = running ]; then
-            detail=${detail#log:}
-            detail=${detail# }
-            if [ ! -f "$log" ]; then detail="(no worklog)"
-            elif [ -z "$detail" ]; then detail="(nothing written yet)"
+        # The scratch dir's own dispatch-ctl, the version its runners started with,
+        # is the authority on state. Its line is name, state, run id and the rest;
+        # everything else on the row is derived here. With no manifest there is no
+        # run to probe; a probe that fails over one leaves runs unread, which is a
+        # row of its own rather than a scratch dir that reads as empty.
+        probe= rc=0
+        [ -f "$dir/manifest" ] && { probe=$(bash "$dir/dispatch-ctl" probe 2>/dev/null) || rc=$?; }
+        if [ "$rc" -ne 0 ]; then
+            printf '%s/%s\t-\tunreadable\t-\t-\t-\tn\tdispatch-ctl probe failed in %s (exit %s)\n' \
+                "$repo" "$base" "$dir" "$rc"
+            probe=
+        fi
+        [ -z "$probe" ] || printf '%s\n' "$probe" |
+            awk '{ name = $1; state = $2; run = $3; sub(/^run=/, "", run)
+                   $1 = $2 = $3 = ""; sub(/^ +/, "")
+                   print name "\t" state "\t" run "\t" $0 }' |
+        while IFS=$'\t' read -r name state run detail; do
+            worktree=$(tac "$dir/manifest" | awk -F'\t' -v n="$name" '$1 == n { print $3; exit }')
+            ticket=${worktree##*/}
+            ticket=${ticket#"$repo-"}
+            [ -z "$feature" ] || ticket=${ticket#"$feature-"}
+            # The run id ends in the second it was spawned.
+            started=${run##*-}
+            case $started in ''|*[!0-9]*) age=- ;; *) age=$((now - started)) ;; esac
+            log=$dir/$run.log
+            if [ -f "$log" ]; then idle=$((now - $(stat -c %Y "$log"))); else idle=-; fi
+            # The session id is the resume's business, and `log:` the probe line's
+            # furniture; the column keeps what the worker or its runner said.
+            [[ $detail =~ ^(.*)\ session=[^\ ]*(.*)$ ]] && detail=${BASH_REMATCH[1]}${BASH_REMATCH[2]}
+            if [ "$state" = running ]; then
+                detail=${detail#log:}
+                detail=${detail# }
+                if [ ! -f "$log" ]; then detail="(no worklog)"
+                elif [ -z "$detail" ]; then detail="(nothing written yet)"
+                fi
             fi
-        fi
-        printf '%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "$repo" "$base" "${ticket:-?}" "$state" "$age" "$idle" "$name" "$(pane_of "$name")" "$detail"
+            printf '%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$repo" "$base" "${ticket:-?}" "$state" "$age" "$idle" "$name" "$(pane_of "$name")" "$detail"
+        done
     done
+}
 
-    # The repo's fuzz run is a `job`, read from the state files `job --help`
-    # documents, since this script runs where `job` may not be on PATH. Its row
-    # is the scratch dir's whose worktree the job runs in: a database outlives
-    # its run, so one left by an earlier integration branch is no run. Its idle
-    # is how long the examples in its database have gone unwritten, which is
-    # what tells a run whose workers died without a word from one that is
-    # fuzzing; the patches a `fuzz check` writes beside them are no activity.
-    db=$dir/fuzz.hypothesis
-    job=${JOB_STATE_DIR:-$HOME/.local/state/jobs}/fuzz-$repo
-    worktree=$(sed -n 's/^worktrees=//p' "$dir/config" | head -1)/$repo-$base-fuzz
-    if [ -d "$db" ] && [ -f "$job/meta" ] && [ "$(sed -n 's/^cwd=//p' "$job/meta")" = "$worktree" ]; then
-        pid=$(sed -n 's/^pid=//p' "$job/meta")
-        started=$(date -d "$(sed -n 's/^started=//p' "$job/meta")" +%s 2>/dev/null)
-        if [ -f "$job/status" ]; then
-            state=exited detail=$(cat "$job/status")
-        elif kill -0 "$pid" 2>/dev/null; then
-            state=running detail=$(tail -1 "$job/log" 2>/dev/null)
-            detail=${detail:-(nothing written yet)}
-        else
-            state=gone detail="(runner dead without a status line)"
-        fi
-        active=$(find "$db" -mindepth 1 -path "$db/patches" -prune -o -printf '%T@\n' | sort -n | tail -1)
-        active=${active:-$(stat -c %Y "$db")}
-        printf '%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$base" fuzz "$state" \
-            "$((now - ${started:-$now}))" "$((now - ${active%.*}))" "job-fuzz-$repo" "$(pane_of "job-fuzz-$repo")" "$detail"
+case ${2:-} in
+    --follow) ;;
+    "")       scan; exit ;;
+    *)        echo "usage: dispatch-ps <root> [--follow]" >&2; exit 2 ;;
+esac
+
+# A scan costs over a second of CPU on a host with a few dozen runs, so the
+# loop scans again only once something it reads has changed: a file in a
+# scratch dir, the tmux sessions, or a runner process, by which probe tells a
+# live run. Whatever a scan comes to read beyond these has to be watched here
+# too, or a follow goes stale on it.
+watched() {
+    local runners
+    find "$root" -mindepth 1 -maxdepth 2 -printf '%p %T@ %s\n' 2>/dev/null
+    tmux ls -F '#{session_name}' 2>/dev/null
+    # A manifest line from before runners were recorded ran the scratch dir's own.
+    runners=$(awk -F'\t' '{ r = $4 != "" ? $4 : substr(FILENAME, 1, length(FILENAME) - 8) "run-worker.sh"
+                            gsub(/[][\\.^$*+?(){}|]/, "\\\\&", r); if (!seen[r]++) print r }' \
+                  "$root"/*/manifest 2>/dev/null | paste -sd'|')
+    [ -z "$runners" ] || pgrep -f -- "^bash ($runners) "
+}
+last=
+while :; do
+    seen=$(watched)
+    if [ "$seen" != "$last" ]; then
+        began=$SECONDS
+        rows=$(scan)
+        last=$seen
+        # A scan takes its ages at its start and can take seconds.
+        late=$((SECONDS - began))
+        [ "$late" -eq 0 ] || rows=$(awk -F'\t' -v OFS='\t' -v late="$late" '
+            $4 ~ /^[0-9]+$/ { $4 += late } $5 ~ /^[0-9]+$/ { $5 += late } { print }' <<<"$rows")
+        { [ -z "$rows" ] || printf '%s\n' "$rows"; echo; } || exit
+    else
+        echo . || exit
     fi
+    sleep 2
 done

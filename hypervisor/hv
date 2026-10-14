@@ -4,7 +4,7 @@
 # is a new pi session on it, since the memory, not pi's transcript, carries the conversation.
 #
 # Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
-# sessions in optchat-pi/, and the extension's files (spawned.jsonl, inbox/, explore.jsonl). The fork is the checkout
+# sessions in optchat-pi/, and the extension's files, which extension/src/live.ts lists. The fork is the checkout
 # $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else the token in max's secrets, else what /login stored.
 #
 # A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/'s.
@@ -29,6 +29,12 @@ fi
 if [[ ${1:-} == offer ]]; then
 	shift
 	HV_STORE=$store exec node "$extension/src/hv-offer.ts" "$@" -- "$here/hv" tell --ping
+fi
+
+# Anything else would start the TUI, which a typo, or a timer running a subcommand this hv lacks, must not.
+if [[ $# -gt 0 && $1 != explore ]]; then
+	echo "hv: no command $1; hv alone starts the hypervisor or attaches to it, beside hv tell, hv offer and hv explore (each takes --help)" >&2
+	exit 2
 fi
 
 if [[ ${1:-} == explore && ${2:-} =~ ^(--found|--help|-h)$ ]]; then

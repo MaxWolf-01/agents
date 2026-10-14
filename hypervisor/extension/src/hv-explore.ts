@@ -4,7 +4,7 @@
 // `hv explore --found` prints what the latest run found.
 
 import { execFileSync } from "node:child_process";
-import { parse, USAGE as COMMAND } from "./exploring.ts";
+import { type EndLine, type JournalLine, parse, type StepLine, USAGE as COMMAND } from "./exploring.ts";
 import { lines } from "./journal.ts";
 
 export const USAGE = `usage: hv explore N [direction] [--tokens T] [--until-week P]
@@ -19,32 +19,19 @@ With --found, prints what the latest run found, from $HV_STORE/explore.jsonl.`;
 const SESSION = "=hypervisor";
 const PANE = `${SESSION}:`;
 
-/** A line of `explore.jsonl`: a step's finding, a run's end, or an offer. */
-interface Line {
-	at: string;
-	run?: string;
-	step?: number;
-	direction?: string;
-	finding?: string;
-	tokens?: number;
-	error?: string;
-	ended?: string;
-	steps?: number;
-	week?: number | "unread";
-}
-
 /** What the latest run in the store's journal found, step by step, and how it ended, as text; or that no run is there. */
 export async function found(store: string): Promise<string> {
-	const all = (await lines<Line>(store, "explore.jsonl")).filter((line) => line.run);
+	const all = (await lines<JournalLine>(store, "explore.jsonl")).filter((line): line is JournalLine & (StepLine | EndLine) => "run" in line);
 	const run = all.at(-1)?.run;
 	if (!run) return "No explore run yet.";
 	const mine = all.filter((line) => line.run === run);
-	const out = [`Explore run of ${run.slice(0, 16)}Z${mine[0]?.direction ? `, toward ${mine[0].direction}` : ""}:`];
+	const first = mine[0];
+	const out = [`Explore run of ${run.slice(0, 16)}Z${first && "direction" in first && first.direction ? `, toward ${first.direction}` : ""}:`];
 	for (const line of mine) {
-		if (line.step !== undefined) out.push(`\nstep ${line.step}, ${line.tokens} tokens:${line.error ? ` failed: ${line.error}` : `\n${line.finding}`}`);
-		if (line.ended) out.push(`\nEnded after ${line.steps} ${line.steps === 1 ? "step" : "steps"}, ${line.tokens} tokens: stopped by ${line.ended}.${line.week === undefined ? "" : line.week === "unread" ? " The week's quota was never read." : ` The week at ${line.week}%.`}`);
+		if ("step" in line) out.push(`\nstep ${line.step}, ${line.tokens} tokens:${line.error ? ` failed: ${line.error}` : `\n${line.finding}`}`);
+		if ("ended" in line) out.push(`\nEnded after ${line.steps} ${line.steps === 1 ? "step" : "steps"}, ${line.tokens} tokens: stopped by ${line.ended}.${line.week === undefined ? "" : line.week === "unread" ? " The week's quota was never read." : ` The week at ${line.week}%.`}`);
 	}
-	if (!mine.some((line) => line.ended)) out.push("\nIt has not ended yet, or its pi stopped before it could.");
+	if (!mine.some((line) => "ended" in line)) out.push("\nIt has not ended yet, or its pi stopped before it could.");
 	return out.join("\n");
 }
 

@@ -7,8 +7,8 @@ import path from "node:path";
 export type Request = { system?: { text: string; cache_control?: unknown }[]; tools?: { name: string; cache_control?: unknown }[]; messages: { role: string; content: string | Block[] }[] };
 type Block = { type: string; text?: string; cache_control?: unknown; tool_use_id?: string; content?: unknown };
 
-/** One reply: text, or a tool call, sent after `delay` milliseconds. */
-export type Reply = ({ text: string } | { tool: string; input: object }) & { delay?: number };
+/** One reply: text, a tool call, or an HTTP error, sent after `delay` milliseconds. */
+export type Reply = ({ text: string } | { tool: string; input: object } | { status: number; error: string }) & { delay?: number };
 
 /** What every reply reports as its usage. */
 const USAGE = { input_tokens: 17, output_tokens: 5, cache_read_input_tokens: 4321, cache_creation_input_tokens: 123 };
@@ -27,6 +27,11 @@ export async function standInAnthropic(answer: (request: Request) => Reply, head
 			requests.push(request);
 			const reply = answer(request);
 			setTimeout(() => {
+				if ("status" in reply) {
+					res.writeHead(reply.status, { "content-type": "application/json" });
+					res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: reply.error } }));
+					return;
+				}
 				res.writeHead(200, { ...headers(), "content-type": "text/event-stream" });
 				for (const [event, data] of events(reply, requests.length)) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 				res.end();
@@ -41,7 +46,7 @@ export async function standInAnthropic(answer: (request: Request) => Reply, head
 	};
 }
 
-function events(reply: Reply, n: number): [string, object][] {
+function events(reply: Exclude<Reply, { status: number }>, n: number): [string, object][] {
 	const block =
 		"text" in reply
 			? [{ type: "text", text: "" }, { type: "text_delta", text: reply.text }]

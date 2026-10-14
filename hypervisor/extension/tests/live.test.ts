@@ -3,13 +3,15 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { inbox } from "../src/inbox.ts";
 import { live, MEMORY } from "../src/live.ts";
+import { STOPPED } from "../src/pace.ts";
+import { resultText, until, waitingPings } from "./helpers.ts";
 import { load } from "./properties/stand-in.ts";
 
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-home-")));
@@ -22,12 +24,6 @@ function newStore() {
 after(() => {
 	for (const dir of [home, ...stores]) rmSync(dir, { recursive: true, force: true });
 });
-/** The pings that wait in `store`'s inbox, left there. */
-async function pings(store: string): Promise<string[]> {
-	let offered: string[] = [];
-	await inbox(store).takePings((taken) => ((offered = taken), false));
-	return offered;
-}
 
 /** pi-optchat's tools by name, as the fork registers them: `spawn` and `tell` start and steer pi subagents with pi's coding tools. */
 const OPTCHAT = ["zoom", "date", "spawn", "tell", "search"];
@@ -80,9 +76,9 @@ test("a plain hv tell starts no turn and is listed on the status line; a ping go
 	await inbox(store).post({ at, from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 	const { reports, status, stop } = await loaded(() => false, store);
 	try {
-		await new Promise((settle) => setTimeout(settle, 100));
+		assert.ok(await until(() => reports.length > 0), "the watch's first take reports the ping");
 		assert.deepEqual(reports, [{ channel: "optchat:report", text: "[agents:board-fix] hv tell: the migration needs max" }]);
-		assert.deepEqual(await pings(store), ["[agents:board-fix] hv tell: the migration needs max"], "nothing took the ping: the inbox keeps it for the next take");
+		assert.deepEqual(await waitingPings(store), ["[agents:board-fix] hv tell: the migration needs max"], "nothing took the ping: the inbox keeps it for the next take");
 		assert.deepEqual(status(), ["Unread in your inbox: agents:board-fix 1 message, 20 B, 0m old."], "the ping is not listed: it is on its way");
 	} finally {
 		await stop();
@@ -94,13 +90,22 @@ test("a ping OptChat takes leaves the inbox for read/", async () => {
 	await inbox(store).post({ at: new Date().toISOString(), from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 	const { reports, stop } = await loaded(() => true, store);
 	try {
-		await new Promise((settle) => setTimeout(settle, 100));
+		assert.ok(await until(() => existsSync(path.join(store, "inbox", "read")) && readdirSync(path.join(store, "inbox", "read")).length > 0), "the taken ping moves to read/");
 		assert.equal(reports.length, 1);
-		assert.deepEqual(await pings(store), []);
+		assert.deepEqual(await waitingPings(store), []);
 		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
 	} finally {
 		await stop();
 	}
+});
+
+test("a wait still running when the hypervisor's session ends posts that it stopped, for the next session's watch", async () => {
+	const store = newStore();
+	const { tools, stop } = await loaded(() => false, store);
+	await tools.get("wait")!.execute("call", { minutes: 20, note: "look at the build" } as never, undefined, undefined, undefined as never);
+	assert.deepEqual(await waitingPings(store), []);
+	await stop();
+	assert.deepEqual(await waitingPings(store), [`[wait] ${STOPPED}\nYour note: look at the build`]);
 });
 
 test("the inbox tool lists what waits without its text, and reads one message or all from a sender as work, out of the inbox", async () => {
@@ -111,22 +116,21 @@ test("the inbox tool lists what waits without its text, and reads one message or
 	const call = (params: object) => tool.execute("call", params as never, undefined, undefined, undefined as never);
 	const at = new Date().toISOString();
 	for (const [from, text] of [["agents:a", "a's first"], ["agents:b", "b's only"], ["agents:a", "a's second"]]) await inbox(store).post({ at, from, text, via: "hv tell" });
-	const listed = textOf(await call({}));
+	const listed = resultText(await call({}));
 	assert.doesNotMatch(listed, /first|only|second/, "the listing holds no message's text");
 	const ids = listed.split("\n").map((line) => line.split("  ")[0]);
 	assert.equal(new Set(ids).size, 3, "each message its own id");
 	const one = await call({ id: ids[1] });
 	const sent = `(sent ${at.slice(0, 16)}Z)`;
-	assert.equal(textOf(one), `[agents:b] hv tell: b's only ${sent}`);
+	assert.equal(resultText(one), `[agents:b] hv tell: b's only ${sent}`);
 	assert.deepEqual(one.details, { optchat: "work" }, "pi-optchat logs it as work");
-	assert.equal(textOf(await call({ from: "agents:a" })), `[agents:a] hv tell: a's first ${sent}\n\n[agents:a] hv tell: a's second ${sent}`);
-	assert.equal(textOf(await call({})), "The inbox is empty.");
+	assert.equal(resultText(await call({ from: "agents:a" })), `[agents:a] hv tell: a's first ${sent}\n\n[agents:a] hv tell: a's second ${sent}`);
+	assert.equal(resultText(await call({})), "The inbox is empty.");
 	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 3);
-	assert.match(textOf(await call({ id: ids[1] })), /No unread message with id/);
+	assert.match(resultText(await call({ id: ids[1] })), /No unread message with id/);
 	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 3, "a message is read once");
 });
 
-const textOf = (result: { content: { type: string; text?: string }[] }) => result.content.map((c) => c.text ?? "").join("");
 
 test("hv starts pi in tmux with the fork's OptChat and this extension, on the profile, its turns cached for an hour", () => {
 	const at = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-launch-")));
@@ -159,6 +163,13 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		const exploring = readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session");
 		assert.deepEqual(exploring, [...started, "/explore 3 papers"]);
 		assert.equal(readFileSync(path.join(hvStore, "optchat", "profiles", "hv", "config.json"), "utf8"), readFileSync(path.resolve(import.meta.dirname, "../../live/config.json"), "utf8"));
+
+		// A command hv does not have, as a timer of a newer hv would run on this one, starts nothing.
+		rmSync(calls);
+		const unknown = spawnSync(path.resolve(import.meta.dirname, "../../hv"), ["summarize"], { env, encoding: "utf8" });
+		assert.equal(unknown.status, 2, unknown.stderr);
+		assert.match(unknown.stderr, /^hv: no command summarize;/);
+		assert.equal(existsSync(calls), false, "no tmux call");
 	} finally {
 		rmSync(at, { recursive: true, force: true });
 	}

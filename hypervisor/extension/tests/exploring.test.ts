@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { parse, stopBefore } from "../src/exploring.ts";
+import { type JournalLine, parse, stopBefore } from "../src/exploring.ts";
 import { found } from "../src/hv-explore.ts";
 import { lines } from "../src/journal.ts";
 import { weekFromHeaders } from "../src/quota.ts";
@@ -64,6 +64,10 @@ function answer(request: Request) {
 	appendFileSync(path.join(f.optchat, "profiles", "hv", "usage.jsonl"), `${JSON.stringify({ date: new Date().toISOString(), role: "main", usage: { cost: { total: CALL_COST } } })}\n`);
 	const last = request.messages.at(-1)!;
 	const result = Array.isArray(last.content) && last.content.find((b) => b.type === "tool_result");
+	if (f.name === "failing") return { status: 400, error: "the stand-in refuses" };
+	// max's turn, in flight when /explore arrives: in one he writes again, in the other it starts a session.
+	if (f.name === "called-off" && f.requests.length === 1) return { text: "noted", delay: 400 };
+	if (f.name === "busy" && f.requests.length === 1) return { tool: "start_session", input: { dir: "~", name: "x", brief: "y" }, delay: 400 };
 	if (f.tool && !result) return { tool: f.tool, input: { dir: "~", name: "x", brief: "y" } };
 	return { text: `finding ${f.requests.length}: ${result ? JSON.stringify(result.content) : "max reads papers on ALife"}`, delay: f.name === "interrupted" ? 400 : 0 };
 }
@@ -83,9 +87,10 @@ const pi = [process.execPath, PI, "--no-extensions", "--no-builtin-tools", "--no
 
 /**
  * `/explore args` sent to pi over RPC, as max types it in the TUI; resolves with the run's notifications once its end is
- * notified. With `interrupt`, max writes while the first step is in flight.
+ * notified. With `interrupt`, max writes while the first step is in flight; with `busy`, max's message `busy` is in
+ * flight when the command arrives, and with `andThen` max writes that too, into his own turn.
  */
-function notified(f: Fixture, args: string[], interrupt = false): Promise<string[]> {
+function notified(f: Fixture, args: string[], { interrupt = false, busy, andThen }: { interrupt?: boolean; busy?: string; andThen?: string } = {}): Promise<string[]> {
 	current = f;
 	return new Promise((resolve, reject) => {
 		const child = spawn(pi[0]!, [...pi.slice(1), "--mode", "rpc"], { env: env(f), stdio: ["pipe", "pipe", "inherit"] });
@@ -98,6 +103,10 @@ function notified(f: Fixture, args: string[], interrupt = false): Promise<string
 			for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
 				const record = JSON.parse(buffer.slice(0, at));
 				buffer = buffer.slice(at + 1);
+				if (busy && record.type === "agent_start" && !sentCommand) {
+					command();
+					if (andThen) child.stdin.write(`${JSON.stringify({ type: "prompt", message: andThen, streamingBehavior: "steer" })}\n`);
+				}
 				if (interrupt && record.type === "agent_start" && f.requests.length === 0) child.stdin.write(`${JSON.stringify({ type: "prompt", message: "max here, what did you find?", streamingBehavior: "steer" })}\n`);
 				if (record.type === "extension_ui_request" && record.method === "notify") {
 					notes.push(record.message);
@@ -109,7 +118,13 @@ function notified(f: Fixture, args: string[], interrupt = false): Promise<string
 				}
 			}
 		});
-		child.stdin.write(`${JSON.stringify({ type: "prompt", message: `/explore ${args.join(" ")}` })}\n`);
+		let sentCommand = false;
+		const command = () => {
+			sentCommand = true;
+			child.stdin.write(`${JSON.stringify({ type: "prompt", message: `/explore ${args.join(" ")}` })}\n`);
+		};
+		if (busy) child.stdin.write(`${JSON.stringify({ type: "prompt", message: busy })}\n`);
+		else command();
 	});
 }
 
@@ -137,14 +152,17 @@ before(async () => {
 	runs.set("headers", await explore(fixture("headers", { headers: { "anthropic-ratelimit-unified-7d-utilization": "0.96", "anthropic-ratelimit-unified-7d-reset": String(Math.round(now / 1000) + 86400) } }), "5", "--until-week", "95"));
 	runs.set("blocked", await explore(fixture("blocked", { tool: "start_session" }), "1"));
 	runs.set("unread", await explore(fixture("unread"), "1", "--until-week", "95"));
-	notes = await notified(fixture("interrupted"), ["5"], true);
+	notes = await notified(fixture("interrupted"), ["5"], { interrupt: true });
+	runs.set("busy", (await notified(fixture("busy"), ["1"], { busy: "max here, what is in flight?" })).join("\n"));
+	runs.set("failing", await explore(fixture("failing"), "3"));
+	runs.set("called-off", (await notified(fixture("called-off"), ["5"], { busy: "max here, explore later", andThen: "no, hold off" })).join("\n"));
 });
 after(async () => {
 	await anthropic?.close();
 	rmSync(dir, { recursive: true, force: true });
 });
 
-const journal = (name: string) => lines<{ run?: string; step?: number; finding?: string; ended?: string; steps?: number }>(fixtures.get(name)!.store, "explore.jsonl");
+const journal = (name: string) => lines<JournalLine>(fixtures.get(name)!.store, "explore.jsonl");
 
 test("/explore N with a direction runs N steps on the live profile: the direction starts the run, and every later step is a bare continue", async () => {
 	const run = runs.get("steps")!;
@@ -153,7 +171,7 @@ test("/explore N with a direction runs N steps on the live profile: the directio
 	for (let n = 1; n <= 3; n++) assert.match(run, new RegExp(`^explore step ${n} of 3, 1000 tokens: finding ${n}: max reads papers`, "m"));
 	assert.match(run, /^explore run ended after 3 steps, 3000 tokens: stopped by 3 steps\./m);
 	const lines = await journal("steps");
-	assert.deepEqual(lines.map((l) => l.step ?? l.ended), [1, 2, 3, "3 steps"]);
+	assert.deepEqual(lines.map((l) => ("step" in l ? l.step : "ended" in l ? l.ended : undefined)), [1, 2, 3, "3 steps"]);
 });
 
 test("what a run found reads back from the store, step by step, with how it ended", async () => {
@@ -182,12 +200,36 @@ test("a run starts no session: start_session is refused while it is in flight", 
 });
 
 test("a message from max ends the run after the step in flight", async () => {
-	assert.match(notes.at(-1)!, /^explore run ended after 1 step, .*: stopped by max wrote\./);
+	assert.match(notes.at(-1)!, /^explore run ended after 1 step, .*: stopped by a message from max\./);
 	const requests = fixtures.get("interrupted")!.requests;
 	assert.ok(requests.some((r) => said(r).some((text) => text.startsWith("max here, what did you find?"))), "his message reaches the hypervisor");
 	assert.ok(!requests.some((r) => said(r).includes("continue")), "no second step");
 	const [step] = await journal("interrupted");
-	assert.match(step!.finding!, /^finding 1: max reads papers/, "the step's finding, not the reply to max that joined its turn");
+	assert.ok(step && "finding" in step);
+	assert.match(step.finding, /^finding 1: max reads papers/, "the step's finding, not the reply to max that joined its turn");
+});
+
+test("a run asked for while max's turn is in flight begins once that turn ends, leaves its tool calls alone, and journals its own step's finding", async () => {
+	const requests = fixtures.get("busy")!.requests;
+	assert.equal(requests.length, 3, runs.get("busy") ?? "");
+	assert.match(said(requests[0]!).at(-1)!, /^max here, what is in flight\?/);
+	assert.doesNotMatch(JSON.stringify(requests[1]!.messages.at(-1)), /explore run is in flight/, "max's start_session ran");
+	assert.equal(said(requests[2]!).at(-1), "Explore.", "the step is a turn of its own");
+	const [step] = await journal("busy");
+	assert.ok(step && "finding" in step);
+	assert.match(step.finding, /^finding 3: /, "the step's reply, not the reply that ended max's turn");
+	assert.equal(step.tokens, 1000, "only the step's own call");
+});
+
+test("a message from max while the run waits for his turn ends it before its first step", () => {
+	assert.match(runs.get("called-off")!, /^explore run ended after 0 steps, .*: stopped by a message from max\./m);
+	const requests = fixtures.get("called-off")!.requests;
+	assert.ok(!requests.some((r) => said(r).some((text) => /^Explore/.test(text))), "no step was sent");
+});
+
+test("a step that fails stops the run, and says so", async () => {
+	assert.match(runs.get("failing")!, /^explore run ended after 1 step, .*: stopped by step 1 failing./m);
+	assert.equal(fixtures.get("failing")!.requests.length, 1);
 });
 
 test("hv explore refuses what /explore cannot run, before it starts the TUI", async () => {
@@ -205,7 +247,7 @@ test("/explore's arguments: N, then a direction of any words, with its caps anyw
 });
 
 test("a week whose reset has passed stops no run, since its quota has started over", () => {
-	const run = { request: { steps: 9, untilWeek: 95 }, started: "", taken: 1, interrupted: false };
+	const run = { request: { steps: 9, untilWeek: 95 }, started: "", begun: true, taken: 1, interrupted: false };
 	assert.equal(stopBefore(run, 0, { used: 99, resets: now - 1, at: now - 3600_000 }, now), undefined);
 	assert.equal(stopBefore(run, 0, { used: 95, resets: now + 1, at: now }, now), "the week at 95% used");
 });

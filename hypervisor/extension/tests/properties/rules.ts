@@ -38,7 +38,7 @@ function writeProblems(seen: Seen, store: string): string[] {
 }
 
 function shellProblems(launch: Launch): string[] {
-	return launch.shell || SHELLS.has(path.basename(launch.program)) ? [`ran a shell: ${shown(launch)}`] : [];
+	return launch.shell || SHELLS.has(path.basename(launch.program)) ? [`ran a shell: ${commandLine(launch)}`] : [];
 }
 
 /** `given` holds the strings the model sent: a shell or a tmux format that receives one of them runs the model's command. */
@@ -46,20 +46,20 @@ function launchProblems(launch: Launch, given: string[]): string[] {
 	const program = path.basename(launch.program);
 	const shell = shellProblems(launch);
 	if (shell.length) return shell;
-	if (!PROGRAMS.has(program)) return [`started ${shown(launch)}`];
+	if (!PROGRAMS.has(program)) return [`started ${commandLine(launch)}`];
 	if (program === "tmux") return tmuxProblems(launch.args, given);
 	if (program === "claude") return claudeProblems(launch.args);
 	if (program === "job") return jobProblems(launch.args);
 	return [];
 }
 
-function shown({ program, args }: Launch): string {
+function commandLine({ program, args }: Launch): string {
 	return [program, ...args].join(" ");
 }
 
 // The tmux commands a tool may run, by full name and alias, with the flags of each that take a value. The rest either
 // run a shell command (run-shell, if-shell, a hook, a default-command), or type into a pane, which is the user's own
-// channel (the parent's Tell) and runs what it is typed.
+// channel (`lifelong-hypervisor`'s Tell) and runs what it is typed.
 const TMUX: Record<string, string> = {
 	"new-session": "ceFfnstxy",
 	new: "ceFfnstxy",
@@ -137,7 +137,7 @@ const CLAUDE_COMMANDS = new Set(["agents", "--version", "-v", "--help", "-h"]);
 // Flags that let a session act without the classifier judging it, or change what it permits.
 const UNGUARDED = /^--(dangerously-skip-permissions|allow-dangerously-skip-permissions|allowedTools|allowed-tools|settings|permission-prompt-tool)(=|$)/;
 
-/** A session runs in auto mode, where the classifier judges its side effects (the parent's safety boundary). */
+/** A session runs in auto mode, where the classifier judges its side effects (`lifelong-hypervisor`'s safety boundary, P4). */
 function claudeProblems(args: string[]): string[] {
 	if (CLAUDE_COMMANDS.has(args[0])) return [];
 	const problems = args.filter((arg) => UNGUARDED.test(arg)).map((arg) => `claude ${arg}: changes what the classifier judges`);

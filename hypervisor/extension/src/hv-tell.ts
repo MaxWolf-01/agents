@@ -8,7 +8,7 @@ import { inbox } from "./inbox.ts";
 export const USAGE = `usage: hv tell [--ping] <message>...   (or the message on stdin)
 
 Leaves the hypervisor a message: what happened, and where max should look. It waits in the hypervisor's inbox, listed
-by sender and size, until the hypervisor chooses to read it. With --ping it reaches the hypervisor at once, starting a
+without its text, until the hypervisor chooses to read it. With --ping it reaches the hypervisor at once, starting a
 turn: for what needs max, or what the hypervisor asked for.
 
 It names the tmux window it was sent from, or the directory when it runs outside tmux. It goes to the inbox of the

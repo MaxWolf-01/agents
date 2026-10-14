@@ -38,7 +38,7 @@ Three claims, each load-bearing: where the text came from, that its content was 
 Nothing goes out without max's yes on the rendered text:
 
 1. **Read the body as a stranger would, for what it discloses**, on any repo others can read. Hostnames, paths, usernames, tokens, internal URLs, a stack trace carrying any of those, and the subtler kind, where the shape of a setup or the reason for a question says more about max than he'd choose to publish. Redact to the minimum that still makes the point.
-2. **Show max** what would be published, the title with it, rendered the way its destination renders it, opened with `claude-browser` where it exists, else `xdg-open`:
+2. **Show max** what would be published, the title with it, rendered the way its destination renders it, and open it for him:
 
    ```console
    gh api -X POST /markdown -f mode=gfm -f context=<owner/repo> \

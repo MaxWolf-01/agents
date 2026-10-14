@@ -10,7 +10,7 @@ A handoff is the conversation compacted into one file a fresh session starts fro
 
 A handoff requires a **purpose**: what the next session should do. The purpose sets the scope:
 
-- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint means this purpose, and once a mark says to write, the file is written without asking first: the user's read before the next session starts is the check. A checkpoint is the plugin's hook saying where the context stands, once per mark, and each mark asks for something else:
+- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint means this purpose, and once a mark says to write, the file is written without asking first: the user's read before the next session starts is the check. A checkpoint is a message saying where the context stands, once per mark, and each mark asks for something else:
   - the first: close the phase in hand; at the next phase boundary (`/mx:orient`, Phase boundaries), rule out Continue and write the handoff.
   - the second: write the handoff at the next phase boundary and tell the user it is there.
   - the third: write it now and tell the user to `/clear`.
@@ -46,10 +46,8 @@ purpose: continuation | fork
 ---
 ```
 
-The file is the deliverable, so the chat gets its absolute path and the pickup line, not a summary of it:
-
+For a continuation from the current live session, the user only needs to `/clear`, then send any message. In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. Give the user the following line verbatim, this skill's base directory and the handoff's path filled in, so they also have the option to continue from a fresh `claude` started any other way (or if you split the handoff into N successors, N such lines):
 ```
-Continue from <absolute path>. Read it in full first, then git rm it in the agent repo and commit: a handoff is retired once a session has picked it up.
+Continue from <absolute path>: first run `<base directory>/pickup.py <absolute path>`, which prints the handoff in full, retires it and links the session pages.
 ```
 
-For a continuation, tell the user the two steps once they have read the file: `/clear`, then any message (`go` will do). In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. A fresh `claude` started any other way is given the line by the user.

@@ -6,6 +6,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Inbox } from "./inbox.ts";
 import { run } from "./run.ts";
+import { answer } from "./tools.ts";
 
 /** Work running in the background, each piece ending in a ping. */
 export interface Background {
@@ -101,12 +102,11 @@ export function waitTool(work: Background): ToolDefinition {
 			probe: Type.Optional(Type.Boolean({ description: "List the jobs instead of waiting." })),
 		}),
 		execute: async (_id, params) => {
-			const text = (said: string) => ({ content: [{ type: "text" as const, text: said }], details: undefined });
-			if (params.probe) return text((await run("job", ["probe"])).trimEnd() || "(no jobs)");
+			if (params.probe) return answer((await run("job", ["probe"])).trimEnd() || "(no jobs)");
 			const { minutes, args } = waitFor(params);
 			const from = args ? `wait ${params.job}` : "wait";
 			work.start(from, (signal) => (args ? run("job", args, { signal, anyExit: true }) : timer(minutes, signal)), params.note);
-			return text(`Waiting${args ? ` on ${params.job}` : ""}, ${minutes} minutes at most; a report starting [${from}] wakes you. End your turn.`);
+			return answer(`Waiting${args ? ` on ${params.job}` : ""}, ${minutes} minutes at most; a report starting [${from}] wakes you. End your turn.`);
 		},
 	}) as ToolDefinition;
 }

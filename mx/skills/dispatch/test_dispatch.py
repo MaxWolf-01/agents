@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "libcst"]
+# dependencies = ["pytest", "tyro", "pyyaml"]
 # ///
 """Checks for what `dispatch` and `dispatch-ctl` read and write on a ticket. Run: pytest test_dispatch.py
 
@@ -11,33 +11,37 @@ git repo of its own inside it that the code repo ignores. The oracles are
 `agent/tickets/ticket-file-contract.md` (P4, that a worker's brief is the ticket's body with every
 ancestor's, assembled by the one function; P7, that a worker writes no ticket file and reports
 instead; `needs-user` as the one field that keeps a ticket from a worker) and `/mx:tracker`'s Ticket
-state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands).
+state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands). A ticket's
+ranges are read back through the tracker module, as `tracker data` prints them (`ranges_of`): the
+read is the oracle's, not the seam's, and in process it costs no tracker launch per check.
 
 `agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
-argued; this file is the cases the ticket-file move made, and the repo's fuzz run. The fuzz checks
-answer to `agent/tickets/fuzz-run-on-integration-branch.md`: P1 a finding survives the run being
-stopped, restarted and its worktrees removed; P3 the next run reuses the corpus; P4 a finding reaches
-the repo as a committed example and the tracker as a proposed ticket; P6 the project knows nothing
-of being fuzzed. Their oracles are the patch Hypothesis wrote in that ticket's prototype, a push
-into the host's bare repo, and the database directory outliving what stops and removes the run.
+argued; this file is the cases the ticket-file move made.
 """
 
-import ast
 import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
+import tracker
+from dispatch_checks import mx, stage_runner
+
 SKILL = Path(__file__).parent
 DISPATCH = SKILL / "dispatch"
+
+# Git with no configuration of the machine's, for the commits a check makes and the ones dispatch makes in
+# it: a hook or a setting of whoever runs the checks would write into the toy's history, which the board reads.
+HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "false"}
 # Read before any check moves HOME: uv keeps its cache under HOME unless told otherwise, and a
 # fresh cache puts a full dependency install in front of every tracker and board a check runs.
 UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
@@ -123,7 +127,7 @@ def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
          "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=HERMETIC_GIT,
     )
     assert done.returncode == 0, f"git {' '.join(args)}: {done.stderr}"
     return done.stdout
@@ -145,8 +149,10 @@ def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_
 def tmux_dir(toy: Path) -> Path:
     """The socket directory of this check's own tmux server. A worker's session is named after the
     repo and the slug, the same in every check, so each check runs a server no other check or user
-    shares. Under /tmp and short, since a socket path over about a hundred bytes is refused."""
-    return Path("/tmp") / f"dispatch-check-{hashlib.sha1(str(toy).encode()).hexdigest()[:12]}"
+    shares. Keyed on the check's temp dir, which holds the toy and every worktree beside it, so a
+    command run in a worktree lands on the server the toy's teardown takes down. Under /tmp and
+    short, since a socket path over about a hundred bytes is refused."""
+    return Path("/tmp") / f"dispatch-check-{hashlib.sha1(str(toy.parent).encode()).hexdigest()[:12]}"
 
 
 @pytest.fixture
@@ -154,7 +160,17 @@ def toy(tmp_path: Path) -> Iterator[Path]:
     """A project on `main`: a code repo, its `agent/` a repo of its own inside it that the code repo
     ignores, and a tree of two tickets in it. Answers the code repo's root, and takes down the tmux
     server its workers ran on."""
-    repo = tmp_path / "lamp"
+    yield from project(tmp_path / "lamp")
+
+
+@pytest.fixture
+def dotted(tmp_path: Path) -> Iterator[Path]:
+    """The toy under a name with a dot in it, as the dotfiles repo has."""
+    yield from project(tmp_path / ".lamp")
+
+
+def project(repo: Path) -> Iterator[Path]:
+    tmp_path = repo.parent
     (repo / "agent" / "tickets").mkdir(parents=True)
     for at in (repo, repo / "agent"):
         git(tmp_path, "init", "-q", "-b", "main", str(at))
@@ -172,7 +188,18 @@ def toy(tmp_path: Path) -> Iterator[Path]:
     git(repo / "agent", "add", "-A")
     git(repo / "agent", "commit", "-q", "-m", "the tracker")
     yield repo
-    subprocess.run(["tmux", "kill-server"], capture_output=True, env=environment(repo))
+    socket = tmux_dir(repo) / f"tmux-{os.getuid()}" / "default"
+    if socket.exists():
+        # Named by its socket and run outside the check's environment: a tmux guard that reads
+        # TMUX_TMPDIR takes the default socket under it for the user's own server and refuses.
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], capture_output=True)
+        for _ in range(20):
+            if subprocess.run(["tmux", "-S", str(socket), "list-sessions"], capture_output=True).returncode:
+                break
+            time.sleep(0.1)
+        else:
+            # The socket stays, since it is the only handle left on that server.
+            pytest.fail(f"the check's tmux server outlived its kill-server: tmux -S {socket} kill-server")
     shutil.rmtree(tmux_dir(repo), ignore_errors=True)
 
 
@@ -185,12 +212,22 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     """What every command here runs in: a HOME of its own, a `diffview` that records the
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
     what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
-    spawn hands its runner in place of the one the host's claude lists."""
+    spawn hands its runner in place of the one the host's claude lists. The page it writes carries
+    each source's spec with both ends pinned to short SHAs, as diffview's does, and its
+    --sources-of reads them back off a page."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
-        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
+        '#!/bin/sh\n'
+        '[ "$1" = --sources-of ] && { grep -o \'"spec": "[^"]*"\' "$2" | sed \'s/^"spec": "//; s/"$//\'; exit 0; }\n'
+        f'printf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
+        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n'
+        '[ "$1" = --serve ] && exit 0\n'
+        'out=; page=\n'
+        'while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; --notes) shift 2 ;;'
+        ' *) r=${1##*@}; page="$page{\\"spec\\": \\"${1%@*}@$(printf %.7s "${r%%..*}")..$(printf %.7s "${r#*..}")\\"}, "; shift ;;'
+        ' esac; done\n'
+        'printf \'{"sources": [%s]}\\n\' "$page" > "$out"\n')
     (bin_dir / "diffview").chmod(0o755)
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
@@ -198,10 +235,15 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     # none, so every host runs the checks against this repo's own.
     (bin_dir / "tracker").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "tracker.py"}" "$@"\n')
     (bin_dir / "tracker").chmod(0o755)
+    # A board that draws nothing and keeps what it was asked to draw (`boards`), since no check reads
+    # the page, unless the check put the real one there (`on_github`).
+    if not (bin_dir / "board").exists():
+        (bin_dir / "board").write_text(f'#!/bin/sh\necho "$*" >> "{bin_dir / "board.calls"}"\n')
+        (bin_dir / "board").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     plugin = mx(toy.parent)
     tmux_dir(toy).mkdir(exist_ok=True)
-    env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
+    env = {**HERMETIC_GIT, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE,
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}",
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
@@ -227,13 +269,19 @@ def waited(toy: Path, state: Path | None = None) -> Path:
         time.sleep(0.5)
     left = list(state.glob("*.status"))
     assert left, "no status line 30s after the spawn: " + subprocess.run(
-        ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
+        ["tmux", "capture-pane", "-p", "-J", "-t", f"=dispatch-{toy.name}-warm-preset:"],
         capture_output=True, text=True, env=environment(toy)).stdout
     return left[0]
 
 
 def status_of(toy: Path, slug: str) -> str:
     return (tracked(toy) / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
+
+
+def ranges_of(toy: Path, slug: str) -> list[str]:
+    """The ticket's `diff:` ranges, as `tracker data` prints them."""
+    read = tracker.tracker_of(tracker.tracker_root(toy))
+    return tracker.as_data(read.ticket(slug), read)["diff"]
 
 
 def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(toy: Path) -> None:
@@ -263,23 +311,49 @@ def test_a_parent_tickets_worktree_finds_the_tracker_and_writes_where_it_is(toy:
     assert git(toy / "agent", "branch", "--show-current").strip() == "main", "on the branch it had out"
 
 
-def stage_runner(state: Path) -> None:
-    """The shipped runner and what it reads beside itself, as `dispatch` stages them on a host."""
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+@pytest.fixture
+def runner(tmp_path: Path) -> Path:
+    """The shipped runner staged in a state dir, the message a spawn hands it, and an empty bin dir
+    for the `claude` a check stubs. Answers the state dir; `run_worker` starts what it staged."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    (tmp_path / "bin").mkdir()
+    return state
 
 
-def mx(tmp_path: Path) -> Path:
-    """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here,
-    shaped like a real one, whose leaf the lines that name the install print."""
-    (tmp_path / "mx" / "installed").mkdir(parents=True, exist_ok=True)
-    return tmp_path / "mx" / "installed"
+def run_worker(state: Path, *args: str, claude: str = "", run_id: str = "run-1", model: str = "opus",
+               cwd: Path | None = None, **env: str | None) -> subprocess.CompletedProcess:
+    """The runner `runner` staged, started on its message as a spawn starts it, for warm-preset, with
+    `args` after the run id. `claude` is the stub put first on PATH, FAKE_CLAUDE recording to
+    `bin/claude.calls` unless given. HOME is the check's temp dir, DISPATCH_PLUGIN_DIR a fresh mx
+    install and DISPATCH_EFFORT unset, unless `env` says otherwise; a None in it unsets the variable."""
+    tmp_path = state.parent
+    bin_dir = tmp_path / "bin"
+    (bin_dir / "claude").write_text(claude or FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    environ = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
+    environ.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
+    if "DISPATCH_PLUGIN_DIR" not in env:
+        environ["DISPATCH_PLUGIN_DIR"] = str(mx(tmp_path))
+    for key, value in env.items():
+        if value is None:
+            environ.pop(key, None)
+        else:
+            environ[key] = value
+    return subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", model, run_id, *args],
+        cwd=cwd or tmp_path, capture_output=True, text=True, timeout=120, env=environ)
 
 
 @pytest.fixture
 def staged(toy: Path) -> Path:
     """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
+    return skill_copy(toy)
+
+
+def skill_copy(toy: Path) -> Path:
     if not shutil.which("tmux"):
         pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     skill = toy.parent / "skills"
@@ -318,6 +392,7 @@ def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
     return remote, env
 
 
+@pytest.mark.full_path
 def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P4`'s worker half: the brief is the ticket's body and every ancestor's,
     which is what `tracker context` assembles for the review's `--spec` too."""
@@ -332,6 +407,7 @@ def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_
     assert written.index("## warm-preset") < written.index("## parent ticket: lamp-ui")
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("fails", [False, True])
 def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, staged: Path, fails: bool) -> None:
     """`worker-hosts-run-the-current-claude`: a model alias is whatever the host's claude resolves
@@ -353,6 +429,7 @@ def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, stage
     assert ("claude update failed" in said.stderr) == fails, said.stderr
 
 
+@pytest.mark.full_path
 def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path, staged: Path) -> None:
     """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `high`
     when the orchestrator says nothing, and it reaches the runner with the permission mode."""
@@ -383,6 +460,7 @@ def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path
     assert "stub: built warm-preset at low" in logs()
 
 
+@pytest.mark.full_path
 def test_a_spawn_hands_the_runner_the_hosts_mx_install(toy: Path, staged: Path) -> None:
     """`unattended-launch`: a worker reads no user settings, so the mx its contract names skills from
     reaches it by path, and the path travels on the line the spawn types into the pane. The spawn
@@ -438,6 +516,7 @@ def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, staged: Path) 
     assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
 
 
+@pytest.mark.full_path
 def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, staged: Path) -> None:
     """One ticket end to end: claim, spawn, the report, the import, a question ruled before the
     merge, and the landing with the range the ticket keeps.
@@ -463,9 +542,8 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert "The warm preset lands, unmerged" in written and "**Warm at what temperature?**" in written
     assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
-    # a worker anchors from its worktree root, and the agent repo is rendered from its own root
-    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [
-        (1, "lamp.txt", 1), (2, "show/warm-preset/report.md", 1)]
+    # the page shows code alone, so an assumption anchored on the report stays on the ticket
+    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,
@@ -486,18 +564,18 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     got = subprocess.run([str(tracker), "get", "warm-preset", "diff"], cwd=toy, capture_output=True, text=True)
     assert got.stdout.split() == [f"code@{cut['code']}..{tip['code']}", f"agent@{cut['agent']}..{tip['agent']}"], got.stdout
 
-    # one page, both repos' ranges on it, each rendered from the repo it names
+    # one page, over the code range alone: the report reaches the user through the ticket
     handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
-    assert [line for line in handed
-            if line.startswith(f"{toy}@{cut['code']}..{tip['code']} {agent}@{cut['agent']}..{tip['agent']} ")], handed
+    pages = [line for line in handed if not line.startswith("--serve")]
+    assert pages and all(line.startswith(f"{toy}@{cut['code']}..{tip['code']} --notes ") for line in pages), handed
 
-    # the cleanup the accept runs: both worktrees and both branches go, the agent one first
-    cleaned = subprocess.run([str(staged), "ctl", "--host", "local", "cleanup", "warm-preset"],
-                             cwd=toy, capture_output=True, text=True, env=environment(toy), timeout=180)
-    assert cleaned.returncode == 0, cleaned.stderr
+    # the `done` retires the run: both worktrees and both branches go, and so does the record of it
     assert not (toy.parent / "lamp-warm-preset").exists()
     for at in (toy, agent):
-        assert "ticket/warm-preset" not in git(at, "branch", "--list", "ticket/warm-preset")
+        assert not git(at, "branch", "--list", "ticket/warm-preset")
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True,
+                            env=environment(toy), timeout=180)
+    assert "no run recorded" in probed.stderr, probed.stderr
 
 
 # The building stub as a tree's children run it: each commits a file of its own, so a child built on
@@ -508,6 +586,7 @@ BUILDING_ITS_OWN = BUILDING.replace(
 )
 
 
+@pytest.mark.full_path
 def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Path) -> None:
     """`speculative-first`'s review unit through the toy: a hinge ruled alone, then two leaves, the
     second built on the first while the first waits unruled in its parent's branch, and the
@@ -556,12 +635,14 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
     assert "on preset-format (review, a hinge)" in frontier(held=True)
     merged("preset-format")  # the user's accept of the hinge, ruled alone
     assert status_of(toy, "preset-format") == "done"
+    assert not (toy.parent / "lamp-preset-format").exists(), "a hinge's `done` retires its run"
 
     assert "warm-preset" in frontier()
     built("warm-preset")
     assert "cool-preset" not in frontier(), "unmerged, the leaf holds its sibling"
     merged("warm-preset")  # the orchestrator's read passed it, and the user has not ruled
     assert status_of(toy, "warm-preset") == "review", "ruled with its parent, not alone"
+    assert (toy.parent / "lamp-warm-preset").exists(), "kept for a resume until the ruling"
     assert "diff: [code@" in (tickets / "warm-preset.md").read_text(), "its ranges are final once merged"
 
     assert "cool-preset" in frontier(), "a merged leaf in review unblocks its sibling"
@@ -601,13 +682,21 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
 
     accepted = run(toy, "accept", "lamp-ui")
     assert accepted.returncode == 0, accepted.stderr
-    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in parent.read_text(), "the parent's range"
-    assert {slug: status_of(toy, slug) for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset")} == dict.fromkeys(
-        ("lamp-ui", "preset-format", "warm-preset", "cool-preset"), "done")
-    assert "lamp-ui landed" in git(agent, "log", "-1", "--format=%s")
-    assert not git(agent, "status", "--porcelain", "--", "tickets"), "one commit carries the tree"
+    # one commit carries the tree's `done`, and the next retires the tree it finished
+    assert git(agent, "log", "-2", "--format=%s").splitlines() == ["retire lamp-ui: finished", "lamp-ui landed, ruled whole"]
+    landed = lambda slug: git(agent, "show", f"HEAD~1:tickets/{slug}.md")  # noqa: E731
+    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in landed("lamp-ui"), "the parent's range"
+    for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset"):
+        assert "status: done" in landed(slug), slug
+        assert not (tickets / f"{slug}.md").exists(), f"{slug} retired"
+    assert not git(agent, "status", "--porcelain", "--", "tickets")
+    for slug in ("warm-preset", "cool-preset"):
+        assert not (toy.parent / f"lamp-{slug}").exists(), f"the accept retires {slug}'s run"
+        for at in (toy, agent):
+            assert not git(at, "branch", "--list", f"ticket/{slug}")
 
 
+@pytest.mark.full_path
 def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
     """The other half of the finished signal: a worker that stopped short leaves no report, the
     fetch says so and exits 0, and the review that follows writes nothing of a worker's into the
@@ -626,6 +715,7 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
     assert "## Questions" not in (tracked(toy) / "warm-preset.md").read_text()
 
 
+@pytest.mark.full_path
 def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowhere(
     toy: Path, staged: Path
 ) -> None:
@@ -667,6 +757,7 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     assert (tracked(toy) / "warm-preset.md").read_text() == once, "nothing of the first round said twice"
 
 
+@pytest.mark.full_path
 def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
     ticket file wrote a second copy of one, and nothing of that round is imported. That read is the
@@ -696,7 +787,7 @@ def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, st
     (True, True, 0, "attempts=1 exit=0 report=yes"),
 ])
 def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
-    tmp_path: Path, already: bool, wrote: bool, exits: int, says: str
+    tmp_path: Path, runner: Path, already: bool, wrote: bool, exits: int, says: str
 ) -> None:
     """The shipped runner, with `claude` stubbed rather than the runner itself: a run whose worker
     committed its report in the agent repo is finished whatever it exited with, one that committed
@@ -704,10 +795,6 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
 
     A resumed round starts with the round before it still committed there, so what the status line
     reads is whether this run wrote that file, never whether the file is there."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent").mkdir(parents=True)
     git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
@@ -721,140 +808,110 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
         git(worktree / "agent", "add", "-A")
         git(worktree / "agent", "commit", "-q", "-m", "the round before's report")
 
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
     committing = (
         'mkdir -p agent/show/warm-preset\n'
         'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
     )
-    (bin_dir / "claude").write_text(
-        '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n")
-    (bin_dir / "claude").chmod(0o755)
+    claude = '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n"
 
-    done = subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-        cwd=worktree, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
-    )
+    done = run_worker(runner, claude=claude, model="sonnet", cwd=worktree)
     assert done.returncode == 0, done.stderr
-    assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
-    assert "runner: started warm-preset" in (state / "run-1.log").read_text()
+    assert (runner / "run-1.status").read_text().startswith(says), (runner / "run-1.status").read_text()
+    assert "runner: started warm-preset" in (runner / "run-1.log").read_text()
 
 
 @pytest.mark.parametrize("given", ["", "low"])
-def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, given: str) -> None:
+def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, runner: Path, given: str) -> None:
     """`model-effort-defaults`: every `claude` a worker runs on names its effort, so no worker runs
     at whatever the host's settings say; DISPATCH_EFFORT is how the spawn sets it."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))}
-    env.pop("DISPATCH_EFFORT", None)
-    if given:
-        env["DISPATCH_EFFORT"] = given
+    run_worker(runner, DISPATCH_EFFORT=given or None)
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
-
-    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     assert attempts and all(f"--model opus --effort {given or 'high'} " in line for line in attempts), attempts
-    assert f"on opus at {given or 'high'} effort" in (state / "run-1.log").read_text().splitlines()[0]
+    assert f"on opus at {given or 'high'} effort" in (runner / "run-1.log").read_text().splitlines()[0]
     # `run-log`: the attempt left its line, in the log this HOME defaults to
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
         ("worker", "warm-preset", 1, "opus", given or "high")
 
 
-def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path) -> None:
+def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path, runner: Path) -> None:
     """`unattended-launch`, as ruled on 2026-09-26: a worker keeps the project's settings and
     CLAUDE.md and the mx plugin the host's claude has installed, and none of the user's settings,
     CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The worklog's first line
     names the mx install it runs."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
     plugin = mx(tmp_path)
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
-                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
+    run_worker(runner)
 
-    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
                 '--settings {"autoMemoryEnabled": false}')
     assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
     assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
-    assert f" and mx {plugin.name} (run-1)" in (state / "run-1.log").read_text().splitlines()[0]
+    assert f" and mx {plugin.name} (run-1)" in (runner / "run-1.log").read_text().splitlines()[0]
 
 
-def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
+def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path, runner: Path) -> None:
     """A worker without the plugin has none of the skills its contract names, so a runner started
     without DISPATCH_PLUGIN_DIR says so on the status line rather than start one."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
-
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
-    env.pop("DISPATCH_PLUGIN_DIR", None)  # whatever the shell running these checks carries
-
-    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env=env)
+    done = run_worker(runner, DISPATCH_PLUGIN_DIR=None)
 
     assert done.returncode == 1
-    assert (state / "run-1.status").read_text().startswith(
+    assert (runner / "run-1.status").read_text().startswith(
         "attempts=0 exit=1 report=no session=- error=DISPATCH_PLUGIN_DIR unset")
-    assert not (bin_dir / "claude.calls").exists(), "claude ran"
+    assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
 
 
-def test_a_worker_runs_under_its_run_id_whatever_run_spawned_it(tmp_path: Path) -> None:
+def test_a_worker_is_told_the_asking_rule_from_its_one_home(tmp_path: Path, runner: Path) -> None:
+    """`asking-rule-has-one-home`: worker-prompt.md names the asking rule as appended below it, so
+    the runner appends that section of the install's RULES.md, and the prompt carries no copy."""
+    rules = (SKILL.parent / "session-page" / "RULES.md").read_text()
+    section = re.split(r"\n#{1,2} ", rules[rules.index("## What the user decides"):])[0].strip()
+    prompt = (SKILL / "worker-prompt.md").read_text()
+
+    run_worker(runner)
+
+    assert section in (tmp_path / "bin" / "claude.calls").read_text()
+    assert not [clause for clause in re.split(r"[.:;]", section.splitlines()[-1]) if len(clause) > 20 and clause.strip() in prompt]
+
+
+def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path: Path, runner: Path) -> None:
+    """A worker told the rule is appended below its prompt, with nothing there, would ask the user
+    by no rule at all; the status line names the section that is missing."""
+    plugin = mx(tmp_path)
+    rules = plugin / "skills" / "session-page" / "RULES.md"
+    rules.write_text(rules.read_text().replace("## What the user decides", "## Something else"))
+
+    done = run_worker(runner, DISPATCH_PLUGIN_DIR=str(plugin))
+
+    assert done.returncode == 1
+    assert (runner / "run-1.status").read_text().startswith(
+        "attempts=0 exit=1 report=no session=- error=no '## What the user decides' section in")
+    assert "older than" in (runner / "run-1.status").read_text()
+    assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
+
+
+def test_a_worker_runs_under_its_run_id_whatever_run_spawned_it(tmp_path: Path, runner: Path) -> None:
     """`browsers-a-worker-can-kill`: MX_RUN is what the browsers a worker's checks launch are
     tagged with, so it names this run and not the one the orchestrator's shell was in."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
     seen = tmp_path / "mx-run"
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$MX_RUN" >> {seen}\n')
-    (bin_dir / "claude").chmod(0o755)
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-7"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
-                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
-                        "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)), "MX_RUN": "the-orchestrators"})
+    run_worker(runner, claude=f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$MX_RUN" >> {seen}\n',
+               run_id="run-7", MX_RUN="the-orchestrators")
 
     assert seen.read_text().splitlines() == ["run-7"]
 
 
 @pytest.mark.parametrize("resumed", [False, True])
-def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resumed: bool) -> None:
+def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, runner: Path, resumed: bool) -> None:
     """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
     answered, so the status line reads it off the session's transcript: the models this round's
     assistant turns carry, none of the rounds' before it on a resumed session, and none of the
     strings a turn merely mentions (an Agent call's `model` input) or claude's own `<synthetic>`
     error turns. The worklog's first line names the launcher's version."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
     session = "5e55-10n"
     project = tmp_path / "profile" / "projects" / "-toy"
     project.mkdir(parents=True)
@@ -869,28 +926,17 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
         {"type": "assistant", "message": {"model": "claude-sonnet-5", "content": "done"}},
     ]
     transcript = "\n".join(json.dumps(turn) for turn in turns)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(
-        '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
-        'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
-        f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
-    (bin_dir / "claude").chmod(0o755)
+    claude = ('#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
+              'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
+              f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
 
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
-           "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")}
-    env.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
-    subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
-         *([session] if resumed else [])],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env,
-    )
-    status = (state / "run-1.status").read_text()
+    run_worker(runner, *([session] if resumed else []), claude=claude, CLAUDE_CONFIG_DIR=str(tmp_path / "profile"))
+    status = (runner / "run-1.status").read_text()
     assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
-    assert "on opus at high effort with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
+    assert "on opus at high effort with claude 2.1.283" in (runner / "run-1.log").read_text().splitlines()[0]
 
 
-def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> None:
+def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path, runner: Path) -> None:
     """A worker whose shell was killed before its cleanup line leaves its children behind, and a
     child that detached itself escapes even the process group `dispatch-ctl stop` signals. The
     runner's scope is what takes both down, on a host with a user systemd manager."""
@@ -898,24 +944,11 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
                            capture_output=True) if shutil.which("systemd-run") else None
     if probe is None or probe.returncode != 0:
         pytest.skip("no user systemd manager here, and the runner says so in the worklog instead")
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
     left = tmp_path / "left.pid"
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
-    (bin_dir / "claude").write_text(
-        f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n')
-    (bin_dir / "claude").chmod(0o755)
 
-    subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet",
-         f"check-{tmp_path.name}"],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
-    )
+    # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
+    run_worker(runner, claude=f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n',
+               run_id=f"check-{tmp_path.name}", model="sonnet")
     pid = left.read_text().strip()
     for _ in range(20):
         if not Path(f"/proc/{pid}").exists():
@@ -926,41 +959,24 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
         pytest.fail(f"the worker's detached sleep (pid {pid}) outlived the run")
 
 
-def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) -> None:
+def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(runner: Path) -> None:
     """Without that repo the worker has nowhere to commit a report, so every attempt would end in
     `report=no` with nothing saying why."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text("#!/bin/sh\nexit 0\n")
-    (bin_dir / "claude").chmod(0o755)
-
-    subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
-    )
-    assert "no agent repo at" in (state / "run-1.log").read_text()
-    assert "report=no" in (state / "run-1.status").read_text()
+    run_worker(runner, claude="#!/bin/sh\nexit 0\n", model="sonnet")
+    assert "no agent repo at" in (runner / "run-1.log").read_text()
+    assert "report=no" in (runner / "run-1.status").read_text()
 
 
-def test_a_runner_staged_without_run_log_refuses_to_start(tmp_path: Path) -> None:
+def test_a_runner_staged_without_run_log_refuses_to_start(runner: Path) -> None:
     """Every attempt runs through run-log, so a staging that lacks it is said on the status line
     rather than run unlogged."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (state / "run-log").unlink()
-    (tmp_path / "message.md").write_text("Work it.\n")
-    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env={**os.environ, "HOME": str(tmp_path)})
+    (runner / "run-log").unlink()
+    done = run_worker(runner, model="sonnet")
     assert done.returncode == 1
-    assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
+    assert (runner / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
 
 
+@pytest.mark.full_path
 def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
     """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
     cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
@@ -996,6 +1012,108 @@ def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_ho
     subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
 
 
+@pytest.mark.full_path
+def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(dotted: Path) -> None:
+    """tmux reads a `.` in a target as the window separator, so `.lamp`'s worker session is named
+    whole only with a `:` after it: a respawn reuses it, a cleanup kills it, and the spawn after
+    that starts in a fresh one."""
+    staged = skill_copy(dotted)
+    state = dotted.parent / "home" / ".local" / "state" / "dispatch" / ".lamp-main"
+    env = environment(dotted)
+
+    def sessions() -> list[str]:
+        """The live sessions' names. A pane's text is no witness: under load the shell echoes a
+        typed line once more as it redraws it."""
+        return subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
+                              capture_output=True, text=True, env=env).stdout.split()
+
+    run(dotted, "claim", "warm-preset")
+    for _ in range(2):
+        said = spawn(dotted, staged, "warm-preset", "Work it.\n")
+        assert said.returncode == 0, said.stderr
+        waited(dotted, state)
+    assert "+ tmux new-session" not in said.stderr, "the respawn found the session the spawn made: " + said.stderr
+    assert sessions() == ["dispatch-.lamp-warm-preset"]
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=dotted,
+                             capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "no session" not in cleaned.stderr, cleaned.stderr
+    assert sessions() == []
+
+    said = spawn(dotted, staged, "warm-preset", "Work it.\n")
+    assert said.returncode == 0, said.stderr
+    assert "+ tmux new-session" in said.stderr, "the spawn after a cleanup starts a fresh session: " + said.stderr
+    assert sessions() == ["dispatch-.lamp-warm-preset"]
+
+
+@pytest.mark.full_path
+def test_a_cleanup_removes_the_jobs_its_worker_left_in_its_worktree_and_no_others(toy: Path, staged: Path) -> None:
+    """Workers rarely `job rm` their builds and test runs, so the cleanup does: every job whose cwd
+    is the ticket's worktree or under it, running or done. A sibling worktree whose name extends
+    the slug and anything outside the worktrees keep theirs."""
+    job = shutil.which("job")
+    if not job:
+        pytest.skip("no `job` here, and a worker's jobs are what this cleans up")
+    env = environment(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    worktree = toy.parent / "lamp-warm-preset"
+    places = {"warm-build": worktree, "warm-suite": worktree / "sub", "warm-more": toy.parent / "lamp-warm-preset-more",
+              "elsewhere": toy}
+    for name, cwd in places.items():
+        cwd.mkdir(exist_ok=True)
+        command = ["true"] if name == "warm-suite" else ["sleep", "600"]
+        started = subprocess.run([job, "run", name, "--cwd", str(cwd), "--", *command],
+                                 capture_output=True, text=True, env=env, timeout=30)
+        assert started.returncode == 0, started.stderr
+    assert subprocess.run([job, "wait", "warm-suite", "--deadline", "20"], capture_output=True, env=env, timeout=30).returncode == 0
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy,
+                             capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert {"removed warm-build", "removed warm-suite"} <= set(cleaned.stdout.splitlines()), cleaned.stdout
+    left = sorted(p.name for p in (toy.parent / "jobs").iterdir())
+    assert left == ["elsewhere", "warm-more"]
+    sessions = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
+                              capture_output=True, text=True, env=env).stdout.split()
+    assert sorted(s for s in sessions if s.startswith("job-")) == ["job-elsewhere", "job-warm-more"]
+
+
+@pytest.mark.full_path
+def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fails_is_said(toy: Path, staged: Path) -> None:
+    """A done ticket has nothing left to resume: its `done` takes the host's worktrees and branches,
+    the run record, and the fetched branches here. A host that does not answer leaves the `done`
+    standing and says what tries again; the next `review` does."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING)
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    def review(env: dict[str, str]) -> subprocess.CompletedProcess:
+        return subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, env=env, timeout=180).returncode == 0
+    assert review(env).returncode == 0
+    for top in (toy, toy / "agent"):
+        git(top, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
+
+    gone = review({**env, "REMOTE_HOME": str(toy.parent / "nowhere")})
+    assert gone.returncode != 0
+    assert "warm-preset is done, and its cleanup on agent@far failed; `dispatch ctl cleanup warm-preset` from main tries again" in gone.stderr, gone.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert git(toy, "branch", "--list", "ticket/warm-preset"), "kept until the host is clean"
+
+    again = review(env)
+    assert again.returncode == 0, again.stderr
+    assert not (remote / "repos" / "dispatch" / "lamp-warm-preset").exists()
+    for top in (remote / "repos" / "dispatch" / "lamp.git", toy, toy / "agent"):
+        assert not git(top, "branch", "--list", "ticket/warm-preset"), top
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert "no run recorded" in probed.stderr, probed.stderr
+
+
+@pytest.mark.full_path
 def test_a_local_host_writes_this_machines_log_itself_so_a_fetch_pulls_nothing(toy: Path, staged: Path) -> None:
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
@@ -1020,6 +1138,7 @@ def test_a_project_whose_agent_directory_is_not_a_repo_is_refused_by_name(toy: P
     assert "not two repos yet" in said.stderr and "project-setup" in said.stderr, said.stderr
 
 
+@pytest.mark.full_path
 def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> None:
     """A worker that died before its first commit: both branches are the base, so there is no range,
     nothing to render and nothing to rule on, and the ticket keeps the claim it had."""
@@ -1035,6 +1154,1076 @@ def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> No
     assert status_of(toy, "warm-preset") == "claimed"
 
 
+@pytest.mark.full_path
+def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> None:
+    """A research ticket's round: the agent branch carries the report and nothing in the code repo
+    moved, so there is no diff of code to show and `review` says so rather than rendering one. A
+    page already at the ticket's path, which a session rendered by hand, is left as it is."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING.replace(
+        "printf 'the lamp, warm\\n' > lamp.txt\ngit add lamp.txt\ngit commit -q -m \"$slug: the warm preset\"\n", ""))
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    assert not git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split()
+    by_hand = toy / "agent" / "diffviews" / "warm-preset.html"
+    by_hand.parent.mkdir(parents=True, exist_ok=True)
+    by_hand.write_text("the code in a repo dispatch does not read\n")
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert "gets no review page" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    assert by_hand.read_text() == "the code in a repo dispatch does not read\n"
+    assert not (toy.parent / "bin" / "diffview.args").exists()
+
+
+# `tickets-land-in-listed-repos`: a ticket's round lands in the listed repos its `repos:` names
+# beside the code repo and the agent repo. The oracle is each toy repo's own history, read with git:
+# a round is one commit per branch, so a range is that commit's parent and the commit.
+
+
+def listed_repo(at: Path, branch: str) -> Path:
+    """A repo for the toy's repo list, with one commit on `branch`."""
+    git(at.parent, "init", "-q", "-b", branch, str(at))
+    (at / "README").write_text(f"{at.name}\n")
+    git(at, "add", "-A")
+    git(at, "commit", "-q", "-m", f"{at.name} begins")
+    return at
+
+
+def listing(toy: Path, slug: str, toml: str, repos: str) -> None:
+    """The toy's repo list as `toml`, and `slug` claimed and naming `repos` in its `repos:`."""
+    agent = toy / "agent"
+    (agent / "repos.toml").write_text(toml)
+    path = tracked(toy) / f"{slug}.md"
+    path.write_text(path.read_text().replace("status: open", f"status: claimed\nrepos: [{repos}]", 1))
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", f"the repo list, and {slug} claimed")
+
+
+def built_on(top: Path, branch: str, start: str, name: str) -> tuple[str, str]:
+    """One commit on `branch` in `top`, cut from `start` unless it exists: (its parent, itself).
+    `top` is left on the branch it had out."""
+    had = git(top, "branch", "--show-current").strip()
+    exists = subprocess.run(["git", "-C", str(top), "rev-parse", "-q", "--verify", f"refs/heads/{branch}"],
+                            capture_output=True, env=HERMETIC_GIT).returncode == 0
+    git(top, "switch", "-q", *([branch] if exists else ["-c", branch, start]))
+    (top / name).write_text(f"{branch} in {top.name}\n")
+    git(top, "add", name)
+    git(top, "commit", "-q", "-m", f"{branch}: {name}")
+    git(top, "switch", "-q", had)
+    return git(top, "rev-parse", f"{branch}~1").strip(), git(top, "rev-parse", branch).strip()
+
+
+def merged_in(top: Path, onto: str, branch: str) -> None:
+    """`branch` merged --no-ff into `onto` in `top`, which is left on the branch it had out."""
+    had = git(top, "branch", "--show-current").strip()
+    git(top, "switch", "-q", onto)
+    git(top, "merge", "-q", "--no-ff", "-m", f"{branch} merged", branch)
+    git(top, "switch", "-q", had)
+
+
+def boards(toy: Path) -> list[str]:
+    """What dispatch asked the board to draw, once per run of it."""
+    calls = toy.parent / "bin" / "board.calls"
+    return calls.read_text().splitlines() if calls.exists() else []
+
+
+def pages(toy: Path) -> list[str]:
+    """The specs of every page `dispatch review` asked diffview for, in order, one line each."""
+    handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
+    return [line.partition(" --notes ")[0] for line in handed if not line.startswith("--serve")]
+
+
+def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_after_its_merge(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P4`: one page, a section per repo the round committed in: the
+    code repo, `Backend` nested in the project, and `jarvis` beside it, whose PR merges at origin
+    while its own `main` is behind. Each range names its repo, and is the same range before and
+    after the merge."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    seed = listed_repo(toy.parent / "jarvis-seed", "main")
+    git(toy.parent, "clone", "-q", "--bare", str(seed), str(toy.parent / "jarvis.git"))
+    jarvis = toy.parent / "jarvis"
+    git(toy.parent, "clone", "-q", str(toy.parent / "jarvis.git"), str(jarvis))
+    jarvis = jarvis.resolve()
+    # origin moves on after the clone, and the ticket branch is cut from there: a range against the
+    # stale local `main` alone would start a commit early
+    (seed / "later").write_text("later\n")
+    git(seed, "add", "later")
+    git(seed, "commit", "-q", "-m", "jarvis moves on")
+    git(seed, "push", "-q", str(toy.parent / "jarvis.git"), "main")
+    git(jarvis, "fetch", "-q")
+    listing(toy, "warm-preset", f'[Backend]\npath = "Backend"\nintegration = "development"\n\n[jarvis]\npath = "{jarvis}"\n',
+            "Backend, jarvis")
+
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "Backend": built_on(backend, "ticket/warm-preset", "development", "warm.py"),
+              "jarvis": built_on(jarvis, "ticket/warm-preset", "origin/main", "warm.rs")}
+    assert rounds["jarvis"][0] != git(jarvis, "rev-parse", "main").strip()
+    ranges = [f"{at}@{cut}..{tip}" for at, (cut, tip) in rounds.items()]
+    page = (f"{toy}@{rounds['code'][0]}..{rounds['code'][1]} {backend}@{rounds['Backend'][0]}..{rounds['Backend'][1]} "
+            f"{jarvis}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}")
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    assert pages(toy) == [page]
+    assert "-o " + str(agent / "diffviews" / "warm-preset.html") in (toy.parent / "bin" / "diffview.args").read_text()
+
+    for top, onto in ((toy, "main"), (agent, "main"), (backend, "development")):
+        merged_in(top, onto, "ticket/warm-preset")
+    # the PR's merge, at origin, which `jarvis` has fetched and its own `main` has not taken in
+    git(jarvis, "switch", "-q", "-c", "pr", "origin/main")
+    git(jarvis, "merge", "-q", "--no-ff", "-m", "Merge pull request #1", "ticket/warm-preset")
+    git(jarvis, "push", "-q", "origin", "pr:main")
+    git(jarvis, "switch", "-q", "main")
+
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert ranges_of(toy, "warm-preset") == ranges
+    assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
+
+
+def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_section(toy: Path) -> None:
+    """`assumption-notes-reach-listed-repos`: a worker anchors from its worktree root, where nested
+    `Backend` sits at its place and `jarvis` beside it as `../jarvis-<slug>`, and each note reaches
+    the page under the path its repo's own tree has, naming its repo as its source, so it lands in
+    that repo's section where another repo's section also shows that path (the same file changed
+    in two repos, or an untouched file another section holds too); nothing about that reaches
+    stderr. A note in a listed repo with no section on the page stays on the ticket, as an agent
+    one does."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n/Helix/\n")
+    git(toy, "commit", "-q", "-am", "Backend and Helix are repos of their own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    listed_repo(toy / "Helix", "main")
+    jarvis = listed_repo(toy.parent / "jarvis", "main").resolve()
+    listing(toy, "warm-preset", f'[Backend]\npath = "Backend"\nintegration = "development"\n\n'
+            f'[Helix]\npath = "Helix"\nintegration = "main"\n\n[jarvis]\npath = "{jarvis}"\nintegration = "main"\n',
+            "Backend, jarvis")
+    for top, start, name in ((toy, "main", "warm.txt"), (toy, "main", "shared.txt"),
+                             (backend, "development", "warm.py"), (backend, "development", "shared.txt"),
+                             (jarvis, "main", "warm.rs")):
+        built_on(top, "ticket/warm-preset", start, name)
+    git(agent, "switch", "-q", "-c", "ticket/warm-preset")
+    (agent / "show" / "warm-preset").mkdir(parents=True)
+    (agent / "show" / "warm-preset" / "report.md").write_text(
+        "## Comments\n\nThe warm preset lands in three repos, unmerged.\n\n- [D1] **Assumptions**\n"
+        "  - A1 `warm.txt:1`: in the code repo.\n"
+        "  - A2 `Backend/warm.py:1`: in the nested repo.\n"
+        "  - A3 `../jarvis-warm-preset/warm.rs:1`: in the sibling repo.\n"
+        "  - A4 `Backend/shared.txt:1`: a path the code repo's section shows too.\n"
+        "  - A5 `agent/show/warm-preset/report.md:1`: in the agent repo.\n"
+        "  - A6 `Backend/README:1`: untouched, and Backend's is the first section holding a README.\n"
+        "  - A7 `../jarvis-warm-preset/README:1`: untouched, and Backend's section holds one first.\n"
+        "  - A8 `Helix/README:1`: in a listed repo this ticket's page has no section for.\n")
+    git(agent, "add", "show")
+    git(agent, "commit", "-q", "-m", "warm-preset: the report")
+    git(agent, "switch", "-q", "main")
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())["notes"]
+    assert [(one["id"], one["path"], one["line"], Path(one["source"]).resolve()) for one in notes] == [
+        (1, "warm.txt", 1, toy.resolve()), (2, "warm.py", 1, backend), (3, "warm.rs", 1, jarvis),
+        (4, "shared.txt", 1, backend), (6, "README", 1, backend), (7, "README", 1, jarvis)]
+    assert "A4" not in said.stderr and "A7" not in said.stderr, said.stderr
+
+
+def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carries(toy: Path) -> None:
+    """A child built on its parent ticket's branch: in `Backend` its base is the parent's branch
+    there, which is ahead of the integration branch. A round merged into it is recorded; the next
+    round, in `Backend` alone and unmerged, renders after it on the same page, and is recorded once
+    it merges."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    git(backend, "branch", "lamp-ui")
+    built_on(backend, "lamp-ui", "development", "ui.py")  # the parent's branch, ahead of development
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n', "Backend")
+
+    first = {"code": built_on(toy, "ticket/warm-preset", "lamp-ui", "warm.txt"),
+             "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+             "Backend": built_on(backend, "ticket/warm-preset", "lamp-ui", "warm.py")}
+    git(worktree, "merge", "-q", "--no-ff", "-m", "warm-preset merged", "ticket/warm-preset")
+    merged_in(agent, "main", "ticket/warm-preset")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review", "ruled with its parent"
+    recorded = [f"{at}@{cut}..{tip}" for at, (cut, tip) in first.items()]
+    assert ranges_of(toy, "warm-preset") == recorded
+
+    # sent back: the resumed worker's next round touches Backend alone
+    again = built_on(backend, "ticket/warm-preset", "", "warmer.py")
+    assert again[0] == first["Backend"][1]
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    sections = [f"{worktree}@{first['code'][0]}..{first['code'][1]}",
+                f"{backend}@{first['Backend'][0]}..{first['Backend'][1]}"]
+    assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
+    assert ranges_of(toy, "warm-preset") == recorded, "unmerged, unrecorded"
+
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert ranges_of(toy, "warm-preset") == [*recorded, f"Backend@{again[0]}..{again[1]}"]
+    assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
+
+
+def claimed_with_code(toy: Path) -> tuple[str, str]:
+    """warm-preset claimed, its round one commit in the code repo and one in the agent repo: the
+    code range's (start, end)."""
+    agent = toy / "agent"
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("status: open", "status: claimed", 1))
+    git(agent, "commit", "-q", "-am", "warm-preset claimed")
+    built_on(agent, "ticket/warm-preset", "main", "warm.md")
+    return built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+
+
+def test_a_page_showing_sources_review_does_not_render_is_left_as_it_is_and_said(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path that
+    shows a source this review does not render is a session's, rendered by hand, and the render
+    that would replace it does not happen; the rest of the review does, and the exit status says it
+    was not whole. A page over the review's own sources is replaced, diffview's rewrite of it when
+    its summary lands included."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+
+    def refused(by_hand: str) -> None:
+        page.write_text(by_hand)
+        said = run(toy, "review", "warm-preset")
+        assert said.returncode != 0
+        assert "leaves that page as it is" in said.stderr, said.stderr
+        assert page.read_text() == by_hand
+        assert status_of(toy, "warm-preset") == "review"
+
+    elsewhere = '{"spec": "/elsewhere/Backend@1234567..89abcde"}'
+    refused("the Backend diff, as a note\n")  # no diffview page at all
+    refused('{"sources": [' + elsewhere + "]}\n")
+    assert not (toy.parent / "bin" / "diffview.args").exists()
+
+    page.unlink()  # moved aside, as the refusal says
+    assert run(toy, "review", "warm-preset").returncode == 0
+    ours = page.read_text()
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in ours
+
+    page.write_text(ours.replace("]}", "]} <p>the summary, landed</p>"))  # diffview's own rewrite
+    assert run(toy, "review", "warm-preset").returncode == 0
+    assert len(pages(toy)) == 2
+
+    # a session's render over it: the review's own source, and the Backend diff the ticket lacks
+    refused(ours.replace("]}", ", " + elsewhere + "]}"))
+    # the same source with an end off the ticket's branch: a commit beside it, not under it
+    _, beside = built_on(toy, "elsewhere", "main", "cool.txt")
+    refused(ours.replace(f"..{tip[:7]}", f"..{beside[:7]}"))
+    # the same source running past the ticket's tip, which the render would cut short
+    _, beyond = built_on(toy, "beyond", tip, "warmest.txt")
+    refused(ours.replace(f"..{tip[:7]}", f"..{beyond[:7]}"))
+    assert len(pages(toy)) == 2
+
+
+def test_a_round_grown_before_its_merge_renders_its_own_page_again(toy: Path) -> None:
+    """An amend, or a resumed round fetched before its merge: the round records no range yet, so its
+    page showed the range to the tip it had, and the range now runs from the same start to a tip
+    that tip is an ancestor of. Nothing on the page is lost to the render over the longer range."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    first = run(toy, "review", "warm-preset")
+    assert first.returncode == 0, first.stderr
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
+
+    grown, later = built_on(toy, "ticket/warm-preset", "", "warmer.txt")
+    assert grown == tip
+    again = run(toy, "review", "warm-preset")
+    assert again.returncode == 0, again.stderr
+    assert pages(toy) == [f"{toy}@{cut}..{tip}", f"{toy}@{cut}..{later}"]
+    assert f"{toy}@{cut[:7]}..{later[:7]}" in page.read_text()
+
+
+def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_again(toy: Path) -> None:
+    """A page over the ticket's own range, its ends pinned to SHAs of another length than
+    diffview's and other JSON around them, as an earlier `dispatch review` left it: nothing on it is
+    lost to a render over that range, so it is replaced with no move by hand."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+    page.write_text('<script>{"sources": [{"label": "lamp", "spec": "' + f"{toy}@{cut[:9]}..{tip[:9]}" + '"}]}</script>\n')
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert pages(toy) == [f"{toy}@{cut}..{tip}"]
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
+    assert boards(toy) == [f"{tracked(toy)} --no-watch --no-open"], "the board shows the status the review wrote"
+
+
+def test_a_merged_round_the_tracker_refuses_done_fails_the_review_and_says_why(toy: Path) -> None:
+    """A round merged before any report reached the ticket, which is still claimed: the merge asks
+    for `done`, the tracker refuses it, and the review fails with the tracker's reason rather than
+    reading as a build waiting in review."""
+    claimed_with_code(toy)
+    for top in (toy, toy / "agent"):
+        merged_in(top, "main", "ticket/warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 1 and "warm-preset claimed → done" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+    assert not (toy.parent / "bin" / "diffview.args").exists(), "and renders nothing"
+
+
+# The building stub in a worktree holding `Backend` nested in it and `jarvis` beside it, as a spawn
+# of a ticket naming both places them: a commit in each, then the report.
+BUILDING_LISTED = BUILDING.replace(
+    'mkdir -p "agent/show/$slug"',
+    """for at in Backend "../jarvis-$slug"; do
+    printf 'warm\\n' > "$at/warm.txt"
+    git -C "$at" add warm.txt
+    git -C "$at" commit -q -m "$slug: warm in $at"
+done
+mkdir -p "agent/show/$slug\"""",
+)
+
+
+def staged_listed(toy: Path) -> dict[str, Path]:
+    """The toy listing three repos, and warm-preset claimed naming two of them: `Backend` nested in
+    the project, `jarvis` beside it, cloned from a bare origin that has moved on since its own
+    `main` was last pulled, and `secrets`, which warm-preset does not name. Answers each repo's
+    checkout here, and jarvis's origin and the repo that feeds it."""
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    repos = {"Backend": listed_repo(toy / "Backend", "development").resolve(),
+             "seed": listed_repo(toy.parent / "jarvis-seed", "main"),
+             "secrets": listed_repo(toy.parent / "secrets", "main").resolve(),
+             "origin": toy.parent / "jarvis.git"}
+    git(toy.parent, "clone", "-q", "--bare", str(repos["seed"]), str(repos["origin"]))
+    git(toy.parent, "clone", "-q", str(repos["origin"]), str(toy.parent / "jarvis"))
+    repos["jarvis"] = (toy.parent / "jarvis").resolve()
+    moved_on(repos)
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n\n'
+            f'[jarvis]\npath = "{repos["jarvis"]}"\n\n[secrets]\npath = "{repos["secrets"]}"\nintegration = "main"\n', "Backend, jarvis")
+    return repos
+
+
+def moved_on(repos: dict[str, Path]) -> str:
+    """jarvis's origin one commit further, fetched into the checkout here and not merged into its
+    `main`: the new `origin/main`."""
+    seed = repos["seed"]
+    (seed / "later").write_text(git(seed, "rev-parse", "HEAD"))
+    git(seed, "add", "later")
+    git(seed, "commit", "-q", "-m", "jarvis moves on")
+    git(seed, "push", "-q", str(repos["origin"]), "main")
+    git(repos["jarvis"], "fetch", "-q")
+    return git(repos["jarvis"], "rev-parse", "origin/main").strip()
+
+
+@pytest.mark.full_path
+def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_branches_back(
+        toy: Path, staged: Path) -> None:
+    """`tickets-land-in-listed-repos#P5`: the host gets a bare repo for each repo warm-preset names
+    and none for `secrets`, which the project lists and the ticket does not; the host's directory
+    listing is the oracle. Each is cut where the brief says, from its base: `Backend` inside the
+    ticket worktree at the path the project keeps it at, from its integration branch, and `jarvis`
+    beside it, from origin's `main`, which is ahead of the local one. The fetch brings each branch
+    back, `push` sends each base again once it moves, the cleanup takes each worktree and branch off
+    the host, and the landing's `done` deletes the fetched branches here."""
+    repos = staged_listed(toy)
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    jarvis_base = git(repos["jarvis"], "rev-parse", "origin/main").strip()
+    assert jarvis_base != git(repos["jarvis"], "rev-parse", "main").strip()
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode == 0, said.stdout + said.stderr
+    waited(toy, state)
+    assert sorted(p.name for p in hosted.iterdir()) == [
+        "jarvis-warm-preset", "lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp-warm-preset", "lamp.git"]
+    for at, cut in ((hosted / "lamp-warm-preset" / "Backend", git(repos["Backend"], "rev-parse", "development")),
+                    (hosted / "jarvis-warm-preset", jarvis_base)):
+        assert git(at, "branch", "--show-current").strip() == "ticket/warm-preset", at
+        assert git(at, "rev-parse", "HEAD~1").strip() == cut.strip(), at
+    (brief,) = state.glob("*.brief")
+    assert "- Backend: `Backend/` in your worktree, from `development`" in brief.read_text()
+    assert "- jarvis: `../jarvis-warm-preset`, beside your worktree, from `main`" in brief.read_text()
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    for name in ("Backend", "jarvis"):
+        assert git(repos[name], "log", "-1", "--format=%s", "ticket/warm-preset").strip().startswith("warm-preset: warm in"), name
+    reviewed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert reviewed.returncode == 0, reviewed.stderr
+    assert [spec.partition("@")[0] for spec in pages(toy)[-1].split()] == [str(toy), str(repos["Backend"]), str(repos["jarvis"])]
+
+    later = moved_on(repos)
+    pushed = subprocess.run([str(staged), "push"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert pushed.returncode == 0, pushed.stderr
+    assert git(hosted / "lamp-jarvis.git", "rev-parse", "main").strip() == later
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert sorted(p.name for p in hosted.iterdir()) == ["lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp.git"]
+    for bare in ("lamp-Backend.git", "lamp-jarvis.git"):
+        assert not git(hosted / bare, "branch", "--list", "ticket/warm-preset"), bare
+
+    # the landing: its `done` deletes the fetched branches here, each once it has merged
+    for top, onto in ((toy, "main"), (toy / "agent", "main"), (repos["Backend"], "development"), (repos["jarvis"], "main")):
+        merged_in(top, onto, "ticket/warm-preset")
+    landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    for name in ("Backend", "jarvis"):
+        assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
+
+
+@pytest.mark.full_path
+def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path, staged: Path) -> None:
+    """A child of lamp-ui, dispatched from lamp-ui's worktree onto this machine: `Backend` is cut
+    from lamp-ui's branch there, which is ahead of its integration branch, into the ticket worktree,
+    and `jarvis` from origin's `main` beside it, each from the checkout the repo list names. The
+    fetch finds every branch here already, and the cleanup takes the worktrees and the branches out
+    of those checkouts."""
+    repos = staged_listed(toy)
+    _, parents = built_on(repos["Backend"], "lamp-ui", "development", "ui.py")
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-lamp-ui"
+    env = environment(toy)
+
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=worktree, input="Work it.\n", text=True, check=True, env=env)
+    said = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+                          cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+    assert said.returncode == 0, said.stdout + said.stderr
+    waited(toy, state)
+    held = {"Backend": toy.parent / "lamp-warm-preset" / "Backend", "jarvis": toy.parent / "jarvis-warm-preset"}
+    for name, cut in (("Backend", parents), ("jarvis", git(repos["jarvis"], "rev-parse", "origin/main").strip())):
+        assert git(held[name], "rev-parse", "--path-format=absolute", "--git-common-dir").strip() == str(repos[name] / ".git")
+        assert git(repos[name], "rev-parse", "ticket/warm-preset~1").strip() == cut, name
+    (brief,) = state.glob("*.brief")
+    assert "- Backend: `Backend/` in your worktree, from `lamp-ui`" in brief.read_text()
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "already here, in every repo" in fetched.stdout
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not any(at.exists() for at in held.values())
+    assert not (toy.parent / "lamp-warm-preset").exists()
+    for name in ("Backend", "jarvis", "secrets"):
+        assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
+
+
+@pytest.mark.full_path
+def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, staged: Path) -> None:
+    """`tickets-land-in-listed-repos#P5` across spawns: `jarvis` named by mistake and dropped from
+    `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the brief stops
+    naming it; while its worktree carries a commit the spawn stops instead, with that commit kept. A
+    ticket that names none any more leaves the host holding no listed worktree, and
+    that spawn makes no host call a ticket that never named a repo would not make."""
+    repos = staged_listed(toy)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    path = tracked(toy) / "warm-preset.md"
+
+    def respawn(names: str, refused: bool = False) -> subprocess.CompletedProcess:
+        path.write_text(re.sub(r"repos: \[[^]]*\]\n", f"repos: [{names}]\n" if names else "", path.read_text()))
+        git(toy / "agent", "commit", "-q", "--allow-empty", "-am", f"warm-preset names [{names}]")
+        before = set(state.glob("*.status"))
+        said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+        assert (said.returncode != 0) == refused, said.stdout + said.stderr
+        for _ in range(60):
+            if refused or set(state.glob("*.status")) - before:
+                break
+            time.sleep(0.5)
+        else:
+            pytest.fail("no status line 30s after the respawn")
+        return said
+
+    respawn("Backend, jarvis")
+    assert (hosted / "jarvis-warm-preset").is_dir()
+
+    built_on(hosted / "jarvis-warm-preset", "ticket/warm-preset", "", "warm.rs")
+    said = respawn("Backend", refused=True)
+    assert "no longer names jarvis, whose worktree here carries work" in said.stderr, said.stderr
+    assert git(hosted / "jarvis-warm-preset", "log", "-1", "--format=%s").strip() == "ticket/warm-preset: warm.rs"
+    git(hosted / "jarvis-warm-preset", "reset", "-q", "--hard", "HEAD~1")  # fetched, and let go
+
+    respawn("Backend")
+    assert sorted(p.name for p in hosted.iterdir()) == [
+        "lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp-warm-preset", "lamp.git"]
+    assert not git(hosted / "lamp-jarvis.git", "branch", "--list", "ticket/warm-preset")
+    assert (hosted / "lamp-warm-preset" / "Backend").is_dir()
+    newest = max(state.glob("*.brief"), key=lambda brief: brief.stat().st_mtime_ns).read_text()
+    assert "- Backend: `Backend/` in your worktree" in newest and "jarvis" not in newest
+
+    said = respawn("")
+    assert not (hosted / "lamp-warm-preset" / "Backend").exists()
+    assert not git(hosted / "lamp-Backend.git", "branch", "--list", "ticket/warm-preset")
+    calls = [line.split("dispatch-ctl ")[1] for line in said.stderr.splitlines()
+             if line.startswith("+ on_host agent@far bash") or line.startswith("+ on_host agent@far env")]
+    assert calls == ["spawn warm-preset sonnet"], said.stderr
+
+
+def test_the_page_over_a_listed_repo_cut_from_origin_is_rendered_again_once_its_round_merges(toy: Path) -> None:
+    """`jarvis`'s ticket branch is cut from origin's `main`, which is ahead of the local one, and the
+    session merges it into the local `main`: the review that lands the round renders the page it
+    rendered before the merge, over the same ranges. Which range the merge gives `jarvis` is the
+    tracker's to say (test_tracker.py); rendering the page from what it says is dispatch's."""
+    repos = staged_listed(toy)
+    agent = toy / "agent"
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "jarvis": built_on(repos["jarvis"], "ticket/warm-preset", "origin/main", "warm.rs")}
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    for top in (toy, agent, repos["jarvis"]):
+        merged_in(top, "main", "ticket/warm-preset")
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert pages(toy)[-1].split()[-1] == f"{repos['jarvis']}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}"
+    assert len(pages(toy)) == 2 and pages(toy)[0] == pages(toy)[1], "the same page, rendered again"
+
+
+@pytest.mark.full_path
+def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and_keeps_it(
+        toy: Path, staged: Path) -> None:
+    """On a local host a listed repo is the user's own checkout, and a `ticket/<slug>` there that
+    this spawn did not cut is somebody's work: the spawn stops before cutting anything, and that
+    branch keeps its commit, through the next spawn once `repos:` drops the repo and through the
+    cleanup after it."""
+    repos = staged_listed(toy)
+    _, theirs = built_on(repos["jarvis"], "ticket/warm-preset", "main", "theirs.rs")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert said.returncode != 0
+    assert "jarvis already has ticket/warm-preset" in said.stderr, said.stderr
+    assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
+    assert not (toy.parent / "lamp-warm-preset").exists()
+    assert not git(repos["Backend"], "branch", "--list", "ticket/warm-preset")
+
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("repos: [Backend, jarvis]", "repos: [Backend]"))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset names Backend alone")
+    again = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert again.returncode == 0, again.stderr
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True,
+                             env=environment(toy), timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
+
+
+def test_a_parents_accept_deletes_its_childs_branch_in_a_listed_repo_once_merged_there(toy: Path) -> None:
+    """A child of lamp-ui whose work is in `Backend` alone, merged there into lamp-ui's branch, which
+    has merged into the integration branch: the accept that writes the child's `done` deletes its
+    fetched branch in `Backend`, and leaves the parent's own branch there, whose range in `Backend`
+    the parent records beside its code range."""
+    tickets = tracked(toy)
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    (toy / "agent" / "repos.toml").write_text('[Backend]\npath = "Backend"\nintegration = "development"\n')
+    for slug, parent in (("lamp-ui", ""), ("warm-preset", "lamp-ui")):
+        path = ticket(tickets, slug, status="review", parent=parent)
+        if parent:
+            path.write_text(path.read_text().replace("status: review", "status: review\nrepos: [Backend]", 1))
+    git(toy / "agent", "add", "-A")
+    git(toy / "agent", "commit", "-q", "-m", "the tree, for its ruling")
+    fork, _ = built_on(backend, "lamp-ui", "development", "ui.py")
+    built_on(backend, "ticket/warm-preset", "lamp-ui", "warm.py")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    merged_in(backend, "development", "lamp-ui")
+    code = built_on(toy, "lamp-ui", "main", "ui.txt")
+    merged_in(toy, "main", "lamp-ui")
+
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+    assert git(backend, "branch", "--list", "lamp-ui")
+    # the tree is retired by now, so the ticket is read as the accept's commit left it
+    landed = git(toy / "agent", "log", "-1", "--format=%H", "--grep=lamp-ui landed, ruled whole").strip()
+    assert git(toy / "agent", "show", f"{landed}:tickets/lamp-ui.md").count(
+        f"diff: [code@{code[0]}..{code[1]}, Backend@{fork}..{git(backend, 'rev-parse', 'lamp-ui').strip()}]") == 1
+
+
+@pytest.mark.full_path
+def test_a_listed_repo_dropped_from_repos_after_the_spawn_is_fetched_and_its_run_kept_until_merged(
+        toy: Path, staged: Path) -> None:
+    """`jarvis` named at the spawn and dropped from `repos:` before the review: the fetch still
+    brings its branch back from the host, which holds it, and the `done` the review writes leaves the
+    run on the host while that branch is unmerged here, so its commit is in two places."""
+    repos = staged_listed(toy)
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, state)
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("repos: [Backend, jarvis]", "repos: [Backend]"))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset names Backend alone")
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "no longer names jarvis" in fetched.stderr, fetched.stderr
+    work = git(repos["jarvis"], "log", "-1", "--format=%s", "ticket/warm-preset").strip()
+    assert work.startswith("warm-preset: warm in"), work
+
+    reviewed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert reviewed.returncode == 0, reviewed.stderr
+    for top, onto in ((toy, "main"), (toy / "agent", "main"), (repos["Backend"], "development")):
+        merged_in(top, onto, "ticket/warm-preset")
+    landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert landed.returncode != 0
+    assert status_of(toy, "warm-preset") == "done"
+    assert "ticket/warm-preset in jarvis is not merged" in landed.stderr, landed.stderr
+    assert (hosted / "jarvis-warm-preset").is_dir()
+    assert git(repos["jarvis"], "log", "-1", "--format=%s", "ticket/warm-preset").strip() == work
+
+
+@pytest.mark.full_path
+def test_a_nested_repos_place_the_code_repo_already_fills_is_cut_there(toy: Path, staged: Path) -> None:
+    """The code repo records `Backend` as a submodule, so its worktree comes with an empty `Backend/`:
+    the spawn cuts Backend's ticket branch into it all the same, where the brief says it is."""
+    repos = staged_listed(toy)
+    git(toy, "update-index", "--add", "--cacheinfo", f"160000,{git(repos['Backend'], 'rev-parse', 'HEAD').strip()},Backend")
+    git(toy, "commit", "-q", "-m", "Backend as a submodule")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert said.returncode == 0, said.stderr
+    waited(toy)
+    nested = toy.parent / "lamp-warm-preset" / "Backend"
+    assert git(nested, "branch", "--show-current").strip() == "ticket/warm-preset"
+    assert git(nested, "rev-parse", "--path-format=absolute", "--git-common-dir").strip() == str(repos["Backend"] / ".git")
+
+
+def test_a_branch_in_a_listed_repo_not_merged_at_the_done_stays_and_says_so(toy: Path) -> None:
+    """`secrets` is on the list and warm-preset does not name it, yet holds a `ticket/warm-preset`
+    with a commit on no branch it merges into: the `done` keeps it, commit and all, and says so."""
+    repos = staged_listed(toy)
+    agent = toy / "agent"
+    for top, start in ((toy, "main"), (agent, "main"), (repos["Backend"], "development")):
+        built_on(top, "ticket/warm-preset", start, "warm.txt")
+    _, theirs = built_on(repos["secrets"], "ticket/warm-preset", "main", "secret.txt")
+    assert run(toy, "review", "warm-preset").returncode == 0
+    for top, onto in ((toy, "main"), (agent, "main"), (repos["Backend"], "development")):
+        merged_in(top, onto, "ticket/warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert status_of(toy, "warm-preset") == "done"
+    assert "ticket/warm-preset in secrets is not merged into main, so it stays" in said.stderr, said.stderr
+    assert git(repos["secrets"], "rev-parse", "ticket/warm-preset").strip() == theirs
+    assert not git(repos["Backend"], "branch", "--list", "ticket/warm-preset")
+
+
+def test_a_listed_repo_whose_remote_for_the_host_points_elsewhere_is_pushed_nothing(toy: Path, staged: Path) -> None:
+    """`tickets-land-in-listed-repos#P7`'s guard on the forced push: jarvis already has a remote by
+    the name dispatch gives its host, for a repo of somebody else's; the spawn stops, and that repo
+    receives nothing."""
+    repos = staged_listed(toy)
+    _, env = fake_remote(toy)
+    elsewhere = toy.parent / "elsewhere.git"
+    git(toy.parent, "init", "-q", "--bare", str(elsewhere))
+    git(repos["jarvis"], "remote", "add", "agent-far-lamp", str(elsewhere))
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode != 0
+    assert f"remote agent-far-lamp at {repos['jarvis']} is not" in said.stderr, said.stderr
+    assert not git(elsewhere, "for-each-ref")
+
+
+def test_a_review_reads_the_list_for_a_range_in_a_listed_repo_the_ticket_does_not_name(toy: Path) -> None:
+    """A range recorded by hand in `Backend` on a ticket whose `repos:` names nothing: the review
+    reads the repo list for it, and the page has its section."""
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    cut, tip = built_on(backend, "elsewhere", "development", "warm.py")
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n', "")
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("repos: []\n", f"diff: [Backend@{cut}..{tip}]\n", 1))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset's Backend range, by hand")
+    code = built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    built_on(toy / "agent", "ticket/warm-preset", "main", "warm.md")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert pages(toy) == [f"{backend}@{cut}..{tip} {toy}@{code[0]}..{code[1]}"]
+
+
+# `dispatch review` against GitHub as two fakes: `gh` answers `pr view` from a file per pull request
+# and records every call, and the listed repo's origin is a bare repo here, which git reaches through
+# the GitHub URL the repo names as its origin. The oracle is the history the check writes there as
+# GitHub would: a squash, a rebase or a merge commit on `development`, after a change of somebody
+# else's.
+
+FAKE_GH = """#!/bin/sh
+printf '%s\\n' "$*" >> "$0.calls"
+[ "$1 $2" = "pr view" ] || { echo "fake gh answers pr view alone" >&2; exit 1; }
+number=$3 repo=
+while [ $# -gt 0 ]; do [ "$1" = --repo ] && repo=$2; shift; done
+cat "$0.answers/$(echo "$repo" | tr / _)_$number.json" 2>/dev/null || { echo "no pull requests found" >&2; exit 1; }
+"""
+
+# Hours apart, and days before any merge a check makes, as a pull request's commits are.
+AUTHORED = ("2026-10-01T09:00:00Z", "2026-10-01T11:30:00Z")
+
+
+def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@github.com:helferline/Backend.git") -> Path:
+    """`Backend` nested in the toy, cloned from `Backend.git` here, whose URL git rewrites from
+    GitHub's `helferline/Backend`; warm-preset in `review` naming it, with `gh` in its `gh:`. Its round is
+    a commit in the code repo and the agent repo, both merged into `main`, and two in Backend on
+    `ticket/warm-preset`, authored at AUTHORED, pushed for its pull request. `url` is its origin's
+    URL, in any form GitHub gives one. GitHub says #7 is open. Answers Backend."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    seed = listed_repo(toy.parent / "Backend-seed", "development")
+    origin = toy.parent / "Backend.git"
+    git(toy.parent, "clone", "-q", "--bare", str(seed), str(origin))
+    git(toy.parent, "clone", "-q", "--config", f"url.{origin}.insteadOf={url}", url, str(toy / "Backend"))
+    backend = (toy / "Backend").resolve()
+    assert git(backend, "config", "--get", "remote.origin.url").strip() == url
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n', "Backend")
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("repos: [Backend]", f"repos: [Backend]\ngh: [{gh}]", 1)
+                    .replace("status: claimed", "status: review", 1))
+    git(agent, "commit", "-q", "-am", "warm-preset's pull request, its build in review")
+    for top in (toy, agent):
+        built_on(top, "ticket/warm-preset", "main", "warm.txt")
+        merged_in(top, "main", "ticket/warm-preset")
+    git(backend, "switch", "-q", "-c", "ticket/warm-preset")
+    for name, date in zip(("warm.py", "warmer.py"), AUTHORED):
+        (backend / name).write_text(f"{name}\n")
+        git(backend, "add", name)
+        git(backend, "commit", "-q", "-m", f"warm-preset: {name}", f"--date={date}")
+    git(backend, "push", "-q", "origin", "ticket/warm-preset")
+    git(backend, "switch", "-q", "development")
+    (toy.parent / "bin").mkdir(exist_ok=True)
+    (toy.parent / "bin" / "gh").write_text(FAKE_GH)
+    (toy.parent / "bin" / "gh").chmod(0o755)
+    (toy.parent / "bin" / "gh.answers").mkdir()
+    # This repo's board, whose query of GitHub is one of the calls `only_read` reads, keeping what it
+    # was asked to draw as the stub does.
+    (toy.parent / "bin" / "board").write_text(f'#!/bin/sh\necho "$*" >> "{toy.parent / "bin" / "board.calls"}"\n'
+                                              f'exec "{SKILL.parent / "tracker" / "board.py"}" "$@"\n')
+    (toy.parent / "bin" / "board").chmod(0o755)
+    answer({"state": "OPEN", "baseRefName": "development", "mergeCommit": None, "commits": []}, backend)
+    return backend
+
+
+def merged_on_github(backend: Path, how: Literal["squash", "rebase", "merge"], number: int = 7,
+                     branch: str = "ticket/warm-preset") -> tuple[str, str]:
+    """`branch`'s pull request merged on `development` at origin as `how`, after a change of
+    somebody else's, and `gh pr view` answering for it. Answers (that change, the tip of
+    `development`)."""
+    commits = [line.split("\t") for line in
+               git(backend, "log", "--reverse", "--format=%H\t%at\t%s", f"development..{branch}").splitlines()]
+    git(backend, "switch", "-q", "-c", "github", "development")
+    (backend / "theirs.py").write_text("theirs\n")
+    git(backend, "add", "theirs.py")
+    git(backend, "commit", "-q", "-m", "somebody else's change")
+    theirs = git(backend, "rev-parse", "HEAD").strip()
+    if how == "squash":
+        git(backend, "merge", "-q", "--squash", branch)
+        git(backend, "commit", "-q", "-m", f"Warm preset (#{number})")
+    elif how == "rebase":
+        git(backend, "cherry-pick", f"development..{branch}")
+    elif how == "merge":
+        git(backend, "merge", "-q", "--no-ff", "-m", f"Merge pull request #{number}", branch)
+    seen = git(backend, "rev-parse", "origin/development").strip()
+    git(backend, "push", "-q", "origin", "github:development")
+    git(backend, "update-ref", "refs/remotes/origin/development", seen)  # what this clone saw before GitHub merged
+    tip = git(backend, "rev-parse", "HEAD").strip()
+    git(backend, "switch", "-q", "development")
+    git(backend, "branch", "-q", "-D", "github")
+    answer({"state": "MERGED", "baseRefName": "development", "mergeCommit": {"oid": tip},
+            "commits": [{"oid": oid, "messageHeadline": subject, "authoredDate": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(at)))}
+                        for oid, at, subject in commits]}, backend, number)
+    return theirs, tip
+
+
+def answer(said: dict, backend: Path, number: int = 7) -> None:
+    """What the fake `gh pr view` says for helferline/Backend#<number>."""
+    (backend.parent.parent / "bin" / "gh.answers" / f"helferline_Backend_{number}.json").write_text(json.dumps(said))
+
+
+def only_read(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P7`: every call of `gh` was a read: review's `pr view`, and the
+    query of the board it renders."""
+    calls = (toy.parent / "bin" / "gh.calls").read_text().splitlines()
+    assert any(call.startswith("pr view ") for call in calls), calls
+    assert all(call.startswith(("pr view ", "api graphql -f query=query ")) for call in calls), calls
+
+
+def round_ranges(toy: Path) -> list[str]:
+    """warm-preset's code and agent ranges as `on_github` built them: each a commit on its ticket
+    branch. Read before the review whose `done` deletes those branches."""
+    return [f"{name}@{git(top, 'rev-parse', 'ticket/warm-preset~1').strip()}..{git(top, 'rev-parse', 'ticket/warm-preset').strip()}"
+            for name, top in (("code", toy), ("agent", toy / "agent"))]
+
+
+def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path) -> None:
+    """The squash is one commit on `development`, and the ticket's two commits on no branch there:
+    the review after it records `Backend@<merge>^..<merge>`, which no branch could give it, deletes
+    the ticket branch the pull request carried, records the code and agent repos' ranges, writes
+    `done`, which the tracker's done check allows, and renders the page over what landed in place of
+    the one it rendered before. Origin's refs are as GitHub left them."""
+    backend = on_github(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review", "the pull request is open"
+    assert "helferline/Backend#7 is open and not merged" in said.stderr, said.stderr
+    code, agent = (git(top, "rev-parse", "ticket/warm-preset~1", "ticket/warm-preset").split() for top in (toy, toy / "agent"))
+    fork = git(backend, "rev-parse", "development").strip()
+    assert pages(toy) == [f"{toy}@{code[0]}..{code[1]} {backend}@{fork}..{git(backend, 'rev-parse', 'ticket/warm-preset').strip()}"]
+
+    theirs, merge = merged_on_github(backend, "squash")
+    origin = git(toy.parent / "Backend.git", "for-each-ref")
+    done = run(toy, "review", "warm-preset")
+    assert done.returncode == 0, done.stderr
+    only_read(toy)
+    assert git(toy.parent / "Backend.git", "for-each-ref") == origin
+    assert status_of(toy, "warm-preset") == "done"
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", f"code@{code[0]}..{code[1]}",
+                                            f"agent@{agent[0]}..{agent[1]}"]
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+    assert pages(toy)[-1] == f"{backend}@{theirs}..{merge} {toy}@{code[0]}..{code[1]}"
+
+
+def test_a_review_asks_github_nothing_once_every_listed_branch_has_merged(toy: Path) -> None:
+    """Backend's branch merged --no-ff into `development` here, as in max's own repos: the ticket
+    names a pull request all the same, and the review that writes `done` reads it off the merge and
+    calls no `gh pr view`."""
+    backend = on_github(toy)
+    fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
+    merged_in(backend, "development", "ticket/warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
+    calls = toy.parent / "bin" / "gh.calls"
+    assert not calls.exists() or "pr view" not in calls.read_text()
+    assert len(boards(toy)) == 1, "the board ran, with its own query of GitHub"
+
+
+def test_a_rebase_merges_commits_replace_the_range_the_ticket_recorded_there(toy: Path) -> None:
+    """A rebase merge puts the ticket's two commits on `development` as new commits: the range the
+    ticket recorded in Backend, from the fork to the ticket's tip, is replaced where it stood by the
+    two rebased ones, and the code repo's range beside it stays."""
+    backend = on_github(toy)
+    fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
+    code = f"code@{git(toy, 'rev-parse', 'ticket/warm-preset~1').strip()}..{git(toy, 'rev-parse', 'ticket/warm-preset').strip()}"
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("gh: [", f"diff: [Backend@{fork}..{tip}, {code}]\ngh: [", 1))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset's ranges, by hand")
+
+    theirs, merge = merged_on_github(backend, "rebase")
+    assert git(backend, "rev-parse", f"{merge}~2").strip() == theirs
+    agent = round_ranges(toy)[1]
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    only_read(toy)
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", code, agent]
+    assert status_of(toy, "warm-preset") == "done"
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+    assert pages(toy)[-1] == f"{backend}@{theirs}..{merge} {toy}@{code.partition('@')[2]}"
+
+
+def test_a_pull_request_merged_with_a_merge_commit_is_recorded_as_its_branch(toy: Path) -> None:
+    """A merge commit brings the ticket's own commits in as they were: the review reads origin's
+    `development`, which now holds the ticket branch, records Backend's range from its fork, and
+    writes `done`."""
+    backend = on_github(toy)
+    fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
+    assert run(toy, "review", "warm-preset").returncode == 0
+    merged_on_github(backend, "merge")
+    done = run(toy, "review", "warm-preset")
+    assert done.returncode == 0, done.stderr
+    only_read(toy)
+    assert "merge commit" in done.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
+
+
+def test_a_ticket_branch_holding_commits_its_pull_request_did_not_carry_stays(toy: Path) -> None:
+    """A commit made on the ticket branch after its pull request merged never reached GitHub: the
+    range is still the squash's, the branch keeps that commit, the ticket stays in `review`, and the
+    exit status says done waits."""
+    backend = on_github(toy)
+    theirs, merge = merged_on_github(backend, "squash")
+    _, later = built_on(backend, "ticket/warm-preset", "", "warmest.py")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "holds commits its pull request did not carry" in said.stderr, said.stderr
+    assert git(backend, "rev-parse", "ticket/warm-preset").strip() == later
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}"]
+    assert status_of(toy, "warm-preset") == "review"
+
+
+def test_a_pull_request_not_merged_and_one_in_no_listed_repo_change_nothing_and_say_why(toy: Path) -> None:
+    """An open pull request is every review before the team merges: Backend's record and branch stay
+    as they are and the ticket waits in `review`. A reference to a repo the project does not list is
+    said and asks GitHub nothing."""
+    backend = on_github(toy, gh="helferline/Backend#7, helferline/Helix#3")
+    tip = git(backend, "rev-parse", "ticket/warm-preset").strip()
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    only_read(toy)
+    assert "helferline/Backend#7 is open and not merged" in said.stderr, said.stderr
+    assert "helferline/Helix#3 is in no repo" in said.stderr, said.stderr
+    assert "helferline/Helix" not in (toy.parent / "bin" / "gh.calls").read_text()
+    assert status_of(toy, "warm-preset") == "review"
+    assert ranges_of(toy, "warm-preset") == []
+    assert git(backend, "rev-parse", "ticket/warm-preset").strip() == tip
+
+
+@pytest.mark.parametrize("url", ["git@github.com:helferline/Backend.git", "https://github.com/Helferline/backend",
+                                 "ssh://git@github.com/helferline/Backend.git/"])
+def test_a_pull_request_is_read_in_the_repo_whose_origin_github_names_in_any_form(toy: Path, url: str) -> None:
+    """GitHub's three forms of a repo's URL, and an owner or a repo spelled in another case than
+    `gh:` spells it, all name helferline/Backend."""
+    backend = on_github(toy, url=url)
+    theirs, merge = merged_on_github(backend, "squash")
+    rounds = round_ranges(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", *rounds]
+
+
+def test_a_merge_origin_does_not_hold_and_a_pull_request_github_does_not_answer_change_nothing(toy: Path) -> None:
+    """#7 is reported merged as a commit `development` at origin does not hold, and GitHub answers
+    nothing for #8: Backend's record and branch stay as they are, each is said, the ticket waits in
+    `review`, and the exit status is nonzero."""
+    backend = on_github(toy, gh="helferline/Backend#7, helferline/Backend#8")
+    tip = git(backend, "rev-parse", "ticket/warm-preset").strip()
+    _, nowhere = built_on(backend, "nowhere", "development", "nowhere.py")
+    answer({"state": "MERGED", "baseRefName": "development", "mergeCommit": {"oid": nowhere}, "commits": []}, backend)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    only_read(toy)
+    assert f"merge {nowhere} is not on development as origin has it" in said.stderr, said.stderr
+    assert "GitHub did not answer for helferline/Backend#8" in said.stderr, said.stderr
+    assert ranges_of(toy, "warm-preset") == []
+    assert status_of(toy, "warm-preset") == "review"
+    assert git(backend, "rev-parse", "ticket/warm-preset").strip() == tip
+
+
+def test_a_merge_commits_range_stands_beside_a_squash_in_the_same_repo(toy: Path) -> None:
+    """Two pull requests in Backend: #7 squashed, #8 merged with a merge commit. Backend's record
+    becomes both: the squash, and the commits #8's merge brought in."""
+    backend = on_github(toy, gh="helferline/Backend#7, helferline/Backend#8")
+    theirs, squash = merged_on_github(backend, "squash")
+    git(backend, "fetch", "-q", "origin")
+    _, other = built_on(backend, "other", "origin/development", "other.py")
+    git(backend, "switch", "-q", "-c", "github", "origin/development")
+    git(backend, "merge", "-q", "--no-ff", "-m", "Merge pull request #8", "other")
+    git(backend, "push", "-q", "origin", "github:development")
+    merge = git(backend, "rev-parse", "HEAD").strip()
+    git(backend, "switch", "-q", "development")
+    answer({"state": "MERGED", "baseRefName": "development", "mergeCommit": {"oid": merge},
+            "commits": [{"oid": other, "messageHeadline": "other", "authoredDate": AUTHORED[0]}]}, backend, 8)
+    rounds = round_ranges(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{squash}", f"Backend@{squash}..{other}", *rounds]
+
+
+def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_on_its_accept(toy: Path) -> None:
+    """lamp-ui is warm-preset's parent. warm-preset's Backend branch merged into lamp-ui's there, its
+    range recorded as the review of that merge writes it, and lamp-ui's own branch, named by its
+    slug as dispatch cuts a parent's, went to GitHub as #9 and was squashed. The parent's accept
+    records the squash on both tickets, deletes both branches, which the done check reads, and writes
+    both `done`s."""
+    backend = on_github(toy)
+    agent = toy / "agent"
+    fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
+    git(backend, "branch", "lamp-ui", "development")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    for slug, front in (("warm-preset", f"status: review\ndiff: [Backend@{fork}..{tip}]"),
+                        ("lamp-ui", "status: review\nrepos: [Backend]\ngh: [helferline/Backend#9]")):
+        path = tracked(toy) / f"{slug}.md"
+        path.write_text(re.sub(r"status: \w+", front, path.read_text(), count=1))
+    git(agent, "commit", "-q", "-am", "the tree, for its ruling")
+    theirs, merge = merged_on_github(backend, "squash", 9, branch="lamp-ui")
+
+    built_on(toy, "lamp-ui", "main", "ui.txt")
+    merged_in(toy, "main", "lamp-ui")
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+    only_read(toy)
+    assert not git(backend, "branch", "--list", "lamp-ui", "ticket/warm-preset")
+    landed = lambda slug: git(agent, "show", f"HEAD~1:tickets/{slug}.md")  # noqa: E731  # retired since
+    for slug in ("lamp-ui", "warm-preset"):
+        assert "status: done" in landed(slug), slug
+        assert f"Backend@{theirs}..{merge}" in landed(slug), slug
+    assert f"Backend@{fork}..{tip}" not in landed("warm-preset")
+
+
+@pytest.mark.full_path
+def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_run_on_the_host(
+        toy: Path, staged: Path) -> None:
+    """Backend's branch was squashed into `development` here and deleted, its range the squash,
+    recorded by hand; the host still holds Backend for the ticket. The `done` retires the run all
+    the same, since Backend is a repo the ticket names and its round has landed."""
+    repos = staged_listed(toy)
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, state)
+    for command in ("fetch", "review"):
+        said = subprocess.run([str(staged), command, "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+        assert said.returncode == 0, said.stderr
+    for top in (toy, toy / "agent", repos["jarvis"]):
+        merged_in(top, "main", "ticket/warm-preset")
+    backend = repos["Backend"]
+    fork = git(backend, "rev-parse", "development").strip()
+    git(backend, "merge", "-q", "--squash", "ticket/warm-preset")
+    git(backend, "commit", "-q", "-m", "Warm preset (#7)")
+    git(backend, "branch", "-q", "-D", "ticket/warm-preset")
+    squash = git(backend, "rev-parse", "HEAD").strip()
+    subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "set", "warm-preset", f"diff+=Backend@{fork}..{squash}"],
+                   cwd=toy, check=True, capture_output=True)
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset: the range that landed in Backend")
+    (toy / "agent" / "diffviews" / "warm-preset.html").unlink()  # the page over what landed is a new one
+
+    landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert not (hosted / "lamp-warm-preset").exists()
+    assert not (hosted / "jarvis-warm-preset").exists()
+
+
+def test_a_review_over_what_landed_leaves_a_page_it_did_not_render_as_it_is_and_says_so(toy: Path) -> None:
+    """A page at the ticket's path showing a source neither the review before the landing nor the
+    one after it renders, one a session rendered by hand: the review records what landed, writes
+    `done`, leaves that page, and the exit status says so."""
+    backend = on_github(toy)
+    assert run(toy, "review", "warm-preset").returncode == 0
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.write_text('{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n')
+    theirs, merge = merged_on_github(backend, "squash")
+    rounds = round_ranges(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "leaves that page as it is" in said.stderr, said.stderr
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", *rounds]
+    assert status_of(toy, "warm-preset") == "done"
+    assert page.read_text() == '{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n'
+
+
+@pytest.mark.full_path
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
     """The version skew a host is left in when an older plugin staged it: its config carries no
     agent repo, and every command on that host says which one it is."""
@@ -1050,12 +2239,7 @@ def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) ->
     assert "predates the agent repo" in said.stderr, said.stderr
 
 
-def test_the_report_the_contract_names_is_the_one_the_scripts_read() -> None:
-    """The worker reads the path out of prose, which no check of the runner or the import can
-    exercise; the two scripts are held to it by the runs above."""
-    assert "agent/show/<slug>/report.md" in (SKILL / "worker-prompt.md").read_text()
-
-
+@pytest.mark.full_path
 def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Path) -> None:
     """The first spawn on a remote host passes `dispatch-ctl init` empty arguments for the host's
     own defaults; each has to arrive as the argument it was, or the agent repo's branch lands in
@@ -1078,6 +2262,7 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
 
 
+@pytest.mark.full_path
 def test_a_remote_hosts_agent_repo_gets_the_trackers_commit_hook(toy: Path, staged: Path) -> None:
     """`report-checked-before-commit`: a worker commits its report in the host's agent repo, and
     that repo's commit hook refuses a report the import would."""
@@ -1090,6 +2275,7 @@ def test_a_remote_hosts_agent_repo_gets_the_trackers_commit_hook(toy: Path, stag
     assert os.access(installed, os.X_OK)
 
 
+@pytest.mark.full_path
 def test_a_commit_hook_the_agent_repo_already_has_is_its_owners(toy: Path, staged: Path) -> None:
     """On a local host the agent repo is the user's own checkout, and a hook in it stays as it was."""
     theirs = toy / "agent" / ".git" / "hooks" / "pre-commit"
@@ -1099,6 +2285,70 @@ def test_a_commit_hook_the_agent_repo_already_has_is_its_owners(toy: Path, stage
     assert said.returncode == 0, said.stdout + said.stderr
     assert theirs.read_text() == "#!/bin/sh\nexit 0\n"
     assert "is not the tracker's" in said.stderr, said.stderr
+
+
+STALE_JOB = "#!/bin/sh\necho stale\n"
+CURRENT_JOB = "#!/bin/sh\necho current\n"
+
+
+def init_with_job(toy: Path, job_dir: Path, fetch_fails: bool = False, on_path: str = "") -> subprocess.CompletedProcess:
+    """`dispatch-ctl init` on a host whose first `job` on PATH is a stale one in `job_dir`, behind a
+    `curl` that serves CURRENT_JOB, or fails as an unreachable network does. `on_path` is how PATH
+    spells `job_dir`, itself unless given."""
+    scratch = toy.parent / "scratch"
+    scratch.mkdir()
+    shutil.copy(SKILL / "dispatch-ctl", scratch / "dispatch-ctl")
+    shutil.copy(SKILL.parent / "tracker" / "pre-commit", scratch / "pre-commit")
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "job").write_text(STALE_JOB)
+    (job_dir / "job").chmod(0o755)
+    fakes = toy.parent / "fakes"
+    fakes.mkdir()
+    served = toy.parent / "served-job"
+    served.write_text(CURRENT_JOB)
+    curl = "exit 22" if fetch_fails else f'while [ "$1" != -o ]; do shift; done; cp "{served}" "$2"'
+    (fakes / "curl").write_text(f"#!/bin/sh\n{curl}\n")
+    (fakes / "curl").chmod(0o755)
+    env = environment(toy)
+    env["PATH"] = f"{on_path or job_dir}:{fakes}:{env['PATH']}"
+    repos = toy.parent / "repos"
+    return subprocess.run(["bash", str(scratch / "dispatch-ctl"), "init", "lamp", "main", str(repos / "lamp.git"),
+                           str(repos), str(repos / "lamp-agent.git"), "main"],
+                          capture_output=True, text=True, env=env, timeout=60)
+
+
+@pytest.mark.parametrize("spelling", ["as HOME spells it", "through a symlink"])
+def test_init_brings_the_job_it_fetched_current(toy: Path, spelling: str) -> None:
+    """`dispatch-init-refreshes-fetched-job`: a host whose `job` is the copy at ~/.local/bin/job
+    has the current one after `init`, however PATH spells that directory."""
+    fetched = toy.parent / "home" / ".local" / "bin"
+    on_path = {"as HOME spells it": "", "through a symlink": str(toy.parent / "linked-bin")}[spelling]
+    if spelling == "through a symlink":
+        (toy.parent / "linked-bin").symlink_to(fetched)
+    said = init_with_job(toy, fetched, on_path=on_path)
+    assert said.returncode == 0, said.stderr
+    assert (fetched / "job").read_text() == CURRENT_JOB
+    assert os.access(fetched / "job", os.X_OK)
+
+
+def test_init_leaves_a_job_elsewhere_on_path_alone(toy: Path) -> None:
+    """`dispatch-init-refreshes-fetched-job`: home-manager's `job` on the orchestrator's machine is
+    not dispatch's to replace."""
+    elsewhere = toy.parent / "nix-profile" / "bin"
+    said = init_with_job(toy, elsewhere)
+    assert said.returncode == 0, said.stderr
+    assert (elsewhere / "job").read_text() == STALE_JOB
+    assert not (toy.parent / "home" / ".local" / "bin" / "job").exists()
+
+
+def test_init_that_cannot_fetch_job_keeps_the_copy_it_has_and_says_so(toy: Path) -> None:
+    """`dispatch-init-refreshes-fetched-job`: the copy a failed fetch leaves still runs the wait loop."""
+    fetched = toy.parent / "home" / ".local" / "bin"
+    said = init_with_job(toy, fetched, fetch_fails=True)
+    assert said.returncode == 0, said.stderr
+    assert (fetched / "job").read_text() == STALE_JOB
+    assert "could not fetch job" in said.stderr, said.stderr
+    assert sorted(p.name for p in fetched.iterdir()) == ["job"]
 
 
 def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
@@ -1111,6 +2361,18 @@ def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
         assert said.stdout.startswith(first), said.stdout
 
 
+@pytest.mark.parametrize(("script", "budget"), [("dispatch", 600), ("dispatch-ctl", 400)])
+def test_each_help_states_the_interface_within_its_budget(script: str, budget: int) -> None:
+    """`/mx:dispatch` loads both helps into every dispatcher's context, so each holds what a
+    dispatcher acts on, in at most `budget` words as `wc -w` counts them; the mechanism is in
+    comments at the code."""
+    said = subprocess.run([str(SKILL / script), "--help"], capture_output=True, text=True)
+    assert said.returncode == 0, said.stderr
+    words = subprocess.run(["wc", "-w"], input=said.stdout, capture_output=True, text=True, check=True)
+    assert int(words.stdout) <= budget, f"{script} --help is {words.stdout.strip()} words"
+
+
+@pytest.mark.full_path
 def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
     """DISPATCH_RUNNER set on the orchestrator reaches a remote host and is the one its worker runs.
     It is renamed after the ticket whatever its own name: this one is called `manifest`, the file
@@ -1134,6 +2396,27 @@ def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) ->
     assert record[-1].strip() == f"{state}/runner-warm-preset", record
 
 
+@pytest.mark.full_path
+def test_push_brings_both_repos_tips_to_the_host_a_run_is_on(toy: Path, staged: Path) -> None:
+    """What a worker resumed to rebase is rebasing onto: this branch's tip in each repo, on its host."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    for at in (toy, toy / "agent"):
+        (at / "moved.md").write_text("the branch moved\n")
+        git(at, "add", "moved.md")
+        git(at, "commit", "-q", "-m", "the branch moved")
+
+    pushed = subprocess.run([str(staged), "push"], cwd=toy, capture_output=True, text=True, env=env, timeout=120)
+
+    assert pushed.returncode == 0, pushed.stderr
+    bare = remote / "repos" / "dispatch"
+    assert git(bare / "lamp.git", "rev-parse", "main") == git(toy, "rev-parse", "main")
+    assert git(bare / "lamp-agent.git", "rev-parse", "main") == git(toy / "agent", "rev-parse", "main")
+
+
+@pytest.mark.full_path
 def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path, staged: Path) -> None:
     """A resume hands the worker its old session id, which only the harness that made it knows."""
     replacement = toy.parent / "replacement.sh"
@@ -1165,395 +2448,6 @@ def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy
     assert said.returncode != 0
     assert "no-such-runner.sh is not a file" in said.stderr, said.stderr
     assert not (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").exists()
-
-
-# --- the repo's fuzz run -------------------------------------------------------------------------
-#
-# The toy as a project with properties and bugs under them. One is the prototype's
-# (`agent/prototypes/fuzz-lifecycle`): `zzz` does not survive the round trip. The other fails on
-# any integer from 1000 up, and sorts first, so two findings are read out of one suite run. Its
-# `make fuzz` stands in for HypoFuzz with a loop of pytest, which ends on its findings. Its default
-# Hypothesis profile only replays the database, so the ordinary suite fails exactly when the
-# database holds a finding. Nothing in it knows dispatch (P6).
-
-LAB = '''def encode(s: str) -> str:
-    # Planted bug: a run of three or more 'z' is mangled.
-    if "zzz" in s:
-        return s.replace("zzz", "zz")
-    return s
-
-def decode(s: str) -> str:
-    return s
-'''
-PROPERTY = '''from hypothesis import given, strategies as st
-from lab import decode, encode
-
-@given(st.text(alphabet="az", min_size=0, max_size=12))
-def test_roundtrip(s):
-    assert decode(encode(s)) == s
-
-@given(st.integers())
-def test_fine(n):
-    assert n + 0 == n
-'''
-BOUND = '''from hypothesis import given, strategies as st
-
-@given(st.integers())
-def test_small(n):
-    assert n < 1000
-'''
-CONFTEST = '''import os
-from hypothesis import Phase, settings
-settings.register_profile("fuzz", max_examples=5000, deadline=None)
-settings.register_profile("replay", phases=[Phase.explicit, Phase.reuse, Phase.shrink])
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "replay"))
-'''
-MAKEFILE = '''PY ?= python
-install:
-\t@true
-test:
-\t$(PY) -m pytest -q -p no:cacheprovider tests
-fuzz:
-\twhile HYPOTHESIS_PROFILE=fuzz $(PY) -m pytest -q -p no:cacheprovider tests/properties; do :; done
-'''
-# The patch Hypothesis wrote in the prototype's run, `hypothesis-wrote-this.patch` there: what
-# `fuzz patch` applies, whatever layout the Hypothesis of the day gives its `@example`.
-PROTOTYPE_PATCH = '''--- ./tests/properties/test_roundtrip.py
-+++ ./tests/properties/test_roundtrip.py
-@@ -2,6 +2,7 @@
- from lab import decode, encode
- 
- @given(st.text(alphabet="az", min_size=0, max_size=12))
-+@example(s="zzz").via("discovered failure")
- def test_roundtrip(s):
-     assert decode(encode(s)) == s
- 
-'''
-NODE = "tests/properties/test_roundtrip.py::test_roundtrip"
-FINDING = "fuzz-tests-properties-test-roundtrip-test-roundtrip"
-BOUND_NODE = "tests/properties/test_bound.py::test_small"
-BOUND_FINDING = "fuzz-tests-properties-test-bound-test-small"
-
-
-@pytest.fixture
-def fuzzable(toy: Path) -> Path:
-    """The toy with the two properties and their bugs committed on `main`."""
-    if not shutil.which("tmux"):
-        pytest.skip("no tmux here, and the fuzz run is a job in a tmux session")
-    for path, text in (("lab/__init__.py", LAB), ("tests/properties/test_roundtrip.py", PROPERTY),
-                       ("tests/properties/test_bound.py", BOUND), ("tests/conftest.py", CONFTEST),
-                       ("Makefile", MAKEFILE)):
-        (toy / path).parent.mkdir(parents=True, exist_ok=True)
-        (toy / path).write_text(text)
-    git(toy, "add", "-A")
-    git(toy, "commit", "-q", "-m", "properties, and bugs under them")
-    return toy
-
-
-def mend(toy: Path) -> None:
-    """Both bugs fixed on `main`, so a run on it fuzzes until it is stopped."""
-    (toy / "lab" / "__init__.py").write_text(LAB.replace('s.replace("zzz", "zz")', "s"))
-    (toy / "tests" / "properties" / "test_bound.py").write_text(BOUND.replace("n < 1000", "n + 0 == n"))
-    git(toy, "commit", "-q", "-am", "the round trip keeps zzz, and no bound")
-
-
-def fuzz(toy: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
-    """`dispatch fuzz`. The toy's suite runs on this interpreter, which is why the checks take
-    Hypothesis, and libcst, without which Hypothesis writes no patch."""
-    env = {**(env or environment(toy)), "PY": sys.executable}
-    return subprocess.run([str(DISPATCH), "fuzz", *args], cwd=toy, capture_output=True, text=True,
-                          env=env, timeout=180)
-
-
-def fuzz_job(toy: Path) -> Path:
-    return toy.parent / "jobs" / "fuzz-lamp"
-
-
-def fuzz_ended(toy: Path) -> str:
-    """The fuzz job's status line, once it has ended."""
-    job = fuzz_job(toy)
-    for _ in range(120):
-        if (job / "status").exists():
-            return (job / "status").read_text()
-        time.sleep(0.5)
-    log = (job / "log").read_text() if (job / "log").exists() else "(no log)"
-    raise AssertionError(f"the fuzz job never ended; its log:\n{log}")
-
-
-def fuzz_pid(toy: Path) -> str:
-    return (fuzz_job(toy) / "meta").read_text().split("pid=")[1].split("\n")[0]
-
-
-def local_scratch(toy: Path) -> Path:
-    return toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
-
-
-def examples(db: Path) -> set[Path]:
-    return {p.relative_to(db) for p in (db / "examples").rglob("*") if p.is_file()}
-
-
-def patched(toy: Path, patch: str) -> dict[str, str]:
-    """What a patch `fuzz check` printed makes of the toy's property files, applied to a copy."""
-    copy = toy.parent / "patched"
-    shutil.rmtree(copy, ignore_errors=True)
-    shutil.copytree(toy / "tests", copy / "tests")
-    subprocess.run(["git", "apply", "-"], cwd=copy, input=patch, text=True, check=True)
-    return {p.name: p.read_text() for p in (copy / "tests" / "properties").glob("*.py")}
-
-
-def ps_rows(toy: Path, env: dict[str, str] | None = None) -> list[list[str]]:
-    """`dispatch ps`'s rows, with a register that publishes no host, so the ones read are the
-    repo's own."""
-    register = toy.parent / "bin" / "worker-hosts"
-    register.write_text("#!/bin/sh\n")
-    register.chmod(0o755)
-    listed = subprocess.run([str(DISPATCH), "ps"], cwd=toy, capture_output=True, text=True,
-                            env=env or environment(toy), timeout=120)
-    assert listed.returncode == 0, listed.stderr
-    return [row.split() for row in listed.stdout.splitlines()[1:]]
-
-
-def test_a_fuzz_run_is_one_job_on_the_host_it_designates_with_its_database_beside_the_worktree(
-        fuzzable: Path) -> None:
-    remote, env = fake_remote(fuzzable)
-
-    started = fuzz(fuzzable, "start", "--host", "agent@far", env=env)
-
-    assert started.returncode == 0, started.stdout + started.stderr
-    assert git(fuzzable, "config", "dispatch.fuzz.host").strip() == "agent@far"
-    assert git(fuzzable, "config", "dispatch.fuzz.branch").strip() == "main"
-    worktree = remote / "repos" / "dispatch" / "lamp-main-fuzz"
-    assert git(worktree, "rev-parse", "HEAD") == git(fuzzable, "rev-parse", "main"), "cut from the tip it pushed"
-    db = remote / ".local" / "state" / "dispatch" / "lamp-main" / "fuzz.hypothesis"
-    assert (worktree / ".hypothesis").resolve() == db
-    fuzz_ended(fuzzable)
-    assert examples(db), "the findings are in the database, beside the worktree"
-
-    for host in ("agent@far", "local"):
-        again = fuzz(fuzzable, "start", "--host", host, env=env)
-        assert again.returncode != 0
-        assert "already fuzzes on agent@far" in again.stderr, again.stderr
-
-
-def test_a_push_of_the_integration_branch_restarts_the_run_on_its_tips_and_leaves_the_database(
-        fuzzable: Path) -> None:
-    remote, env = fake_remote(fuzzable)
-    assert fuzz(fuzzable, "start", "--host", "agent@far", env=env).returncode == 0
-    ended = fuzz_ended(fuzzable)
-    db = remote / ".local" / "state" / "dispatch" / "lamp-main" / "fuzz.hypothesis"
-    (db / "kept").write_text("the restart never touches this\n")
-    worktree = remote / "repos" / "dispatch" / "lamp-main-fuzz"
-    before = git(worktree, "rev-parse", "HEAD")
-
-    other = subprocess.run(["git", "-C", str(fuzzable), "push", "-q", "agent-far", "main:elsewhere"],
-                           capture_output=True, text=True, env=env, timeout=120)
-    assert other.returncode == 0, other.stderr
-    assert (fuzz_job(fuzzable) / "status").read_text() == ended, "a push of another branch restarts nothing"
-
-    mend(fuzzable)
-    (fuzzable / "agent" / "notes.md").write_text("the agent repo moved too\n")
-    git(fuzzable / "agent", "add", "notes.md")
-    git(fuzzable / "agent", "commit", "-q", "-m", "a note")
-    pushed = subprocess.run([str(DISPATCH), "push"], cwd=fuzzable, capture_output=True, text=True,
-                            env={**env, "PY": sys.executable}, timeout=120)
-
-    assert pushed.returncode == 0, pushed.stderr
-    assert git(worktree, "rev-parse", "HEAD") == git(fuzzable, "rev-parse", "main") != before
-    assert git(worktree / "agent", "rev-parse", "HEAD") == git(fuzzable / "agent", "rev-parse", "main")
-    assert not (fuzz_job(fuzzable) / "status").exists(), "a fresh job, fuzzing the mended code with no end in sight"
-    assert (db / "kept").exists()
-    checked = fuzz(fuzzable, "check", env=env)
-    assert checked.returncode == 0, checked.stdout + checked.stderr
-    assert "no failure" in checked.stdout
-
-
-def test_stop_ends_a_running_run_and_start_resumes_it_on_the_tip(fuzzable: Path) -> None:
-    """User story 3: stopping frees the machine, a push to it restarts nothing until the next
-    `start`, and that start takes the tip there is by then."""
-    mend(fuzzable)
-    remote, env = fake_remote(fuzzable)
-    assert fuzz(fuzzable, "start", "--host", "agent@far", env=env).returncode == 0
-    pid = fuzz_pid(fuzzable)
-    again = fuzz(fuzzable, "start", env=env)
-    assert again.returncode != 0
-    assert "already fuzzing" in again.stderr, again.stderr
-    assert fuzz_pid(fuzzable) == pid, "the running job is left alone"
-    assert [row[:4] for row in ps_rows(fuzzable, env)] == [["agent@far", "lamp/main", "fuzz", "running"]]
-
-    stopped = fuzz(fuzzable, "stop", env=env)
-
-    assert stopped.returncode == 0, stopped.stderr
-    assert "exit=143" in fuzz_ended(fuzzable)
-    assert not (remote / "repos" / "dispatch" / "lamp.git" / "hooks" / "post-receive").exists()
-    worktree = remote / "repos" / "dispatch" / "lamp-main-fuzz"
-    stopped_at = git(worktree, "rev-parse", "HEAD")
-    (fuzzable / "lamp.txt").write_text("the lamp, brighter\n")
-    git(fuzzable, "commit", "-q", "-am", "brighter")
-    assert subprocess.run([str(DISPATCH), "push"], cwd=fuzzable, capture_output=True, env=env,
-                          timeout=120).returncode == 0
-    assert git(worktree, "rev-parse", "HEAD") == stopped_at, "no hook, no restart"
-    assert (fuzz_job(fuzzable) / "status").exists()
-
-    resumed = fuzz(fuzzable, "start", env=env)
-
-    assert resumed.returncode == 0, resumed.stderr
-    assert git(worktree, "rev-parse", "HEAD") == git(fuzzable, "rev-parse", "main")
-    assert not (fuzz_job(fuzzable) / "status").exists(), "running again"
-    assert (remote / "repos" / "dispatch" / "lamp.git" / "hooks" / "post-receive").exists()
-
-
-def test_stop_and_clean_leave_the_finding_and_the_next_start_resumes_on_it(fuzzable: Path) -> None:
-    """P1 and P3, on `local`, whose repo is the user's own checkout and takes no hook of the run's,
-    nor loses one of its own."""
-    (fuzzable / "hooks").mkdir()
-    (fuzzable / "hooks" / "post-receive").write_text("#!/bin/sh\n# the project's own\n")
-    git(fuzzable, "add", "hooks")
-    git(fuzzable, "commit", "-q", "-m", "a hook the project ships")
-    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
-    fuzz_ended(fuzzable)
-    worktree = fuzzable.parent / "lamp-main-fuzz"
-    db = local_scratch(fuzzable) / "fuzz.hypothesis"
-    found = examples(db)
-    assert found
-
-    stopped = fuzz(fuzzable, "stop")
-    assert stopped.returncode == 0, stopped.stderr
-    assert worktree.is_dir() and examples(db) == found
-    assert [row[:4] for row in ps_rows(fuzzable)] == [["local", "lamp/main", "fuzz", "exited"]]
-
-    cleaned = fuzz(fuzzable, "clean")
-    assert cleaned.returncode == 0, cleaned.stderr
-    assert not worktree.exists()
-    for at in (fuzzable, fuzzable / "agent"):
-        assert "fuzz/main" not in git(at, "branch", "--list")
-    assert examples(db) == found
-    assert (fuzzable / "hooks" / "post-receive").exists()
-    assert "dispatch.fuzz" not in git(fuzzable, "config", "--list"), "the host is forgotten with the run"
-
-    again = fuzz(fuzzable, "start", "--host", "local")
-    assert again.returncode == 0, again.stderr
-    assert (worktree / ".hypothesis").resolve() == db, "the corpus the next run starts on"
-    checked = fuzz(fuzzable, "check")
-    assert checked.returncode != 0
-    files = patched(fuzzable, checked.stdout)
-    assert "n=1000" in files["test_bound.py"] and "s='zzz'" in files["test_roundtrip.py"], checked.stdout
-
-
-def test_clean_frees_a_repo_whose_host_is_gone(toy: Path) -> None:
-    gone = toy.parent / "gone"
-    gone.mkdir()
-    (gone / "ssh").write_text("#!/bin/sh\necho 'ssh: Could not resolve hostname far' >&2\nexit 255\n")
-    (gone / "ssh").chmod(0o755)
-    git(toy, "config", "dispatch.fuzz.host", "agent@far")
-    git(toy, "config", "dispatch.fuzz.branch", "main")
-    env = environment(toy)
-    env["PATH"] = f"{gone}:{env['PATH']}"
-
-    cleaned = fuzz(toy, "clean", env=env)
-
-    assert cleaned.returncode == 0, cleaned.stderr
-    assert "no answer from agent@far" in cleaned.stderr
-    assert "dispatch.fuzz" not in git(toy, "config", "--list")
-
-
-def test_the_fuzz_verbs_reference_is_their_own_help() -> None:
-    """`dispatch --help` gives the fuzz run one line, and the text it points at is there."""
-    for args in (["fuzz", "--help"], ["fuzz"]):
-        said = subprocess.run([str(DISPATCH), *args], capture_output=True, text=True)
-        assert said.returncode == 0, said.stderr
-        assert said.stdout.startswith("Usage: dispatch fuzz start")
-        assert all(f"  {verb} " in said.stdout for verb in ("start", "stop", "clean", "check", "patch")), said.stdout
-    assert [line for line in subprocess.run([str(DISPATCH), "--help"], capture_output=True, text=True).stdout.splitlines()
-            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help"]
-
-
-def test_a_project_that_sets_its_own_database_is_refused_and_left_undesignated(fuzzable: Path) -> None:
-    (fuzzable / "tests" / "conftest.py").write_text(CONFTEST.replace("deadline=None", "deadline=None, database=None"))
-    git(fuzzable, "commit", "-q", "-am", "no database")
-
-    refused = fuzz(fuzzable, "start", "--host", "local")
-
-    assert refused.returncode != 0
-    assert "tests/conftest.py:3" in refused.stderr, refused.stderr
-    assert not (fuzzable.parent / "lamp-main-fuzz").exists()
-    assert "dispatch.fuzz" not in git(fuzzable, "config", "--list")
-    unread = fuzz(fuzzable, "check")
-    assert unread.returncode != 0
-    assert "no fuzz run designated" in unread.stderr
-
-
-def test_patch_brings_each_finding_here_as_an_example_and_to_the_tracker_as_one_proposed_ticket(
-        fuzzable: Path, tmp_path: Path) -> None:
-    """P4, with the prototype's patch as the oracle: the property as the tree has it once the patch
-    Hypothesis wrote there is applied, compared as Python rather than as layout."""
-    expected = tmp_path / "expected"
-    (expected / "tests" / "properties").mkdir(parents=True)
-    (expected / "tests" / "properties" / "test_roundtrip.py").write_text(PROPERTY)
-    (expected / "prototype.patch").write_text(PROTOTYPE_PATCH)
-    subprocess.run(["git", "apply", "prototype.patch"], cwd=expected, check=True)
-    want = ast.dump(ast.parse((expected / "tests" / "properties" / "test_roundtrip.py").read_text()))
-    bound = BOUND.replace("def test_small", '@example(n=1000).via("discovered failure")\ndef test_small')
-    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
-    fuzz_ended(fuzzable)
-
-    patched = fuzz(fuzzable, "patch")
-
-    assert patched.returncode == 0, patched.stdout + patched.stderr
-    have = (fuzzable / "tests" / "properties" / "test_roundtrip.py").read_text()
-    assert ast.dump(ast.parse(have)) == want, have
-    have = (fuzzable / "tests" / "properties" / "test_bound.py").read_text()
-    assert ast.dump(ast.parse(have)) == ast.dump(ast.parse(bound)), have
-    assert "tests/properties/test_roundtrip.py" in git(fuzzable, "status", "--porcelain"), "left for the user to commit"
-    ticket = tracked(fuzzable) / f"{FINDING}.md"
-    assert status_of(fuzzable, FINDING) == "proposed"
-    assert NODE in ticket.read_text() and "s='zzz'" in ticket.read_text()
-    assert "n=1000" in (tracked(fuzzable) / f"{BOUND_FINDING}.md").read_text(), "each case on its own property's ticket"
-    assert "s='zzz'" not in (tracked(fuzzable) / f"{BOUND_FINDING}.md").read_text()
-    assert git(fuzzable / "agent", "status", "--porcelain") == "", "filed and committed"
-
-    ticket_text = ticket.read_text()
-    commits = git(fuzzable / "agent", "rev-list", "--count", "HEAD")
-
-    again = fuzz(fuzzable, "patch")
-
-    assert again.returncode == 0, again.stdout + again.stderr
-    assert ast.dump(ast.parse((fuzzable / "tests" / "properties" / "test_roundtrip.py").read_text())) == want, \
-        "taken in once"
-    assert sorted(p.name for p in tracked(fuzzable).glob("fuzz-*.md")) == [f"{BOUND_FINDING}.md", f"{FINDING}.md"]
-    assert ticket.read_text() == ticket_text, "filed once"
-    assert git(fuzzable / "agent", "rev-list", "--count", "HEAD") == commits
-    assert f"{FINDING} is filed already" in again.stdout and "s='zzz'" in again.stdout
-
-
-def test_a_finding_hypothesis_writes_no_case_for_is_still_said(fuzzable: Path) -> None:
-    """Hypothesis 6.168 writes no `@example` for a property that is a method of a test class."""
-    (fuzzable / "tests" / "properties" / "test_codec.py").write_text(
-        "from hypothesis import given, strategies as st\n\n"
-        "class TestCodec:\n    @given(st.integers())\n    def test_small(self, n):\n        assert n < 500\n")
-    git(fuzzable, "add", "-A")
-    git(fuzzable, "commit", "-q", "-m", "a property in a class")
-    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
-    fuzz_ended(fuzzable)
-
-    said = fuzz(fuzzable, "patch")
-
-    assert "tests/properties/test_codec.py::TestCodec::test_small" in said.stderr, said.stderr
-    assert not list(tracked(fuzzable).glob("fuzz-*codec*.md"))
-
-
-def test_a_suite_that_fails_with_no_case_written_says_why_and_files_nothing(fuzzable: Path) -> None:
-    mend(fuzzable)
-    (fuzzable / "tests" / "test_plain.py").write_text("def test_plain():\n    assert 'lamp' == 'lantern'\n")
-    git(fuzzable, "add", "-A")
-    git(fuzzable, "commit", "-q", "-m", "a plain test that fails")
-    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
-
-    said = fuzz(fuzzable, "patch")
-
-    assert said.returncode != 0
-    assert "lantern" in said.stderr, said.stderr
-    assert said.stdout.strip() == ""
-    assert not list(tracked(fuzzable).glob("fuzz-*.md"))
 
 
 if __name__ == "__main__":

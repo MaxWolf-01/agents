@@ -1,6 +1,6 @@
 # ADR Format
 
-ADRs live in `decisions/` and use sequential numbering: `0001-slug.md`, `0002-slug.md`, etc.
+ADRs live in `decisions/` (in a repo of several contexts, one beside each context's glossary, as [GLOSSARY-FORMAT.md](GLOSSARY-FORMAT.md) lays out) and use sequential numbering: `0001-slug.md`, `0002-slug.md`, etc.
 
 ## Template
 

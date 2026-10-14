@@ -7,8 +7,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { inbox } from "../src/inbox.ts";
+import type { JournalLine } from "../src/exploring.ts";
 import { lines } from "../src/journal.ts";
+import { waitingPings } from "./helpers.ts";
 
 const HV_OFFER = path.resolve(import.meta.dirname, "../src/hv-offer.ts");
 const HV = path.resolve(import.meta.dirname, "../../hv");
@@ -43,14 +44,17 @@ function offer(f: Fixture, tell = "tell") {
 }
 
 const told = (f: Fixture) => (existsSync(f.told) ? readFileSync(f.told, "utf8").trimEnd().split("\n") : []);
-const offers = (f: Fixture) => lines<{ offer?: number }>(f.store, "explore.jsonl").then((all) => all.filter((line) => line.offer !== undefined));
+const offers = (f: Fixture) => lines<JournalLine>(f.store, "explore.jsonl").then((all) => all.filter((line) => "offer" in line));
 
 test("12 hours before the reset, with more than a fifth of the week unused, the hypervisor is pinged the offer once, and max notified", async () => {
 	const f = fixture("due");
-	reading(f, "s", { used: 40, resetsIn: 6 * HOUR });
-	for (let hour = 0; hour < 3; hour++) assert.equal(offer(f).code, 0);
+	// Each reading gives the reset a few seconds apart, as Claude Code's statusline does.
+	for (let hour = 0; hour < 3; hour++) {
+		reading(f, "s", { used: 40, resetsIn: 6 * HOUR - hour * 7000 });
+		assert.equal(offer(f).code, 0);
+	}
 	assert.equal(told(f).length, 1, "one offer for the week, however often the timer runs");
-	assert.match(told(f)[0]!, /^--ping Explore offer: .*60% of it unused\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run, and once that reset has passed, the offer has lapsed\./);
+	assert.match(told(f)[0]!, /^--ping Explore offer: .*60% of it unused, as Claude Code read it 0 h ago\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run, and once that reset has passed, the offer has lapsed\./);
 	assert.equal(readFileSync(f.notified, "utf8").trimEnd().split("\n").length, 1);
 	assert.equal((await offers(f)).length, 1);
 	assert.match(offer(f).out, /^No offer: this week's was made already/);
@@ -108,8 +112,7 @@ test("hv offer reaches the hypervisor through hv tell, as a ping in its inbox", 
 	reading(f, "s", { used: 40, resetsIn: 6 * HOUR });
 	const run = spawnSync(HV, ["offer"], { env: { ...process.env, PATH: `${f.bin}:${process.env.PATH}`, HOME: f.home, HV_STORE: f.store, TMUX_PANE: "" }, encoding: "utf8", timeout: 30_000 });
 	assert.equal(run.status, 0, `${run.stdout}${run.stderr}`);
-	let pings: string[] = [];
-	await inbox(f.store).takePings((taken) => ((pings = taken), false));
+	const pings = await waitingPings(f.store);
 	assert.equal(pings.length, 1);
 	assert.match(pings[0]!, /^\[.*\] hv tell: Explore offer: max's week resets at /);
 });

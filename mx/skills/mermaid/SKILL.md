@@ -1,6 +1,6 @@
 ---
 name: mermaid
-description: "Must read guide on creating/editing mermaid charts with valiation tools"
+description: "Mermaid diagrams, validated before they go anywhere. Use when creating or editing a mermaid chart."
 allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/tools/validate.sh --help)
 ---
 

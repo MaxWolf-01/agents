@@ -9,7 +9,7 @@ The look of [mwolf.dev](https://mwolf.dev) as a floor: a quiet page, separated b
 
 ## Colour
 
-Eleven tokens in `tokens.css`, the colours as `light-dark()` pairs. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
+Sixteen tokens in `tokens.css`, the colours as `light-dark()` pairs except the series, which hold one hex in both schemes. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
 
 | token | job |
 | --- | --- |
@@ -24,6 +24,7 @@ Eleven tokens in `tokens.css`, the colours as `light-dark()` pairs. The page fol
 | `wash-ink` | a zone's fill; a banner's ramp is the same mix of muted, 6% to 22% |
 | `accent-2` | caution, errors, and the second value of two-valued data |
 | `mark` | text selection |
+| `series-1` to `series-5` | the series of a chart that has three or more, taken in order |
 
 ## Type
 
@@ -54,4 +55,4 @@ Copy on the page is artefact text: `/mx:writing-for-humans` binds every label an
 - `PARTS.md`: one line per part (button, input, table, note, overlay, chart), and the Tailwind v4 mapping.
 - `demo.html`: every token, role and part rendered, with the toggle and the `?theme=` reading to copy. Open it to see the floor.
 
-Before presenting anything built on this, `render-lint` the page (its `--help` lists what it measures and how to get a crop per finding) and look at both schemes.
+Before presenting anything built on this, lint it and look at both schemes, as `/mx:show` says under Produce and present.

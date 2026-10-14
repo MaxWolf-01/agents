@@ -11,12 +11,29 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/write_hook.py",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py checkpoint",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
             "timeout": 10
           }
         ]
@@ -31,6 +48,14 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py ended $PPID"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/end_hook.py"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -43,6 +68,15 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -52,7 +86,7 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/stop_hook.py",
             "timeout": 60,
-            "statusMessage": "session page: reviewing and rendering the turn"
+            "statusMessage": "session page: rendering the turn"
           }
         ]
       }

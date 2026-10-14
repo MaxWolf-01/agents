@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code status line: reads the session JSON on stdin, prints two rows.
+# Claude Code status line: reads the session JSON on stdin, prints two rows, and keeps the input in ~/.cache/claude-statusline/.
 #   row 1: session id │ [host] user in dir with model (effort) │ git │ session duration
 #   row 2: label bar detail, for the context window and the 5h and weekly usage windows
 # Input fields: https://code.claude.com/docs/en/statusline
@@ -21,6 +21,22 @@ IFS=$'\x1f' read -r sid model effort dir tp ctx_pct ctx_tokens h5 h5_reset wk wk
   (.rate_limits.seven_day.used_percentage // -1 | floor),
   (.rate_limits.seven_day.resets_at // 0)
 ] | map(tostring) | join("\u001f")' <<<"$input")
+
+# Claude Code keeps these numbers nowhere else; the hub reads them from here. Failures stay silent.
+save_input() {
+  [ -n "$sid" ] || return
+  local dir=$HOME/.cache/claude-statusline tmp
+  mkdir -p "$dir" || return
+  tmp=$(mktemp "$dir/.tmp.XXXXXX") || return
+  if jq --arg cd "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" --argjson at "$now" \
+    '. + {config_dir: $cd, written_at: $at}' <<<"$input" >"$tmp"; then
+    mv -f "$tmp" "$dir/$sid.json"
+  else
+    rm -f "$tmp"
+  fi
+  find "$dir" -maxdepth 1 \( -name '*.json' -o -name '.tmp.*' \) -mtime +7 -delete
+}
+save_input 2>/dev/null
 
 # Wall time from the transcript's first to last timestamped entry (metadata lines carry none).
 duration() {

@@ -1,64 +1,11 @@
 ---
 name: show
-description: "Show, don't tell: a session's answers on its session page, and the artifacts that make a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use whenever an answer needs more than a line, when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
+description: "Show, don't tell: the artifacts that make a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
 ---
 
 # Show
 
 A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, have what the table names for the thing's shape built, look at it, put it in front of the reader on the session page.
-
-## The session page
-
-A session the user reads answers on its **session page**: one page per session, rendered from plain-text records each time a turn ends, with the questions waiting on the user at its top and the turns below, newest first. An answer that fits in a line is that line, in the chat, and a session that never needs more gets no page. Past a line, the answer is on the page and the chat gets no reply from the agent: the Stop hook shows the user one line under the turn, the questions waiting on them and the page's link. A session outside a project with an agent repo (`session-page` refuses) answers in the chat, and so does one nobody reads live, a dispatched worker or a print-mode run, whose artifacts are its report.
-
-The records sit in the directory `session-page` prints, outside git and the same from every worktree of the project. As the turn ends the page renders from them, opening in the browser the first time, and the turn is sent back instead when a record does not parse, when the light review of its prose flags something, or when the answer went to the chat with no record written.
-
-A turn that answers with more than a line, in order:
-
-1. **Its artifacts**, each built by a subagent or a fork (Who builds it, below), since the session writes no HTML. The turn waits for them, so every link its record carries points at a page that exists.
-2. **The session record**, on the first such turn: `session.md`, with frontmatter `session` (the id) and `repo` (the directory the session was started in, which the page's resume command changes into), an H1 naming what the session is about, and a `## Brief` of a few sentences. The brief is rewritten when the session's scope moves.
-3. **The turn record**, below.
-4. **No chat reply**: the turn ends on the record's Write call. Any line of your own summarises the page, and the user would read it instead of the page.
-
-A question still open when the session ends leaves the page for a ticket, since every question on the board belongs to a ticket: a grilling's as the child tickets `/mx:grilling` files, any other as one of the questions of the ticket it concerns (`/mx:tracker`), or a proposed ticket where no ticket holds it. A question is tagged where it lives: `Qn` on the session page, `Dn` in a ticket.
-
-### The turn record
-
-`turns/NN.md`, numbered on from the last record, shaped like a ticket file and written once: a later turn never edits it, and a question clears through the frontmatter of the turn that received its answer.
-
-```markdown
----
-date: 2026-09-28
-answered:
-  Q3: a
-  Q4: keep both, the user's own words where the answer was neither option
-superseded:
-  Q5: Q7
----
-
-# The turn's headline: what it answers, in one line
-
-## Questions
-
-- [Q7] **The decision, as a question** the part of the design it would change
-  - (a) The option recommended *my pick*
-  - (b) The other option
-  - Why: the argument for the pick, and what it costs
-
-## Links
-
-- [What the artifact shows](agent/show/<slug>/figure.html): why to open it
-
-## Details
-
-A few lines of plain markdown: what the reader needs beyond the headline and the links.
-```
-
-- `date` is the day the turn ends. `answered` maps each question whose answer this turn received to the option's letter, or to the user's own words where the answer was neither option; `superseded` maps a question to the one that replaced it. A question either one names leaves the top of the page.
-- **Questions** holds only the calls the user must make, each with at least two options you would defend and your pick marked. Tags run `Q1`, `Q2`, … across the whole session. A call the user need not make is a line of Details, or a call mark in the ticket it shapes, and nothing asks the user to acknowledge it. A ticket's own question shown on the page is a line of Details citing its ticket and its `Dn`, since it clears through the ticket.
-- **Links** are the artifacts this turn made or moved, each a path from the repo root and a note on why to open it.
-- **Details** says what the reader needs beyond the headline and the links, and never retells what an artifact shows.
-- A section with nothing in it is left out. The user's own message is read from the transcript, so the record never quotes it.
 
 ## What a reader can be shown
 
@@ -73,7 +20,7 @@ It sits on two axes. The **level** is what they look at: the **concept** (how it
 
 The line that matters is **narrated against real**: an example written from the head is a narrated example, one made by running the thing is output, and a narrated example says it is one.
 
-The reader's question picks the level: how does it fit, what did you write, what will I see. Whether something moved picks the form: a thing that existed and changed gets the diff form, a new thing the as-is form, and a decision nothing has built yet the concept level alone. Cells combine whenever each adds what the others do not; a clean output diff, the same scenario on the old and the new, is usually the one that shows most.
+The reader's question picks the level: how does it fit, what did you write, what will I see. Whether something moved picks the form: a thing that existed and changed gets the diff form, a new thing the as-is form, and a decision nothing has built yet the concept level alone. Cells combine whenever each adds what the others do not; a clean output diff, the same scenario on the old and the new, is usually the one that shows most. A change to something the user looks at (a page, a view, a command's output) is shown as that thing: the page opened or rendered, the command run, before and after where it existed. A change to how things fit (the architecture, a flow, an interface) is drawn at the concept level. The code diff sits beside either, and stands alone only where it makes the change plain at a glance (a typo, a rename).
 
 A **demo**, in the user's words, is a show made of the built thing's own output, walked through: the rendered page, the running tool, an annotated tutorial of either.
 
@@ -92,16 +39,17 @@ The code level is the same for every shape, the diff on the review page, so a sh
 | A page or a UI | | the page rendered: screenshots, the page itself, or both; before the page exists, a prototype's render (`/mx:prototype`) |
 | A config or a keybinding | | the setting or the keystroke, and what it does |
 
-Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it. At a landing the table says what a show would hold, and the calls put to the user decide whether one is owed: where the line each one shaped on the review page already shows it, that line is the whole of it. Every document takes this table, an ADR included, and most ADRs hit no row.
+Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it. At a landing the table says what its show holds. Every document takes this table, an ADR included, and most ADRs hit no row.
 
 The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants.
 
 ## A landing's show
 
-Work that lands with calls for the user to make (`/mx:dispatch`) comes with its review page and, when those calls hold something the diff does not make visible, one show built around them; a build accepted on the user's standing yes owes none. It is for the user's understanding of what was built, as far as their ruling needs it. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
+Every landing (`/mx:dispatch`) comes with its review page and one show, a build that puts no call to the user included, read whenever the user looks. A change its code diff makes plain at a glance (What a reader can be shown) goes without one, and the landing says so in a line. The show is for the user's understanding of what was built, and where the landing puts calls to the user, it is built around them, as far as their ruling needs it. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
 
 - **One per landing.** A tree's show covers every child ticket in review, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule: on a hinge alone, and on the rest with the parent ticket at its close-out. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
+- **Top down.** It opens with the intent and the change to how the parts fit, a figure where the structure moved; each lower level appears only where the one above needs it, and the code diff, on the review page, comes last. The user reads it from the top and goes a level lower only where the one above looks wrong or needs explaining, so a mistake high up is caught before the diff is read.
 - **The few things the user would notice.** Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
 
 ## Where it goes
@@ -130,19 +78,20 @@ Every artifact, in every medium, reads like a good README: it states, it never s
 How a row's medium gets made. An open set, not a menu; combining media is normal, and anything that carries the thing qualifies:
 
 - **Diagram**: mermaid (invoke `mx:mermaid` first) when layout should be solved for you; hand-placed SVG (read `SVG-FIGURES.md`) when the figure is the artifact and deserves the control. Either way the classic families apply: UML, flowcharts, sequence and state charts, Nassi-Shneiderman, and the rest.
-- **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, two rendered variants side by side.
+- **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, two rendered variants side by side, or a blind test (`blind-test`) where the reader is to choose between them by taste (`/mx:grilling`, A blind test).
 - **Runnable code**: the smallest script that exhibits the behavior; run it and show the output. When the question grows into "does this design/state model feel right?", that's `/mx:prototype`.
 - **HTML/JS page**, the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition (prose interleaved with figures the reader can poke at). Read `PAGES.md`.
-- **LaTeX/TikZ**: publication-grade figures. TeX Live is fully installed: just compile, `pdftoppm` to PNG to inspect.
+- **LaTeX/TikZ**: publication-grade figures.
 - **Animation**: a process unfolding over time. Interactive JS (the reader steps and scrubs) usually beats a linear video; manim is the option for math-heavy scenes when video is the right form.
 
 ## Produce and present
 
 - Facts in an artifact come from primary sources (the config, the code, the live system), never only from prose docs about them. Docs drift, and the artifact inherits the drift; a figure states things with more authority than the README it was cribbed from.
 - Anything opened in a browser wears the house style (`/mx:house-style`: tokens, type, parts, and the scheme toggle) unless the artifact has a reason to look otherwise, and ships both color schemes; the reader's system setting is the default, not a constraint. Look at both before presenting.
+- A script a page loads from outside itself names an exact version (`mermaid@11.17.2`, never `@11`) and carries its `integrity` hash: a classic script in its `<script src integrity crossorigin>`, a module and every chunk it imports in an import map's `integrity` entries. Where a package ships a one-file classic build, load that: it needs one pin. Every page an agent opens is served from one local origin together with every agent directory, so a script changed at its CDN could read them all and send them off; the browser refuses a file whose hash does not match. jsDelivr lists each file's hash, which goes after `sha256-`, at `https://data.jsdelivr.com/v1/packages/npm/<package>@<version>?structure=flat`. An update is a deliberate edit of version and hash together.
 - A page names the session the reader resumes to get back to the conversation behind it: `session <first 8 of the id>` in its `v-meta` line, as a button that copies `claude --resume <id>`, the id being `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}` read in the shell.
-- Look at your own render before presenting: Read the PNG, run what runs, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
-- Present it as a link in the turn record that asked for it (The session page). Where there is no page, open it (`claude-browser` where it exists, else `xdg-open`) and give one line on what it shows and its absolute path.
+- Look at your own render before presenting: `render-lint` an HTML page first (its `--help` says what it reports) and fix every fatal finding, then Read the PNG, run what runs, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
+- Present it as a link in the turn record that asked for it ([the session page's rules](../session-page/RULES.md)). Where there is no page, open it and give one line on what it shows and its absolute path.
 
 ## Who builds it
 

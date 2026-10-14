@@ -57,7 +57,7 @@ const LINE_CHARS = 200;
 const NOTES = 50;
 const MEMEX_MS = 300_000;
 
-export type ExploreConfig = Pick<SessionConfig, "home"> &
+export type ReadToolsConfig = Pick<SessionConfig, "home"> &
 	Partial<Pick<SessionConfig, "store">> & {
 		/** The memex program, `memex` on `PATH` unless named. */
 		memex?: string;
@@ -68,7 +68,7 @@ export type ExploreConfig = Pick<SessionConfig, "home"> &
  * throws on a path under a denied root, judged once `..` and symlinks are resolved, and a search or listing passes over
  * those roots. memex's results pass through the same judgment.
  */
-export function exploreTools(config: ExploreConfig): ToolDefinition[] {
+export function exploreTools(config: ReadToolsConfig): ToolDefinition[] {
 	const pathParam = Type.String({ description: "Absolute, under ~/, or relative to home." });
 	return [
 		defineTool({
@@ -139,7 +139,7 @@ type Places = Awaited<ReturnType<typeof places>>;
  * Where a path the model sent leads, and whether the explorer may go there. The denied roots are resolved once per
  * tool call, kept both as spelled and as they resolve, for a root that is a symlink or lies below one.
  */
-async function places({ home, store }: ExploreConfig) {
+async function places({ home, store }: ReadToolsConfig) {
 	const profiles = (await claudeConfigs(home)).map((name) => path.join(home, name, CREDENTIALS));
 	const spelled = [...DENIED.map((root) => path.join(home, root)), ...profiles, ...DENIED_ANYWHERE, ...(store ? [store] : [])];
 	const resolved = await Promise.all(spelled.map((root) => realpath(root).catch(() => root)));
