@@ -4,7 +4,7 @@
 // `hv explore --found` prints what the latest run found.
 
 import { execFileSync } from "node:child_process";
-import { type EndLine, type JournalLine, parse, type StepLine, USAGE as COMMAND } from "./exploring.ts";
+import { type JournalLine, parse, USAGE as COMMAND } from "./exploring.ts";
 import { lines } from "./journal.ts";
 
 export const USAGE = `usage: hv explore N [direction] [--tokens T] [--until-week P]
@@ -21,7 +21,8 @@ const PANE = `${SESSION}:`;
 
 /** What the latest run in the store's journal found, step by step, and how it ended, as text; or that no run is there. */
 export async function found(store: string): Promise<string> {
-	const all = (await lines<JournalLine>(store, "explore.jsonl")).filter((line): line is JournalLine & (StepLine | EndLine) => "run" in line);
+	// A journal an older hv wrote may hold lines of another kind, which name no run.
+	const all = (await lines<JournalLine | { at: string }>(store, "explore.jsonl")).filter((line): line is JournalLine => "run" in line);
 	const run = all.at(-1)?.run;
 	if (!run) return "No explore run yet.";
 	const mine = all.filter((line) => line.run === run);
