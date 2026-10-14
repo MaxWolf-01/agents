@@ -1,3 +1,8 @@
+## 1.0.63
+
+- feat(retro): a weekly retro per repo keeps one living report, and the workflow retro reads every session
+- docs(readme): the workflow map, a ticket's life and the story page, in the house style at mx 1.0.62
+
 ## 1.0.62
 
 - fix(dispatch): dispatch --help back within its word budget
