@@ -1,3 +1,7 @@
+## 1.0.61
+
+- feat(session-page): the page's top, timeline and copy redesigned, and the turns' end times the hub reads
+
 ## 1.0.60
 
 - fix(session-page): clickable links, and a reload that follows a new turn when you were caught up
