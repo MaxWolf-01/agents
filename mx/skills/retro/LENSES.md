@@ -32,9 +32,9 @@ Numbered as max numbered them. Each reads the digests in `sessions/` and `sample
 - **Q4** Which context, environment or tool would have let the agent answer its question itself?
 - **Q5** False done: work reported as done or verified that I found broken. Which check was missing? *Also the worker reports in `git/<repo>.md`.*
 - **Q7** Escaped defects: for each, which stage was the cheapest place to catch it, and why did it miss? *`git/<repo>.md`: fix commits and reverts after a merge.*
-- **Q11** Which kinds of work have needed no rework after merging? Look at this once. *`git/<repo>.md`, and the reports in `previous/`: answered in an earlier run, it is not asked again.*
+- **Q11** Which kinds of work have needed no rework after merging? Look at this once. *`git/<repo>.md`. Its answer stands in the report once given, so a run whose `previous/` holds it leaves the question.*
 - **Q13** Do review findings change the environment, or only the diff? Do reviews keep finding the same things? *`git/<repo>.md`: commits with a `Workflow-stage: review` trailer, and the finding indexes in worker reports.*
 - **Q14** What do unrelated sessions in one repo work out again: the same files read, the same searches, the same explanation written twice?
 - **Q16** For each workflow change, which observation would show it worked, and was that observation made? *The agents repo's commits in `git/`, then the sessions after each.*
-- **Q17** Per skill, how big is it at each release (not a running total), and how many rules were added versus retired? *The mx releases in `versions.md`; their commits are `git -C <agents repo> log --format='%h %cs %s' -- mx/.claude-plugin/plugin.json`, and a skill reads at one with `git -C <agents repo> show <sha>:mx/skills/<skill>/SKILL.md`.*
+- **Q17** Per skill, how big is it at each release (not a running total), and how many rules were added versus retired? *The mx releases in `versions.md`, each with its commit, at which a skill reads as `git -C <agents repo> show <sha>:mx/skills/<skill>/SKILL.md`.*
 - **Q18** Did parallel workers or orchestrators duplicate work, or miss a shared root cause? *`git/<repo>.md`: the tickets and worker reports of one wave.*

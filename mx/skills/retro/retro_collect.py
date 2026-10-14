@@ -561,7 +561,7 @@ PLUGIN = "mx/.claude-plugin/plugin.json"
 
 
 def versions(since: datetime, until: datetime, period: list[Digest], repos: list[Path]) -> str:
-    """The mx releases committed in the period, and the Claude Code versions and models that ran in
+    """The mx releases committed in the period, each with its commit, and the Claude Code versions and models that ran in
     it, each with the first and last day it ran on. A day counts when an entry of that day falls in
     the period."""
     out = [f"# Versions since {stamp(since)}", "", "## mx releases", ""]
@@ -569,7 +569,7 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
         if (repo / PLUGIN).exists():
             for c in reversed(commits(repo, since, PLUGIN, until=until)):
                 version = json.loads(git(repo, "show", f"{c['sha']}:{PLUGIN}")).get("version", "?")
-                out.append(f"- {version} ({c['date']}): {c['subject']}")
+                out.append(f"- {version} {c['sha'][:10]} ({c['date']}): {c['subject']}")
     for title, attr in (("Claude Code", "versions"), ("Models", "models")):
         ran: dict[str, set[str]] = {}
         sessions: Counter = Counter()

@@ -361,3 +361,17 @@ def test_proposed_names_the_agent_repos_commit_and_the_tickets_proposed_at_it(tm
 
     assert head in proposed
     assert re.findall(r"^- (.+)$", proposed, re.M) == ["hook-noise", "slow-suite"]
+
+
+def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_path: Path) -> None:
+    repo = tmp_path / "agents"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, {"mx/.claude-plugin/plugin.json": '{"version": "1.0.0"}'}, "mx v1.0.0", SINCE - timedelta(days=1))
+    commit(repo, {"mx/.claude-plugin/plugin.json": '{"version": "1.0.1"}'}, "mx v1.0.1", SINCE + timedelta(days=1))
+    sha = subprocess.run(["git", "-C", repo, "rev-parse", "--short=10", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    versions = (collect(tmp_path, [repo]) / "versions.md").read_text()
+
+    assert f"- 1.0.1 {sha} (" in versions and "mx v1.0.1" in versions
+    assert "1.0.0" not in versions
