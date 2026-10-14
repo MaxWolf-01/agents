@@ -5,3 +5,5 @@ scratch/
 __pycache__/
 
 docs/figures/story/site/
+node_modules/
+.hypothesis/
