@@ -10,7 +10,6 @@ import { after, test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { post, waiting } from "../src/inbox.ts";
 import { live, MEMORY } from "../src/live.ts";
-import { MODEL } from "../src/pi.ts";
 import { load } from "./properties/stand-in.ts";
 
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-home-")));
@@ -142,9 +141,18 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		assert.deepEqual(after("-e").filter((e) => !e.includes("=")), [path.resolve(import.meta.dirname, "../src/live.ts"), path.join(fork, "src", "index.ts")], "the extensions, this one first, so OptChat journals max's message with its path line");
 		assert.ok(after("-e").includes("PI_CACHE_RETENTION=long"));
 		assert.deepEqual(after("--optchat-profile"), ["hv"]);
-		assert.deepEqual(after("--model"), [MODEL]);
+		assert.deepEqual(after("--model"), ["anthropic/claude-opus-5-5"]);
 		for (const off of ["--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files"]) assert.ok(started.includes(off), off);
 		assert.equal(readlinkSync(instructions), path.resolve(import.meta.dirname, "../../live/AGENTS.md"), "the profile's instructions link to live/'s, over the copy an earlier start left");
+
+		// hv explore, with no TUI running and no profile yet, starts the same TUI on a new profile, the run as its first message.
+		rmSync(path.join(hvStore, "optchat", "profiles", "hv"), { recursive: true });
+		rmSync(calls);
+		const explored = spawnSync(path.resolve(import.meta.dirname, "../../hv"), ["explore", "3", "papers"], { env, encoding: "utf8" });
+		assert.equal(explored.status, 0, explored.stderr);
+		const exploring = readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session");
+		assert.deepEqual(exploring, [...started, "/explore 3 papers"]);
+		assert.equal(readFileSync(path.join(hvStore, "optchat", "profiles", "hv", "config.json"), "utf8"), readFileSync(path.resolve(import.meta.dirname, "../../live/config.json"), "utf8"));
 	} finally {
 		rmSync(at, { recursive: true, force: true });
 	}

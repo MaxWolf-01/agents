@@ -1,11 +1,11 @@
-// Explore runs on the live hypervisor, end to end: `hv explore` runs headless, a real pi over RPC with the live
-// extension against a stand-in for the Anthropic endpoint, and stops at the first of its budgets. The stand-in logs
+// Explore runs on the live hypervisor, end to end: `/explore` sent to a real pi over RPC with the live extension,
+// against a stand-in for the Anthropic endpoint, runs until the first of its budgets stops it. The stand-in logs
 // each call's cost to the profile's usage log, as pi-optchat does. The offer before the week resets is checked on the
 // extension loaded into a stand-in for pi.
 
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -32,6 +32,9 @@ mkdirSync(agent);
 mkdirSync(bin);
 // No hypervisor TUI runs, whatever this host's tmux holds.
 writeFileSync(path.join(bin, "tmux"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+/** A stand-in for the command that starts the TUI: it writes the arguments after its first, one a line, to the file its first names. */
+const recorder = path.join(bin, "record");
+writeFileSync(recorder, `#!/bin/sh\nout=$1; shift; printf '%s\\n' "$@" >> "$out"\n`, { mode: 0o755 });
 
 /** One run's directories, and what the stand-in sees of it. */
 interface Fixture {
@@ -81,18 +84,11 @@ const env = (f: Fixture) => ({
 });
 const pi = [process.execPath, PI, "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-session", "-e", LIVE, "--model", "stand-in/claude-opus-5-5"];
 
-/** `hv explore args` headless, as `hv` runs it; resolves with what it printed and its exit code. */
-function explore(f: Fixture, ...args: string[]): Promise<{ out: string; code: number }> {
-	current = f;
-	return new Promise((resolve) =>
-		execFile(process.execPath, [HV_EXPLORE, ...args, "--", ...pi], { env: env(f), timeout: 60_000 }, (error, stdout, stderr) =>
-			resolve({ out: `${stdout}${stderr}`, code: error ? Number(error.code ?? 1) : 0 }),
-		),
-	);
-}
-
-/** A run driven over RPC as max would in the TUI: `/explore 5`, and a message of his while its first step is in flight. */
-function interrupted(f: Fixture): Promise<string[]> {
+/**
+ * `/explore args` sent to pi over RPC, as max types it in the TUI; resolves with the run's notifications once its end is
+ * notified. With `interrupt`, max writes while the first step is in flight.
+ */
+function notified(f: Fixture, args: string[], interrupt = false): Promise<string[]> {
 	current = f;
 	return new Promise((resolve, reject) => {
 		const child = spawn(pi[0]!, [...pi.slice(1), "--mode", "rpc"], { env: env(f), stdio: ["pipe", "pipe", "inherit"] });
@@ -105,7 +101,7 @@ function interrupted(f: Fixture): Promise<string[]> {
 			for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
 				const record = JSON.parse(buffer.slice(0, at));
 				buffer = buffer.slice(at + 1);
-				if (record.type === "agent_start" && f.requests.length === 0) child.stdin.write(`${JSON.stringify({ type: "prompt", message: "max here, what did you find?", streamingBehavior: "steer" })}\n`);
+				if (interrupt && record.type === "agent_start" && f.requests.length === 0) child.stdin.write(`${JSON.stringify({ type: "prompt", message: "max here, what did you find?", streamingBehavior: "steer" })}\n`);
 				if (record.type === "extension_ui_request" && record.method === "notify") {
 					notes.push(record.message);
 					if (record.message.startsWith("explore run ended")) {
@@ -116,12 +112,24 @@ function interrupted(f: Fixture): Promise<string[]> {
 				}
 			}
 		});
-		child.stdin.write(`${JSON.stringify({ type: "prompt", message: "/explore 5" })}\n`);
+		child.stdin.write(`${JSON.stringify({ type: "prompt", message: `/explore ${args.join(" ")}` })}\n`);
 	});
 }
 
+/** `/explore args`, run as `notified` runs it: its notifications, a line each. */
+const explore = (f: Fixture, ...args: string[]) => notified(f, args).then((notes) => notes.join("\n"));
+
+/** `hv explore args` as `hv` runs it, with `start` as the command that starts the TUI; resolves with what it printed and its exit code. */
+function hvExplore(args: string[], start: string[], tmux = bin): Promise<{ out: string; code: number }> {
+	return new Promise((resolve) =>
+		execFile(process.execPath, [HV_EXPLORE, ...args, "--", ...start], { env: { ...process.env, PATH: `${tmux}:${process.env.PATH}`, HV_STORE: dir }, timeout: 30_000 }, (error, stdout, stderr) =>
+			resolve({ out: `${stdout}${stderr}`, code: error ? Number(error.code ?? 1) : 0 }),
+		),
+	);
+}
+
 let anthropic: Awaited<ReturnType<typeof standInAnthropic>>;
-const runs = new Map<string, { out: string; code: number }>();
+const runs = new Map<string, string>();
 let notes: string[] = [];
 const now = Date.now();
 before(async () => {
@@ -140,7 +148,7 @@ before(async () => {
 	runs.set("statusline", await explore(statusline, "5", "--until-week", "95"));
 	runs.set("blocked", await explore(fixture("blocked", { tool: "start_session" }), "1"));
 	runs.set("unread", await explore(fixture("unread"), "1", "--until-week", "95"));
-	notes = await interrupted(fixture("interrupted"));
+	notes = await notified(fixture("interrupted"), ["5"], true);
 });
 after(async () => {
 	await anthropic?.close();
@@ -149,13 +157,12 @@ after(async () => {
 
 const journal = (name: string) => lines<{ run?: string; step?: number; finding?: string; ended?: string; steps?: number }>(fixtures.get(name)!.store, "explore.jsonl");
 
-test("hv explore N with a direction runs N steps on the live profile: the direction starts the run, and every later step is a bare continue", async () => {
+test("/explore N with a direction runs N steps on the live profile: the direction starts the run, and every later step is a bare continue", async () => {
 	const run = runs.get("steps")!;
-	assert.equal(run.code, 0, run.out);
 	const firsts = fixtures.get("steps")!.requests.map((r) => said(r).at(-1));
 	assert.deepEqual(firsts, ["Explore: papers on open-ended ALife", "continue", "continue"]);
-	for (let n = 1; n <= 3; n++) assert.match(run.out, new RegExp(`^explore step ${n} of 3, 1000 tokens: finding ${n}: max reads papers`, "m"));
-	assert.match(run.out, /^explore run ended after 3 steps, 3000 tokens: stopped by 3 steps\./m);
+	for (let n = 1; n <= 3; n++) assert.match(run, new RegExp(`^explore step ${n} of 3, 1000 tokens: finding ${n}: max reads papers`, "m"));
+	assert.match(run, /^explore run ended after 3 steps, 3000 tokens: stopped by 3 steps\./m);
 	const lines = await journal("steps");
 	assert.deepEqual(lines.map((l) => l.step ?? l.ended), [1, 2, 3, "3 steps"]);
 });
@@ -169,27 +176,26 @@ test("what a run found reads back from the store, step by step, with how it ende
 
 test("a run stops at its token cap, counted from the profile's usage log, before N steps", () => {
 	const run = runs.get("tokens")!;
-	assert.equal(run.code, 0, run.out);
-	assert.match(run.out, /^explore run ended after 2 steps, 2000 tokens: stopped by the cap of 1500 tokens\./m);
+	assert.match(run, /^explore run ended after 2 steps, 2000 tokens: stopped by the cap of 1500 tokens\./m);
 	assert.equal(fixtures.get("tokens")!.requests.length, 2);
 });
 
 test("a run stops once the week's quota reaches its share, read from the reply's rate-limit headers", () => {
 	const run = runs.get("headers")!;
-	assert.match(run.out, /^explore run ended after 1 step, 1000 tokens: stopped by the week at 96% used\. The week is at 96%\./m);
+	assert.match(run, /^explore run ended after 1 step, 1000 tokens: stopped by the week at 96% used\. The week is at 96%\./m);
 });
 
 test("without a reply's headers, the week is read from the statusline's cache of max's own account", () => {
 	const run = runs.get("statusline")!;
-	assert.match(run.out, /^explore run ended after 0 steps, 0 tokens: stopped by the week at 97% used\./m);
+	assert.match(run, /^explore run ended after 0 steps, 0 tokens: stopped by the week at 97% used\./m);
 	assert.equal(fixtures.get("statusline")!.requests.length, 0);
 });
 
 test("a run starts no session: start_session is refused while it is in flight", () => {
 	const [, second] = fixtures.get("blocked")!.requests;
-	assert.ok(second, runs.get("blocked")!.out);
+	assert.ok(second, runs.get("blocked")!);
 	assert.match(JSON.stringify(second.messages.at(-1)), /An explore run is in flight: read and delegate, and start or message no session/);
-	assert.match(runs.get("blocked")!.out, /stopped by 1 step\./);
+	assert.match(runs.get("blocked")!, /stopped by 1 step\./);
 });
 
 test("a message from max ends the run after the step in flight", async () => {
@@ -201,13 +207,13 @@ test("a message from max ends the run after the step in flight", async () => {
 	assert.match(step!.finding!, /^finding 1: max reads papers/, "the step's finding, not the reply to max that joined its turn");
 });
 
-test("hv explore refuses what /explore cannot run, before any pi starts", async () => {
-	const f = fixture("refused");
+test("hv explore refuses what /explore cannot run, before it starts the TUI", async () => {
+	const started = path.join(dir, "refused.calls");
 	for (const args of [[], ["0"], ["three", "steps"], ["3", "--tokens", "1.5"], ["3", "--until-week", "120"]]) {
-		const run = await explore(f, ...args);
+		const run = await hvExplore(args, [recorder, started]);
 		assert.equal(run.code, 2, `${args}: ${run.out}`);
 	}
-	assert.equal(f.requests.length, 0);
+	assert.equal(existsSync(started), false);
 });
 
 test("/explore's arguments: N, then a direction of any words, with its caps anywhere among them", () => {
@@ -261,24 +267,26 @@ test("in the TUI, the hypervisor is asked once per week to offer max a run, with
 	assert.deepEqual(readdirSync(f.store).sort(), ["explore.jsonl", "inbox"]);
 });
 
-test("with the hypervisor's TUI open, hv explore types the command into its pane and starts no pi of its own", async () => {
-	const f = fixture("tui");
+test("with the hypervisor's TUI open, hv explore types the command into its pane and starts nothing", async () => {
 	const open = path.join(dir, "bin-open");
 	const calls = path.join(dir, "tmux.calls");
+	const started = path.join(dir, "open.calls");
 	mkdirSync(open);
 	writeFileSync(path.join(open, "tmux"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${calls}"\n`, { mode: 0o755 });
-	current = f;
-	const ran = await new Promise<{ code: number; out: string }>((resolve) =>
-		execFile(process.execPath, [HV_EXPLORE, "20", "the", "news", "--", ...pi], { env: { ...env(f), PATH: `${open}:${process.env.PATH}` }, timeout: 30_000 }, (error, stdout) =>
-			resolve({ code: error ? Number(error.code ?? 1) : 0, out: String(stdout) }),
-		),
-	);
-	assert.equal(ran.code, 0, ran.out);
-	assert.deepEqual(readFileSync(calls, "utf8").trimEnd().split("\n"), ["has-session -t =hypervisor", "send-keys -t =hypervisor -l /explore 20 the news", "send-keys -t =hypervisor Enter"]);
-	assert.equal(f.requests.length, 0);
+	const run = await hvExplore(["20", "the", "news"], [recorder, started], open);
+	assert.equal(run.code, 0, run.out);
+	assert.deepEqual(readFileSync(calls, "utf8").trimEnd().split("\n"), ["has-session -t =hypervisor", "send-keys -t =hypervisor: -l /explore 20 the news", "send-keys -t =hypervisor: Enter"]);
+	assert.equal(existsSync(started), false);
+});
+
+test("with the hypervisor's TUI closed, hv explore starts it with the command as pi's first message", async () => {
+	const started = path.join(dir, "closed.calls");
+	const run = await hvExplore(["20", "the", "news", "--until-week", "90"], [recorder, started, "new-session", "pi"]);
+	assert.equal(run.code, 0, run.out);
+	assert.deepEqual(readFileSync(started, "utf8").trimEnd().split("\n"), ["new-session", "pi", "/explore 20 the news --until-week 90"]);
 });
 
 test("a share of the week asked for and never read stopped nothing, and the run's end says so", async () => {
-	assert.match(runs.get("unread")!.out, /stopped by 1 step\. The week's quota was never read, so --until-week stopped nothing\./);
+	assert.match(runs.get("unread")!, /stopped by 1 step\. The week's quota was never read, so --until-week stopped nothing\./);
 	assert.match(await found(fixtures.get("unread")!.store), /Ended after 1 step, 1000 tokens: stopped by 1 step\. The week's quota was never read\./);
 });

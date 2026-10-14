@@ -20,11 +20,6 @@ export const USAGE =
 	"Runs up to N explore steps, toward the direction or your instructions' default goal. --tokens caps the run's price-weighted tokens " +
 	"(one uncached Opus input token each, the profile's summaries included); --until-week stops it once P% of the week's quota is used.";
 
-/** What a run's notifications start with; the last one of a run starts with `ENDED`. */
-export const NOTICE = "explore";
-export const ENDED = "explore run ended";
-export const REFUSED = `${ENDED} before it started`;
-
 /** The tools a run blocks: no session is started or messaged while max is away. */
 export const BLOCKED = ["start_session", "tell_session"];
 
@@ -196,7 +191,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		run = current;
 		let stopped: string | undefined;
 		try {
-			ctx.ui.notify(`${NOTICE}: up to ${request.steps} steps toward ${request.direction ?? "the default goal"}. A message from you ends the run after the step in flight.`, "info");
+			ctx.ui.notify(`explore: up to ${request.steps} steps toward ${request.direction ?? "the default goal"}. A message from you ends the run after the step in flight.`, "info");
 			for (;;) {
 				const before = spent(current.started);
 				stopped = stopBefore(current, before, week(), now());
@@ -205,7 +200,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 				current.taken++;
 				const tokens = spent(current.started) - before;
 				await journal({ run: current.started, step: current.taken, ...(current.taken === 1 && request.direction ? { direction: request.direction } : {}), finding: done.finding, tokens, ...(done.error ? { error: done.error } : {}) });
-				ctx.ui.notify(`${NOTICE} step ${current.taken} of ${request.steps}, ${tokens} tokens: ${done.error ? `failed: ${done.error}` : done.finding}`, done.error ? "error" : "info");
+				ctx.ui.notify(`explore step ${current.taken} of ${request.steps}, ${tokens} tokens: ${done.error ? `failed: ${done.error}` : done.finding}`, done.error ? "error" : "info");
 				if (done.error) {
 					stopped = `step ${current.taken} failing`;
 					break;
@@ -226,16 +221,16 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		// A share asked for and never read stopped nothing, which the end says rather than leave it to pass for a share not reached.
 		const share = used ? ` The week is at ${Math.round(used.used)}%.` : request.untilWeek !== undefined ? " The week's quota was never read, so --until-week stopped nothing." : "";
 		await journal({ run: current.started, ended: stopped, steps: current.taken, tokens, ...(used ? { week: Math.round(used.used) } : request.untilWeek !== undefined ? { week: "unread" } : {}) }).catch(() => {});
-		ctx.ui.notify(`${ENDED} after ${current.taken} ${current.taken === 1 ? "step" : "steps"}, ${tokens} tokens: stopped by ${stopped}.${share}`, "info");
+		ctx.ui.notify(`explore run ended after ${current.taken} ${current.taken === 1 ? "step" : "steps"}, ${tokens} tokens: stopped by ${stopped}.${share}`, "info");
 	};
 
 	pi.registerCommand("explore", {
 		description: "Explore for up to N steps, toward a direction or the default goal: /explore N [direction] [--tokens T] [--until-week P]",
 		handler: async (args, ctx) => {
 			const request = parse(args);
-			if (typeof request === "string") return ctx.ui.notify(`${REFUSED}: ${request}\n${USAGE}`, "error");
-			if (run) return ctx.ui.notify(`${NOTICE}: a run is in flight already; a message from you ends it after its step.`, "warning");
-			if (request.tokens !== undefined && !config.usage) return ctx.ui.notify(`${REFUSED}: --tokens needs the profile's usage log, which OPTCHAT_HOME and HV_PROFILE locate.`, "error");
+			if (typeof request === "string") return ctx.ui.notify(`explore run refused: ${request}\n${USAGE}`, "error");
+			if (run) return ctx.ui.notify(`explore: a run is in flight already; a message from you ends it after its step.`, "warning");
+			if (request.tokens !== undefined && !config.usage) return ctx.ui.notify(`explore run refused: --tokens needs the profile's usage log, which OPTCHAT_HOME and HV_PROFILE locate.`, "error");
 			// Not awaited, so the editor stays max's while the run goes on.
 			void explore(request, ctx);
 		},
@@ -243,7 +238,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 
 	let offering: ReturnType<typeof setInterval> | undefined;
 	pi.on("session_start", (_event, ctx) => {
-		// Only the TUI has max to ask; a headless run is one he started.
+		// Only the TUI has max to ask.
 		if (ctx.mode !== "tui" || offering) return;
 		const look = async () => {
 			const read = week();
