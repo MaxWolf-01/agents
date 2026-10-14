@@ -1,5 +1,5 @@
 // The live hypervisor: this extension beside our pi-optchat fork, which holds the memory (`hv` starts pi with both). It
-// registers the session tools, the inbox, wait and the explorer's read tools, and makes them, with OptChat's `zoom` and
+// registers the session tools, the inbox, tell_jarvis, wait and the explorer's read tools, and makes them, with OptChat's `zoom` and
 // `date`, the whole active set: OptChat's own `spawn` and `tell` run pi subagents with pi's coding tools, which
 // lifelong-hypervisor#P4 rules out. A message waits in the inbox, listed on OptChat's status line, until the hypervisor
 // reads it; a ping reaches OptChat as a report and starts a turn, as does what wait and a background delegate post.
@@ -12,11 +12,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exploreTools } from "./explore.ts";
 import { exploring, usageLog } from "./exploring.ts";
 import { inbox } from "./inbox.ts";
+import { type JarvisConfig, jarvisFromEnvironment } from "./jarvis.ts";
 import { append } from "./journal.ts";
 import { fromEnvironment, type SessionConfig } from "./sessions.ts";
 import { background, waitTool } from "./pace.ts";
 import { save } from "./inputs.ts";
-import { inboxTool, sessionTools } from "./tools.ts";
+import { inboxTool, jarvisTool, sessionTools } from "./tools.ts";
 import { watch } from "./watch.ts";
 
 /** OptChat's memory tools, which stay active. */
@@ -28,12 +29,12 @@ const STATUS_CHANNEL = "optchat:status";
 /** How often the watch takes the inbox's pings. */
 const WATCH_MS = 3000;
 
-/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each take of the pings that failed; `explore.jsonl`, what explore runs found. `config.usage` is OptChat's usage log for the profile, which an explore run's token cap reads. */
-export function live(config: SessionConfig & { usage?: string }): (pi: ExtensionAPI) => void {
+/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each take of the pings that failed; `explore.jsonl`, what explore runs found. `config.jarvis` is how tell_jarvis reaches Jarvis's mailbox, from the environment if not given. `config.usage` is OptChat's usage log for the profile, which an explore run's token cap reads. */
+export function live(config: SessionConfig & { usage?: string; jarvis?: JarvisConfig }): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		const messages = inbox(config.store);
 		const work = background(messages);
-		const tools = [...sessionTools(config, work), inboxTool(messages), waitTool(work), ...exploreTools(config)];
+		const tools = [...sessionTools(config, work), inboxTool(messages), jarvisTool(config.jarvis ?? jarvisFromEnvironment()), waitTool(work), ...exploreTools(config)];
 		for (const tool of tools) pi.registerTool(tool);
 		pi.events.on(STATUS_CHANNEL, (data) => {
 			const line = messages.statusLine();

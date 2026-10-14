@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Inbox } from "./inbox.ts";
+import { type JarvisConfig, tellJarvis } from "./jarvis.ts";
 import { DELEGATE_MINUTES, delegation, look, type SessionConfig, spawn, tell } from "./sessions.ts";
 import type { Background } from "./pace.ts";
 
@@ -17,7 +18,7 @@ export function inboxTool(inbox: Inbox): ToolDefinition {
 		name: "inbox",
 		label: "Inbox",
 		description:
-			"Your inbox: the messages orchestrators left you with hv tell, which wait for you. Without arguments, list them: id, sender, size and age. With an id, read that message; with a sender, read every message from it. A message you read leaves the inbox and stays in your memory.",
+			"Your inbox: the messages orchestrators left you with hv tell, and Jarvis's, which wait for you. Without arguments, list them: id, sender, size and age. With an id, read that message; with a sender, read every message from it. A message you read leaves the inbox and stays in your memory.",
 		parameters: Type.Object({
 			id: Type.Optional(Type.String({ description: "A message's id, as the listing gives it." })),
 			from: Type.Optional(Type.String({ description: "A sender, as the listing or the status line names it." })),
@@ -28,6 +29,18 @@ export function inboxTool(inbox: Inbox): ToolDefinition {
 			if (!read.length) return answer(`No unread message ${[id && `with id ${id}`, from && `from ${from}`].filter(Boolean).join(" ")}; inbox lists what waits.`);
 			return { ...answer(read.join("\n\n")), details: WORK_RESULT };
 		},
+	}) as ToolDefinition;
+}
+
+/** The tell_jarvis tool: leaves Jarvis a message in its inbox, through the mailbox key `config` names. */
+export function jarvisTool(config: JarvisConfig): ToolDefinition {
+	return defineTool({
+		name: "tell_jarvis",
+		label: "Tell Jarvis",
+		description:
+			"Leave Jarvis, max's life assistant, a message in its inbox. It waits there for Jarvis's next wake, and Jarvis's answer reaches your inbox from jarvis within minutes of that. Send what you meet that is Jarvis's to keep: a deadline, a preference, a calendar item, an interest of max's.",
+		parameters: Type.Object({ message: Type.String({ description: "The message, as Jarvis should read it: what you learned, where it came from, and what you ask of Jarvis, if anything." }) }),
+		execute: async (_id, { message }) => answer(await tellJarvis(config, message)),
 	}) as ToolDefinition;
 }
 
