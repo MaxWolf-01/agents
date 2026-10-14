@@ -4,6 +4,6 @@ scratch/
 .claude/settings.local.json
 __pycache__/
 
-docs/figures/*.png
+docs/figures/story/site/
 node_modules/
 .hypothesis/
