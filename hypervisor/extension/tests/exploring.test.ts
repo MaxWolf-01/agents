@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { type JournalLine, parse, stopBefore } from "../src/exploring.ts";
+import { type JournalLine, parse, stepMessage, stopBefore } from "../src/exploring.ts";
 import { found } from "../src/hv-explore.ts";
 import { lines } from "../src/journal.ts";
 import { weekFromHeaders } from "../src/quota.ts";
@@ -164,10 +164,10 @@ after(async () => {
 
 const journal = (name: string) => lines<JournalLine>(fixtures.get(name)!.store, "explore.jsonl");
 
-test("/explore N with a direction runs N steps on the live profile: the direction starts the run, and every later step is a bare continue", async () => {
+test("/explore N with a direction runs N steps on the live profile, each step's message saying it is one, of how many at most, toward the direction", async () => {
 	const run = runs.get("steps")!;
 	const firsts = fixtures.get("steps")!.requests.map((r) => said(r).at(-1));
-	assert.deepEqual(firsts, ["Explore: papers on open-ended ALife", "continue", "continue"]);
+	assert.deepEqual(firsts, [1, 2, 3].map((n) => `Explore step ${n} of at most 3, toward papers on open-ended ALife.`));
 	for (let n = 1; n <= 3; n++) assert.match(run, new RegExp(`^explore step ${n} of 3, 1000 tokens: finding ${n}: max reads papers`, "m"));
 	assert.match(run, /^explore run ended after 3 steps, 3000 tokens: stopped by 3 steps\./m);
 	const lines = await journal("steps");
@@ -185,11 +185,23 @@ test("a run stops at its token cap, counted from the profile's usage log, before
 	const run = runs.get("tokens")!;
 	assert.match(run, /^explore run ended after 2 steps, 2000 tokens: stopped by the cap of 1500 tokens\./m);
 	assert.equal(fixtures.get("tokens")!.requests.length, 2);
+	assert.deepEqual(
+		fixtures.get("tokens")!.requests.map((r) => said(r).at(-1)),
+		["Explore step 1 of at most 5, toward the default goal. 0 of 1500 tokens spent.", "Explore step 2 of at most 5, toward the default goal. 1000 of 1500 tokens spent."],
+		"each step says what the run has spent against its cap",
+	);
 });
 
 test("a run stops once the week's quota reaches its share, read from the reply's rate-limit headers", () => {
 	const run = runs.get("headers")!;
 	assert.match(run, /^explore run ended after 1 step, 1000 tokens: stopped by the week at 96% used\. The week is at 96%\./m);
+	assert.equal(said(fixtures.get("headers")!.requests[0]!).at(-1), "Explore step 1 of at most 5, toward the default goal. The week not read yet, the run stops at 95%.");
+});
+
+test("a step's message says where the run stands against every budget asked for, and a week past its reset as not read", () => {
+	const request = { steps: 20, direction: "the news", tokens: 300000, untilWeek: 90 };
+	assert.equal(stepMessage(request, 4, 41000, { used: 61.6, resets: now + 1 }, now), "Explore step 4 of at most 20, toward the news. 41000 of 300000 tokens spent; the week at 62%, the run stops at 90%.");
+	assert.match(stepMessage(request, 4, 41000, { used: 99, resets: now - 1 }, now), /the week not read yet, the run stops at 90%\.$/);
 });
 
 test("a run starts no session: start_session is refused while it is in flight", () => {
@@ -203,7 +215,7 @@ test("a message from max ends the run after the step in flight", async () => {
 	assert.match(notes.at(-1)!, /^explore run ended after 1 step, .*: stopped by a message from max\./);
 	const requests = fixtures.get("interrupted")!.requests;
 	assert.ok(requests.some((r) => said(r).some((text) => text.startsWith("max here, what did you find?"))), "his message reaches the hypervisor");
-	assert.ok(!requests.some((r) => said(r).includes("continue")), "no second step");
+	assert.ok(!requests.some((r) => said(r).some((text) => text.startsWith("Explore step 2"))), "no second step");
 	const [step] = await journal("interrupted");
 	assert.ok(step && "finding" in step);
 	assert.match(step.finding, /^finding 1: max reads papers/, "the step's finding, not the reply to max that joined its turn");
@@ -214,7 +226,7 @@ test("a run asked for while max's turn is in flight begins once that turn ends, 
 	assert.equal(requests.length, 3, runs.get("busy") ?? "");
 	assert.match(said(requests[0]!).at(-1)!, /^max here, what is in flight\?/);
 	assert.doesNotMatch(JSON.stringify(requests[1]!.messages.at(-1)), /explore run is in flight/, "max's start_session ran");
-	assert.equal(said(requests[2]!).at(-1), "Explore.", "the step is a turn of its own");
+	assert.equal(said(requests[2]!).at(-1), "Explore step 1 of at most 1, toward the default goal.", "the step is a turn of its own");
 	const [step] = await journal("busy");
 	assert.ok(step && "finding" in step);
 	assert.match(step.finding, /^finding 3: /, "the step's reply, not the reply that ended max's turn");

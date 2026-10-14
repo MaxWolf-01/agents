@@ -1,6 +1,6 @@
 // Explore runs on the live hypervisor: `/explore N [direction]` runs up to N explore steps as turns of its own
-// profile, so what they find lands in the memory max talks to. The first step's message is the direction, every later
-// one a bare "continue". A run stops before the next step at the first of: N steps taken, its token cap spent, the
+// profile, so what they find lands in the memory max talks to. Each step's message says it is one, toward what, and
+// where the run stands against what stops it. A run stops before the next step at the first of: N steps taken, its token cap spent, the
 // week's quota used to its share, a step that failed, or a message from max, who is back and whose turn comes first.
 // The week's quota is read from the rate-limit headers of the hypervisor's replies. While a run is in flight, the
 // hypervisor reads and delegates, and starts or messages no session.
@@ -103,10 +103,21 @@ export function parse(args: string): Request | string {
 	return request;
 }
 
-/** The message that starts step `n` of a run toward `direction`. */
-export function stepMessage(n: number, direction: string | undefined): string {
-	if (n > 1) return "continue";
-	return direction ? `Explore: ${direction}` : "Explore.";
+/**
+ * The message that starts step `n` of a run, with `spent` of its tokens spent and the week as last read: what the step
+ * is, toward what, and where the run stands against each budget it was asked for. A week whose reset has passed reads
+ * as not read, since it stops nothing.
+ */
+export function stepMessage(request: Request, n: number, spent: number, week: Week | undefined, now: number): string {
+	const stands: string[] = [];
+	if (request.tokens !== undefined) stands.push(`${spent} of ${request.tokens} tokens spent`);
+	if (request.untilWeek !== undefined) {
+		const used = week && week.resets > now ? `at ${Math.round(week.used)}%` : "not read yet";
+		stands.push(`the week ${used}, the run stops at ${request.untilWeek}%`);
+	}
+	const head = `Explore step ${n} of at most ${request.steps}, toward ${request.direction ?? "the default goal"}.`;
+	const tail = stands.join("; ");
+	return tail ? `${head} ${tail[0]!.toUpperCase()}${tail.slice(1)}.` : head;
 }
 
 /** Why a run stops before its next step, or nothing while it goes on. A week whose reset has passed tells nothing. */
@@ -217,7 +228,7 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 				const before = spent(current.started) ?? 0;
 				stopped = stopBefore(current, before, replied, Date.now()) ?? "";
 				if (stopped) break;
-				const done = await step(ctx, stepMessage(current.taken + 1, request.direction));
+				const done = await step(ctx, stepMessage(request, current.taken + 1, before, replied, Date.now()));
 				current.taken++;
 				const after = spent(current.started);
 				const tokens = (after ?? before) - before;
