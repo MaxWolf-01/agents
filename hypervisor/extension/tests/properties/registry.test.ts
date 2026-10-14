@@ -14,8 +14,8 @@ import { execute, load, standIn, within } from "./stand-in.ts";
 
 const store = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-")));
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-home-")));
-// Jarvis's mailbox as the check's own: a key in the scratch home, so tell_jarvis reaches ssh, and a host under
-// `.invalid`, which no resolver answers, so no run reaches the VPS. The real key in max's home is never read.
+// Jarvis's mailbox as the check's own: a key in the scratch home, so tell_jarvis reaches ssh, which the watch records
+// and never starts. The host is under `.invalid`, which no resolver answers, so an ssh that did start would reach no VPS.
 const jarvis = { host: "jarvis.invalid", key: path.join(home, ".ssh", "hypervisor-jarvis") };
 mkdirSync(path.dirname(jarvis.key));
 writeFileSync(jarvis.key, "");
