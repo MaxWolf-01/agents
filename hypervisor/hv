@@ -11,6 +11,7 @@
 # `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
 # `hv tell [--ping] <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
 # `hv fetch` brings Jarvis's messages to the hypervisor into its inbox; a timer runs it (`hv fetch --help`).
+# `hv mail` prints what the hypervisor and Jarvis sent each other, as one timeline (`hv mail --help`).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -29,10 +30,14 @@ if [[ ${1:-} == fetch ]]; then
 	shift
 	HV_STORE=$store exec node "$extension/src/hv-fetch.ts" "$@"
 fi
+if [[ ${1:-} == mail ]]; then
+	shift
+	HV_STORE=$store exec node "$extension/src/hv-mail.ts" "$@"
+fi
 
 # Anything else would start the TUI, which a typo, or a timer running a subcommand this hv lacks, must not.
 if [[ $# -gt 0 && $1 != explore ]]; then
-	echo "hv: no command $1; hv alone starts the hypervisor or attaches to it, beside hv tell, hv fetch and hv explore (each takes --help)" >&2
+	echo "hv: no command $1; hv alone starts the hypervisor or attaches to it, beside hv tell, hv fetch, hv mail and hv explore (each takes --help)" >&2
 	exit 2
 fi
 

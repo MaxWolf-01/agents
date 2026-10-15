@@ -136,7 +136,7 @@ function size(bytes: number): string {
 	return bytes < 1000 ? `${bytes} B` : `${(bytes / 1000).toFixed(1)} kB`;
 }
 
-function parsed(text: string): Told | undefined {
+export function parsed(text: string): Told | undefined {
 	try {
 		const told = JSON.parse(text);
 		if (typeof told.text !== "string") return undefined;
