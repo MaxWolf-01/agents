@@ -841,6 +841,7 @@ KEYS = [
     ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
     ("y", "copy the resume command"),
+    ("c", "copy the path under the pointer"),
     ("?", "this list"),
 ]
 
@@ -1304,7 +1305,10 @@ def code_inline(self, tokens, idx, options, env) -> str:
     code = CODE_INLINE(tokens, idx, options, env)
     in_link = sum((t.type == "link_open") - (t.type == "link_close") for t in tokens[:idx]) > 0
     target = None if in_link or not env.get("paths", True) else path_target(tokens[idx].content)
-    return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
+    if not target:
+        return code
+    file = resolved(LINE.sub("", tokens[idx].content.strip()), ROOT.get())
+    return f'<a class="path" href="{esc(target)}" data-copy="{esc(file)}" target="_blank" rel="noopener">{code}</a>'
 
 
 COPY_CODE = (
@@ -1351,6 +1355,7 @@ for rule in ("fence", "code_block"):
 
 
 URL = re.compile(r"[a-z][a-z0-9+.-]*:", re.I)
+LINE = re.compile(r":\d+(?::\d+)?$")  # a path's trailing `:line` or `:line:column`
 
 
 def href(path: str) -> str:
@@ -1389,7 +1394,7 @@ def path_target(text: str) -> str | None:
     else, so a command, a name or a path on another host stays code. A bare word is never a path,
     even where the repo root holds a directory of that name."""
     root = ROOT.get()
-    path = re.sub(r":\d+(?::\d+)?$", "", text.strip())
+    path = LINE.sub("", text.strip())
     if root is None or re.search(r"\s", path) or not ("/" in path or Path(path).suffix):
         return None
     local = expanded(path)
