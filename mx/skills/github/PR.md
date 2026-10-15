@@ -10,7 +10,7 @@ A squash merge makes the title the commit subject, so it follows the repo's comm
 
 Most PRs are the first two parts, and a PR that is one paragraph is one paragraph. Everything after them appears only when it exists, in this order:
 
-1. **The change**: what behaviour changes and why it matters to someone. On most PRs this is the change summary, `git diff <base>...HEAD | change-summary`: a paragraph from a model that saw only the diff, so nothing from the session that made the change (ticket jargon, "as discussed") reaches it. Correct what it gets wrong; write the paragraph yourself where the point is something the diff cannot show.
+1. **The change**: what behaviour changes and why it matters to someone. Draft it with `git diff <base>...HEAD | change-summary`: a model that saw only the diff writes it for a cold reader, in plainer prose than you can after a session spent on the change, and nothing from that session (ticket jargon, "as discussed") reaches it. Then adapt the draft: correct what it gets wrong, add what it missed, cut what does not matter to the reader, or write the paragraph yourself where the point is something the diff cannot show.
 2. **The issue link**, one line (`Closes #123`), when there is an issue. The body links it and leaves its content there.
 3. **What the diff, the issue and CI cannot say**, a short paragraph each: a step someone must take around the merge, a merge order across PRs or repos, what went unverified where that is worth a reader's time. Shorter wins when in doubt. The commands that were run are CI's to report. Alternatives not taken appear only when the issue discussed them or max asks for them.
 4. **A figure** sits beside the text it explains.
