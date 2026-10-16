@@ -8,7 +8,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 
 - `touched.md`: the files the period's commits touched, most-touched first.
 - `git/<repo>.md`: the period's commits with their messages, its reverts, and the agent repo's tickets filed, ruled and dropped, and its worker reports.
-- `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on.
+- `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on; `in-flight.md` and `in-flight/`, its tickets in flight, those max ruled on that are not done. Each list says which of the agent repo's tickets it holds.
 - `follow-up.md`: what the period did to each finding and candidate the living report already carries; `previous/`, the earlier reports, `current.md` with max's verdicts.
 - In a workflow retro, also `notes/` and `deep/`: the period's friction, read from max's sessions.
 
@@ -18,7 +18,7 @@ The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may re
 
 ## Steps
 
-1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; in a workflow retro, `notes/` and `deep/` too. Then list the agent repo's tickets in flight, those in `{{agent}}/tickets/` that max ruled on and that are not done (`status:` open, claimed or review), each by its slug and a line on what it changes.
+1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; in a workflow retro, `notes/` and `deep/` too. Then list the tickets in flight that `in-flight.md` names, each by its slug and a line on what it changes, read from `in-flight/`.
 2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, and in a workflow retro the code the period's friction touched. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
 3. Spawn one subagent per code lens, in parallel, each given the brief below, its code lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
 4. When they return, check each wrote its file; spawn a fresh one for any that did not.

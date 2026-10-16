@@ -913,8 +913,7 @@ def resolved(root: Path, name: str) -> Listed:
     if name not in listing:
         raise Refused([f"`{name}` names no repo {file} lists"])
     table = listing[name]
-    path = Path(table["path"]).expanduser()
-    path = (path if path.is_absolute() else project_root(root) / path).resolve()
+    path = listed_path(root, table)
     top = tried(path, "rev-parse", "--show-toplevel") if path.is_dir() else None
     if top is None or top.returncode != 0 or Path(top.stdout.strip()).resolve() != path:
         raise Refused([f"{file}: `[{name}]` path {path} is no git repo's root"])
@@ -924,6 +923,13 @@ def resolved(root: Path, name: str) -> Listed:
     if not integration_refs(path, integration):
         raise Refused([f"{file}: `[{name}]` integration {integration} is no branch of {path}, locally or at origin"])
     return Listed(name, path, integration)
+
+
+def listed_path(root: Path, table: dict) -> Path:
+    """The absolute path a table of the repo list names, opening nothing: `~` expanded, a relative
+    path read from the project root."""
+    path = Path(table["path"]).expanduser()
+    return (path if path.is_absolute() else project_root(root) / path).resolve()
 
 
 def origin_head(top: Path) -> str | None:

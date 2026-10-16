@@ -329,12 +329,13 @@ def test_an_auto_mode_config_that_could_not_be_read_says_why(
     assert "not logged in" in (permissions / "auto-mode.failed").read_text()
 
 
-def test_proposed_names_the_agent_repos_commit_and_the_tickets_proposed_at_it(tmp_path: Path) -> None:
+def test_the_ticket_lists_name_the_agent_repos_commit_and_the_tickets_proposed_and_in_flight_at_it(tmp_path: Path) -> None:
     agent = tmp_path / "agents" / "agent"
     agent.mkdir(parents=True)
     git(agent, "init", "-q", "-b", "main")
     commit(agent, {"tickets/slow-suite.md": ticket("proposed"), "tickets/board-link.md": ticket("open") + "\nIt moved from status: proposed to open.\n",
-                   "tickets/hook-noise.md": ticket("proposed"), "show/hook-noise/report.md": "status: proposed\n"},
+                   "tickets/hook-noise.md": ticket("proposed"), "show/hook-noise/report.md": "status: proposed\n",
+                   "tickets/fast-board.md": ticket("review"), "tickets/old-board.md": ticket("done")},
            "file tickets", SINCE)
     (agent / "tickets/hook-noise.md").write_text(ticket("open"))  # a session's edit, not yet committed
     run = tmp_path / "data" / "runs" / "1"
@@ -347,6 +348,10 @@ def test_proposed_names_the_agent_repos_commit_and_the_tickets_proposed_at_it(tm
     assert head in proposed
     assert re.findall(r"^- (.+)$", proposed, re.M) == ["hook-noise", "slow-suite"]
     assert (run / "proposed/hook-noise.md").read_text() == ticket("proposed"), "each as it stood at the commit, not as a session left it"
+    in_flight = (run / "in-flight.md").read_text()
+    assert head in in_flight
+    assert re.findall(r"^- (.+)$", in_flight, re.M) == ["board-link: open", "fast-board: review"]
+    assert (run / "in-flight/board-link.md").read_text().startswith(ticket("open"))
 
 
 def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_path: Path) -> None:

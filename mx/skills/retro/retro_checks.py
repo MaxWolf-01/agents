@@ -71,5 +71,6 @@ def commit(repo: Path, files: dict[str, str | None], message: str, when: datetim
     git(repo, "commit", "-q", "-m", message, when=when)
 
 
-def ticket(status: str) -> str:
-    return f"---\nstatus: {status}\npriority: 2\n---\n\n# A ticket\n"
+def ticket(status: str, repos: tuple[str, ...] = ()) -> str:
+    listed = f"repos: [{', '.join(repos)}]\n" if repos else ""
+    return f"---\nstatus: {status}\npriority: 2\n{listed}---\n\n# A ticket\n"
