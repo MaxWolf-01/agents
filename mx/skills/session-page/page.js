@@ -346,6 +346,29 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".copy-code")
   if (b) write(b.parentElement.querySelector("pre").textContent.replace(/\n$/, ""), b)
 })
+// a click on a path opens the file, and the browser's own copy gives its file:// URL, so c copies
+// the path under the pointer, or the one Tab focused, as the turn shows it
+const pathLink = (el) => el && el.closest && el.closest("a.path")
+const pathAt = () => document.querySelector("a.path:hover") || pathLink(document.activeElement)
+let hint = null
+const hideHint = () => { if (hint) { hint.remove(); hint = null } }
+const showHint = (a) => {
+  if (hint && hint.path === a) return
+  hideHint()
+  const r = [...a.getClientRects()].at(-1)  // under the last line of a path that wraps
+  hint = Object.assign(document.createElement("span"), { className: "key-hint", path: a, innerHTML: "<kbd>c</kbd> copy" })
+  Object.assign(hint.style, { left: `${r.left}px`, top: `${r.bottom + 4}px` })
+  document.body.append(hint)
+}
+// mousemove rather than mouseover, so the hint a scroll took away comes back with the pointer's next move
+document.addEventListener("mousemove", (e) => { const a = pathLink(e.target); if (a) showHint(a) })
+document.addEventListener("mouseout", (e) => {
+  const a = pathLink(e.target)
+  if (a && !a.contains(e.relatedTarget) && document.activeElement !== a) hideHint()
+})
+document.addEventListener("focusin", (e) => { const a = pathLink(e.target); if (a) showHint(a) })
+document.addEventListener("focusout", (e) => { const a = pathLink(e.target); if (a && !a.matches(":hover")) hideHint() })
+addEventListener("scroll", hideHint, { capture: true, passive: true })
 
 // ---- the keys
 
@@ -382,6 +405,7 @@ document.addEventListener("keydown", (e) => {
     case "o": case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "O": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
     case "y": copy(); break
+    case "c": { const a = pathAt(); if (a) write(a.textContent, a); else say("no path under the pointer"); break }
     default: {
       if (!/^[1-9]$/.test(e.key)) return
       const turn = focused && focused.matches("details.turn") ? focused : turns[0]

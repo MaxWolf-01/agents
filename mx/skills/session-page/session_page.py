@@ -841,6 +841,7 @@ KEYS = [
     ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
     ("y", "copy the resume command"),
+    ("c", "copy the path under the pointer"),
     ("?", "this list"),
 ]
 

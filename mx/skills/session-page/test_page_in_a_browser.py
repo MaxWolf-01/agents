@@ -159,6 +159,25 @@ with sync_playwright() as pw:
         page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
         out["copied"] = page.evaluate("navigator.clipboard.readText()")
 
+    elif scenario == "copy-path":
+        context, page = open_page(1280, 800)
+        context.grant_permissions(["clipboard-read", "clipboard-write"])
+        hint = lambda: page.evaluate("document.querySelector('.key-hint')?.textContent ?? null")
+        page.hover("#t04 a.path")
+        out["hint"] = hint()
+        page.keyboard.press("c")
+        page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
+        out["copied"] = page.evaluate("navigator.clipboard.readText()")
+        page.mouse.move(5, 5)
+        out["hint_away"] = hint()
+        page.keyboard.press("c")
+        out["toast"] = page.text_content("#toast")
+        page.evaluate("navigator.clipboard.writeText('')")
+        page.focus("#t04 a.path")
+        page.keyboard.press("c")
+        page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
+        out["copied_focused"] = page.evaluate("navigator.clipboard.readText()")
+
     elif scenario == "reload":
         # P1, P2, P3, P5 across a reload: the reader clicks a turn number in the timeline, which
         # puts its fragment in the address, opens a turn, scrolls on, and the page is reloaded with
@@ -373,7 +392,7 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["clicked"] == [str(root / ARTEFACTS[i]) for i in (2, 3, 1)]
     assert seen["toast"] == "turn 03 has no artefact 2"
     assert seen["copied"] == SESSION, "a click on the session id did not copy it whole"
-    for keys in ("n", "t 0 7", "[ ]", "q"):
+    for keys in ("n", "t 0 7", "[ ]", "q", "c"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
 
 
@@ -395,6 +414,22 @@ def test_a_code_blocks_button_copies_its_code(rendered: tuple[Path, Path], trans
     right, top = seen["corner"]
     assert 0 < right < 20 and 0 < top < 20, f"the button is not in the block's top right corner: {seen['corner']}"
     assert seen["copied"] == code
+
+
+def test_c_copies_the_path_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
+    """A path's link shows the key that copies it while the pointer is on it, and c copies the path
+    as the turn shows it, `:line` and all; with the pointer elsewhere c copies nothing and says so,
+    and a path Tab focused takes the key without the pointer."""
+    page, _ = rendered
+    record = page.parent / "turns" / "04.md"
+    record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\nSee `{ARTEFACTS[0]}:3`.\n\n", 1))
+    page.write_text(render_session(page.parent, transcript))
+    seen = probe(page, "copy-path")
+    assert seen["hint"] == "c copy", f"no hint under the hovered path: {seen['hint']}"
+    assert seen["copied"] == f"{ARTEFACTS[0]}:3"
+    assert seen["hint_away"] is None, "the hint stayed after the pointer left"
+    assert seen["toast"] == "no path under the pointer"
+    assert seen["copied_focused"] == f"{ARTEFACTS[0]}:3"
 
 
 def test_a_reload_with_a_turn_added_keeps_the_readers_place(long_session: tuple[Path, Path]) -> None:
