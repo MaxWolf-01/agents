@@ -1,3 +1,7 @@
+## 1.0.66
+
+- feat(session-page): c copies the path under the pointer, as the turn shows it
+
 ## 1.0.65
 
 - feat(retro): a repo planned from another project's tracker gets its repo retro there
