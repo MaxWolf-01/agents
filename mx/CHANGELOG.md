@@ -1,3 +1,8 @@
+## 1.0.65
+
+- feat(retro): a repo planned from another project's tracker gets its repo retro there
+- docs(github): change-summary drafts the PR's opening, the agent adapts it
+
 ## 1.0.64
 
 - feat(session-page): a copy button in each code block's top right corner
