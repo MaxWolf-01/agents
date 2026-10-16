@@ -317,10 +317,9 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A path a record writes as code is a link the user clicks rather than text they copy: from
-    the repo root, absolute or under `~`, with a `:line` dropped. What page.js copies of it is the
-    file's absolute path. A path that is not there, a `~name` that names no user, a bare word, a
-    command, and code already inside a link stay code. Pins the format: the links are in the
-    record's prose, which reaches the page as markup."""
+    the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a
+    `~name` that names no user, a bare word, a command, and code already inside a link stay code.
+    Pins the format: the links are in the record's prose, which reaches the page as markup."""
     root, home = tmp_path / "repo", tmp_path / "home"
     (root / "mx").mkdir(parents=True)
     (root / "mx" / "tool.py").write_text("")
@@ -343,8 +342,6 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
         ((home / "notes.md").as_uri(), "~/notes.md"),
     ]
     assert section.count('class="path"') == 3, "a code span inside a link of its own was linked again"
-    assert re.findall(r'<a class="path" [^>]*data-copy="([^"]+)"', section) == [
-        str(root / "mx" / "tool.py"), str(elsewhere), str(home / "notes.md")]
 
 
 def test_a_bare_url_and_a_file_url_are_links() -> None:

@@ -417,19 +417,19 @@ def test_a_code_blocks_button_copies_its_code(rendered: tuple[Path, Path], trans
 
 
 def test_c_copies_the_path_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
-    """A path's link shows the key that copies it while the pointer is on it, and c copies the
-    file's absolute path, its `:line` dropped; with the pointer elsewhere c copies nothing and says
-    so, and a path Tab focused takes the key without the pointer."""
-    page, root = rendered
+    """A path's link shows the key that copies it while the pointer is on it, and c copies the path
+    as the turn shows it, `:line` and all; with the pointer elsewhere c copies nothing and says so,
+    and a path Tab focused takes the key without the pointer."""
+    page, _ = rendered
     record = page.parent / "turns" / "04.md"
     record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\nSee `{ARTEFACTS[0]}:3`.\n\n", 1))
     page.write_text(render_session(page.parent, transcript))
     seen = probe(page, "copy-path")
     assert seen["hint"] == "c copy", f"no hint under the hovered path: {seen['hint']}"
-    assert seen["copied"] == str(root / ARTEFACTS[0])
+    assert seen["copied"] == f"{ARTEFACTS[0]}:3"
     assert seen["hint_away"] is None, "the hint stayed after the pointer left"
     assert seen["toast"] == "no path under the pointer"
-    assert seen["copied_focused"] == str(root / ARTEFACTS[0])
+    assert seen["copied_focused"] == f"{ARTEFACTS[0]}:3"
 
 
 def test_a_reload_with_a_turn_added_keeps_the_readers_place(long_session: tuple[Path, Path]) -> None:

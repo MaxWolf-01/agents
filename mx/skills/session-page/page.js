@@ -347,7 +347,7 @@ document.addEventListener("click", (e) => {
   if (b) write(b.parentElement.querySelector("pre").textContent.replace(/\n$/, ""), b)
 })
 // a click on a path opens the file, and the browser's own copy gives its file:// URL, so c copies
-// the path under the pointer, or the one Tab focused, as its absolute path with no :line
+// the path under the pointer, or the one Tab focused, as the turn shows it
 const pathLink = (el) => el && el.closest && el.closest("a.path")
 const pathAt = () => document.querySelector("a.path:hover") || pathLink(document.activeElement)
 let hint = null
@@ -405,7 +405,7 @@ document.addEventListener("keydown", (e) => {
     case "o": case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "O": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
     case "y": copy(); break
-    case "c": { const a = pathAt(); if (a) write(a.dataset.copy, a); else say("no path under the pointer"); break }
+    case "c": { const a = pathAt(); if (a) write(a.textContent, a); else say("no path under the pointer"); break }
     default: {
       if (!/^[1-9]$/.test(e.key)) return
       const turn = focused && focused.matches("details.turn") ? focused : turns[0]
