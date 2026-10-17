@@ -57,7 +57,6 @@ For each session, assign one of these statuses:
 
 **Key judgment calls:**
 - A session can have `signals.commit: true` but still be UNFINISHED if work continued after the commit. Check `last_assistant`: does it reference the commit as final, or is there subsequent work?
-- Sessions ending with `/mx:transcript` ARE done (the transcript captures the state for later).
 - Sessions where last_user is a question or request and last_assistant doesn't resolve it → UNFINISHED.
 
 ### 3. Present results
