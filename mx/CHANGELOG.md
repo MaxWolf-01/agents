@@ -1,3 +1,7 @@
+## 1.0.67
+
+- feat(session-page): a wider text column, centred in a wide pane, with tables that spread past it instead of wrapping
+
 ## 1.0.66
 
 - feat(session-page): c copies the path under the pointer, as the turn shows it
