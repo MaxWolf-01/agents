@@ -7,8 +7,8 @@
 `checkpoint` runs on PostToolBatch and UserPromptSubmit: it reads the session's context size off
 the last assistant message in the transcript (the tokens the last request sent as its prompt) and,
 the first time it stands past a mark, says so to the model, once per mark, naming the mark by its
-place (the first, second, third of them) and its figure. The marks are MX_CONTEXT_CHECKPOINTS,
-comma-separated token counts, three of them unless set (MARKS below). A context that has fallen
+place (the first, the second, ...) and its figure. The marks are MX_CONTEXT_CHECKPOINTS,
+comma-separated token counts, two of them unless set (MARKS below). A context that has fallen
 back under a mark said (a compaction) hears that mark again on its way back up. A dispatched
 worker (DISPATCH_WORKLOG set), a print-mode session (CLAUDE_CODE_SESSION_ATTENDED=0) and a
 subagent's tool batches (agent_id in the event) hear nothing: only the session's own thread has a
@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 
 STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "mx"
-MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "300000,500000,600000").split(",") if m.strip()]
+MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "500000,600000").split(",") if m.strip()]
 TRACKER = Path(__file__).resolve().parents[1] / "tracker" / "tracker.py"
 PICKUP = Path(__file__).resolve().parent / "pickup.py"
 BLOCK = 64 * 1024
