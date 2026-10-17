@@ -1,3 +1,7 @@
+## 1.0.68
+
+- feat(handoff): a session's first context checkpoint is at 500k
+
 ## 1.0.67
 
 - feat(session-page): a wider text column, centred in a wide pane, with tables that spread past it instead of wrapping
