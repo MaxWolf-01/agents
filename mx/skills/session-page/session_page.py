@@ -715,11 +715,19 @@ def prompted(entry: dict) -> bool:
         not entry.get("isMeta") or bool(entry.get("origin")))
 
 
+def local_commands(entries: list[dict]) -> set[str]:
+    """The user entries of the slash commands Claude Code ran itself, which reach no model:
+    /reload-plugins, /model, /status. Their output is a `local_command` entry under the command's
+    own; a command that prompts the model (a skill) has the prompt there instead."""
+    return {str(e["parentUuid"]) for e in entries
+            if e.get("type") == "system" and e.get("subtype") == "local_command" and e.get("parentUuid")}
+
+
 def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
     """Each user entry and queued prompt, with when, the kind of its origin and its content."""
-    out = []
+    out, local = [], local_commands(entries)
     for entry in entries:
-        if prompted(entry):
+        if prompted(entry) and entry.get("uuid") not in local:
             content = entry.get("message", {}).get("content")
         elif entry.get("type") == "attachment" and entry.get("attachment", {}).get("type") == "queued_command":
             if entry["attachment"].get("commandMode", "prompt") != "prompt":
@@ -737,9 +745,11 @@ def turn_start(entries: list[dict]) -> datetime | None:
     whoever sent it, the user, a finished task or another session, or else the end of the turn
     before it, where a prompt the transcript marks as none (a scheduled wakeup) started this one.
     Claude Code marks a turn's end with a `turn_duration` line once its Stop hooks let it end, so a
-    Stop hook's send-back ends no turn. A message queued mid-turn joins the turn it arrived in, and
-    a tool result is part of the turn that called the tool."""
-    started = (entry for entry in entries if prompted(entry) and flat(entry.get("message", {}).get("content")))
+    Stop hook's send-back ends no turn. A message queued mid-turn joins the turn it arrived in, a
+    tool result is part of the turn that called the tool, and a local command starts no turn."""
+    local = local_commands(entries)
+    started = (entry for entry in entries
+               if prompted(entry) and entry.get("uuid") not in local and flat(entry.get("message", {}).get("content")))
     ended = (entry for entry in entries if entry.get("type") == "system" and entry.get("subtype") == "turn_duration")
     return max((datetime.fromisoformat(entry["timestamp"]) for entry in (*started, *ended) if "timestamp" in entry), default=None)
 
