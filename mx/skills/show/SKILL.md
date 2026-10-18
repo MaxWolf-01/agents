@@ -41,7 +41,7 @@ The code level is the same for every shape, the diff on the review page, so a sh
 
 Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it. At a landing the table says what its show holds. Every document takes this table, an ADR included, and most ADRs hit no row.
 
-The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants.
+The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants. Where it explains a process of several parts, its figure can grow as the reader goes: each step draws the last again with one part added and that part in focus, the whole figure comes at the end, and a toggle shows every step at once (`docs/figures/story/` in the agents repo is a first, rough instance).
 
 ## A landing's show
 

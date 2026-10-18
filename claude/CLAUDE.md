@@ -93,7 +93,6 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
 - Read-only commands are auto-approved in ~/.claude/settings.json.
 - For `gh api`: Always use `-X GET` explicitly (e.g., `gh api -X GET repos/owner/repo`); this is the only form that's auto-approved. POST/PUT/DELETE will prompt.
-- ALWAYS prefer `fd` over `find`, unless it is not powerful enough, e.g. you actually want to delete something 
 
 Understanding this will allow you to go faster (when it's time to implement, experiment, or gather information).
 
@@ -118,7 +117,6 @@ LaTeX: full TeX Live is on the workstations (`pdflatex`/`lualatex`/`xelatex`/`la
 Makefiles carry the standard commands in max's projects: read the Makefile before any dev work (tests, type checks, starting servers).
 
 `uv` is the only tool you need for Python projects:
-- NEVER `python ...` or `python3 ...`, and NEVER `source .venv/bin/activate`; ALWAYS `uv run (--with ...) (python) ...` (auto-approved). `--with` only for deps not already in the venv, `python` only for `python -c` and the like.
 - In a project with a pyproject.toml, ONLY add / update deps via `uv add` / `uv remove`; `uv sync` installs them (plus the optional extras it needs, sometimes `--all-extras`).
 - Type check with `make check` where the Makefile has it, else `uvx ty@latest check .`.
 - Python CLIs use tyro, never argparse/click/fire, and **`/mx:tyro-cli` is loaded before writing one** -- it carries gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong. Reach for a CLI for anything you might run more than once or want to ablate flags on: proper infrastructure for investigations, visualizations and experiments saves time and attention.
