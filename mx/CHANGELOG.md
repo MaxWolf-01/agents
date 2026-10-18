@@ -1,3 +1,7 @@
+## 1.0.69
+
+- fix(session-page): the open question keeps room to be read in a crowded questions band
+
 ## 1.0.68
 
 - feat(handoff): a session's first context checkpoint is at 500k
