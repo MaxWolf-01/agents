@@ -1,3 +1,7 @@
+## 1.0.71
+
+- fix(session-page): local slash commands are no longer shown as something the user said
+
 ## 1.0.70
 
 - pstack takeaways: uv and fd rules cut, /mx:transcript deleted, agent-contributor scan, growing figures in show
