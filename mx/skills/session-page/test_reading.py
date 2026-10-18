@@ -193,6 +193,30 @@ def test_a_prompt_resubmitted_with_more_after_a_comma_is_shown_once(tmp_path: Pa
     assert said["01"] == ["fix the header, and the footer"]
 
 
+def test_a_command_claude_code_runs_itself_is_nothing_the_user_said(tmp_path: Path, worked_example: Path) -> None:
+    """A local command (/reload-plugins, as the container hub types it into an idle session) reaches
+    no model, so no turn carries it; a slash command that prompts the model reads as typed. The two
+    as Claude Code 2.1.302 writes them: the local one's output under it, the skill's body under the
+    other."""
+    command = lambda uuid, name, args, at: {
+        "type": "user", "uuid": uuid, "timestamp": at, "message": {"role": "user", "content":
+            f"<command-name>{name}</command-name>\n<command-message>{name[1:]}</command-message>\n<command-args>{args}</command-args>"}}
+    entries = [
+        {"type": "user", "uuid": "u1", "timestamp": "2026-09-22T21:00:00Z", "message": {"role": "user", "content": "fix the header"}},
+        command("u2", "/reload-plugins", "", "2026-09-22T21:01:00Z"),
+        {"type": "system", "subtype": "local_command", "parentUuid": "u2", "timestamp": "2026-09-22T21:01:00Z",
+         "content": "<local-command-stdout>Reloaded: 2 plugins</local-command-stdout>"},
+        command("u3", "/mx:show", "the grid", "2026-09-22T21:02:00Z"),
+        {"type": "user", "uuid": "u4", "parentUuid": "u3", "isMeta": True, "timestamp": "2026-09-22T21:02:00Z",
+         "message": {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /mx/skills/show"}]}},
+    ]
+    t = tmp_path / "t.jsonl"
+    t.write_text("\n".join(map(json.dumps, entries)) + "\n")
+    calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
+    said = messages_of(view_of(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls)))
+    assert said["01"] == ["fix the header", "/mx:show the grid"]
+
+
 def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
     worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
