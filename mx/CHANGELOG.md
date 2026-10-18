@@ -1,3 +1,7 @@
+## 1.0.70
+
+- pstack takeaways: uv and fd rules cut, /mx:transcript deleted, agent-contributor scan, growing figures in show
+
 ## 1.0.69
 
 - fix(session-page): the open question keeps room to be read in a crowded questions band
