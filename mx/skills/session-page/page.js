@@ -63,10 +63,11 @@ const inView = () => {
   const p = pane.getBoundingClientRect()
   return blocks.find((b) => { const r = b.getBoundingClientRect(); return r.bottom > p.top + MARGIN && r.top < p.bottom - MARGIN })
 }
-// a scroll inside `box` that brings `el` into its view, a third of the way down, where it is out of it
+// a scroll inside `box` that brings `el` into its view, a third of the way down, where it is out of it;
+// higher where that would cut off its bottom
 const keepInView = (box, el, head = 0) => {
-  const b = box.getBoundingClientRect(), r = el.getBoundingClientRect()
-  if (r.top < b.top + head || r.bottom > b.bottom) box.scrollTop += r.top - b.top - head - (box.clientHeight - head) / 3
+  const b = box.getBoundingClientRect(), r = el.getBoundingClientRect(), room = box.clientHeight - head
+  if (r.top < b.top + head || r.bottom > b.bottom) box.scrollTop += r.top - b.top - head - Math.max(0, Math.min(room / 3, room - r.height))
 }
 
 let cur = -1

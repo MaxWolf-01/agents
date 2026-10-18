@@ -288,6 +288,15 @@ with sync_playwright() as pw:
             page.click("#sheet-toggle")
         page.wait_for_timeout(400)
         out["sheet_open"] = page.evaluate(geometry)["column"]
+    elif scenario == "crowded":
+        # the question ] opens in a band whose folded rows alone outgrow it, and how much of it shows
+        context, page = open_page(args["width"], 800)
+        for _ in range(args["presses"]):
+            page.keyboard.press("]")
+        out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom} }
+          const band = document.getElementById("open-questions"), q = band.querySelector(".q:not(.folded)"), body = q.querySelector(".q-body")
+          return {band: box(band), head: box(band.querySelector(".divider")), q: box(q), id: q.id, height: innerHeight,
+                  overflows: band.scrollHeight > band.clientHeight, body: body.clientHeight, whole: body.scrollHeight} })()'''))
     elif scenario == "tables":
         # where turn 05's tables sit against its text, its edge and the pane, and which cells wrap
         context, page = open_page(args["width"], 800)
@@ -350,6 +359,21 @@ def long_session(rendered: tuple[Path, Path], transcript: Path) -> tuple[Path, P
     after.write_text(render_session(directory, transcript))
     (directory / "turns" / "13.md").unlink()
     return page, after
+
+
+@pytest.fixture
+def crowded(long_session: tuple[Path, Path], transcript: Path) -> Path:
+    """The long session with eleven more questions waiting, Q10 to Q20, each long enough to fill the
+    band on its own: fourteen rows, more than the band holds folded."""
+    page, _ = long_session
+    detail = " ".join(["A sentence of the question's detail, long enough to wrap across the measure."] * 12)
+    asked = "## Questions\n\n" + "".join(
+        f"- [Q{n}] **Question {n}, one of many waiting at once?** {detail}\n  - (a) Yes. *my pick*\n  - (b) No.\n"
+        for n in range(10, 21))
+    (page.parent / "turns" / "12.md").write_text(filler(12, asked + "\n"))
+    crowded = page.parent / "crowded.html"
+    crowded.write_text(render_session(page.parent, transcript))
+    return crowded
 
 
 @pytest.fixture
@@ -566,6 +590,16 @@ def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: i
     if width <= 704:
         sheet = seen["sheet_open"]
         assert sheet["shown"] and sheet["right"] <= seen["top"]["width"] + 1 and sheet["left"] >= 0, f"the sheet did not open: {sheet}"
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_the_open_question_keeps_its_room_in_a_crowded_band(crowded: Path, width: int) -> None:
+    """With more questions waiting than the band holds folded, the band scrolls, and the question
+    opened mid-list shows in full view, at least a fifth of the window high or all of it."""
+    seen = probe(crowded, "crowded", width=width, presses=6)
+    assert seen["id"] == "q13" and seen["overflows"], seen
+    assert seen["head"]["bottom"] <= seen["q"]["top"] + 1 and seen["q"]["bottom"] <= seen["band"]["bottom"] + 1, f"out of view: {seen}"
+    assert seen["body"] >= min(seen["whole"], seen["height"] / 5), f"squeezed: {seen}"
 
 
 @pytest.mark.parametrize("width", WIDTHS)

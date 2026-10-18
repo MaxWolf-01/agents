@@ -145,8 +145,9 @@ button.id:hover { color: var(--accent); }
 
 /* The questions waiting on the user: a band above the turns, an accordion with one question open.
    The folded rows never shrink; the open question gives up height first, its body scrolling on its
-   own, so every row stays in view however long that question is. The band itself scrolls only when
-   the rows alone outgrow it. */
+   own, so every row stays in view however long that question is. It stops at a floor, all of it or
+   a third of the window, whichever is less; past that the band scrolls instead, as it does when
+   more rows wait than it holds. */
 .waiting { flex: 0 1 auto; display: flex; flex-direction: column; max-height: 60%; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 var(--pad) 1.1rem; background: var(--ground-2); border-bottom: 1px solid var(--edge); --head: 2.4rem; }
 /* A pane wider than the text centres it: the title, the questions and the turns share one column, the space beside it
    split evenly (--gutter). */
@@ -157,7 +158,8 @@ button.id:hover { color: var(--accent); }
 .waiting.collapsed { padding-bottom: 0; }
 .waiting.collapsed > .q { display: none; }
 .q { flex: none; display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); font-size: 0.92rem; }
-.q:not(.folded) { flex: 0 1 auto; min-height: 4.5rem; }
+/* calc-size() lets the floor read the question's own height; a browser without it keeps 4.5rem */
+.q:not(.folded) { flex: 0 1 auto; min-height: 4.5rem; min-height: calc-size(max-content, min(size, 33vh)); }
 .q + .q { margin-top: 0.7rem; }
 .q:not(.folded) + .q, .q + .q:not(.folded) { margin-top: 1.05rem; }
 .q:focus { outline: none; }
