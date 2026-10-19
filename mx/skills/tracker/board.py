@@ -2300,15 +2300,15 @@ STYLE = r"""  /* The house tokens, copied from mx/skills/house-style/tokens.css:
      the board's small text is read on parchment at 100% zoom. */
   :root {
     color-scheme: light dark;
-    --ground: light-dark(#f4e4cd, #1a1714);
-    --ground-2: light-dark(#eddabe, #201c18);
-    --edge: light-dark(#cfbca3, #4a433b);
+    --ground: light-dark(#f4e4cd, #14110e);
+    --ground-2: light-dark(#eddabe, #1b1713);
+    --edge: light-dark(#cfbca3, #463f37);
     --muted: light-dark(#4c443c, #b0a89e);
     --body: light-dark(#37261d, #ede3d2);
     --strong: light-dark(#22140b, #faf2dc);
     --accent: light-dark(#426724, #75a252);
     --accent-2: light-dark(#674806, #cdb78a);
-    --wash: light-dark(rgb(66 103 36 / 0.16), rgb(117 162 82 / 0.22));
+    --wash: light-dark(rgb(66 103 36 / 0.1), rgb(117 162 82 / 0.22));
     --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
     --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
     --font-body: "Newsreader", Georgia, serif;

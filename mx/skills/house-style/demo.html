@@ -97,6 +97,12 @@
     .frame { border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2); overflow: hidden; }
     pre { margin: 0; padding: 1rem; overflow-x: auto; font: 400 0.85rem/1.6 var(--font-mono); font-variant-numeric: tabular-nums; }
     pre .muted { color: var(--muted); }
+    /* Flexoki's syntax mapping at the text steps: 700 by day, 400 by night */
+    pre .kw { color: light-dark(#536907, #879a39); }
+    pre .str { color: light-dark(#1c6c66, #3aa99f); }
+    pre .number { color: light-dark(#4f3685, #8b7ec8); }
+    pre .fn { color: light-dark(#9d4310, #da702c); }
+    pre .var { color: light-dark(#1a4f8c, #4385be); }
     kbd { padding: 0.125rem 0.375rem; border: 1px solid var(--edge); border-radius: 3px; background: var(--ground-2); font: 400 0.8em var(--font-mono); color: var(--muted); }
     .zone { position: relative; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--wash-ink); padding: 1.25rem 0.75rem 0.75rem; }
     .zone > .v-meta { position: absolute; top: -0.6rem; left: 0.75rem; padding: 0 0.4rem; background: var(--ground); }
@@ -289,8 +295,8 @@
           </figure>
           <figure>
             <figcaption class="v-meta">sheet.ts</figcaption>
-            <pre class="frame">const sheet = { no: "h-0114", alt: 2050 } <span class="muted">// metres</span>
-const kin = sheets.filter((s) =&gt; s.no !== sheet.no)</pre>
+            <pre class="frame"><span class="kw">const</span> <span class="var">sheet</span> = { <span class="var">no</span>: <span class="str">"h-0114"</span>, <span class="var">alt</span>: <span class="number">2050</span> } <span class="muted">// metres</span>
+<span class="kw">const</span> <span class="var">kin</span> = <span class="var">sheets</span>.<span class="fn">filter</span>((<span class="var">s</span>) =&gt; <span class="var">s</span>.<span class="var">no</span> !== <span class="var">sheet</span>.<span class="var">no</span>)</pre>
           </figure>
           <div class="zone"><span class="v-meta">agent/board.html</span><div class="nodes"><span class="node v-small">proposed</span><span class="node v-small">open</span><span class="node v-small accent">claimed</span></div></div>
           <figure>

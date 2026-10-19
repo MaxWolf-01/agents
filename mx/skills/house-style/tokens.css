@@ -4,34 +4,35 @@
    project needs: the serif, the size and leading that fit it, the measure. The
    colours and the roles stay.
 
-   Every colour but the series is a light-dark() pair. Without data-theme on
-   the root the page follows the system; data-theme="day" or "night" pins it.
+   Every colour is a light-dark() pair. Without data-theme on the root the
+   page follows the system; data-theme="day" or "night" pins it.
    The rules sit in the base and components layers, so a project's own CSS,
    and Tailwind's utilities, win over them without fighting specificity. */
 
 :root {
   color-scheme: light dark;
 
-  --ground: light-dark(#f4e4cd, #1a1714);
-  --ground-2: light-dark(#eddabe, #201c18);
-  --edge: light-dark(#cfbca3, #4a433b);
+  --ground: light-dark(#f4e4cd, #14110e);
+  --ground-2: light-dark(#eddabe, #1b1713);
+  --edge: light-dark(#cfbca3, #463f37);
   --muted: light-dark(#5e5650, #b0a89e);
   --body: light-dark(#37261d, #ede3d2);
   --strong: light-dark(#22140b, #faf2dc);
   --accent: light-dark(#426724, #75a252);
   --accent-2: light-dark(#674806, #cdb78a);
-  --wash: light-dark(rgb(66 103 36 / 0.16), rgb(117 162 82 / 0.22));
+  --wash: light-dark(rgb(66 103 36 / 0.1), rgb(117 162 82 / 0.22));
   --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
   --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
 
-  /* Muted on purpose, so five series sit quietly on either ground. The order
-     keeps the two closest pairs, dusty blue and slate, sage and mustard, from
-     ever sitting side by side. */
-  --series-1: #9c6b50; /* rust */
-  --series-2: #5e7a9b; /* dusty blue */
-  --series-3: #b8915a; /* mustard */
-  --series-4: #6e6479; /* slate */
-  --series-5: #7c8f6f; /* sage */
+  /* Flexoki's hues at its marks steps (600 by day, 400 by night), so each
+     clears 3:1 on its ground. Green and yellow stay out: green is the accent's,
+     yellow reads as caution. The order passes dataviz's palette checks for
+     neighbouring series in both schemes. */
+  --series-1: light-dark(#205ea6, #4385be); /* blue */
+  --series-2: light-dark(#a02f6f, #ce5d97); /* magenta */
+  --series-3: light-dark(#bc5215, #da702c); /* orange */
+  --series-4: light-dark(#5e409d, #8b7ec8); /* purple */
+  --series-5: light-dark(#af3029, #d14d41); /* red */
 
   --font-body: "Newsreader", Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
