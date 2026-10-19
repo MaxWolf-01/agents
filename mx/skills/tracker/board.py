@@ -2308,7 +2308,7 @@ STYLE = r"""  /* The house tokens, copied from mx/skills/house-style/tokens.css:
     --strong: light-dark(#22140b, #faf2dc);
     --accent: light-dark(#426724, #75a252);
     --accent-2: light-dark(#674806, #cdb78a);
-    --wash: light-dark(rgb(66 103 36 / 0.1), rgb(117 162 82 / 0.22));
+    --wash: light-dark(rgb(66 103 36 / 0.16), rgb(117 162 82 / 0.22));
     --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
     --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
     --font-body: "Newsreader", Georgia, serif;
