@@ -4,8 +4,8 @@
    project needs: the serif, the size and leading that fit it, the measure. The
    colours and the roles stay.
 
-   Every colour but the series is a light-dark() pair. Without data-theme on
-   the root the page follows the system; data-theme="day" or "night" pins it.
+   Every colour is a light-dark() pair. Without data-theme on the root the
+   page follows the system; data-theme="day" or "night" pins it.
    The rules sit in the base and components layers, so a project's own CSS,
    and Tailwind's utilities, win over them without fighting specificity. */
 
@@ -24,14 +24,15 @@
   --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
   --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
 
-  /* Muted on purpose, so five series sit quietly on either ground. The order
-     keeps the two closest pairs, dusty blue and slate, sage and mustard, from
-     ever sitting side by side. */
-  --series-1: #9c6b50; /* rust */
-  --series-2: #5e7a9b; /* dusty blue */
-  --series-3: #b8915a; /* mustard */
-  --series-4: #6e6479; /* slate */
-  --series-5: #7c8f6f; /* sage */
+  /* Flexoki's orange, blue, yellow, purple and green at half their chroma, so
+     five series sit quietly on either ground; each clears 3:1 on ground and
+     ground-2. The night yellow is darkened to the others' lightness, which it
+     outshone. Yellow and green, the closest pair, never sit side by side. */
+  --series-1: light-dark(#9c6850, #b88467); /* rust */
+  --series-2: light-dark(#446083, #6583a0); /* dusty blue */
+  --series-3: light-dark(#806f4b, #9e8856); /* mustard */
+  --series-4: light-dark(#594e7b, #8a85aa); /* slate */
+  --series-5: light-dark(#6d7b4e, #8b956a); /* sage */
 
   --font-body: "Newsreader", Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
