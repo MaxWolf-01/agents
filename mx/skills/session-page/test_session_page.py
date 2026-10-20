@@ -363,7 +363,7 @@ def test_text_between_double_tildes_renders_struck_through() -> None:
 
 def test_a_session_record_that_still_has_a_brief_renders_without_it(tmp_path: Path) -> None:
     """A session.md written while the page still carried a brief renders as it is, its title on the page and its
-    brief nowhere the reader sees, so committed sessions need no rewrite. Y still copies the record as written."""
+    brief nowhere the reader sees, so committed sessions need no rewrite."""
     directory, transcript = write_session(tmp_path / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
     described = directory / "session.md"
     described.write_text(described.read_text() + "\n## Brief\n\nWhat the session was about, in a few sentences.\n")

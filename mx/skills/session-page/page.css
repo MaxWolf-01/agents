@@ -133,6 +133,7 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .handoffs a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .resume { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; letter-spacing: inherit; white-space: nowrap; cursor: pointer; }
 .resume kbd { font-size: 0.68rem; }
+.resume:hover kbd { color: var(--accent); border-color: var(--accent); }
 button.id { padding: 0; border: none; border-bottom: 1px dotted currentColor; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; transition: color 150ms; }
 button.id:hover { color: var(--accent); }
 
