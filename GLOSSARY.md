@@ -187,7 +187,7 @@ A recurring review of one repo and its tracker that runs unattended and keeps a 
 _Avoid_: retrospective, post-mortem, review (a diff's)
 
 **Repo retro**:
-A retro of one repo's code and its proposed tickets, through every code lens, reading no session.
+A retro of one repo: its code through every code lens, its proposed tickets, and max's corrections in the sessions worked in it.
 _Avoid_: architecture retro, architecture review
 
 **Workflow retro**:
