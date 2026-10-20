@@ -183,19 +183,19 @@ _Avoid_: session artifact, transcript, notebook, log
 ### Retros
 
 **Retro**:
-A recurring review of one repo and its tracker that runs unattended and keeps a living report; a repo retro, or the workflow retro.
+A recurring review of one tracker and the repos it plans that runs unattended and keeps a living report; a repo retro, or the workflow retro.
 _Avoid_: retrospective, post-mortem, review (a diff's)
 
 **Repo retro**:
-A retro of one repo: its code through every code lens, its proposed tickets, and max's corrections in the sessions worked in it.
+The retro of any tracker but the agents repo's, which reads the sessions worked in its repos.
 _Avoid_: architecture retro, architecture review
 
 **Workflow retro**:
-The agents repo's retro: its repo retro, plus a reading of every repo's sessions for friction in the workflow.
+The agents repo's retro, which reads every session, of every repo and profile, for friction in the workflow.
 _Avoid_: agents retro, meta-analysis
 
 **Lens pass**:
-The part of every retro that reads its repo's code through each code lens and proposes candidates for it.
+The part of every retro that reads its repos' code through each code lens and proposes candidates for it.
 _Avoid_: architecture pass
 
 **Code lens**:
@@ -203,5 +203,13 @@ One angle a lens pass reads a repo's code from; architecture is one.
 _Avoid_: lens (bare; a workflow retro's finding has a lens, whose friction it is)
 
 **Living report**:
-A retro's one report for its repo, which each run rewrites whole from the last few, so the newest holds what the earlier runs found.
+A retro's one report for its tracker, which each run rewrites whole from the last few, so the newest holds what the earlier runs found.
 _Avoid_: weekly report, retro report
+
+**Execution problem**:
+An agent's miss against guidance that covers the case clearly, where the agent reads it as it acts.
+_Avoid_: lapse, slip
+
+**Watched list**:
+The living report's list of execution problems and corrections of a fact seen once, kept so that a later run seeing one again counts a repeat.
+_Avoid_: backlog, watchlist
