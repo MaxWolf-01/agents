@@ -274,7 +274,6 @@ class Session:
     tickets: tuple[str, ...]
     """The tickets it filed or committed on, which give its unit a tree on the rail."""
     title: str
-    brief: str
     turns: list[Turn]
     opens: tuple[str, ...] = ()
     """Pages it opened in the hub beside its session page, in order, as paths under `agent/`."""
@@ -300,8 +299,6 @@ GRILL = Session(
     id="71b0d4c8-2a5f-4e93-b86d-0c3e9f17a254", name="ledger-13", status="idle", running=False,
     tickets=("saved-views", "save-and-reopen-a-view", "share-a-view-by-link"),
     title="Saved views: grilling what a view holds",
-    brief="Grilling saved views: what a view keeps of the screen, where views are stored, and how the ticket cuts into "
-          "slices. Ends with the tree filed and a handoff for the session that builds it.",
     turns=[
         Turn(ago=26 * 60, prompts=((
             "saved views. people keep rebuilding the same filter every morning, groceries last 90 days etc. "
@@ -356,9 +353,6 @@ SAVED = Session(
     id="3f6c2a91-8d4e-4b7a-9c15-2e7d40b8a6f3", name="ledger-14", status="idle", context=(78, 156_000), pane=True,
     continues=GRILL, tickets=("save-and-reopen-a-view", "saved-views"),
     title="Saved views: reopening a view, then sharing one by link",
-    brief="Building the saved-views tree yesterday's grilling filed: the filters, sort and columns a user names once "
-          "and reopens from the sidebar, then a link that shows a view to someone else. Its first slice has landed; "
-          "sharing by link waits on what a shared link carries.",
     opens=("show/share-a-view-by-link/link-resolves.html", "diffviews/save-and-reopen-a-view.html"),
     handoff=("share-a-view-by-link", """# Saved views: build sharing by link once Q1 is answered
 
@@ -426,8 +420,6 @@ IMPORT = Session(
     runs=(("wait for the wave-2 workers to land", "dispatch-ctl wait map-columns-to-fields duplicate-rule"),),
     tickets=("csv-import", "upload-and-parse-report", "map-columns-to-fields", "duplicate-rule", "commit-the-import"),
     title="CSV import: wave 2, mapping columns and the duplicate rule",
-    brief="Dispatching the csv-import tree. Wave 1 landed the upload's parse report; wave 2 runs map-columns-to-fields "
-          "and duplicate-rule in parallel, and commit-the-import waits on both.",
     opens=("show/csv-import/waves.html",),
     turns=[
         Turn(ago=5 * 60, prompts=("dispatch csv-import",), record="""---
@@ -461,8 +453,6 @@ FLAKY = Session(
     id="c47e9b13-6a05-4d28-8f71-9be3a2d6c084", name="ledger-12", status="waiting", waiting_for="permission prompt",
     context=(24, 48_000), tickets=("flaky-upload-test",),
     title="Flaky upload test: the report test fails one run in forty",
-    brief="`test_upload_report` fails on CI about one run in forty and never locally. Reproducing it under load, then "
-          "fixing whatever the load exposes.",
     opens=("show/flaky-upload-test/runs.html",),
     turns=[
         Turn(ago=35, prompts=("the upload report test flaked again on CI, can you find out why",), record="""---
@@ -486,8 +476,6 @@ EXPORTER = Session(
     id="5b82f4d6-1e37-4a90-a6c3-0d58e7b21f94", name="ledger-9", status="busy", context=(12, 24_000),
     tickets=("retire-the-legacy-exporter",),
     title="Legacy exporter: what still calls it, before it goes",
-    brief="The legacy exporter writes a format nothing reads any more. Finding what still calls it, so the proposed "
-          "ticket to retire it says what moves when a triage takes it up.",
     turns=[
         Turn(ago=3 * 60 + 20, prompts=("what still uses the old exporter?",), record="""---
 date: {date}
@@ -507,8 +495,6 @@ BUDGET = Session(
     id="e19a7c35-9f64-4b02-8d1e-6a3f05c8b7d2", name="ledger-15", status="idle", visited=False, context=(33, 67_000),
     tickets=("budget-chart",),
     title="Budget chart: a month's spending against its budget",
-    brief="The month page's chart: spending per category against what was budgeted. Three shapes drawn from the same "
-          "month, for you to pick one in front of them.",
     opens=("show/budget-chart/three-charts.html",),
     turns=[
         Turn(ago=40, prompts=("the month page needs a chart of spending vs budget, show me a few options",),

@@ -10,8 +10,8 @@ recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a c
 shape RULES.md gives them, and `previous`, which the handoff skill's `pickup.py` writes where the
 session picked up another's continuation handoff. Any of them may be missing: a session's first
 turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
-title, links to the pages of the sessions before and after it across a handoff, the brief and
-resume command, the questions no later turn answered or superseded, then the turns newest first,
+title, links to the pages of the sessions before and after it across a handoff, the resume
+command, the questions no later turn answered or superseded, then the turns newest first,
 each with the user's messages it answered and what other sessions sent meanwhile, read from the
 transcript.
 The page is laid out in panes that each scroll on their own: the title and the questions above
@@ -104,7 +104,7 @@ def sessions_directory(cwd: Path) -> Path | None:
 
 
 def render_session(directory: Path, transcript: Path, now: datetime | None = None) -> str:
-    """The session page for `directory`: its title, brief and resume command, the questions no
+    """The session page for `directory`: its title and resume command, the questions no
     later turn answered or superseded, then the turns newest first.
 
     `now` is the clock the page is rendered against, the machine's by default; a check pins it so
@@ -119,12 +119,12 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     a tool call there only after the call's PostToolUse hooks have run.
 
     Where there is no `session.md` yet, the title is the one Claude Code keeps for the session
-    (`claude_title`), the brief is empty, and the resume command changes to the directory the
-    session started in.
+    (`claude_title`), and the resume command changes to the directory the session started in.
 
     Raises RecordError where a record does not parse.
     """
-    front, title, sections = read_record(
+    # an older session.md may carry a `## Brief`, which parses and stays off the page
+    front, title, _ = read_record(
         directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"},
     ) if (directory / "session.md").exists() else ({}, "", {})
     turns = read_turns(directory / "turns")
@@ -147,7 +147,6 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         name=registered_name(session),
         repo=Path(str(front["repo"])) if "repo" in front else started_in(entries) or root,
         title=title or claude_title(entries) or f"session {session[:8]}",
-        brief=sections.get("Brief", (0, ""))[1],
         turns=tuple(paired[t.path] for t in turns),
         chats=tuple(paired[c.path] for c in chats),
         settled=settled,
@@ -344,7 +343,6 @@ class Session:
     id: str
     repo: Path  # where the resume command changes to
     title: str  # session.md's H1, or Claude Code's title for the session where there is no session.md
-    brief: str  # its `## Brief`; empty where there is no session.md
     root: Path  # the repo root the directory sits under, which a record's paths are from
     directory: Path  # the session's own, which holds its records
     name: str = ""  # its short name in Claude Code's session registry; empty where it has no entry
@@ -1007,11 +1005,7 @@ def assemble(v: View, now: datetime) -> str:
   <div class="left">
     <section class="intro">
       <h1 class="v-title">{title}</h1>{handoffs(session)}
-      <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
-      <div class="prose brief">{block(session.brief)}</div>
-      <div class="actions">
-        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>R</kbd></button>
-      </div>
+      <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="resume" id="resume" data-cmd="{esc(v.resume)}" title="copy: {esc(v.resume)}">copy resume command <kbd>R</kbd></button></p>
     </section>{top}
     <div class="pane" id="turns-pane">
       <section class="turns" aria-label="turns">
@@ -1042,8 +1036,8 @@ def sources(v: View) -> str:
 def handoffs(session: Session) -> str:
     """The links to the page of the session this one continued from and to each that continued
     from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
-    sessions directory: a line each under the title, by the session's title where it has one, so
-    they show with the brief folded. Nothing where neither is there."""
+    sessions directory: a line each under the title, by the session's title where it has one.
+    Nothing where neither is there."""
     def line(label: str, other: str) -> str:
         text = inline(session.titles[other], paths=False) if session.titles.get(other) else esc(other[:8])
         return (f'<span class="handoff"><span class="v-meta">{label}</span> '
@@ -1369,7 +1363,7 @@ def file_links_too(url: str) -> bool:
     return url.strip().lower().startswith("file:") or validateLink(url)
 
 
-MARKDOWN = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable(["table", "linkify"])
+MARKDOWN = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable(["table", "linkify", "strikethrough"])
 MARKDOWN.linkify.set({"fuzzy_link": False, "fuzzy_email": False})
 MARKDOWN.core.ruler.at("linkify", links_in_text)
 MARKDOWN.inline.ruler.at("linkify", links_in_line)

@@ -2,9 +2,10 @@
 
 `session/` is the four grilling rounds this feature was designed in, as the session directory the
 Decisions of `agent/tickets/session-page.md` put under `agent/sessions/<session-id>/`. The records
-are `agent/prototypes/session-page/sample/`'s, with three changes: the prototype's relative links
-are written from the repo root, `session.md`'s `spec:` went with the spec page it named, and
-`04.md`'s third link, the one to the record itself, went with it, having no repo-root form. The
+are `agent/prototypes/session-page/sample/`'s, with four changes: the prototype's relative links
+are written from the repo root, `session.md`'s `spec:` went with the spec page it named,
+`04.md`'s third link, the one to the record itself, went with it, having no repo-root form, and
+`session.md`'s `## Brief` went, since the page shows none. The
 sample's `NN.you.md` files are not here either: the user's messages come from the transcript.
 
 `transcript.jsonl` is that session's own, trimmed from the 12 MB Claude Code wrote at

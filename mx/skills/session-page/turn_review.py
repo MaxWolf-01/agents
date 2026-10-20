@@ -4,7 +4,7 @@ A fresh model, MODEL at EFFORT, reads the records the turn wrote against the rul
 ../writing-for-humans/CATALOGUE.md tagged `chat` or `both`, the selection that file's header
 states, seeing what the page's reader has seen: the earlier records, each after the user's messages
 it answered, and the messages this record answers. The records under review are the turn's own and,
-where the transcript shows this turn writing it, session.md, whose title and brief head the page.
+where the transcript shows this turn writing it, session.md, whose title heads the page.
 Tool calls are not on the page, so the reviewer never sees them. The record's shape, as
 RULES.md gives it to the agent, is exempt as structure. It answers against a JSON schema; a
 finding whose quote is in no record under review is dropped, and at most MOST go back to the agent.
@@ -42,7 +42,7 @@ SHAPE = "## The turn record"
 
 SYSTEM = """You review the prose of the records a coding agent writes as a turn ends, which its user reads rendered on a web page. Review it against the rules below, as a careful human editor would.
 
-The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Where the agent rewrote the session's own record this turn (session.md: frontmatter, the session's title as its H1, and a brief), it comes first, in <record> tags of its own. Review the text inside <record> tags and nothing else; the rest is what the reader already knows.
+The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Where the agent rewrote the session's own record this turn (session.md: frontmatter and the session's title as its H1), it comes first, in <record> tags of its own. Review the text inside <record> tags and nothing else; the rest is what the reader already knows.
 
 Report at most three findings, the ones that cost the reader most. Each quotes a short excerpt of one record verbatim, names the rule it breaks by id, and says in a few words what is wrong. When in doubt, leave it out; no findings is a good answer.
 

@@ -192,7 +192,7 @@ def lay_session(s: fixture.Session, code: Path, home: Path, now: float, pane: tu
     directory = code / "agent" / "sessions" / s.id
     transcript = home / ".claude" / "projects" / ("-" + str(code).strip("/").replace("/", "-")) / f"{s.id}.jsonl"
     lines, number, first = [], 0, at(s.turns[0].ago, now)
-    write(directory / "session.md", f"---\nsession: {s.id}\nrepo: {code}\n---\n\n# {s.title}\n\n## Brief\n\n{s.brief}\n")
+    write(directory / "session.md", f"---\nsession: {s.id}\nrepo: {code}\n---\n\n# {s.title}\n")
     for turn in s.turns:
         end = at(turn.ago, now)
         for i, prompt in enumerate(turn.prompts):

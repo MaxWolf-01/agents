@@ -139,7 +139,7 @@ def write_session(directory: Path, turns: list[dict]) -> tuple[Path, Path]:
     (directory / "turns").mkdir(parents=True, exist_ok=True)
     (directory / "session.md").write_text(
         f"---\nsession: {DRAWN}\nrepo: {directory.parent}\n---\n\n"
-        "# A session with questions\n\n## Brief\n\nWhat it is about.\n"
+        "# A session with questions\n"
     )
     for number, turn in enumerate(turns, start=1):
         (directory / "turns" / f"{number:02d}.md").write_text(record(number, turn))
@@ -351,6 +351,25 @@ def test_a_bare_url_and_a_file_url_are_links() -> None:
     rendered = block("See https://example.com/a, [the PDF](file:///tmp/x.pdf), page.py and [no](javascript:alert(1)).")
     assert re.findall(r'<a href="([^"]+)"', rendered) == ["https://example.com/a", "file:///tmp/x.pdf"]
     assert "<a" not in inline("Stage at https://example.com/a", paths=False)
+
+
+def test_text_between_double_tildes_renders_struck_through() -> None:
+    """A grilling round shows the sentences its answers dropped from a ticket's brief struck through,
+    beside the ones that replaced them; a lone tilde stays a tilde."""
+    rendered = block("The goal is ~~one note per repo~~ one note per feature, ~5 lines long.")
+    assert re.findall(r"<s>(.*?)</s>", rendered) == ["one note per repo"]
+    assert "~5 lines" in rendered
+
+
+def test_a_session_record_that_still_has_a_brief_renders_without_it(tmp_path: Path) -> None:
+    """A session.md written while the page still carried a brief renders as it is, its title on the page and its
+    brief nowhere the reader sees, so committed sessions need no rewrite."""
+    directory, transcript = write_session(tmp_path / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
+    described = directory / "session.md"
+    described.write_text(described.read_text() + "\n## Brief\n\nWhat the session was about, in a few sentences.\n")
+    page = text_of(re.sub(r"<script\b.*?</script>", "", render_session(directory, transcript, now=NOW), flags=re.S))
+    assert "A session with questions" in page
+    assert "What the session was about" not in page
 
 
 def test_a_code_block_sits_in_a_box_with_its_copy_button() -> None:

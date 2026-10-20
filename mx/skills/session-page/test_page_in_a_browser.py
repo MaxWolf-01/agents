@@ -105,6 +105,18 @@ with sync_playwright() as pw:
         # the word that says so, over the id
         page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
         out["copied"] = page.evaluate("navigator.clipboard.readText()")
+        # the resume control: on the title's meta line, level with the time the page was rendered
+        out["resume_inline"] = page.evaluate('''(() => {
+            const r = document.getElementById("resume"), meta = r.closest(".intro > .v-meta")
+            if (!meta || !r.checkVisibility()) return false
+            const a = r.getBoundingClientRect(), b = meta.querySelector(".nowrap").getBoundingClientRect()
+            return Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 4 })()''')
+        page.click("#resume")
+        out["resume_clicked"] = page.evaluate("navigator.clipboard.readText()")
+        page.evaluate("navigator.clipboard.writeText('')")
+        page.keyboard.press("R")
+        page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
+        out["resume_keyed"] = page.evaluate("navigator.clipboard.readText()")
         out["chips"] = page.evaluate('''[...document.querySelectorAll("details.turn")].map((t) => [t.id,
             [...t.querySelectorAll(":scope > summary .chip-link")].filter((a) => a.checkVisibility()).map((a) => a.textContent)])''')
 
@@ -450,7 +462,8 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     j and k walk the turns, marking the cursor's turn in the timeline (P5); 1 and 2 open the
     focused turn's first and second artefact, past the ticket file turn 04 links first, by clicking
     its link, and a number the turn has no artefact for opens nothing and says so. The key list
-    names the keys this page added (P6)."""
+    names the keys this page added (P6). The resume control sits on the title's meta line, and it
+    and R copy the resume command."""
     page, root = rendered
     seen = probe(page, "keys")
     assert seen["chips"] == [
@@ -465,6 +478,9 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["clicked"] == [str(root / ARTEFACTS[i]) for i in (2, 3, 1)]
     assert seen["toast"] == "turn 03 has no artefact 2"
     assert seen["copied"] == SESSION, "a click on the session id did not copy it whole"
+    assert seen["resume_inline"], "the resume control is not on the title's meta line"
+    resume = f"cd /home/max/repos/github/MaxWolf-01/agents && claude --resume {SESSION}"
+    assert (seen["resume_clicked"], seen["resume_keyed"]) == (resume, resume)
     for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
 

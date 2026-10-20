@@ -373,8 +373,8 @@ def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_clau
     entries: list[dict], title: str, tmp_path: Path,
 ) -> None:
     """every-session-gets-a-page#P5: no session.md and no numbered record, one chat turn, and the
-    page renders it, titled as the hub's rail titles the session, with no brief, and a resume
-    command that changes to the directory the session started in."""
+    page renders it, titled as the hub's rail titles the session, with a resume command that
+    changes to the directory the session started in."""
     directory = tmp_path / "agent" / "sessions" / FRESH
     at = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
     chat = chat_path(directory / "turns", at)
@@ -383,7 +383,7 @@ def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_clau
     said = tmp_path / "t.jsonl"
     said.write_text("".join(json.dumps(e) + "\n" for e in [STARTED, *entries]))
     page = view_of(directory, said)
-    assert (page.session.title, page.session.brief) == (title, "")
+    assert page.session.title == title
     assert [row.key for row in page.rows] == [chat.stem]
     assert page.resume == f"cd '/srv/help line' && claude --resume {FRESH}"
     rendered = render_session(directory, said, now=NOW)
