@@ -1,3 +1,8 @@
+## 1.0.73
+
+- /mx:sharpen replaces /mx:expert and wf, and is the one home of grilling's expert bar
+- fix(house-style): code comments recede, quotes match, ALL_CAPS names stay plain
+
 ## 1.0.72
 
 - feat(session-page): turns and whole sessions copy as their markdown
