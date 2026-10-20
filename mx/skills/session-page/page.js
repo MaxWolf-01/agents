@@ -39,7 +39,6 @@ const nativeKey = (e) => (e.key === "Enter" || e.key === " ") && e.target.closes
 
 const pane = document.getElementById("turns-pane")
 const column = document.getElementById("artefacts")
-const intro = document.querySelector(".intro")
 const waiting = document.getElementById("open-questions")
 const questions = waiting ? [...waiting.querySelectorAll(".q")] : []
 const blocks = [...pane.querySelectorAll("[data-block]")]
@@ -151,15 +150,7 @@ pane.addEventListener("scroll", () => {
 const SCROLLING_KEYS = new Set(["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "])
 for (const ev of ["wheel", "touchstart"]) pane.addEventListener(ev, () => (follow = "scroll"), { passive: true })
 
-// ---- the title's fold, the questions' accordion, the timeline's sheet
-
-const unfold = document.getElementById("unfold")
-const brief = (on = !intro.classList.contains("unfolded")) => {
-  intro.classList.toggle("unfolded", on)
-  unfold.setAttribute("aria-expanded", on)
-  refade()
-}
-unfold.addEventListener("click", () => brief())
+// ---- the questions' accordion, the timeline's sheet
 
 let openQ = questions.findIndex((q) => !q.classList.contains("folded"))
 const foldBand = document.getElementById("fold-band")
@@ -239,7 +230,6 @@ const place = () => {
     seen,
     question: questions[openQ] ? questions[openQ].id : null,
     band: waiting ? !waiting.classList.contains("collapsed") : true,
-    brief: intro.classList.contains("unfolded"),
   }
 }
 const save = () => { try { sessionStorage.setItem(KEY, JSON.stringify(place())) } catch {} }
@@ -258,7 +248,6 @@ const restore = (s) => {
     if (q >= 0 || s.question === null) showQuestion(q)
     band(s.band)
   }
-  brief(s.brief)
   const anchor = s.anchor && document.getElementById(s.anchor)
   const go = () => { pane.scrollTop = follows || s.top || !anchor ? 0 : offsetIn(anchor) + s.into; reach() }
   go()
@@ -332,12 +321,7 @@ const write = async (text, el) => {
   if (el) copied(el)
 }
 const resume = document.getElementById("resume")
-const copy = async () => {
-  await write(resume.dataset.cmd)
-  resume.classList.add("copied")
-  resume.querySelector("span").textContent = "copied"
-  setTimeout(() => { resume.classList.remove("copied"); resume.querySelector("span").textContent = "copy resume command" }, 1600)
-}
+const copy = () => write(resume.dataset.cmd, resume)
 resume.addEventListener("click", copy)
 const id = document.getElementById("session-id")
 id.addEventListener("click", () => write(id.dataset.copy, id))
