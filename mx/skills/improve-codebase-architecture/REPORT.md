@@ -14,3 +14,5 @@ Before and after side by side. Pick the form that fits each candidate, and vary 
 - **Cross-section**: the layers a call passes through, as stacked bands. Before: many thin layers, each doing little. After: one thick band named for the consolidated responsibility.
 - **Call-graph collapse**: before, a tree of calls as nested boxes; after, one box with the now-internal calls faded inside it.
 - **Deep module**: the after as one thick-bordered module with its internals greyed out.
+- Anything else that makes sense (see `/mx:show` for examples).
+
