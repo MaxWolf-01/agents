@@ -16,8 +16,10 @@ The repo's kind decides what a run reads and which stages it runs. The agents re
 the mx plugin, gets the workflow retro: it reads the sessions of every Claude Code profile under
 the home (`~/.claude*/projects`) and the git of the agents repo and of the repos `retro/repos`
 lists in its agent repo, one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
-other repo gets a repo retro: it reads the repo's own commits and the tickets of the agent repo
-its report is in, and no session, and runs follow-up, the lens pass and synthesize.
+other repo gets a repo retro: it reads the repo's own commits, the tickets of the agent repo its
+report is in, and the sessions of every profile worked in the repo in the period, those that ran in
+it or one of its worktrees or made a tool call naming a path inside one; it runs read-corrections,
+follow-up, the lens pass and synthesize.
 
 A run's period starts where the last run committed to the report ended, or at --since; a
 repo retro's first run, given no --since, takes the four weeks before it. Everything a run writes
@@ -26,9 +28,10 @@ repo: what collect gathered, each stage's prompt, notes and output, and the new 
 of a run is a line of `<data>/<repo>/runs.log`.
 
 The stages run one after another, each a `claude -p` that may write only in the run directory.
-The workflow retro's first, read-fresh, may read nothing outside it either, and runs before the
-earlier reports are copied into it, under `previous/`. A repo retro's stages may not read the
-session pages in the agent repo its report is in, and run no git command there.
+The first of each kind, read-fresh or read-corrections, may read nothing outside it either, and
+runs before the earlier reports are copied into it, under `previous/`. A repo retro's stages read
+sessions as the digests in the run directory alone: they may not read the session pages in the
+agent repo its report is in, and run no git command there.
 
 The commit holds the report and its page, `report.html` beside it, alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when
@@ -126,7 +129,12 @@ WORKFLOW = Kind("workflow retro", (
     LENS_PASS,
     SYNTHESIZE,
 ))
-REPO = Kind("repo retro", (FOLLOW_UP, LENS_PASS, SYNTHESIZE))
+REPO = Kind("repo retro", (
+    Stage("read-corrections", ("corrections/{batch}.md", "corrections.md"), fresh=True),
+    FOLLOW_UP,
+    LENS_PASS,
+    SYNTHESIZE,
+))
 
 
 def kind_of(repo: Path) -> Kind:
@@ -236,6 +244,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
                                                           focus=focus, seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       kind=kind.name, agent=str(agent), repos="\n".join(f"- {r}" for r in repos),
+                      digest=(HERE / "DIGEST.md").read_text().strip(),
                       sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
                              f"{retro_collect.SAMPLE_WINDOW[0].days // 7} to {retro_collect.SAMPLE_WINDOW[1].days // 7} "
                              f"weeks before the period's end",
@@ -288,9 +297,9 @@ def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path,
     if kind is WORKFLOW:
         retro_collect.collect_sessions(since, until, run, home / "digest-cache", projects, repos, agent=place.agent,
                                        scope=place.scope)
-        write_batches(run)
     else:
-        retro_collect.collect_repo(since, until, run, repo, place.agent, place.scope)
+        retro_collect.collect_repo(since, until, run, home / "digest-cache", projects, repo, place.agent, place.scope)
+    write_batches(run)
     retro_collect.collect_touched(since, until, run, repo)
 
 
@@ -366,8 +375,9 @@ class Reach:
 
 def reach(kind: Kind, repos: list[Path], agent: Path) -> Reach:
     """The repos, their agent repos and the skills, whose files the stages' prompts name. A repo
-    retro reads no session, so its agent repos' session pages are hidden, and git, which would show
-    a committed page by its commit or blob, is not run in them: their tickets are read as files."""
+    retro reads the sessions worked in its repo as their digests in the run directory, and the session
+    pages of its agent repos, which are of every session of the project, are hidden: git, which would
+    show a committed page by its commit or blob, is not run in them, and their tickets are read as files."""
     agents = list(dict.fromkeys(d.resolve() for d in (agent, *(r / "agent" for r in repos if (r / "agent" / ".git").exists()))))
     read = list(dict.fromkeys(d.resolve() for d in (*repos, *agents, HERE.parent)))
     if kind is WORKFLOW:
@@ -380,8 +390,8 @@ def reach(kind: Kind, repos: list[Path], agent: Path) -> Reach:
 
 def write_batches(run: Path) -> None:
     """`batches.json`: the period's digests in batches of about BATCH_CHARS, a project's sessions
-    together and in order of their start, named `batch-01`, …; then the older sample's, in order of
-    their start, named `sample-01`, …"""
+    together and in order of their start, named `batch-01`, …; then the older sample's, where the
+    run has one, in order of their start, named `sample-01`, …"""
     rows = [json.loads(line) for line in (run / "sessions.jsonl").read_text().splitlines()]
     period = sorted((r for r in rows if r["set"] == "sessions"), key=lambda r: (r["project"], r["start"]))
     sample = sorted((r for r in rows if r["set"] == "sample"), key=lambda r: r["start"])
@@ -603,7 +613,7 @@ class Args:
     data: Path = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "retro"
     """The retro's data directory, outside every git repo."""
     projects: list[Path] = field(default_factory=retro_collect.profiles)
-    """Each Claude Code profile's directory of transcripts, which the workflow retro reads; by default every `~/.claude*/projects`."""
+    """Each Claude Code profile's directory of transcripts, whose sessions the workflow retro reads every one of and a repo retro those worked in its repo; by default every `~/.claude*/projects`."""
     if_active: bool = False
     """Skip the run, exiting 3, when there is nothing new since the period's start: for the workflow retro, no message of max's in an interactive session and no commit of his in the listed repos; for a repo retro, no commit in the repo."""
     resume: Path | None = None

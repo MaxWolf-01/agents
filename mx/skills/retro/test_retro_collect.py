@@ -383,3 +383,37 @@ def test_touched_names_the_files_the_periods_commits_touched_that_the_repo_still
     retro_collect.collect_touched(SINCE, UNTIL, run, repo)
 
     assert re.findall(r"^- (.+)$", (run / "touched.md").read_text(), re.M) == ["2 a.py", "1 b.py"]
+
+
+def test_a_repo_retro_reads_the_sessions_worked_in_its_repo_one_started_in_a_project_root_that_edits_its_worktree_included(
+        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A repo planned from a project's tracker is worked on from the project's root, in a worktree of the repo."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    project, repo, worktree = tmp_path / "helferline", tmp_path / "helferline/clones/api", tmp_path / "dispatch/api-login"
+    for r in (project / "agent", repo):
+        r.mkdir(parents=True)
+        git(r, "init", "-q", "-b", "main")
+        commit(r, {"README.md": "1"}, "start", SINCE - timedelta(days=9))
+    git(repo, "worktree", "add", "-q", "-b", "ticket/login", str(worktree))
+    (tmp_path / "api-link").symlink_to(repo)
+    day = SINCE + timedelta(days=1)
+
+    def session(cwd: Path, start: datetime = day) -> Transcript:
+        return Transcript(projects, str(cwd), start).says("go on")
+
+    edits_worktree = session(project).calls("Edit", {"file_path": f"{worktree}/login.py", "old_string": "a", "new_string": "b"}, "ok")
+    started_in_repo = session(repo).answers("Reading the code.")
+    from_the_home = session(project).calls("Bash", {"command": "make -C ~/api-link test"}, "ok")
+    only_said = session(project).says(f"compare it with {repo}/login.py").answers(f"I'll read {repo}/login.py.")
+    a_sibling = session(project).calls("Bash", {"command": f"ls {repo}-old/ && cat {repo}2"}, "ok")
+    before_the_period = session(project, SINCE - timedelta(days=2)).calls("Read", {"file_path": f"{repo}/README.md"}, "1")
+    before_the_period.at = day
+    before_the_period.says("now the tracker").calls("Read", {"file_path": f"{project}/agent/tickets/login.md"}, "ticket")
+    run = tmp_path / "data" / "runs" / "1"
+
+    retro_collect.collect_repo(SINCE, UNTIL, run, tmp_path / "data" / "cache", [projects], repo, project / "agent")
+
+    assert {p.stem for p in (run / "sessions").glob("*.md")} == {edits_worktree.sid, started_in_repo.sid, from_the_home.sid}
+    assert {json.loads(r)["id"] for r in (run / "sessions.jsonl").read_text().splitlines()} == \
+        {edits_worktree.sid, started_in_repo.sid, from_the_home.sid}
+    assert not {only_said.sid, a_sibling.sid, before_the_period.sid} & {p.stem for p in run.rglob("*.md")}

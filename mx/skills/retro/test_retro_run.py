@@ -20,7 +20,7 @@ in a git repository (retro-semi-automated#P2), the oracle being that repo's stat
 
 A repo retro runs through the same command, on a repo other than the agents repo: which stages
 run, in which order, what its run directory holds and what its stages may reach, the oracle being
-the stub's record and the stages' command lines (retro-semi-automated#P10); and which repos are
+the stub's record and the stages' command lines; and which repos are
 refused and which weeks skipped, the oracle being git's record of the agent repo and the run log.
 """
 
@@ -61,6 +61,7 @@ find . -path ./prompts -prune -o -type f -print | sort > "$STUB_LOG/$stage.seen"
 if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo "$$ $!" > "$STUB_LOG/$stage.pids.tmp" && mv "$STUB_LOG/$stage.pids.tmp" "$STUB_LOG/$stage.pids"; wait; fi
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
+    "read corrections") mkdir -p corrections && echo "corrections" > corrections.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "corrections/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && for f in leading-words permissions; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
@@ -413,17 +414,22 @@ def code(tmp_path: Path) -> Path:
     return code
 
 
-def test_a_repo_retro_reads_its_repos_commits_and_proposed_tickets_and_no_session(
+def test_a_repo_retro_reads_its_repos_commits_its_proposed_tickets_and_the_sessions_worked_in_it(
         tmp_path: Path, stub: Path, code: Path) -> None:
     projects = tmp_path / ".claude/projects"
-    Transcript(projects, str(code), SINCE + timedelta(days=2)).says("the backup failed again")
+    worked = Transcript(projects, str(code), SINCE + timedelta(days=2)).says("no, the backup must retry once only")
+    Transcript(projects, str(tmp_path / "elsewhere"), SINCE + timedelta(days=2)).says("SOMEWHERE-ELSE")
 
     run = retro_run.run_retro(code, tmp_path / "data", [projects], SINCE, until=FIRST)
 
-    assert (stub / "order").read_text().split("\n")[:-1] == ["follow up", "lens pass", "synthesize"]
-    assert not any((run / d).exists() for d in ("sessions", "sample", "sessions.jsonl", "batches.json")), \
-        "no session was digested (retro-semi-automated#P10)"
-    assert not (tmp_path / "data/dotfiles/digest-cache").exists()
+    assert (stub / "order").read_text().split("\n")[:-1] == ["read corrections", "follow up", "lens pass", "synthesize"]
+    assert [p.stem for p in (run / "sessions").glob("*.md")] == [worked.sid] and not (run / "sample").exists()
+    assert [b["digests"] for b in json.loads((run / "batches.json").read_text())] == [[f"sessions/{worked.sid}.md"]]
+    seen = (stub / "read corrections.seen").read_text()
+    args = (stub / "read corrections.argv").read_text().splitlines()
+    assert "sessions/" in seen and "previous" not in seen and "--add-dir" not in args and "Bash" not in args[args.index("--tools") + 1], \
+        "read-corrections reads the digests in its run directory alone, before any earlier report"
+    assert (run / "corrections.md").is_file()
     assert "backup: retry once" in (run / "git/dotfiles.md").read_text()
     assert (run / "touched.md").is_file()
     assert (run / "proposed/flaky-backup.md").read_text() == ticket("proposed")
@@ -532,7 +538,7 @@ def test_a_repo_planned_from_another_projects_tracker_gets_its_report_there_read
 
     run = retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
 
-    assert (stub / "order").read_text().split("\n")[:-1] == ["follow up", "lens pass", "synthesize"]
+    assert (stub / "order").read_text().split("\n")[:-1] == ["read corrections", "follow up", "lens pass", "synthesize"]
     assert tickets(run, "proposed") == ["search-index"] and tickets(run, "in-flight") == ["theme-toggle"]
     assert "only the tickets whose `repos:` names `quartz`" in (run / "proposed.md").read_text(), \
         "the stages are told the list is the planned repo's alone"

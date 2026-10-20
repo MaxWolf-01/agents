@@ -34,8 +34,11 @@ every git work tree. `retro_run.py` runs it as a run's collect stage; its subcom
 messages, its reverts, and, where the repo holds an agent repo, the tickets filed, every status
 change, the tickets deleted, and the worker reports committed in the period.
 
-A repo retro reads no session: its run gets the repo's `git/<repo>.md`, `proposed.md` and `in-flight.md` alone,
-and, as a workflow retro's does, `touched.md`, the files the period's commits touched.
+A repo retro reads the sessions worked in its repo alone: a digest in `sessions/<id>.md` and a row in
+`sessions.jsonl` for each interactive session that, on a day of the period, ran in the repo or one
+of its worktrees or made a tool call naming a path inside one (`worked_in`), and no older sample.
+Beside them its run gets the repo's `git/<repo>.md`, `proposed.md` and `in-flight.md`, and, as a
+workflow retro's does, `touched.md`, the files the period's commits touched.
 
 Digests are cached per session in the cache directory and digested again only once the
 transcript or its session page changed.
@@ -74,6 +77,9 @@ SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the p
 PASTE_CLIP = 600  # pasted text in a message of max's
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
+# An absolute path, or one from the home, wherever a tool call's input holds it: a field of its own or a word of a
+# command. Read from the input as JSON, so a quote or an escape (`\n`) ends it.
+NAMED_PATH = re.compile(r"(?<![\w.~/$\\-])~?/[^\s\"'`;|&<>(){}\[\],\\]*")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
 RETRO = Path("retro")  # in an agent repo: its own report, and a directory per repo its tracker plans that has one
@@ -115,15 +121,36 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
                      repos: list[Path], sample_seed: int | None = None, agent: Path | None = None,
                      scope: Scope = Scope()) -> None:
     """Everything a workflow retro's later stages read, written into `run`."""
-    oldest = until - SAMPLE_WINDOW[1]
-    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= min(since, oldest).timestamp()]
-    digests = [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
+    digests = interactive_digests(projects, cache, repos, min(since, until - SAMPLE_WINDOW[1]))
     period = [d for d in digests if d.end >= since and d.start <= until]
     ids = {d.sid for d in period}
     older = [d for d in digests if d.sid not in ids and until - SAMPLE_WINDOW[1] <= d.start <= until - SAMPLE_WINDOW[0]]
-    sample = weighted_sample(older, SAMPLE_SIZE, random.Random(sample_seed))
+    write_digests(run, since, period, weighted_sample(older, SAMPLE_SIZE, random.Random(sample_seed)))
+    collect_git(since, run, repos, until, agent, scope)
+    (run / "versions.md").write_text(versions(since, until, period, repos))
+    collect_permissions(since, run, projects)
+    if agent:
+        collect_tickets(run, agent, scope)
+
+
+def collect_repo(since: datetime, until: datetime, run: Path, cache: Path, projects: list[Path], repo: Path,
+                 agent: Path, scope: Scope = Scope()) -> None:
+    """The digests of the sessions worked in the repo, `git/<repo>.md` and the tickets: what a repo
+    retro reads beside `touched.md` and the code."""
+    roots = worktrees(repo)
+    worked = [d for d in interactive_digests(projects, cache, [repo], since) if worked_in(d, roots, since, until)]
+    write_digests(run, since, worked)
+    collect_git(since, run, [repo], until, agent, scope)
+    collect_tickets(run, agent, scope)
+
+
+def write_digests(run: Path, since: datetime, period: list[Digest], sample: list[Digest] | None = None) -> None:
+    """`sessions/<id>.md`, each digest of the period from the day `since` falls on, `sample/<id>.md`
+    where a sample is given, and `sessions.jsonl`, a row per digest."""
     rows = []
     for where, chosen in (("sessions", period), ("sample", sample)):
+        if chosen is None:
+            continue
         (run / where).mkdir(parents=True, exist_ok=True)
         for stale in (run / where).glob("*.md"):  # a run again into the same directory replaces its digests
             stale.unlink()
@@ -132,17 +159,6 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
             rows.append(dict(id=d.sid, set=where, profile=d.profile, project=d.cwd, start=stamp(d.start),
                              end=stamp(d.end), messages=d.messages))
     (run / "sessions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    collect_git(since, run, repos, until, agent, scope)
-    (run / "versions.md").write_text(versions(since, until, period, repos))
-    collect_permissions(since, run, projects)
-    if agent:
-        collect_tickets(run, agent, scope)
-
-
-def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent: Path, scope: Scope = Scope()) -> None:
-    """`git/<repo>.md` and the tickets, what a repo retro reads beside `touched.md` and the code; no session."""
-    collect_git(since, run, [repo], until, agent, scope)
-    collect_tickets(run, agent, scope)
 
 
 def collect_touched(since: datetime, until: datetime, run: Path, repo: Path) -> None:
@@ -185,9 +201,7 @@ def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Pat
     """A sign of max since `since`, or "" when there is none: his latest message in an
     interactive session, else a commit of his on a branch of one of the repos, his being the author
     identity the repo itself commits with. The digests it reads are cached as a run's are."""
-    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= since.timestamp()]
-    said = [d for d in digest_all(transcripts, cache, repos)
-            if d.interactive and d.said_last and parse_time(d.said_last) >= since]
+    said = [d for d in interactive_digests(projects, cache, repos, since) if d.said_last and parse_time(d.said_last) >= since]
     if said:
         d = max(said, key=lambda d: d.said_last)
         return f"a message of max's at {d.said_last} in session {d.sid} ({d.cwd})"
@@ -321,6 +335,27 @@ def profiles() -> list[Path]:
     return sorted(p for p in Path.home().glob(".claude*/projects") if p.is_dir())
 
 
+def interactive_digests(projects: list[Path], cache: Path, repos: list[Path], since: datetime) -> list[Digest]:
+    """The digest of every interactive session whose transcript was written to since `since`."""
+    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= since.timestamp()]
+    return [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
+
+
+def worked_in(d: Digest, roots: list[Path], since: datetime, until: datetime) -> bool:
+    """Whether the session, on a day from `since` to `until`, ran in one of `roots` or made a tool
+    call naming a path inside one. A path is taken as it resolves now, so one through a symlink
+    counts for the repo the link points into."""
+    first, last = (t.astimezone(UTC).date().isoformat() for t in (since, until))
+    named = {p for day, paths in d.paths.items() if first <= day <= last for p in paths}
+    return any(Path(os.path.realpath(os.path.expanduser(p))).is_relative_to(root) for p in named for root in roots)
+
+
+def worktrees(repo: Path) -> list[Path]:
+    """The repo's main checkout and every worktree of it, resolved."""
+    out = git(repo, "worktree", "list", "--porcelain")
+    return [Path(line.split(" ", 1)[1]).resolve() for line in out.splitlines() if line.startswith("worktree ")]
+
+
 def find_transcripts(projects: list[Path]) -> list[Path]:
     """Every session's transcript under the profiles' project directories."""
     return [t for root in projects if root.is_dir() for t in sorted(root.glob("*/*.jsonl"))]
@@ -350,6 +385,7 @@ class Digest:
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
+    paths: dict[str, list[str]] = field(default_factory=dict)  # day: the working directories and the paths its tool calls named
     page_at: int = 0  # where in `text` the days end and the session page's records begin
 
     def since(self, start: datetime) -> str:
@@ -412,7 +448,7 @@ class _Inline:
         return map(f, *items)
 
 
-CACHE_FORMAT = 7  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 8  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -460,6 +496,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     models: dict[str, dict[str, list[str]]] = {}
     messages = 0
     said_last: datetime | None = None
+    paths: dict[str, set[str]] = {}
 
     def put(at: datetime | None, text: str) -> None:
         nonlocal day
@@ -473,6 +510,8 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
         if e.get("isSidechain"):
             continue
         at = parse_time(e["timestamp"]) if e.get("timestamp") else None
+        if at and isinstance(e.get("cwd"), str) and e["cwd"]:
+            paths.setdefault(at.date().isoformat(), set()).add(e["cwd"])
         if at and e.get("version"):
             seen(versions, e["version"], at)
         kind = e.get("type")
@@ -487,6 +526,9 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                     put(at, f"A: {block['text'].strip()}")
                 elif block.get("type") == "tool_use":
                     calls[block.get("id", "")] = block.get("name", "?")
+                    if at:
+                        paths.setdefault(at.date().isoformat(), set()).update(
+                            NAMED_PATH.findall(json.dumps(block.get("input"), ensure_ascii=False)))
                     put(at, f"→ {block.get('name', '?')} {json.dumps(block.get('input'), ensure_ascii=False)}")
         elif kind == "system":
             sub = e.get("subtype")
@@ -552,7 +594,8 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     return Digest(sid=transcript.stem, profile=profile, cwd=cwd, start=start, end=end, interactive=interactive,
                   messages=messages, text=text, said_last=stamp(said_last) if said_last else "",
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
-                  page_at=starts[-1] - 1 if interactive else 0)
+                  page_at=starts[-1] - 1 if interactive else 0,
+                  paths={day: sorted(named) for day, named in paths.items()} if interactive else {})
 
 
 def said(content: object) -> str:

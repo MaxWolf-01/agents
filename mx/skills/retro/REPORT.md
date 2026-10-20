@@ -36,6 +36,16 @@ Deletions and narrowings come first. A defect class that recurs and that a tool 
 
 A candidate is weighed the same way; its **Weighing**, or an architecture candidate's impact, orders the Candidates section.
 
+### What is already written
+
+Before a finding or candidate enters the report, look for the guidance that already covers its case: a skill, a `CLAUDE.md`, a doc or a rule the agent reads, in the repos and skills the run can read. What is there decides, in this order:
+
+1. **A rule written down that nothing enforces** makes the finding a repeat, weighed as one that recurs: the rule was written after the mistake was first seen. Its proposal moves the rule up a rung of the agents repo's `PRINCIPLES.md` #1, as high as will hold (the code shaped so the mistake cannot be written; then a lint, type, test or script that goes red on it; then a line of a reviewer's checklist), and retires the written rule once the mechanism covers it. Where no rung above prose would hold, the next two decide.
+2. **Guidance that covers the case clearly, where the agent reads it as it acts**, makes the finding an execution problem, and rejects it: a new one stays out of the report, and a standing one is dropped, its line in What changed naming the guidance.
+3. **Guidance that covers it where the agent does not read it** (buried in a long file, under a heading about something else, behind a pointer that does not fire) gets a placement fix: the proposal moves the guidance to where the agent acts, and writes no second copy of it.
+
+Beside these, **a skill the model invokes itself that held the guidance and did not fire** in the sessions gets a proposal to tune its description, the trigger that decides when it fires.
+
 ## Shape, in this order
 
 A repo retro's report has no Findings and no Versions, its `ids:` line names the highest `A<n>` alone, and its top recommendation is a candidate.
@@ -73,7 +83,7 @@ What the lens pass proposes for the code, every code lens's together, in order o
 
 - **Code lens**: the section of `stages/lens-pass.md`'s The code lenses it came from
 - **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them, its **Proposal** standing for the solution (benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
-- **Pointed at by**: the commits, proposed tickets or friction that pointed the pass at it, each with its date
+- **Pointed at by**: the commits, proposed tickets, friction or corrections of max's that pointed the pass at it, each with its date; a correction seen in two or more sessions is quoted, each time with its session and date
 - **State** and **History**, as a finding's
 
 ## Proposed tickets

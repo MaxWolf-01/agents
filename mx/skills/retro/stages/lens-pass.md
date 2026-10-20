@@ -11,6 +11,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on; `in-flight.md` and `in-flight/`, its tickets in flight, those max ruled on that are not done. Each list says which of the agent repo's tickets it holds.
 - `follow-up.md`: what the period did to each finding and candidate the living report already carries; `previous/`, the earlier reports, `current.md` with max's verdicts.
 - In a workflow retro, also `notes/` and `deep/`: the period's friction, read from max's sessions.
+- In a repo retro, also `corrections.md`: max's corrections in the period's sessions worked in the repo, each with what the agent did before it, grouped by the mistake it corrects; `sessions/` holds the digests they are quoted from.
 
 The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
@@ -18,9 +19,9 @@ The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may re
 
 ## Steps
 
-1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; in a workflow retro, `notes/` and `deep/` too. Then list the tickets in flight that `in-flight.md` names, each by its slug and a line on what it changes, read from `in-flight/`.
-2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, and in a workflow retro the code the period's friction touched. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
-3. Spawn one subagent per code lens, in parallel, each given the brief below, its code lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
+1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; in a workflow retro, `notes/` and `deep/` too; in a repo retro, `corrections.md`. Then list the tickets in flight that `in-flight.md` names, each by its slug and a line on what it changes, read from `in-flight/`.
+2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, in a workflow retro the code the period's friction touched, and in a repo retro the code and commands max's corrections concern. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
+3. Spawn one subagent per code lens, in parallel, each given the brief below, its code lens's section, `lens-pass/direction.md`, in a repo retro `corrections.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
 4. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
 The stage is done when `lens-pass/` holds `architecture.md`, `bloat.md`, `tests.md`, `footguns.md` and `escaped-defects.md`.
@@ -29,7 +30,7 @@ The stage is done when `lens-pass/` holds `architecture.md`, `bloat.md`, `tests.
 
 You read `{{repo}}`'s code through one code lens, starting from the direction you were given and following what you find past it. A candidate is a change the code or its environment should get. Each carries:
 
-- **Files**, and the **Problem**: what in the code produces it, by path and line, and its evidence, the commits, tickets or reports that show it, each with its short sha or slug and absolute date, and in a workflow retro the friction that pointed at it, quoted with its source and date.
+- **Files**, and the **Problem**: what in the code produces it, by path and line, and its evidence, the commits, tickets or reports that show it, each with its short sha or slug and absolute date; in a workflow retro the friction that pointed at it, quoted with its source and date; in a repo retro the corrections of max's that point at it, every one of a group seen in two or more sessions quoted with its session and date.
 - **Proposal**: a deletion or a narrowing first; one that adds a mechanism names the recurrence behind it and what keeping it costs.
 - **Weighing**, as REPORT.md's weighing says.
 - **In flight**: the ticket in flight that already takes it up, where one does. The candidate then cites that ticket, and proposes nothing beside it.
@@ -57,4 +58,4 @@ Both sides. A pattern that makes a bug easy: a call whose misuse looks like its 
 
 ### escaped defects
 
-Bugs found after they merged: fix commits, reverts, tickets filed against a defect, worker reports naming one. For each, the defect, the commit that brought it in (`git log`, `git blame`), the cheapest stage that could have caught it (a type, a lint, a test, a line of the reviewer's rules, a render check) and why that stage missed it. A class of defect that recurs gets that check proposed.
+Bugs found after they merged: fix commits, reverts, tickets filed against a defect, worker reports naming one; in a repo retro also the mistakes max corrected in a session, from `corrections.md`. For each, the defect, the commit that brought it in (`git log`, `git blame`), the cheapest stage that could have caught it (a type, a lint, a test, a line of the reviewer's rules, a render check) and why that stage missed it. A class of defect that recurs gets that check proposed, and the proposal names the past commit it would have failed on: one that brought a defect of the class in, read with `git show`, on which the check as proposed goes red. A class whose mistakes max corrected before any reached a commit has no commit to name, and gets no check from this lens.

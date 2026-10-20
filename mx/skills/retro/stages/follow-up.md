@@ -6,6 +6,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 
 - `previous/`: the earlier reports. `current.md` is the report as it stands in the agent repo now, max's verdicts since the last run included; `<date>.md` are the last runs' reports, named for the end of their period; `seed/`, where it exists, holds the reports a first run takes as its previous ones, max's verdicts on them among them. With none of these, there is nothing to follow up: write `follow-up.md` saying so, and stop.
 - `git/<repo>.md`: the period's commits, reverts, tickets and worker reports in each repo; `touched.md`, the files the period's commits touched in `{{repo}}`.
+- In a repo retro, also `corrections.md`, max's corrections in the period's sessions worked in the repo, and `sessions/`, their digests.
 - In a workflow retro, also `notes/`, stage 2's notes, written with no earlier report in view, on the period and, in `notes/sample-*.md`, on the older sample from before it; `sessions/` and `sample/`, the digests the notes come from, `sample/` holding {{sample}}; and `versions.md`.
 
 The report's shape and rules are `{{skills}}/retro/REPORT.md`; read it first. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
