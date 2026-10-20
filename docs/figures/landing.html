@@ -34,15 +34,14 @@
   --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
   --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
 
-  /* Flexoki's hues at its marks steps (600 by day, 400 by night), so each
-     clears 3:1 on its ground. Green and yellow stay out: green is the accent's,
-     yellow reads as caution. The order passes dataviz's palette checks for
-     neighbouring series in both schemes. */
-  --series-1: light-dark(#205ea6, #4385be); /* blue */
-  --series-2: light-dark(#a02f6f, #ce5d97); /* magenta */
-  --series-3: light-dark(#bc5215, #da702c); /* orange */
-  --series-4: light-dark(#5e409d, #8b7ec8); /* purple */
-  --series-5: light-dark(#af3029, #d14d41); /* red */
+  /* Muted on purpose, so five series sit quietly on either ground. The order
+     keeps the two closest pairs, dusty blue and slate, sage and mustard, from
+     ever sitting side by side. */
+  --series-1: #9c6b50; /* rust */
+  --series-2: #5e7a9b; /* dusty blue */
+  --series-3: #b8915a; /* mustard */
+  --series-4: #6e6479; /* slate */
+  --series-5: #7c8f6f; /* sage */
 
   --font-body: "Newsreader", Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
