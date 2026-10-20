@@ -62,6 +62,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NamedTuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "session-page"))
@@ -87,10 +88,9 @@ RETRO = Path("retro")  # in an agent repo: where its report is
 
 def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, projects: list[Path],
                      repos: list[Path], sample_seed: int | None = None, agent: Path | None = None,
-                     worked_in: list[Path] | None = None) -> None:
+                     worked: Worked | None = None) -> None:
     """The digests, the git records, the versions and the tickets, written into `run`: of every
-    session, or of the sessions alone that worked in the repos `worked_in` names."""
-    worked = Worked.of(worked_in) if worked_in is not None else None
+    session, or of the sessions alone that worked where `worked` says."""
     def kept(d: Digest, first: datetime, last: datetime) -> bool:
         return worked is None or worked.by(d, first, last)
 
@@ -266,16 +266,23 @@ def collect_tickets(run: Path, agent: Path) -> None:
             *(f"- {t.slug}" + ("" if name == "proposed" else f": {t.status}") for t in chosen)]) + "\n")
 
 
-def planned(agent: Path) -> list[Path]:
-    """The repos of the agent repo's repo list that its retro reads, by their paths: every one but
-    one whose table says `retro = false`, and one with an agent repo of its own, which its own
-    tracker's retro reads. Exits when the list cannot be read."""
+class Plan(NamedTuple):
+    """The repos of an agent repo's repo list, by their paths, split by whether its retro reads them."""
+    read: list[Path]
+    left_out: list[Path]
+    """One whose table says `retro = false`, and one with an agent repo of its own, which its own tracker's retro reads."""
+
+
+def planned(agent: Path) -> Plan:
+    """The agent repo's repo list, as its retro reads it; exits when the list cannot be read."""
     root = agent / tracker.TICKETS.name
     try:
-        listed = [tracker.listed_path(root, table) for table in tracker.repo_list(root).values() if table.get("retro", True)]
+        tables = tracker.repo_list(root).values()
     except tracker.Refused as refused:
         sys.exit(str(refused))
-    return [path for path in listed if not (path / "agent" / ".git").exists()]
+    listed = [(tracker.listed_path(root, table), table.get("retro", True)) for table in tables]
+    reads = [retro and not (path / "agent" / ".git").exists() for path, retro in listed]
+    return Plan([p for (p, _), r in zip(listed, reads) if r], [p for (p, _), r in zip(listed, reads) if not r])
 
 
 # ── which sessions ───────────────────────────────────────────────────────────
@@ -297,13 +304,16 @@ class Worked:
     """Where a session has to have worked to count for a tracker's repos: inside one of them, the
     project's own repo, whose root is the project root, among them; inside a worktree git lists for
     one; or inside a directory beside one named `<repo>-<anything>` that no longer exists, which is
-    what a worktree made beside the repo leaves once it is removed."""
+    what a worktree made beside the repo leaves once it is removed. A path inside a repo the
+    tracker's retro leaves out counts for none, also where that repo sits inside one it reads."""
     roots: tuple[Path, ...]
     repos: tuple[Path, ...]
+    left_out: tuple[Path, ...] = ()
 
     @staticmethod
-    def of(repos: list[Path]) -> Worked:
-        return Worked(tuple(w for r in repos for w in worktrees(r)), tuple(r.resolve() for r in repos))
+    def of(repos: list[Path], left_out: list[Path] = ()) -> Worked:
+        return Worked(tuple(w for r in repos for w in worktrees(r)), tuple(r.resolve() for r in repos),
+                      tuple(r.resolve() for r in left_out))
 
     def by(self, d: Digest, first: datetime, last: datetime) -> bool:
         """Whether the session, on a day from `first` to `last`, ran there or made a tool call naming
@@ -314,8 +324,8 @@ class Worked:
     def holds(self, path: str) -> bool:
         """A path taken as it resolves now, so one through a symlink counts where the link points."""
         p = Path(os.path.realpath(os.path.expanduser(path)))
-        if any(p.is_relative_to(root) for root in self.roots):
-            return True
+        if inside := [r for r in (*self.roots, *self.left_out) if p.is_relative_to(r)]:
+            return max(inside, key=lambda r: len(r.parts)) in self.roots  # the innermost repo decides
         for repo in self.repos:
             if p.is_relative_to(repo.parent) and p != repo.parent:
                 beside = repo.parent / p.relative_to(repo.parent).parts[0]

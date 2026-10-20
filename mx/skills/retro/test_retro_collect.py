@@ -431,7 +431,7 @@ def test_a_repo_retro_reads_the_sessions_that_worked_in_its_repos_their_removed_
     run = tmp_path / "data" / "runs" / "1"
 
     retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [projects], [project, api], sample_seed=0,
-                                   agent=project / "agent", worked_in=[project, api])
+                                   agent=project / "agent", worked=retro_collect.Worked.of([project, api]))
 
     worked = {root_edits_worktree.sid, edits_under_the_root.sid, edits_live_worktree.sid, edits_removed_worktree.sid, from_the_home.sid, a_heredoc.sid}
     assert {p.stem for p in (run / "sessions").glob("*.md")} == worked

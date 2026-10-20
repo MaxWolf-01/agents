@@ -181,9 +181,9 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     retro_collect.refuse_inside_git(home)
     log = Log(home / "runs.log", run.name)
     if kind is WORKFLOW:
-        listed = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")]
+        listed, left_out = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")], []
     else:
-        listed = retro_collect.planned(agent)
+        listed, left_out = retro_collect.planned(agent)
     repos = list(dict.fromkeys([repo, *listed]))
     code = [repo] if kind is WORKFLOW else repos  # the repos whose code the lens pass reads
     where = "the check for something new"
@@ -203,7 +203,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
             signal.signal(s, on_stop)
         where = "collect"
         if not (run / "run.json").is_file():
-            collect(kind, since, until, run, home, list(projects), repos, code, agent)
+            collect(kind, since, until, run, home, list(projects), repos, code, agent, left_out)
             # What a resumed run keeps; written last, so its presence says collect finished.
             (run / "run.json").write_text(json.dumps(dict(repo=str(repo), report=str(agent / REPORT_PATH),
                                                           since=stamp(since), until=stamp(until),
@@ -260,11 +260,11 @@ def failure(e: Exception) -> str:
 
 
 def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path, projects: list[Path],
-            repos: list[Path], code: list[Path], agent: Path) -> None:
+            repos: list[Path], code: list[Path], agent: Path, left_out: list[Path]) -> None:
     """Stage 1, by script: the sessions the kind reads, the git records and tickets, the workflow
     retro's permission data, and the files the period's commits touched where the lens pass reads."""
     retro_collect.collect_sessions(since, until, run, home / "digest-cache", projects, repos, agent=agent,
-                                   worked_in=None if kind is WORKFLOW else repos)
+                                   worked=None if kind is WORKFLOW else retro_collect.Worked.of(repos, left_out))
     if kind is WORKFLOW:
         retro_collect.collect_permissions(since, run, projects)
     write_batches(run)

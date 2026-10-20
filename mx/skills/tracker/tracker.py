@@ -142,9 +142,7 @@ def repos() -> int:
         integration = "development"   # the branch tickets merge into and are done on
         retro = false                 # the project's retro leaves it out; true where not written
 
-    A repo with no `integration` integrates on the branch its `origin/HEAD` names. The project's
-    retro reads every listed repo but one with `retro = false` and one with an agent repo of its
-    own, which its own tracker's retro reads. A ticket's work
+    A repo with no `integration` integrates on the branch its `origin/HEAD` names. A ticket's work
     in a listed repo has landed once it is in the branch the ticket's accept merges it into there:
     its parent ticket's branch for a hinge, and the integration branch, locally or at `origin`, for
     a top-level ticket and any other child of one. A list this cannot read whole is refused with
