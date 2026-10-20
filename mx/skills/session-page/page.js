@@ -347,7 +347,7 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".copy-code")
   if (b) write(b.parentElement.querySelector("pre").textContent.replace(/\n$/, ""), b)
 })
-// a turn's button copies its record as written, as m does for the cursor's turn, and M every record of the
+// a turn's button copies its record as written, as y does for the cursor's turn, and Y every record of the
 // session; a click on the button, which sits in the turn's summary, opens and closes nothing
 const sources = JSON.parse(document.getElementById("sources").textContent)
 const copyTurn = (b) => {
@@ -417,9 +417,9 @@ document.addEventListener("keydown", (e) => {
     case "q": if (waiting) band(); break
     case "o": case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "O": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
-    case "y": copy(); break
-    case "m": copyTurn(focused || blocks[0]); break
-    case "M": if (blocks.length) { write(sources.session); say("copied the session as markdown") } else say("no turn yet"); break
+    case "R": copy(); break
+    case "y": copyTurn(focused || blocks[0]); break
+    case "Y": if (blocks.length) { write(sources.session); say("copied the session as markdown") } else say("no turn yet"); break
     case "c": { const a = pathAt(); if (a) write(a.textContent, a); else say("no path under the pointer"); break }
     default: {
       if (!/^[1-9]$/.test(e.key)) return

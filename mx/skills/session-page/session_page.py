@@ -853,9 +853,9 @@ KEYS = [
     ("[ ]", "previous, next question"),
     ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
-    ("y", "copy the resume command"),
-    ("m", "copy the turn's markdown, the newest turn's where none is picked"),
-    ("M", "copy the whole session's markdown"),
+    ("y", "copy the turn's markdown, the newest turn's where none is picked"),
+    ("Y", "copy the whole session's markdown"),
+    ("R", "copy the resume command"),
     ("c", "copy the path under the pointer"),
     ("?", "this list"),
 ]
@@ -1010,7 +1010,7 @@ def assemble(v: View, now: datetime) -> str:
       <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
       <div class="prose brief">{block(session.brief)}</div>
       <div class="actions">
-        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>y</kbd></button>
+        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>R</kbd></button>
       </div>
     </section>{top}
     <div class="pane" id="turns-pane">
@@ -1340,10 +1340,10 @@ COPY_ICON = (
     '<path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>'
 )
 COPY_CODE = f'<button class="copy-code" type="button" aria-label="copy the code" title="copy">{COPY_ICON}</button>'
-# Under a turn's number: copies the turn's record, as `m` does with the cursor on the turn. Out of the Tab order,
+# Under a turn's number: copies the turn's record, as `y` does with the cursor on the turn. Out of the Tab order,
 # which goes from turn to turn.
 COPY_TURN = (f'<button class="copy-turn" type="button" tabindex="-1" aria-label="copy the turn\'s markdown" '
-             f'title="copy the turn\'s markdown (m)">{COPY_ICON}</button>')
+             f'title="copy the turn\'s markdown (y)">{COPY_ICON}</button>')
 
 
 def with_copy(rule: Callable):

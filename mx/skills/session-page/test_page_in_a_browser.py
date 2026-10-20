@@ -164,7 +164,7 @@ with sync_playwright() as pw:
         context.grant_permissions(["clipboard-read", "clipboard-write"])
         clipboard = lambda: page.evaluate("navigator.clipboard.readText()")
         opacity = lambda: page.eval_on_selector("#t03 .copy-turn", "(b) => getComputedStyle(b).opacity")
-        page.keyboard.press("m")
+        page.keyboard.press("y")
         out["m_newest"], out["m_toast"] = clipboard(), page.text_content("#toast")
         page.mouse.move(5, 5)
         out["hidden"] = opacity()
@@ -174,10 +174,10 @@ with sync_playwright() as pw:
         out["clicked"] = clipboard()
         out["opened_by_click"] = page.evaluate("document.getElementById('t03').open")
         # the click put the cursor on turn 03, and j moves it on to 02
-        for key in ("j", "m"):
+        for key in ("j", "y"):
             page.keyboard.press(key)
         out["m_cursor"] = clipboard()
-        page.keyboard.press("M")
+        page.keyboard.press("Y")
         out["M"], out["M_toast"] = clipboard(), page.text_content("#toast")
 
     elif scenario == "copy-path":
@@ -465,7 +465,7 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["clicked"] == [str(root / ARTEFACTS[i]) for i in (2, 3, 1)]
     assert seen["toast"] == "turn 03 has no artefact 2"
     assert seen["copied"] == SESSION, "a click on the session id did not copy it whole"
-    for keys in ("n", "t 0 7", "[ ]", "q", "c", "m", "M"):
+    for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
 
 
@@ -489,10 +489,10 @@ def test_a_code_blocks_button_copies_its_code(rendered: tuple[Path, Path], trans
     assert seen["copied"] == code
 
 
-def test_a_turn_copies_as_its_markdown_by_its_button_and_by_m(rendered: tuple[Path, Path]) -> None:
+def test_a_turn_copies_as_its_markdown_by_its_button_and_by_y(rendered: tuple[Path, Path]) -> None:
     """A turn's copy button shows only while the pointer is on the turn, and a click copies the turn's record as
-    written without opening the turn, the cursor going to it. m copies the newest turn's record while the cursor is on
-    no turn, and the cursor's turn once it is on one; M copies the whole session. Each key says what it copied."""
+    written without opening the turn, the cursor going to it. y copies the newest turn's record while the cursor is on
+    no turn, and the cursor's turn once it is on one; Y copies the whole session. Each key says what it copied."""
     page, _ = rendered
     directory = page.parent
     record = lambda n: (directory / "turns" / f"{n}.md").read_text()
