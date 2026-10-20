@@ -1,3 +1,8 @@
+## 1.0.72
+
+- feat(session-page): turns and whole sessions copy as their markdown
+- feat(house-style): Flexoki at half chroma as the house's colour source, and a darker night ground
+
 ## 1.0.71
 
 - fix(session-page): local slash commands are no longer shown as something the user said
