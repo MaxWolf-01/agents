@@ -25,7 +25,6 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 - "bd" (brain dead) ... you said something so stupid (or asked a stupid question during grilling) I'm not even gonna explain beyond maybe a pointer to what part; most likely not an intelligence limitation, just lazy thinking; think again, think harder, you should know the right answer or at least a much better answer than what you just said, suggested, or asked me, even if it's a question on "taste".
 - "tldfr" (way too verbose) ... progressive disclosure -- answers, actionable items, detail "choose your own adventure" style, etc. pp. (give me the entrypoints tho -- ideally easily referable as detailX [DX]) -- also, don't assume I read any messages you sent in-between tool-calls and your last msg.
 - "idk|idfk" ... blank or fatigued -- give me options, show dont tell, prototype, help me make up my find, make it easy to understand, break it down, lead with a suggestion yourself, etc. pp. 
-- "wf" (wrong frame?) ... hunch that we're solving inside an inherited/assumed frame -- stop, name the premise the current plan/options share, give the strongest option outside it, reassess before continuing
 - "ro" ... read only investigation. gather intel / answer the question and report back without taking action.
 - "iiuc|iirc" ... I'm stating something the way I understand it or remember it, and am not entirely sure about it; this is a nudge for you to make exra sure to correct me if wrong or unclear and to check facts yourself.
 
