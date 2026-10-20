@@ -600,9 +600,9 @@ class Args:
     data: Path = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "retro"
     """The retro's data directory, outside every git repo."""
     projects: list[Path] = field(default_factory=retro_collect.profiles)
-    """Each Claude Code profile's directory of transcripts, whose sessions the workflow retro reads every one of and a repo retro those worked in its repo; by default every `~/.claude*/projects`."""
+    """Each Claude Code profile's directory of transcripts, whose sessions the workflow retro reads every one of and a repo retro those worked in its repos; by default every `~/.claude*/projects`."""
     if_active: bool = False
-    """Skip the run, exiting 3, when there is nothing new since the period's start: for the workflow retro, no message of max's in an interactive session and no commit of his in the listed repos; for a repo retro, no commit in the repo."""
+    """Skip the run, exiting 3, when there is nothing new since the period's start: for the workflow retro, no message of max's in an interactive session and no commit of his in the listed repos; for a repo retro, no commit in any of its repos."""
     resume: Path | None = None
     """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
 

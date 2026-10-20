@@ -36,6 +36,8 @@ Read every correction of max's for its cause. A correction is a message of his t
 - **guidance**: guidance covering it existed, and the agent missed it or could not follow it;
 - **fact**: the agent lacked a fact max had to supply.
 
+In a repo retro, a session read may have worked on other repos too: its notes hold the friction and corrections of the work in the retro's repos, those whose cause is the workflow among them, with the skill named in their Cause.
+
 ### The digest
 
 One file per session. Its header names the session id, title, project, profile, span, how many messages max wrote, and the models and Claude Code versions it ran. Then, under a heading per day, each line carries its time, UTC:

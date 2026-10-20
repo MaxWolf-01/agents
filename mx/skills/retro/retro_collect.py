@@ -300,9 +300,10 @@ def interactive_digests(projects: list[Path], cache: Path, repos: list[Path], si
 
 @dataclass(frozen=True)
 class Worked:
-    """Where a session has to have worked to count for a tracker's repos: inside one of them or a
-    worktree git lists for one, or inside a directory beside one named `<repo>-<anything>` that no
-    longer exists, which is what a worktree made beside the repo leaves once it is removed."""
+    """Where a session has to have worked to count for a tracker's repos: inside one of them, the
+    project's own repo, whose root is the project root, among them; inside a worktree git lists for
+    one; or inside a directory beside one named `<repo>-<anything>` that no longer exists, which is
+    what a worktree made beside the repo leaves once it is removed."""
     roots: tuple[Path, ...]
     repos: tuple[Path, ...]
 

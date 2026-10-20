@@ -415,6 +415,7 @@ def test_a_repo_retro_reads_the_sessions_that_worked_in_its_repos_their_removed_
         return Transcript(projects, str(cwd), start).says("go on")
 
     root_edits_worktree = session(project).calls("Edit", {"file_path": f"{project}/.worktrees/login/x.py"}, "ok")
+    edits_under_the_root = session(tmp_path).calls("Edit", {"file_path": f"{project}/.worktrees/login/y.py"}, "ok")
     edits_live_worktree = session(tmp_path).calls("Edit", {"file_path": f"{live}/login.py", "old_string": "a"}, "ok")
     edits_removed_worktree = session(tmp_path).calls("Write", {"file_path": f"{removed}/login.py", "content": "b"}, "ok")
     from_the_home = session(tmp_path).calls("Bash", {"command": "make -C ~/api-link test"}, "ok")
@@ -432,7 +433,7 @@ def test_a_repo_retro_reads_the_sessions_that_worked_in_its_repos_their_removed_
     retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [projects], [project, api], sample_seed=0,
                                    agent=project / "agent", worked_in=[project, api])
 
-    worked = {root_edits_worktree.sid, edits_live_worktree.sid, edits_removed_worktree.sid, from_the_home.sid, a_heredoc.sid}
+    worked = {root_edits_worktree.sid, edits_under_the_root.sid, edits_live_worktree.sid, edits_removed_worktree.sid, from_the_home.sid, a_heredoc.sid}
     assert {p.stem for p in (run / "sessions").glob("*.md")} == worked
     assert {p.stem for p in (run / "sample").glob("*.md")} == {older_in_api.sid}
     assert {json.loads(r)["id"] for r in (run / "sessions.jsonl").read_text().splitlines()} == worked | {older_in_api.sid}
