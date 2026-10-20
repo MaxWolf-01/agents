@@ -347,6 +347,18 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".copy-code")
   if (b) write(b.parentElement.querySelector("pre").textContent.replace(/\n$/, ""), b)
 })
+// a turn's button copies its record as written, as y does for the cursor's turn, and Y every record of the
+// session; a click on the button, which sits in the turn's summary, opens and closes nothing
+const sources = JSON.parse(document.getElementById("sources").textContent)
+const copyTurn = (b) => {
+  if (!b) { say("no turn yet"); return }
+  write(sources[b.id], b.querySelector(".copy-turn"))
+  say(`copied ${b.matches(".chat") ? "the chat turn" : "turn " + b.id.slice(1)} as markdown`)
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".copy-turn")
+  if (b) { e.preventDefault(); copyTurn(b.closest("[data-block]")) }
+})
 // a click on a path opens the file, and the browser's own copy gives its file:// URL, so c copies
 // the path under the pointer, or the one Tab focused, as the turn shows it
 const pathLink = (el) => el && el.closest && el.closest("a.path")
@@ -405,7 +417,9 @@ document.addEventListener("keydown", (e) => {
     case "q": if (waiting) band(); break
     case "o": case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "O": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
-    case "y": copy(); break
+    case "R": copy(); break
+    case "y": copyTurn(focused || blocks[0]); break
+    case "Y": if (blocks.length) { write(sources.session); say("copied the session as markdown") } else say("no turn yet"); break
     case "c": { const a = pathAt(); if (a) write(a.textContent, a); else say("no path under the pointer"); break }
     default: {
       if (!/^[1-9]$/.test(e.key)) return

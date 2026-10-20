@@ -16,7 +16,8 @@ each with the user's messages it answered and what other sessions sent meanwhile
 transcript.
 The page is laid out in panes that each scroll on their own: the title and the questions above
 the turns, and beside them the timeline, every numbered turn newest first with the artefacts it
-links; a ticket file is no artefact there.
+links; a ticket file is no artefact there. Each turn's record, and the whole session's, copies as
+the markdown it was written in.
 
 Run as a command, it prints where a session's directory is.
 """
@@ -153,6 +154,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         began=turn_start(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
         root=root,
+        directory=directory,
         previous=previous if previous and (directory.parent / previous / PAGE).exists() else "",
         following=successors(directory),
         titles={other: title_of(directory.parent / other) for other in (previous, *successors(directory)) if other},
@@ -344,6 +346,7 @@ class Session:
     title: str  # session.md's H1, or Claude Code's title for the session where there is no session.md
     brief: str  # its `## Brief`; empty where there is no session.md
     root: Path  # the repo root the directory sits under, which a record's paths are from
+    directory: Path  # the session's own, which holds its records
     name: str = ""  # its short name in Claude Code's session registry; empty where it has no entry
     turns: tuple[Turn, ...] = ()
     chats: tuple[Chat, ...] = ()  # oldest first
@@ -850,7 +853,9 @@ KEYS = [
     ("[ ]", "previous, next question"),
     ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
-    ("y", "copy the resume command"),
+    ("y", "copy the turn's markdown, the newest turn's where none is picked"),
+    ("Y", "copy the whole session's markdown"),
+    ("R", "copy the resume command"),
     ("c", "copy the path under the pointer"),
     ("?", "this list"),
 ]
@@ -1005,7 +1010,7 @@ def assemble(v: View, now: datetime) -> str:
       <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
       <div class="prose brief">{block(session.brief)}</div>
       <div class="actions">
-        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>y</kbd></button>
+        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>R</kbd></button>
       </div>
     </section>{top}
     <div class="pane" id="turns-pane">
@@ -1017,10 +1022,21 @@ def assemble(v: View, now: datetime) -> str:
 </main>
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="application/json" id="sources">{sources(v)}</script>
 <script>{(HERE / "page.js").read_text()}</script>
 </body>
 </html>
 """
+
+
+def sources(v: View) -> str:
+    """What the copy keys and buttons copy, as JSON: each turn's record as written, by the id of its block, and under
+    `session` its session.md and every record, oldest first. Every `<` is escaped, so nothing a record quotes ends the
+    script element the JSON sits in, `</script>` or a comment's opening before a `<script>`."""
+    turns = {(f"t{r.key}" if isinstance(r.turn, Turn) else r.key): r.turn.path.read_text() for r in reversed(v.rows)}
+    described = v.session.directory / "session.md"
+    whole = ([described.read_text()] if described.is_file() else []) + list(turns.values())
+    return json.dumps({**turns, "session": "\n\n".join(t.strip() for t in whole) + "\n"}).replace("<", "\\u003c")
 
 
 def handoffs(session: Session) -> str:
@@ -1154,7 +1170,7 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     return f"""
 <details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
   <summary class="head">
-    <span class="rail v-num">{r.key}</span>
+    <span class="rail v-num">{r.key}{COPY_TURN}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
     <span class="v-meta date">{esc(r.when)}</span>{chips(r)}
   </summary>
@@ -1169,7 +1185,7 @@ def chat_row(r: Row) -> str:
     reply as it was, with nothing to open or close."""
     return f"""
 <article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
-  <span class="rail"></span>
+  <span class="rail">{COPY_TURN}</span>
   <div class="chat-body">
     {you(r)}{"".join(map(peer, r.turn.sent))}
     <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(r.turn.reply)}</div></div>
@@ -1318,12 +1334,16 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
-COPY_CODE = (
-    '<button class="copy-code" type="button" aria-label="copy the code" title="copy">'
+COPY_ICON = (
     '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" '
     'stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>'
-    '<path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg></button>'
+    '<path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>'
 )
+COPY_CODE = f'<button class="copy-code" type="button" aria-label="copy the code" title="copy">{COPY_ICON}</button>'
+# Under a turn's number: copies the turn's record, as `y` does with the cursor on the turn. Out of the Tab order,
+# which goes from turn to turn.
+COPY_TURN = (f'<button class="copy-turn" type="button" tabindex="-1" aria-label="copy the turn\'s markdown" '
+             f'title="copy the turn\'s markdown (y)">{COPY_ICON}</button>')
 
 
 def with_copy(rule: Callable):

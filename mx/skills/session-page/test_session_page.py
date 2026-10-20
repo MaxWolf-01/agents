@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from session_checks import SESSION, elements, rows_of, sections_of, text_of, turns_on, view_of
+from session_checks import SESSION, TURN_ANCHOR, elements, rows_of, sections_of, text_of, turns_on, view_of
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -361,6 +361,25 @@ def test_a_code_block_sits_in_a_box_with_its_copy_button() -> None:
     boxes = re.findall(r'<div class="code">(<pre>.*?</pre>)\s*<button class="copy-code"', rendered, re.S)
     assert boxes == ['<pre><code class="language-sh">make test\n</code></pre>', "<pre><code>uv run x.py\n</code></pre>"]
     assert rendered.count('class="copy-code"') == 2
+
+
+def test_each_turn_and_the_whole_session_copy_as_the_markdown_they_were_written_in(worked_example: Path, transcript: Path) -> None:
+    """Each turn's block, a chat turn's too, holds the button that copies it, and the page carries what it copies:
+    every record as written, under the block's id, and the whole session, its session.md and then every record in the
+    order the turns happened. A record quoting `</script>`, or a comment's opening before a `<script>`, stays inside
+    the data. Pins the format: page.js reads the
+    data by its script's id and a turn's text by its block's."""
+    at = datetime.now(UTC)
+    chat = chat_path(worked_example / "turns", at)
+    chat.write_text(chat_record("A reply quoting `<!--<script>` and `</script>`, which must not end the page's data.", at))
+    page = render_session(worked_example, transcript, now=NOW)
+    data = json.loads(re.search(r'<script type="application/json" id="sources">(.*?)</script>', page, re.S)[1])
+    records = sorted((worked_example / "turns").glob("[0-9][0-9].md"))
+    turns = {**{f"t{p.stem}": p.read_text() for p in records}, chat.stem: chat.read_text()}
+    assert {k: v for k, v in data.items() if k != "session"} == turns
+    assert data["session"] == "\n\n".join(p.read_text().strip() for p in [worked_example / "session.md", *records, chat]) + "\n"
+    blocks = elements(page, TURN_ANCHOR)
+    assert set(blocks) == set(turns) and all('class="copy-turn"' in b for b in blocks.values())
 
 
 # What the user said in each of the worked example's four turns, the last of them queued mid-turn,
