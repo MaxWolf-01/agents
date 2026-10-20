@@ -366,11 +366,12 @@ def test_a_code_block_sits_in_a_box_with_its_copy_button() -> None:
 def test_each_turn_and_the_whole_session_copy_as_the_markdown_they_were_written_in(worked_example: Path, transcript: Path) -> None:
     """Each turn's block, a chat turn's too, holds the button that copies it, and the page carries what it copies:
     every record as written, under the block's id, and the whole session, its session.md and then every record in the
-    order the turns happened. A record quoting `</script>` stays inside the data. Pins the format: page.js reads the
+    order the turns happened. A record quoting `</script>`, or a comment's opening before a `<script>`, stays inside
+    the data. Pins the format: page.js reads the
     data by its script's id and a turn's text by its block's."""
     at = datetime.now(UTC)
     chat = chat_path(worked_example / "turns", at)
-    chat.write_text(chat_record("A reply quoting `</script>`, which must not end the page's data.", at))
+    chat.write_text(chat_record("A reply quoting `<!--<script>` and `</script>`, which must not end the page's data.", at))
     page = render_session(worked_example, transcript, now=NOW)
     data = json.loads(re.search(r'<script type="application/json" id="sources">(.*?)</script>', page, re.S)[1])
     records = sorted((worked_example / "turns").glob("[0-9][0-9].md"))

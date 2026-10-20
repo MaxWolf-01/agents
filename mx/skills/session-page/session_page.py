@@ -1031,12 +1031,12 @@ def assemble(v: View, now: datetime) -> str:
 
 def sources(v: View) -> str:
     """What the copy keys and buttons copy, as JSON: each turn's record as written, by the id of its block, and under
-    `session` its session.md and every record, oldest first. `</` is escaped, so no record closes the script element
-    the JSON sits in."""
+    `session` its session.md and every record, oldest first. Every `<` is escaped, so nothing a record quotes ends the
+    script element the JSON sits in, `</script>` or a comment's opening before a `<script>`."""
     turns = {(f"t{r.key}" if isinstance(r.turn, Turn) else r.key): r.turn.path.read_text() for r in reversed(v.rows)}
     described = v.session.directory / "session.md"
     whole = ([described.read_text()] if described.is_file() else []) + list(turns.values())
-    return json.dumps({**turns, "session": "\n\n".join(t.strip() for t in whole) + "\n"}).replace("</", "<\\/")
+    return json.dumps({**turns, "session": "\n\n".join(t.strip() for t in whole) + "\n"}).replace("<", "\\u003c")
 
 
 def handoffs(session: Session) -> str:
