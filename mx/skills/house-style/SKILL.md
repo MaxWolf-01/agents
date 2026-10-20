@@ -9,7 +9,7 @@ The look of [mwolf.dev](https://mwolf.dev) as a floor: a quiet page, separated b
 
 ## Colour
 
-Sixteen tokens in `tokens.css`, the colours as `light-dark()` pairs except the series, which hold one hex in both schemes. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
+Sixteen tokens in `tokens.css`, each colour a `light-dark()` pair. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
 
 | token | job |
 | --- | --- |
@@ -25,6 +25,8 @@ Sixteen tokens in `tokens.css`, the colours as `light-dark()` pairs except the s
 | `accent-2` | caution, errors, and the second value of two-valued data |
 | `mark` | text selection |
 | `series-1` to `series-5` | the series of a chart that has three or more, taken in order |
+
+A colour the tokens don't have (a status, a variant, a code token) comes from [Flexoki 2.0](https://github.com/kepano/flexoki/blob/2.0.0/css/flexoki.css) at half its chroma, never an invented hex: its hues are calibrated as a set, and halved they sit as quietly as the series, which are made the same way. At full chroma they read as neon on parchment. Start from the step that suits the house grounds (Flexoki's own steps are set for its lighter paper): a mark (a line, a bar, an icon, 3:1) from 600 by day and text (4.5:1) from 700, yellow one step darker for each; by night both from 400, red text from 300. Halve the chroma in OKLCH, then move the lightness only as far as the contrast needs.
 
 ## Type
 
