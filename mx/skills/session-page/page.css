@@ -21,7 +21,12 @@ p, h1, h2, h3 { margin: 0; }
 .copy-code::before { content: ""; position: absolute; inset: -0.4rem; }
 .copy-code:hover, .copy-code:focus-visible { opacity: 1; }
 .copy-code:hover { color: var(--accent); border-color: var(--accent); }
-@media (hover: none) { .copy-code { opacity: 1; } }
+@media (hover: none) { .copy-code, .copy-turn { opacity: 1; } }
+/* a turn's copy button sits under its number and shows while the pointer is on the turn */
+.turn .rail { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+.copy-turn { display: inline-flex; padding: 0.25rem; margin-left: -0.3rem; border: 1px solid transparent; border-radius: var(--radius); background: none; color: var(--muted); cursor: pointer; opacity: 0; transition: opacity 150ms, color 150ms, border-color 150ms; }
+.turn:hover .copy-turn, .copy-turn:focus-visible { opacity: 1; }
+.copy-turn:hover { color: var(--accent); border-color: var(--accent); }
 
 /* The window never scrolls: the bar on top, and under it the panes, each scrolling on its own. */
 html, body { height: 100%; }

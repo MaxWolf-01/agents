@@ -159,6 +159,27 @@ with sync_playwright() as pw:
         page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
         out["copied"] = page.evaluate("navigator.clipboard.readText()")
 
+    elif scenario == "copy-turn":
+        context, page = open_page(1280, 800)
+        context.grant_permissions(["clipboard-read", "clipboard-write"])
+        clipboard = lambda: page.evaluate("navigator.clipboard.readText()")
+        opacity = lambda: page.eval_on_selector("#t03 .copy-turn", "(b) => getComputedStyle(b).opacity")
+        page.keyboard.press("m")
+        out["m_newest"], out["m_toast"] = clipboard(), page.text_content("#toast")
+        page.mouse.move(5, 5)
+        out["hidden"] = opacity()
+        page.hover("#t03 > summary .hl")
+        out["over_turn"] = opacity()
+        page.click("#t03 .copy-turn")
+        out["clicked"] = clipboard()
+        out["opened_by_click"] = page.evaluate("document.getElementById('t03').open")
+        # the click put the cursor on turn 03, and j moves it on to 02
+        for key in ("j", "m"):
+            page.keyboard.press(key)
+        out["m_cursor"] = clipboard()
+        page.keyboard.press("M")
+        out["M"], out["M_toast"] = clipboard(), page.text_content("#toast")
+
     elif scenario == "copy-path":
         context, page = open_page(1280, 800)
         context.grant_permissions(["clipboard-read", "clipboard-write"])
@@ -444,7 +465,7 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["clicked"] == [str(root / ARTEFACTS[i]) for i in (2, 3, 1)]
     assert seen["toast"] == "turn 03 has no artefact 2"
     assert seen["copied"] == SESSION, "a click on the session id did not copy it whole"
-    for keys in ("n", "t 0 7", "[ ]", "q", "c"):
+    for keys in ("n", "t 0 7", "[ ]", "q", "c", "m", "M"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
 
 
@@ -466,6 +487,23 @@ def test_a_code_blocks_button_copies_its_code(rendered: tuple[Path, Path], trans
     right, top = seen["corner"]
     assert 0 < right < 20 and 0 < top < 20, f"the button is not in the block's top right corner: {seen['corner']}"
     assert seen["copied"] == code
+
+
+def test_a_turn_copies_as_its_markdown_by_its_button_and_by_m(rendered: tuple[Path, Path]) -> None:
+    """A turn's copy button shows only while the pointer is on the turn, and a click copies the turn's record as
+    written without opening the turn, the cursor going to it. m copies the newest turn's record while the cursor is on
+    no turn, and the cursor's turn once it is on one; M copies the whole session. Each key says what it copied."""
+    page, _ = rendered
+    directory = page.parent
+    record = lambda n: (directory / "turns" / f"{n}.md").read_text()
+    seen = probe(page, "copy-turn")
+    assert (seen["hidden"], seen["over_turn"]) == ("0", "1"), f"the button does not show on the turn alone: {seen}"
+    assert seen["clicked"] == record("03") and seen["opened_by_click"] is False
+    assert (seen["m_newest"], seen["m_toast"]) == (record("04"), "copied turn 04 as markdown")
+    assert seen["m_cursor"] == record("02")
+    names = ["session.md", *(f"turns/{n:02d}.md" for n in range(1, 5))]
+    assert seen["M"] == "\n\n".join((directory / n).read_text().strip() for n in names) + "\n"
+    assert seen["M_toast"] == "copied the session as markdown"
 
 
 def test_c_copies_the_path_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
