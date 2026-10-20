@@ -404,6 +404,7 @@ def test_a_repo_retro_reads_the_sessions_worked_in_its_repo_one_started_in_a_pro
     edits_worktree = session(project).calls("Edit", {"file_path": f"{worktree}/login.py", "old_string": "a", "new_string": "b"}, "ok")
     started_in_repo = session(repo).answers("Reading the code.")
     from_the_home = session(project).calls("Bash", {"command": "make -C ~/api-link test"}, "ok")
+    a_heredoc = session(project).calls("Bash", {"command": f"bash <<'EOF'\n{repo}/.venv/bin/pytest -q\nEOF"}, "ok")
     only_said = session(project).says(f"compare it with {repo}/login.py").answers(f"I'll read {repo}/login.py.")
     a_sibling = session(project).calls("Bash", {"command": f"ls {repo}-old/ && cat {repo}2"}, "ok")
     before_the_period = session(project, SINCE - timedelta(days=2)).calls("Read", {"file_path": f"{repo}/README.md"}, "1")
@@ -413,7 +414,7 @@ def test_a_repo_retro_reads_the_sessions_worked_in_its_repo_one_started_in_a_pro
 
     retro_collect.collect_repo(SINCE, UNTIL, run, tmp_path / "data" / "cache", [projects], repo, project / "agent")
 
-    assert {p.stem for p in (run / "sessions").glob("*.md")} == {edits_worktree.sid, started_in_repo.sid, from_the_home.sid}
-    assert {json.loads(r)["id"] for r in (run / "sessions.jsonl").read_text().splitlines()} == \
-        {edits_worktree.sid, started_in_repo.sid, from_the_home.sid}
+    worked = {edits_worktree.sid, started_in_repo.sid, from_the_home.sid, a_heredoc.sid}
+    assert {p.stem for p in (run / "sessions").glob("*.md")} == worked
+    assert {json.loads(r)["id"] for r in (run / "sessions.jsonl").read_text().splitlines()} == worked
     assert not {only_said.sid, a_sibling.sid, before_the_period.sid} & {p.stem for p in run.rglob("*.md")}

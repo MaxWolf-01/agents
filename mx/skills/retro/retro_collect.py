@@ -77,9 +77,9 @@ SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the p
 PASTE_CLIP = 600  # pasted text in a message of max's
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
-# An absolute path, or one from the home, wherever a tool call's input holds it: a field of its own or a word of a
-# command. Read from the input as JSON, so a quote or an escape (`\n`) ends it.
-NAMED_PATH = re.compile(r"(?<![\w.~/$\\-])~?/[^\s\"'`;|&<>(){}\[\],\\]*")
+# An absolute path, or one from the home, in any string of a tool call's input: a field of its own, or a word of a
+# command or of a file's text.
+NAMED_PATH = re.compile(r"(?<![\w.~/$-])~?/[^\s\"'`;|&<>(){}\[\],]*")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
 RETRO = Path("retro")  # in an agent repo: its own report, and a directory per repo its tracker plans that has one
@@ -527,8 +527,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                 elif block.get("type") == "tool_use":
                     calls[block.get("id", "")] = block.get("name", "?")
                     if at:
-                        paths.setdefault(at.date().isoformat(), set()).update(
-                            NAMED_PATH.findall(json.dumps(block.get("input"), ensure_ascii=False)))
+                        paths.setdefault(at.date().isoformat(), set()).update(named_paths(block.get("input")))
                     put(at, f"→ {block.get('name', '?')} {json.dumps(block.get('input'), ensure_ascii=False)}")
         elif kind == "system":
             sub = e.get("subtype")
@@ -596,6 +595,14 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
                   page_at=starts[-1] - 1 if interactive else 0,
                   paths={day: sorted(named) for day, named in paths.items()} if interactive else {})
+
+
+def named_paths(value: object) -> Iterable[str]:
+    """The paths NAMED_PATH finds in every string of a tool call's input."""
+    if isinstance(value, str):
+        yield from NAMED_PATH.findall(value)
+    for item in value.values() if isinstance(value, dict) else value if isinstance(value, list) else ():
+        yield from named_paths(item)
 
 
 def said(content: object) -> str:
