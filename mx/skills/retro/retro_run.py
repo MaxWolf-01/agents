@@ -15,7 +15,8 @@ the home (`~/.claude*/projects`), its permission data, and the git of the agents
 repos `retro/repos` lists in its agent repo, one path per line; its lens pass reads the agents
 repo's code; it runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any other project
 gets a repo retro: it reads the commits, tickets and code of the project's repo and of every repo
-its `agent/repos.toml` lists, and the sessions of every profile that worked in those repos
+its `agent/repos.toml` lists but one with `retro = false` and one with an agent repo of its own,
+which its own tracker's retro reads, and the sessions of every profile that worked in those repos
 (`retro_collect.Worked`); it runs read-fresh, follow-up, the lens pass and synthesize. A run's
 stages log in as the profile `CLAUDE_CONFIG_DIR` names, as every `claude` does.
 
@@ -568,7 +569,7 @@ def blob(agent: Path, path: str) -> str | None:
 @dataclass
 class Args:
     repo: tyro.conf.Positional[Path]
-    """The project the retro is for, whose agent repo at `agent/` holds its tracker and the report: the agents repo, which holds the mx plugin, for the workflow retro; any other for a repo retro, which reads every repo its `agent/repos.toml` lists beside it."""
+    """The project the retro is for, whose agent repo at `agent/` holds its tracker and the report: the agents repo, which holds the mx plugin, for the workflow retro; any other for a repo retro, which reads every repo its `agent/repos.toml` lists beside it but one with `retro = false` or an agent repo of its own."""
     focus: str = ""
     """What max names for this run to look at: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass."""
     since: str = ""

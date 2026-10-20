@@ -267,12 +267,15 @@ def collect_tickets(run: Path, agent: Path) -> None:
 
 
 def planned(agent: Path) -> list[Path]:
-    """The repos the agent repo's repo list names, by their paths; exits when the list cannot be read."""
+    """The repos of the agent repo's repo list that its retro reads, by their paths: every one but
+    one whose table says `retro = false`, and one with an agent repo of its own, which its own
+    tracker's retro reads. Exits when the list cannot be read."""
     root = agent / tracker.TICKETS.name
     try:
-        return [tracker.listed_path(root, table) for table in tracker.repo_list(root).values()]
+        listed = [tracker.listed_path(root, table) for table in tracker.repo_list(root).values() if table.get("retro", True)]
     except tracker.Refused as refused:
         sys.exit(str(refused))
+    return [path for path in listed if not (path / "agent" / ".git").exists()]
 
 
 # ── which sessions ───────────────────────────────────────────────────────────

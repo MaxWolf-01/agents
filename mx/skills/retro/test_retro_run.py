@@ -552,6 +552,36 @@ def test_a_repo_retro_reads_every_repo_its_tracker_plans_and_keeps_one_report(
     assert not (quartz / "agent").exists()
 
 
+@pytest.mark.parametrize("why", ["it has an agent repo of its own", "its table says retro = false"])
+def test_a_repo_retro_leaves_out_a_listed_repo_its_own_tracker_reads_or_its_table_leaves_out(
+        tmp_path: Path, stub: Path, code: Path, quartz: Path, why: str) -> None:
+    """The dotfiles' list names jarvis, whose own tracker's retro reads it, or the knowledge base
+    max writes himself, which `retro = false` leaves out: neither its code and git, nor the sessions
+    that worked in it alone, are this retro's."""
+    other = tmp_path / ("jarvis" if why.startswith("it has") else "kb")
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    commit(other, {"main.py": "1"}, "OTHER-REPO-COMMIT", SINCE + timedelta(days=1))
+    if why.startswith("it has"):
+        (other / "agent").mkdir()
+        git(other / "agent", "init", "-q", "-b", "main")
+        commit(other / "agent", {"tickets/x.md": ticket("proposed")}, "file x", SINCE + timedelta(days=1))
+    listing = (code / "agent/repos.toml").read_text() + f'\n[{other.name}]\npath = "../{other.name}"\n'
+    commit(code / "agent", {"repos.toml": listing + ("" if why.startswith("it has") else "retro = false\n")},
+           f"list {other.name}", SINCE + timedelta(days=1))
+    projects = tmp_path / ".claude/projects"
+    in_quartz = Transcript(projects, str(quartz), SINCE + timedelta(days=2)).says("the graph is wrong")
+    Transcript(projects, str(other), SINCE + timedelta(days=2)).says("OTHER-REPO-SESSION")
+
+    run = retro_run.run_retro(code, tmp_path / "data", [projects], SINCE, until=FIRST)
+
+    assert sorted(p.name for p in (run / "git").glob("*.md")) == ["dotfiles.md", "quartz-knowledge-base.md", "secrets.md"]
+    assert f"## {other}" not in (run / "touched.md").read_text()
+    assert f"- {other}" not in (run / "prompts/lens-pass.md").read_text()
+    assert [p.stem for p in (run / "sessions").glob("*.md")] == [in_quartz.sid]
+    assert not any("OTHER-REPO" in p.read_text() for p in run.rglob("*.md"))
+
+
 def test_a_repo_retro_runs_on_a_commit_in_any_repo_its_tracker_plans(
         tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
     retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
