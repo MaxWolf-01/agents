@@ -73,7 +73,7 @@ import signal
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -109,6 +109,9 @@ class Stage:
     """Files in the run directory the stage writes; `{batch}` stands for each batch's name."""
     fresh: bool = False
     """Confined to the run directory, which holds no earlier report while it runs."""
+    model: str = MODEL
+    """The model the stage and its subagents run on; a run's --model overrides it for every stage."""
+    effort: str = EFFORT
 
 
 @dataclass(frozen=True)
@@ -142,21 +145,22 @@ def kind_of(repo: Path) -> Kind:
 
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
               seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None,
-              if_active: bool = False) -> Path:
+              if_active: bool = False, model: str = "", effort: str = "") -> Path:
     """A whole retro on `repo`, or the rest of the one `resume` names; returns its run directory.
     The handlers of STOP are the caller's again afterwards, for a caller that goes on in the same
     process: a signal left ignored is inherited by every process it starts later, which no TERM then
-    stops."""
+    stops. `model` and `effort`, where given, replace every stage's own."""
     found = {s: signal.getsignal(s) for s in STOP}
     try:
-        return retro(repo, data, projects, since, focus, seed, until, resume, if_active)
+        return retro(repo, data, projects, since, focus, seed, until, resume, if_active, model, effort)
     finally:
         for s, handler in found.items():
             signal.signal(s, handler)
 
 
 def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None, focus: str,
-          seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool) -> Path:
+          seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool,
+          model: str = "", effort: str = "") -> Path:
     repo = repo.expanduser().resolve()
     if not repo.is_dir():
         sys.exit(f"{repo} does not exist")
@@ -219,6 +223,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
                       focus=f'max named a focus for this run: "{focus}".' if focus else "max named no focus for this run.")
         within = reach(kind, repos, agent)
         for stage in kind.stages:
+            stage = replace(stage, model=model or stage.model, effort=effort or stage.effort)
             where = stage.name
             if resume and not missing(stage, run):
                 continue
@@ -392,7 +397,7 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], within: Reach) ->
         process = subprocess.Popen(launch(stage, run, within), cwd=run, stdin=subprocess.PIPE, stdout=out,
                                    stderr=subprocess.STDOUT, text=True, start_new_session=True,
                                    preexec_fn=dies_with(os.getpid()),
-                                   env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0",
+                                   env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": stage.model, "GIT_OPTIONAL_LOCKS": "0",
                                         # print mode otherwise stops a subagent still running 10 minutes after the last turn
                                         "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"})
         try:
@@ -471,7 +476,7 @@ def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
         add = ["--add-dir", *map(str, within.read), "--disallowedTools", *denied]
         allowed += [f"Bash(git -C {d} {sub}{rest})" for d in within.git for sub in GIT_READS for rest in ("", " *")]
     return ["bash", str(RUN_LOG), "run", "--site", f"retro-{stage.name}", "--timeout", str(STAGE_TIMEOUT), "--",
-            "claude", "-p", "--model", MODEL, "--effort", EFFORT,
+            "claude", "-p", "--model", stage.model, "--effort", stage.effort,
             "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
             "--settings", '{"autoMemoryEnabled": false}', "--restricted", *add, "--allowedTools", *allowed,
             "--tools", tools, "--permission-mode", "manual", "--permission-prompts", "none"]
@@ -584,9 +589,13 @@ class Args:
     """Skip the run, exiting 3, when there is nothing new since the period's start: for the workflow retro, no message of max's in an interactive session and no commit of his in the listed repos; for a repo retro, no commit in any of its repos."""
     resume: Path | None = None
     """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
+    model: str = ""
+    """The model every stage of this run runs on, in place of each stage's own (`Stage.model`, in this file's stage table); a try on a cheaper model is `--model claude-sonnet-5-5`."""
+    effort: str = ""
+    """The effort every stage of this run runs at, in place of each stage's own."""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
     run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed,
-              resume=args.resume, if_active=args.if_active)
+              resume=args.resume, if_active=args.if_active, model=args.model, effort=args.effort)

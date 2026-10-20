@@ -226,6 +226,18 @@ def test_a_verdict_written_into_the_report_is_never_overwritten(
     assert last_logged(tmp_path).startswith("not committed: ")
 
 
+@pytest.mark.parametrize("model", ["", "claude-sonnet-5-5"])
+def test_every_stage_runs_on_its_own_model_unless_the_run_names_one(
+        tmp_path: Path, stub: Path, repo: Path, model: str) -> None:
+    projects = tmp_path / ".claude/projects"
+    Transcript(projects, str(repo), FIRST - timedelta(days=2)).says("why is the suite so slow").answers("Looking.")
+    retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, model=model, effort="medium" if model else "")
+    for stage in retro_run.WORKFLOW.stages:
+        args = (stub / f"{stage.name.replace('-', ' ')}.argv").read_text().splitlines()
+        assert args[args.index("--model") + 1] == (model or stage.model), stage.name
+        assert args[args.index("--effort") + 1] == ("medium" if model else stage.effort), stage.name
+
+
 def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_three_from_git_history(
         tmp_path: Path, stub: Path, repo: Path) -> None:
     runs = [retro(tmp_path, repo, FIRST, SINCE)] + [retro(tmp_path, repo, FIRST + n * WEEK) for n in (1, 2, 3)]
