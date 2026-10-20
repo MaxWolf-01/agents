@@ -1,3 +1,8 @@
+## 1.0.75
+
+- proposed tickets are more general; codebase arch report has more creative freedom
+- bloat begone
+
 ## 1.0.74
 
 - Session page drops its brief; grilling shows a ticket's brief as it moves
