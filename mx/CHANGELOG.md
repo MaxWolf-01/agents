@@ -1,3 +1,7 @@
+## 1.0.74
+
+- Session page drops its brief; grilling shows a ticket's brief as it moves
+
 ## 1.0.73
 
 - /mx:sharpen replaces /mx:expert and wf, and is the one home of grilling's expert bar
