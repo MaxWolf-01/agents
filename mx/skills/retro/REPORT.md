@@ -6,7 +6,7 @@ One report per tracker, `retro/report.md` in its agent repo, over every repo the
 
 - **Every finding quotes its evidence**: the session (its id's first 8 characters), the commit (its short sha) or the report it comes from, with an absolute date, `2026-10-07`. Never "last week", never a session's offset.
 - **Every proposal names what it deletes or narrows.** One that adds a mechanism also names the recurrence behind it and what keeping it costs.
-- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any code lens. A finding keeps the id the run that raised it gave it; one taken in from a report a listed repo kept of its own, `retro/<name>/report.md`, takes a new id, its History naming the one it had there; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
+- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any code lens. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
 - **A dismissal holds**: a finding or candidate max dismissed stays under Dismissed, with his verdict and its date, and returns only on evidence dated after his verdict, which it names.
 - **The report proposes; it files nothing and changes no ticket.** What max rules on a finding, in a session, becomes tickets there.
 
@@ -55,7 +55,7 @@ Run <date of the period's end>, over <start> to <end>. ids: F<highest>, A<highes
 
 ## What changed since <the last run's date>
 
-One line per finding or candidate added, sharpened, amended, dropped, taken in from a listed repo's own report, or whose state moved (taken up, fix landed, held, back), with its id and why.
+One line per finding or candidate added, sharpened, amended, dropped or whose state moved (taken up, fix landed, held, back), with its id and why.
 
 ## Top recommendation
 

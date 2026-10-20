@@ -552,36 +552,6 @@ def test_a_repo_retro_reads_every_repo_its_tracker_plans_and_keeps_one_report(
     assert not (quartz / "agent").exists()
 
 
-@pytest.mark.parametrize("verdict", [False, True], ids=["untouched", "a verdict committed to it while the run ran"])
-def test_a_report_a_listed_repo_kept_of_its_own_is_read_as_an_earlier_report_and_taken_out_by_the_commit(
-        tmp_path: Path, stub: Path, code: Path, quartz: Path, monkeypatch: pytest.MonkeyPatch, verdict: bool) -> None:
-    agent = code / "agent"
-    commit(agent, {"retro/quartz/report.md": "# Repo retro: quartz\n\nQUARTZ-A3\n", "retro/quartz/report.html": "<html>"},
-           "quartz's own report", SINCE - timedelta(days=1))
-    if verdict:
-        monkeypatch.setenv("STUB_BEFORE_SYNTHESIS", f"echo 'A3 dismissed by max' >> {agent}/retro/quartz/report.md && "
-                                                    f"git -C {agent} commit -qm verdict -- retro/quartz/report.md")
-
-    if verdict:
-        with pytest.raises(SystemExit):
-            retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
-    else:
-        retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
-
-    run = tmp_path / "data/dotfiles/runs" / retro_run.dirname(FIRST)
-    assert (run / "previous/folded/quartz.md").read_text() == "# Repo retro: quartz\n\nQUARTZ-A3\n"
-    assert "./previous/folded/quartz.md" in (stub / "follow up.seen").read_text().split()
-    if verdict:
-        assert last_logged(tmp_path, "dotfiles").startswith(f"not committed: {agent}/retro/quartz/report.md was committed to")
-        assert "A3 dismissed by max" in (agent / "retro/quartz/report.md").read_text()
-        return
-    assert "It folds in retro/quartz/report.md." in git(agent, "log", "-1", "--format=%B")
-    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == \
-        ["retro/quartz/report.html", "retro/quartz/report.md", "retro/report.html", "retro/report.md"]
-    assert git(agent, "ls-tree", "-r", "--name-only", "HEAD", "--", "retro").split() == ["retro/report.html", "retro/report.md"]
-    assert not (agent / "retro/quartz").exists() and git(agent, "status", "--porcelain", "--", "retro") == ""
-
-
 def test_a_repo_retro_runs_on_a_commit_in_any_repo_its_tracker_plans(
         tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
     retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)

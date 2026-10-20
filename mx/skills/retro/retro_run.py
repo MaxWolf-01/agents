@@ -7,8 +7,7 @@
 and its page into the project's agent repo, in its main checkout.
 
 A retro is one per tracker. Its report is `retro/report.md` in the project's agent repo, and a
-project whose `agent/` is no git repo of its own is refused. A report a listed repo kept of its own
-before, `retro/<name>/report.md`, is read as an earlier report and taken out by the run's commit.
+project whose `agent/` is no git repo of its own is refused.
 
 The project's kind decides what a run reads and which stages it runs. The agents repo, which holds
 the mx plugin, gets the workflow retro: it reads every session of every Claude Code profile under
@@ -32,11 +31,10 @@ copied into it, under `previous/`. A repo retro's stages read sessions as the di
 directory alone: they may not read the session pages in its agent repos, and run no git command
 there.
 
-The commit holds the report and its page, `report.html` beside it, and the removal of the reports
-it folded in, alone, and leaves whatever else is staged in the agent repo staged. It is not made,
-and the report stays in the run directory, when the agent repo is mid-merge, mid-rebase,
-mid-cherry-pick or mid-revert, when a file it holds has changes of its own there, or when the
-report was committed to while the run ran. Nothing is pushed.
+The commit holds the report and its page, `report.html` beside it, alone, and leaves whatever else
+is staged in the agent repo staged. It is not made, and the report stays in the run directory, when
+the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when either file has changes
+of its own there, or when the report was committed to while the run ran. Nothing is pushed.
 A run that ends without its commit, there, in collect or at a stage that failed or left out a file
 it owes, exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the
 stage it is in, and whatever that stage started, before it exits; one stopped during the commit lets the
@@ -65,7 +63,6 @@ Examples:
 
 from __future__ import annotations
 
-import contextlib
 import ctypes
 import json
 import os
@@ -495,10 +492,9 @@ def run_commits(agent: Path) -> list[tuple[str, datetime]]:
 
 def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], seed: list[Path]) -> None:
     """`previous/`: the report as it stands now, verdicts since the last run included, as
-    `current.md`; the last three runs' reports, each named for the end of its period; the seed, the
-    reports a first run takes as its previous ones, under `seed/`; and under `folded/<name>.md` each
-    report a listed repo kept of its own, as it stands now. Built beside it and renamed into place,
-    so a `previous/` a stopped run left is whole."""
+    `current.md`; the last three runs' reports, each named for the end of its period; and the
+    seed, the reports a first run takes as its previous ones, under `seed/`. Built beside it and
+    renamed into place, so a `previous/` a stopped run left is whole."""
     previous = run / "previous.partial"
     shutil.rmtree(previous, ignore_errors=True)
     previous.mkdir()
@@ -510,10 +506,6 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
         (previous / "seed").mkdir()
         for path in seed:
             shutil.copy(path, previous / "seed" / path.name)
-    if names := retro_collect.folded(agent):
-        (previous / "folded").mkdir()
-        for name in names:
-            (previous / "folded" / f"{name}.md").write_text(git(agent, "show", f"HEAD:{retro_collect.RETRO}/{name}/report.md"))
     previous.rename(run / "previous")
 
 
@@ -522,44 +514,30 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
 
 def commit_report(agent: Path, run: Path, base: str | None, since: datetime, until: datetime,
                   kind: Kind) -> tuple[bool, str]:
-    """Copy the run's report and page into the report's directory, take out the reports the run
-    folded in, and commit those files alone. Whether it committed, and the line the run log gets,
-    saying what was committed or why nothing was."""
+    """Copy the run's report and page into the report's directory and commit those two files alone.
+    Whether it committed, and the line the run log gets, saying what was committed or why nothing was."""
     paths = [f"{retro_collect.RETRO}/{name}" for name in REPORT]
-    names = sorted(p.stem for p in (run / "previous" / "folded").glob("*.md"))
-    gone = [path for name in names
-            for path in git(agent, "ls-tree", "-r", "--name-only", "HEAD", "--", f"{retro_collect.RETRO}/{name}/").splitlines()]
     gitdir = Path(git(agent, "rev-parse", "--absolute-git-dir").strip())
     if busy := [op for marker, op in IN_PROGRESS.items() if (gitdir / marker).exists()]:
         return False, f"not committed: {agent} is mid-{busy[0]}; the report stays in {run}"
     if blob(agent, REPORT_PATH) != base:
         return False, f"not committed: {agent}/{REPORT_PATH} was committed to while the run ran; the report stays in {run}"
-    if moved := [name for name in names if (run / "previous" / "folded" / f"{name}.md").read_text()
-                 != git(agent, "show", f"HEAD:{retro_collect.RETRO}/{name}/report.md")]:
-        return False, (f"not committed: {agent}/{retro_collect.RETRO}/{moved[0]}/report.md was committed to while the run "
-                       f"ran; the report stays in {run}")
-    if changed := git(agent, "status", "--porcelain", "--", *paths, *gone).strip():
+    if changed := git(agent, "status", "--porcelain", "--", *paths).strip():
         changes = ", ".join(line[3:] for line in changed.splitlines())
         return False, f"not committed: {changes} has changes of its own in {agent}; the report stays in {run}"
     (agent / retro_collect.RETRO).mkdir(parents=True, exist_ok=True)
     for name in REPORT:
         shutil.copy(run / name, agent / retro_collect.RETRO / name)
-    for path in gone:
-        (agent / path).unlink()
-    for name in names:
-        with contextlib.suppress(OSError):  # a directory still holding a file git does not track stays
-            (agent / retro_collect.RETRO / name).rmdir()
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
-               + (f"It folds in {', '.join(f'{retro_collect.RETRO}/{n}/report.md' for n in names)}.\n\n" if names else "")
-               + f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
+               f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
-        # `--only` stages a tracked file itself, a removed one included, so a commit that fails
-        # leaves it unstaged; a first run's files, untracked, need the add.
+        # `--only` stages a tracked file itself, so a commit that fails leaves it unstaged; a first
+        # run's files, untracked, need the add.
         if new := [path for path in paths if blob(agent, path) is None]:
             git(agent, "add", "--", *new)
-        git(agent, "commit", "--quiet", "--only", "-m", message, "--", *paths, *gone)
+        git(agent, "commit", "--quiet", "--only", "-m", message, "--", *paths)
     except subprocess.CalledProcessError as e:
-        restore(agent, [*paths, *gone])
+        restore(agent, paths)
         return False, f"not committed: git {e.cmd[3]} failed ({(e.stderr or e.stdout).strip()}); the report stays in {run}"
     return True, f"committed {git(agent, 'rev-parse', '--short', 'HEAD').strip()} in {agent}"
 

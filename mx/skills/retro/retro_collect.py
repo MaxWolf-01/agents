@@ -79,7 +79,7 @@ DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't w
 NAMED_PATH = re.compile(r"(?<![\w.~/$-])~?/[^\s\"'`;|&<>(){}\[\],]*")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
-RETRO = Path("retro")  # in an agent repo: its report, and under `<name>/` the report a listed repo kept before its tracker's retro folded it in
+RETRO = Path("retro")  # in an agent repo: where its report is
 
 
 # ── what runs ────────────────────────────────────────────────────────────────
@@ -273,15 +273,6 @@ def planned(agent: Path) -> list[Path]:
         return [tracker.listed_path(root, table) for table in tracker.repo_list(root).values()]
     except tracker.Refused as refused:
         sys.exit(str(refused))
-
-
-def folded(agent: Path) -> list[str]:
-    """The names of the reports the agent repo holds at HEAD beside its own, `retro/<name>/report.md`:
-    each a report a listed repo kept of its own before its tracker's retro took it in."""
-    if subprocess.run(["git", "-C", str(agent), "rev-parse", "--verify", "--quiet", "HEAD"], capture_output=True).returncode:
-        return []  # no commit yet, so no report
-    paths = git(agent, "ls-tree", "-r", "--name-only", "HEAD", "--", str(RETRO)).splitlines()
-    return sorted(Path(p).parent.name for p in paths if Path(p).match(f"{RETRO}/*/report.md"))
 
 
 # ── which sessions ───────────────────────────────────────────────────────────
