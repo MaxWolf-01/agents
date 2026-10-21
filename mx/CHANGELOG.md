@@ -1,3 +1,7 @@
+## 1.0.78
+
+- "Brief" means a ticket's, and what an agent is handed is its prompt
+
 ## 1.0.77
 
 - The retro proposes auto mode entries in both directions, checked by the critique
