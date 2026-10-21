@@ -90,6 +90,7 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
 - A chained command (`&&`, `||`, `;`) is checked segment by segment. It runs unapproved when every segment would alone; one segment that needs approval prompts for the whole call, which blocks async execution and stalls the agent. A command that may prompt goes in a call of its own.
   - `cd` passes only into the session's working directory and below; a `cd` anywhere else prompts. Reach outside with absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead.
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
+- A permission fix is a prose `autoMode` entry in ~/.claude/settings.json that covers the class of action, never a static allow rule that patches one command: I run auto mode, and its classifier judges every shell command anyway.
 
 Understanding this will allow you to go faster (when it's time to implement, experiment, or gather information).
 
