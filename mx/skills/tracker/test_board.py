@@ -2307,7 +2307,9 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     # stamped while the session was exploring: a run's clock is read before it starts, so a change
     # landing during one reads as a change it has not heard, and the cadence after is when it does
     watcher.saw(statuses + (("small-chore", "done"),), statuses, written.last_activity + timedelta(seconds=1))
-    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + CADENCE + timedelta(seconds=1))
+    # the cadence counts from the run's own clock, read on its thread a moment after `at`, and later under load
+    second = written.last_activity + CADENCE + timedelta(seconds=1)
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, second)
     watcher.running.join(30)
     assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the cadence after it"
     assert f"--resume {written.session}" in runs(claude)[1], "the cadence's change started a fresh exploration"
@@ -2315,9 +2317,9 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     assert watcher.told == told, "what the session was told about waits for the run that reaches it"
 
     # and the run that answered nothing is tried again a cadence later, not on every pass after it
-    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + CADENCE + timedelta(seconds=30))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, second + timedelta(seconds=30))
     assert len(runs(claude)) == 2, "a run that answered nothing was retried on the next pass"
-    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + 2 * CADENCE + timedelta(seconds=2))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, second + CADENCE + timedelta(seconds=1))
     watcher.running.join(30)
     assert len(runs(claude)) == 3, "a run that answered nothing was never retried"
 
