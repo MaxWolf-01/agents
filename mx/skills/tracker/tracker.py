@@ -140,6 +140,7 @@ def repos() -> int:
         [Backend]
         path = "Backend"              # from the project root, or absolute, `~` expanded
         integration = "development"   # the branch tickets merge into and are done on
+        retro = false                 # the project's retro leaves it out; true where not written
 
     A repo with no `integration` integrates on the branch its `origin/HEAD` names. A ticket's work
     in a listed repo has landed once it is in the branch the ticket's accept merges it into there:
@@ -898,10 +899,12 @@ def tables(path: Path, text: str) -> dict[str, dict]:
             said.append(f"{path}: `[{name}]` is what a range calls the project's {name} repo; a listed repo takes another name")
         elif not isinstance(table.get("path"), str) or not table["path"]:
             said.append(f"{path}: `[{name}]` has no `path`; it says where the repo is, from the project root or absolute")
-        elif extra := sorted(set(table) - {"path", "integration"}):
-            said.append(f"{path}: `[{name}]` declares {', '.join(extra)}; a listed repo declares `path` and `integration`")
+        elif extra := sorted(set(table) - {"path", "integration", "retro"}):
+            said.append(f"{path}: `[{name}]` declares {', '.join(extra)}; a listed repo declares `path`, `integration` and `retro`")
         elif not isinstance(table.get("integration", ""), str):
             said.append(f"{path}: `[{name}]` integration is no branch name")
+        elif not isinstance(table.get("retro", True), bool):
+            said.append(f"{path}: `[{name}]` retro is no boolean; it is `retro = false` to leave the repo out of the project's retro")
     refuse(said)
     return parsed
 

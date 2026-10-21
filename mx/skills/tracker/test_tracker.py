@@ -1895,6 +1895,13 @@ def test_the_repo_list_is_printed_one_repo_a_line_with_its_path_and_integration_
     assert run(listed / "agent" / "tickets", "repos").out == said.out, "read from anywhere in the project"
 
 
+def test_a_repo_the_retro_leaves_out_is_listed_like_any_other(listed: Path) -> None:
+    before = run(listed, "repos").out
+    (listed / "agent" / "repos.toml").write_text(
+        (listed / "agent" / "repos.toml").read_text().replace('integration = "development"\n', 'integration = "development"\nretro = false\n'))
+    assert run(listed, "repos") == Run(0, before, "")
+
+
 def test_a_project_with_no_repo_list_lists_nothing(split: Path) -> None:
     assert run(split, "repos") == Run(0, "", "")
 
@@ -1914,6 +1921,7 @@ def test_a_listed_repo_at_a_home_relative_path_is_found_there(split: Path, monke
     ("[code]\npath = 'Backend'\n", "`[code]` is what a range calls the project's code repo"),
     ('["a b"]\npath = "Backend"\n', "is no name a range can carry"),
     ("[Backend]\npath = 'Backend'\nintegration = 3\n", "integration is no branch name"),
+    ("[Backend]\npath = 'Backend'\nretro = 'no'\n", "retro is no boolean"),
     ("[Backend]\npath = 'nowhere'\nintegration = 'main'\n", "is no git repo's root"),
     ("[Backend]\npath = 'docs'\nintegration = 'main'\n", "is no git repo's root"),
     ("[Backend]\npath = 'Backend'\nintegration = 'release'\n", "integration release is no branch of"),

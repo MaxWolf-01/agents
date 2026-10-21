@@ -1,6 +1,10 @@
-# A workflow retro: read fresh
+# A {{kind}}: read fresh
 
-You run the read-fresh stage of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}. Its job is to read the period with fresh eyes: what went wrong for max and for the agents, quoted and dated, before anyone looks at what earlier retros found. The later stages compare your notes with the standing findings; your notes are worth most when they come from the sessions alone.
+You run the read-fresh stage of a {{kind}} of `{{repo}}`, over {{sessions}}, from {{since}} to {{until}}. Its job is to read the period with fresh eyes: what went wrong for max and for the agents, and the cause behind each of max's corrections, quoted and dated, before anyone looks at what earlier retros found. The later stages compare your notes with the standing findings; your notes are worth most when they come from the sessions alone.
+
+The retro's repos, whose git `git/` records:
+
+{{repos}}
 
 Everything you read and write is in the run directory, `{{run}}`, your working directory:
 
@@ -17,11 +21,22 @@ The stage is done when `notes/` holds a file for every batch in `batches.json` a
 
 ## The reader's brief
 
-You read part of a workflow retro's period, from {{since}} to {{until}}, to find the friction worth fixing. A batch named `sample-…` holds older sessions instead, from before the period, read the same way: what they show tells the later stages whether a pattern is older than the period. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
+You read part of a {{kind}}'s period, from {{since}} to {{until}}, to find the friction worth fixing and the cause behind each of max's corrections. A batch named `sample-…` holds older sessions instead, from before the period, read the same way: what they show tells the later stages whether a pattern is older than the period. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
 
 ### What to look for
 
 Two sides, alike in weight. What cost max time, attention or nerves, read from his own messages and from what he was shown. What made an agent slower, costlier or less successful.
+
+Read every correction of max's for its cause. A correction is a message of his that sets right what an agent did, said, was about to do or showed him: he rejects an approach, points at a mistake, restates a rule, redirects the work, supplies a fact, or asks what he is looking at. `MAX INTERRUPTED` followed by his next message is one, as is `MAX REWOUND and re-sent`, whose abandoned turn is what he corrected. Read it in both directions, what made the agent go wrong and what made the agent hard for him to follow, and name the cause as one of:
+
+- **workflow**: a skill, a prompt, a hook or the harness steered the agent there;
+- **codebase**: a shape of the code invited the mistake;
+- **environment**: the obvious way was not to be seen from the repo, its commands or its tools;
+- **shown**: how the work was shown to max left him unable to tell what was built, what was decided, or what he had to do;
+- **guidance**: guidance covering it existed, and the agent missed it or could not follow it;
+- **fact**: the agent lacked a fact max had to supply.
+
+In a repo retro, a session read may have worked on other repos too: its notes hold the friction and corrections of the work in the retro's repos, those whose cause is the workflow among them, with the skill named in their Cause.
 
 ### The digest
 
@@ -45,11 +60,12 @@ A git record lists commits with their messages, reverts, ticket changes and work
 Outcome: done | partial | abandoned | unclear, and what came out, in one clause.
 
 - **[max|agents] <what happened, in a few words of the session's own>** (low|med|high) What happened and what it cost, in one or two sentences. Evidence: "<verbatim quote>" (<session id, 8 characters>, <date>). Cause: <the skill line, script, config or habit that produced it, where you can tell>.
+- **[correction · workflow|codebase|environment|shown|guidance|fact] <what he corrected, in a few words>** (low|med|high) What the agent did before it, with the call or text that drew it, and what max said. Evidence: "<his words, verbatim>" (<session id, 8 characters>, <date>). Cause: <the skill line, file, shape, command, guidance or missing fact, by path where it is a file>.
 - **[works]** Something that clearly worked and is worth keeping, with its quote. At most two per session.
 
 ## Patterns in this batch
 
-Friction that recurs across two or more of these sessions, naming each session and the date.
+Friction that recurs, and corrections that share a cause, across two or more of these sessions, naming each session and the date.
 ```
 
 Each finding carries a verbatim quote and its absolute date, copied from the digest; a finding you cannot quote stays out. Cost is your estimate of what it cost: `high` for many minutes or much nerve lost, `med` for a detour, `low` for a papercut. A session with no friction gets its heading and its outcome line alone. The concrete beats the general: "max pasted the board's URL by hand three times because the Stop hook printed no link" carries the fix; "observability could be better" carries nothing. For `git/`, the sections are the repos, and the quotes are commit subjects and report lines with their short sha or ticket and date.

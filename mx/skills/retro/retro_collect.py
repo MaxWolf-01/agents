@@ -6,36 +6,36 @@
 """Gather what a retro reads, for the period since a given start, into a run directory outside
 every git work tree. `retro_run.py` runs it as a run's collect stage; its subcommands run it alone.
 
-`sessions`, what a workflow retro reads, writes into the run directory:
+`sessions`, what a retro reads of sessions and git, writes into the run directory:
 
 - `sessions/<id>.md`: a digest of every interactive session with an entry in the period, from
-  every Claude Code profile given, holding the period's days alone. A digest keeps max's messages
+  every Claude Code profile given, holding the period's days alone; in a repo retro, of those
+  alone that worked in the repos its tracker plans (`Worked`). A digest keeps max's messages
   verbatim, pasted text clipped; every tool call's input, error and denial in full; the model's
   text; and the session page's turn records. It keeps no tool output. Beside them it marks
   interrupts, rewinds, messages queued while the agent worked, hook send-backs, context
   compactions and how long each turn took.
 - `sample/<id>.md`: digests of about 20 older sessions, from two to eight weeks before the end
-  of the period, drawn at random, weighted to sessions with more of max's messages.
+  of the period, drawn at random, weighted to sessions with more of max's messages; in a repo
+  retro, from those that worked in its repos.
 - `sessions.jsonl`: one row per digest above: id, profile, project, start, end, max's messages,
   and which of the two it is in.
 - `git/<repo>.md` and `versions.md`, as `git` writes the first.
-- `permissions/<profile>/`, for each profile: `scan.json`, the Bash calls of the period no
-  allowlist rule covers, as `scan_unapproved.py` buckets them; `rules.json`, the permission rules
-  and auto mode settings of the profile's own settings files; and `auto-mode.json`, the effective
-  auto mode config `claude auto-mode config` prints for it, or `auto-mode.failed` saying why there
-  is none.
 - `proposed.md` and `in-flight.md`, given an agent repo: its commit at collect time and the slugs
   of the tickets proposed, and of those in flight (open, claimed or review), at that commit, each
-  as it stood in `proposed/<slug>.md` and `in-flight/<slug>.md`. A report kept for a repo planned
-  from the agent repo's tracker reads only the tickets whose `repos:` names that repo, and the
-  agent repo's own report reads none of those (`Scope`).
+  as it stood in `proposed/<slug>.md` and `in-flight/<slug>.md`.
+- `permissions/<profile>/`, what a workflow retro reads beside them, for each profile: `scan.json`,
+  the Bash calls of the period no allowlist rule covers, as `scan_unapproved.py` buckets them;
+  `rules.json`, the permission rules and auto mode settings of the profile's own settings files;
+  and `auto-mode.json`, the effective auto mode config `claude auto-mode config` prints for it, or
+  `auto-mode.failed` saying why there is none.
 
 `git` writes `git/<repo>.md` alone, for each repo given: its commits in the period with their
 messages, its reverts, and, where the repo holds an agent repo, the tickets filed, every status
 change, the tickets deleted, and the worker reports committed in the period.
 
-A repo retro reads no session: its run gets the repo's `git/<repo>.md`, `proposed.md` and `in-flight.md` alone,
-and, as a workflow retro's does, `touched.md`, the files the period's commits touched.
+Both kinds also get `touched.md`, the files the period's commits touched in the repos whose code
+the lens pass reads.
 
 Digests are cached per session in the cache directory and digested again only once the
 transcript or its session page changed.
@@ -62,6 +62,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NamedTuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "session-page"))
@@ -74,38 +75,12 @@ SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the p
 PASTE_CLIP = 600  # pasted text in a message of max's
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
+# An absolute path, or one from the home, in any string of a tool call's input: a field of its own, or a word of a
+# command or of a file's text.
+NAMED_PATH = re.compile(r"(?<![\w.~/$-])~?/[^\s\"'`;|&<>(){}\[\],]*")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
-RETRO = Path("retro")  # in an agent repo: its own report, and a directory per repo its tracker plans that has one
-
-
-@dataclass(frozen=True)
-class Scope:
-    """Which of an agent repo's tickets a report reads, by the listed repos their `repos:` names:
-    the report of a repo planned from the project's tracker reads the tickets naming that repo
-    alone, and the project's own report reads none of those."""
-
-    repo: str | None = None
-    """The listed repo whose report this is, where it is not the project's own."""
-    excluded: frozenset[str] = frozenset()
-    """For the project's own report, the listed repos with a report of their own, whose tickets are theirs."""
-
-    @property
-    def dir(self) -> Path:
-        """Where in the agent repo the report is."""
-        return RETRO / self.repo if self.repo else RETRO
-
-    def reads(self, repos: list[str]) -> bool:
-        return self.repo in repos if self.repo else not self.excluded.intersection(repos)
-
-    def note(self) -> str:
-        """The sentence a record of tickets carries saying which it holds, for a stage that reads it."""
-        if self.repo:
-            return f" It holds only the tickets whose `repos:` names `{self.repo}`."
-        if self.excluded:
-            return (f" It leaves out the tickets whose `repos:` names {', '.join(f'`{n}`' for n in sorted(self.excluded))}, "
-                    f"each read by that repo's own report, `{RETRO}/<name>/report.md`.")
-        return ""
+RETRO = Path("retro")  # in an agent repo: where its report is
 
 
 # ── what runs ────────────────────────────────────────────────────────────────
@@ -113,15 +88,27 @@ class Scope:
 
 def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, projects: list[Path],
                      repos: list[Path], sample_seed: int | None = None, agent: Path | None = None,
-                     scope: Scope = Scope()) -> None:
-    """Everything a workflow retro's later stages read, written into `run`."""
-    oldest = until - SAMPLE_WINDOW[1]
-    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= min(since, oldest).timestamp()]
-    digests = [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
-    period = [d for d in digests if d.end >= since and d.start <= until]
+                     worked: Worked | None = None) -> None:
+    """The digests, the git records, the versions and the tickets, written into `run`: of every
+    session, or of the sessions alone that worked where `worked` says."""
+    def kept(d: Digest, first: datetime, last: datetime) -> bool:
+        return worked is None or worked.by(d, first, last)
+
+    digests = interactive_digests(projects, cache, repos, min(since, until - SAMPLE_WINDOW[1]))
+    period = [d for d in digests if d.end >= since and d.start <= until and kept(d, since, until)]
     ids = {d.sid for d in period}
-    older = [d for d in digests if d.sid not in ids and until - SAMPLE_WINDOW[1] <= d.start <= until - SAMPLE_WINDOW[0]]
-    sample = weighted_sample(older, SAMPLE_SIZE, random.Random(sample_seed))
+    older = [d for d in digests if d.sid not in ids and until - SAMPLE_WINDOW[1] <= d.start <= until - SAMPLE_WINDOW[0]
+             and kept(d, d.start, d.end)]
+    write_digests(run, since, period, weighted_sample(older, SAMPLE_SIZE, random.Random(sample_seed)))
+    collect_git(since, run, repos, until)
+    (run / "versions.md").write_text(versions(since, until, period, repos))
+    if agent:
+        collect_tickets(run, agent)
+
+
+def write_digests(run: Path, since: datetime, period: list[Digest], sample: list[Digest]) -> None:
+    """`sessions/<id>.md`, each digest of the period from the day `since` falls on, `sample/<id>.md`,
+    and `sessions.jsonl`, a row per digest."""
     rows = []
     for where, chosen in (("sessions", period), ("sample", sample)):
         (run / where).mkdir(parents=True, exist_ok=True)
@@ -132,45 +119,35 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
             rows.append(dict(id=d.sid, set=where, profile=d.profile, project=d.cwd, start=stamp(d.start),
                              end=stamp(d.end), messages=d.messages))
     (run / "sessions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    collect_git(since, run, repos, until, agent, scope)
-    (run / "versions.md").write_text(versions(since, until, period, repos))
-    collect_permissions(since, run, projects)
-    if agent:
-        collect_tickets(run, agent, scope)
 
 
-def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent: Path, scope: Scope = Scope()) -> None:
-    """`git/<repo>.md` and the tickets, what a repo retro reads beside `touched.md` and the code; no session."""
-    collect_git(since, run, [repo], until, agent, scope)
-    collect_tickets(run, agent, scope)
-
-
-def collect_touched(since: datetime, until: datetime, run: Path, repo: Path) -> None:
-    """`touched.md`: the files of `repo` the period's commits touched that it still tracks, by how
+def collect_touched(since: datetime, until: datetime, run: Path, repos: list[Path]) -> None:
+    """`touched.md`: per repo, the files the period's commits touched that it still tracks, by how
     many of those commits touched each, most first."""
-    out = git(repo, "log", "--branches", f"--since-as-filter={since.isoformat()}", f"--until={until.isoformat()}",
-              "--format=", "--name-only")
-    tracked = set(git(repo, "ls-files").splitlines())
-    counts = Counter(path for path in out.splitlines() if path in tracked)
+    out = ["# Files the period's commits touched", "",
+           f"From {stamp(since)} to {stamp(until)}, on any local branch; each file a repo still tracks, with how many "
+           f"of the period's commits touched it."]
+    for repo in repos:
+        log = git(repo, "log", "--branches", f"--since-as-filter={since.isoformat()}", f"--until={until.isoformat()}",
+                  "--format=", "--name-only")
+        tracked = set(git(repo, "ls-files").splitlines())
+        counts = Counter(path for path in log.splitlines() if path in tracked)
+        out += ["", f"## {repo.resolve()}", "", *(f"- {n} {path}" for path, n in sorted(counts.items(), key=lambda pn: (-pn[1], pn[0])))]
     run.mkdir(parents=True, exist_ok=True)
-    (run / "touched.md").write_text("\n".join([
-        f"# Files the period's commits touched in {repo.resolve()}", "",
-        f"From {stamp(since)} to {stamp(until)}, on any local branch; each file the repo still tracks, with how many "
-        f"of the period's commits touched it.", "",
-        *(f"- {n} {path}" for path, n in sorted(counts.items(), key=lambda pn: (-pn[1], pn[0])))]) + "\n")
+    (run / "touched.md").write_text("\n".join(out) + "\n")
 
 
-def latest_commit(repo: Path, since: datetime) -> str:
-    """The repo's newest commit on any local branch since `since`, or "" when there is none."""
-    if rows := commits(repo, since):
-        return f"a commit at {stamp(parse_time(rows[0]['date']))} in {repo.resolve()} ({rows[0]['sha'][:7]})"
-    return ""
+def latest_commit(repos: list[Path], since: datetime) -> str:
+    """The newest commit on any local branch of the repos since `since`, or "" when there is none."""
+    found = [(parse_time(rows[0]["date"]), rows[0]["sha"], repo) for repo in repos if (rows := commits(repo, since))]
+    if not found:
+        return ""
+    at, sha, repo = max(found, key=lambda f: f[0])
+    return f"a commit at {stamp(at)} in {repo.resolve()} ({sha[:7]})"
 
 
-def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None,
-                agent: Path | None = None, scope: Scope = Scope()) -> None:
-    """`git/<repo>.md` for each repo: its commits since `since`, and its agent repo's tickets; the
-    tickets of `agent`, the agent repo the report is in, as far as `scope` reads them."""
+def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None) -> None:
+    """`git/<repo>.md` for each repo: its commits since `since`, and its agent repo's tickets."""
     (run / "git").mkdir(parents=True, exist_ok=True)
     names = Counter()
     for repo in repos:
@@ -178,16 +155,14 @@ def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime |
         names[name] += 1
         if names[name] > 1:
             name = f"{name}-{names[name]}"
-        (run / "git" / f"{name}.md").write_text(git_record(repo, since, until, agent, scope))
+        (run / "git" / f"{name}.md").write_text(git_record(repo, since, until))
 
 
 def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
     """A sign of max since `since`, or "" when there is none: his latest message in an
     interactive session, else a commit of his on a branch of one of the repos, his being the author
     identity the repo itself commits with. The digests it reads are cached as a run's are."""
-    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= since.timestamp()]
-    said = [d for d in digest_all(transcripts, cache, repos)
-            if d.interactive and d.said_last and parse_time(d.said_last) >= since]
+    said = [d for d in interactive_digests(projects, cache, repos, since) if d.said_last and parse_time(d.said_last) >= since]
     if said:
         d = max(said, key=lambda d: d.said_last)
         return f"a message of max's at {d.said_last} in session {d.sid} ({d.cwd})"
@@ -267,8 +242,8 @@ def auto_mode(profile: Path, cwd: Path) -> tuple[str, str]:
 # ── the tickets ──────────────────────────────────────────────────────────────
 
 
-def collect_tickets(run: Path, agent: Path, scope: Scope = Scope()) -> None:
-    """The tickets of the agent repo that `scope` reads, as they stand at its commit now: those
+def collect_tickets(run: Path, agent: Path) -> None:
+    """The agent repo's tickets as they stand at its commit now: those
     proposed, by slug in `proposed.md` and each in `proposed/<slug>.md`, and those in flight, in
     `in-flight.md` and `in-flight/<slug>.md`."""
     sha = git(agent, "rev-parse", "HEAD").strip()
@@ -278,8 +253,7 @@ def collect_tickets(run: Path, agent: Path, scope: Scope = Scope()) -> None:
         raise subprocess.CalledProcessError(found.returncode, found.args, found.stdout, found.stderr)
     texts = {Path(path).stem: git(agent, "show", f"{sha}:{path}")
              for path in sorted(line.split(":", 1)[1] for line in found.stdout.splitlines())}
-    parsed = [tracker.read(Path(f"{slug}.md"), text) for slug, text in texts.items()]
-    tickets = [t for t in parsed if scope.reads(t.repos)]
+    tickets = [tracker.read(Path(f"{slug}.md"), text) for slug, text in texts.items()]
     for name, title, statuses in (("proposed", "Proposed tickets", ("proposed",)), ("in-flight", "Tickets in flight", IN_FLIGHT)):
         chosen = [t for t in tickets if t.status in statuses]
         (run / name).mkdir(parents=True, exist_ok=True)
@@ -288,29 +262,27 @@ def collect_tickets(run: Path, agent: Path, scope: Scope = Scope()) -> None:
         (run / f"{name}.md").write_text("\n".join([
             f"# {title} ({len(chosen)})", "",
             f"The agent repo `{agent}` at {sha}, when the run collected. Each ticket, as it stood then, is "
-            f"`{name}/<slug>.md`.{scope.note()}", "",
+            f"`{name}/<slug>.md`.", "",
             *(f"- {t.slug}" + ("" if name == "proposed" else f": {t.status}") for t in chosen)]) + "\n")
 
 
-def reported(agent: Path) -> frozenset[str]:
-    """The listed repos whose report the agent repo holds beside its own, `retro/<name>/report.md`, at HEAD."""
-    if subprocess.run(["git", "-C", str(agent), "rev-parse", "--verify", "--quiet", "HEAD"], capture_output=True).returncode:
-        return frozenset()  # no commit yet, so no report
-    paths = git(agent, "ls-tree", "-r", "--name-only", "HEAD", "--", str(RETRO)).splitlines()
-    return frozenset(Path(p).parent.name for p in paths if Path(p).match(f"{RETRO}/*/report.md"))
+class Plan(NamedTuple):
+    """The repos of an agent repo's repo list, by their paths, split by whether its retro reads them."""
+    read: list[Path]
+    left_out: list[Path]
+    """One whose table says `retro = false`, and one with an agent repo of its own, which its own tracker's retro reads."""
 
 
-def listed_name(agent: Path, repo: Path) -> str:
-    """The name the agent repo's repo list gives `repo`; exits when the list names no repo there, or cannot be read."""
+def planned(agent: Path) -> Plan:
+    """The agent repo's repo list, as its retro reads it; exits when the list cannot be read."""
     root = agent / tracker.TICKETS.name
     try:
-        listing = tracker.repo_list(root)
+        tables = tracker.repo_list(root).values()
     except tracker.Refused as refused:
         sys.exit(str(refused))
-    if names := [name for name, table in listing.items() if tracker.listed_path(root, table) == repo.resolve()]:
-        return names[0]
-    sys.exit(f"{agent / tracker.REPO_LIST} lists no repo at {repo.resolve()}; a repo planned from this tracker is listed "
-             f"there, under the name its tickets' `repos:` gives it")
+    listed = [(tracker.listed_path(root, table), table.get("retro", True)) for table in tables]
+    reads = [retro and not (path / "agent" / ".git").exists() for path, retro in listed]
+    return Plan([p for (p, _), r in zip(listed, reads) if r], [p for (p, _), r in zip(listed, reads) if not r])
 
 
 # ── which sessions ───────────────────────────────────────────────────────────
@@ -319,6 +291,53 @@ def listed_name(agent: Path, repo: Path) -> str:
 def profiles() -> list[Path]:
     """Every Claude Code profile's directory of transcripts under the home: `~/.claude*/projects`."""
     return sorted(p for p in Path.home().glob(".claude*/projects") if p.is_dir())
+
+
+def interactive_digests(projects: list[Path], cache: Path, repos: list[Path], since: datetime) -> list[Digest]:
+    """The digest of every interactive session whose transcript was written to since `since`."""
+    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= since.timestamp()]
+    return [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
+
+
+@dataclass(frozen=True)
+class Worked:
+    """Where a session has to have worked to count for a tracker's repos: inside one of them, the
+    project's own repo, whose root is the project root, among them; inside a worktree git lists for
+    one; or inside a directory beside one named `<repo>-<anything>` that no longer exists, which is
+    what a worktree made beside the repo leaves once it is removed. A path inside a repo the
+    tracker's retro leaves out counts for none, also where that repo sits inside one it reads."""
+    roots: tuple[Path, ...]
+    repos: tuple[Path, ...]
+    left_out: tuple[Path, ...] = ()
+
+    @staticmethod
+    def of(repos: list[Path], left_out: list[Path] = ()) -> Worked:
+        return Worked(tuple(w for r in repos for w in worktrees(r)), tuple(r.resolve() for r in repos),
+                      tuple(r.resolve() for r in left_out))
+
+    def by(self, d: Digest, first: datetime, last: datetime) -> bool:
+        """Whether the session, on a day from `first` to `last`, ran there or made a tool call naming
+        a path there."""
+        days = [t.astimezone(UTC).date().isoformat() for t in (first, last)]
+        return any(self.holds(p) for day, paths in d.paths.items() if days[0] <= day <= days[1] for p in paths)
+
+    def holds(self, path: str) -> bool:
+        """A path taken as it resolves now, so one through a symlink counts where the link points."""
+        p = Path(os.path.realpath(os.path.expanduser(path)))
+        if inside := [r for r in (*self.roots, *self.left_out) if p.is_relative_to(r)]:
+            return max(inside, key=lambda r: len(r.parts)) in self.roots  # the innermost repo decides
+        for repo in self.repos:
+            if p.is_relative_to(repo.parent) and p != repo.parent:
+                beside = repo.parent / p.relative_to(repo.parent).parts[0]
+                if beside.name.startswith(f"{repo.name}-") and not beside.exists():
+                    return True
+        return False
+
+
+def worktrees(repo: Path) -> list[Path]:
+    """The repo's main checkout and every worktree of it, resolved."""
+    out = git(repo, "worktree", "list", "--porcelain")
+    return [Path(line.split(" ", 1)[1]).resolve() for line in out.splitlines() if line.startswith("worktree ")]
 
 
 def find_transcripts(projects: list[Path]) -> list[Path]:
@@ -350,6 +369,7 @@ class Digest:
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
+    paths: dict[str, list[str]] = field(default_factory=dict)  # day: the working directories and the paths its tool calls named
     page_at: int = 0  # where in `text` the days end and the session page's records begin
 
     def since(self, start: datetime) -> str:
@@ -412,7 +432,7 @@ class _Inline:
         return map(f, *items)
 
 
-CACHE_FORMAT = 7  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 8  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -460,6 +480,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     models: dict[str, dict[str, list[str]]] = {}
     messages = 0
     said_last: datetime | None = None
+    paths: dict[str, set[str]] = {}
 
     def put(at: datetime | None, text: str) -> None:
         nonlocal day
@@ -473,6 +494,8 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
         if e.get("isSidechain"):
             continue
         at = parse_time(e["timestamp"]) if e.get("timestamp") else None
+        if at and isinstance(e.get("cwd"), str) and e["cwd"]:
+            paths.setdefault(at.date().isoformat(), set()).add(e["cwd"])
         if at and e.get("version"):
             seen(versions, e["version"], at)
         kind = e.get("type")
@@ -487,6 +510,8 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                     put(at, f"A: {block['text'].strip()}")
                 elif block.get("type") == "tool_use":
                     calls[block.get("id", "")] = block.get("name", "?")
+                    if at:
+                        paths.setdefault(at.date().isoformat(), set()).update(named_paths(block.get("input")))
                     put(at, f"→ {block.get('name', '?')} {json.dumps(block.get('input'), ensure_ascii=False)}")
         elif kind == "system":
             sub = e.get("subtype")
@@ -552,7 +577,16 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     return Digest(sid=transcript.stem, profile=profile, cwd=cwd, start=start, end=end, interactive=interactive,
                   messages=messages, text=text, said_last=stamp(said_last) if said_last else "",
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
-                  page_at=starts[-1] - 1 if interactive else 0)
+                  page_at=starts[-1] - 1 if interactive else 0,
+                  paths={day: sorted(named) for day, named in paths.items()} if interactive else {})
+
+
+def named_paths(value: object) -> Iterable[str]:
+    """The paths NAMED_PATH finds in every string of a tool call's input."""
+    if isinstance(value, str):
+        yield from NAMED_PATH.findall(value)
+    for item in value.values() if isinstance(value, dict) else value if isinstance(value, list) else ():
+        yield from named_paths(item)
 
 
 def said(content: object) -> str:
@@ -622,12 +656,8 @@ def commits(repo: Path, since: datetime, *paths: str, until: datetime | None = N
     return rows
 
 
-def git_record(repo: Path, since: datetime, until: datetime | None = None, report: Path | None = None,
-               scope: Scope = Scope()) -> str:
-    """A repo's commits since `since` in markdown, its reverts, and its agent repo's tickets. A
-    repo with no agent repo of its own, in the run of a report `scope` keeps for it, reads its
-    tickets in `report`, the agent repo that report is in; the tickets of `report` are the ones
-    `scope` reads, wherever they are read."""
+def git_record(repo: Path, since: datetime, until: datetime | None = None) -> str:
+    """A repo's commits since `since` in markdown, its reverts, and its agent repo's tickets."""
     rows = commits(repo, since, until=until)
     out = [f"# {repo.resolve()} since {stamp(since)}", "", f"## Commits ({len(rows)})", ""]
     for c in rows:
@@ -635,31 +665,19 @@ def git_record(repo: Path, since: datetime, until: datetime | None = None, repor
         out += [f"  {line}" for line in c["body"].splitlines()]
     reverts = [c for c in rows if c["subject"].startswith("Revert") or "This reverts commit" in c["body"]]
     out += ["", f"## Reverts ({len(reverts)})", ""] + [f"- {c['sha'][:10]} {c['date']}: {c['subject']}" for c in reverts]
-    agent = repo / "agent"
-    if not (agent / ".git").exists():
-        agent = report if report and scope.repo else None
-    if agent:
-        mine = report is not None and agent.resolve() == report.resolve()
-        out += ["", ticket_record(agent, since, until, scope if mine else Scope())]
+    if (repo / "agent" / ".git").exists():
+        out += ["", ticket_record(repo / "agent", since, until)]
     return "\n".join(out) + "\n"
 
 
-def ticket_record(agent: Path, since: datetime, until: datetime | None, scope: Scope = Scope()) -> str:
-    """An agent repo's tickets in the period that `scope` reads: filed, every status change,
-    deleted (dropped or retired, as the commit says), and each worker report as committed."""
-    def reads(sha: str, slug: str) -> bool:
-        if scope == Scope():
-            return True
-        done = subprocess.run(["git", "-C", str(agent), "show", f"{sha}:tickets/{slug}.md"], capture_output=True, text=True)
-        return scope.reads(tracker.read(Path(f"{slug}.md"), done.stdout).repos if done.returncode == 0 else [])
-
+def ticket_record(agent: Path, since: datetime, until: datetime | None) -> str:
+    """An agent repo's tickets in the period: filed, every status change, deleted (dropped or
+    retired, as the commit says), and each worker report as committed."""
     filed, changes, deleted = [], [], []
     for c in reversed(commits(agent, since, "tickets", until=until)):
         diff = git(agent, "show", "--format=", "--no-renames", c["sha"], "--", "tickets")
         for path, before, after, status in file_diffs(diff):
             slug = Path(path).stem
-            if not reads(f"{c['sha']}^" if status == "deleted" else c["sha"], slug):
-                continue
             if status == "added":
                 filed.append(f"- {slug} ({c['date']}, {c['subject']}): {after or '?'}")
             elif status == "deleted":
@@ -669,11 +687,9 @@ def ticket_record(agent: Path, since: datetime, until: datetime | None, scope: S
     reports = []
     for c in reversed(commits(agent, since, "show/*/report.md", until=until)):
         for path in git(agent, "show", "--format=", "--name-only", "--diff-filter=AM", c["sha"], "--", "show/*/report.md").split():
-            if not reads(c["sha"], Path(path).parent.name):
-                continue
             text = git(agent, "show", f"{c['sha']}:{path}").strip()
             reports.append(f"### {path} ({c['date']}, {c['subject']})\n\n{text}")
-    return "\n".join(["## Tickets", "", f"In `{agent}`.{scope.note()}", "", f"### Filed ({len(filed)})", "", *filed, "",
+    return "\n".join(["## Tickets", "", f"In `{agent}`.", "", f"### Filed ({len(filed)})", "", *filed, "",
                       f"### Status changes ({len(changes)})", "", *changes, "",
                       f"### Deleted ({len(deleted)})", "", *deleted, "",
                       f"## Worker reports ({len(reports)})", "", *reports])
@@ -727,7 +743,7 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
 
 @dataclass
 class Sessions:
-    """The period's session digests, the older sample, git across the repos, and the versions."""
+    """What a workflow retro collects but `touched.md`: the period's session digests, the older sample, git across the repos, the versions, the tickets and the permissions."""
 
     since: str
     """The period's start, an ISO date or time; UTC where it names no offset."""
@@ -764,8 +780,8 @@ def main(command: Sessions | Git) -> None:
         return
     cache = command.cache or command.run.parent / "digest-cache"
     refuse_inside_git(command.run, cache)
-    collect_sessions(since, datetime.now(UTC), command.run, cache, command.projects, command.repos, agent=command.agent,
-                     scope=Scope(excluded=reported(command.agent)) if command.agent else Scope())
+    collect_sessions(since, datetime.now(UTC), command.run, cache, command.projects, command.repos, agent=command.agent)
+    collect_permissions(since, command.run, command.projects)
 
 
 if __name__ == "__main__":

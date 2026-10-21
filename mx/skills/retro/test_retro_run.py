@@ -20,7 +20,7 @@ in a git repository (retro-semi-automated#P2), the oracle being that repo's stat
 
 A repo retro runs through the same command, on a repo other than the agents repo: which stages
 run, in which order, what its run directory holds and what its stages may reach, the oracle being
-the stub's record and the stages' command lines (retro-semi-automated#P10); and which repos are
+the stub's record and the stages' command lines; and which repos are
 refused and which weeks skipped, the oracle being git's record of the agent repo and the run log.
 """
 
@@ -106,14 +106,16 @@ def repo(tmp_path: Path) -> Path:
 
 
 def plan_quartz(tmp_path: Path, code: Path) -> Path:
-    """A repo with no agent repo of its own, with a commit in the period, which the dotfiles' tracker
-    plans: its repo list calls it `quartz`, by a path from the project root, and its tickets of each
-    status name it in `repos:`, name another listed repo, or name none. One of quartz's has a worker
-    report."""
-    quartz = tmp_path / "quartz-knowledge-base"
-    quartz.mkdir()
-    git(quartz, "init", "-q", "-b", "v4")
+    """Two repos the dotfiles' tracker plans, neither with an agent repo of its own: quartz beside
+    the dotfiles, with a commit in the period, and secrets inside them, each listed by a path from
+    the project root. Its tickets of each status name one of them in `repos:`, or none; one of
+    quartz's has a worker report."""
+    quartz, secrets = tmp_path / "quartz-knowledge-base", code / "secrets"
+    for r, branch in ((quartz, "v4"), (secrets, "master")):
+        r.mkdir()
+        git(r, "init", "-q", "-b", branch)
     commit(quartz, {"quartz.config.ts": "1"}, "quartz: dark mode", SINCE + timedelta(days=1))
+    commit(secrets, {"keys.age": "1"}, "secrets: rotate", SINCE - timedelta(days=3))
     commit(code / "agent", {"repos.toml": '[quartz]\npath = "../quartz-knowledge-base"\nintegration = "v4"\n\n'
                                           '[secrets]\npath = "secrets"\n',
                             "tickets/search-index.md": ticket("proposed", ("quartz",)),
@@ -224,6 +226,18 @@ def test_a_verdict_written_into_the_report_is_never_overwritten(
     assert last_logged(tmp_path).startswith("not committed: ")
 
 
+@pytest.mark.parametrize("model", ["", "claude-sonnet-5-5"])
+def test_every_stage_runs_on_its_own_model_unless_the_run_names_one(
+        tmp_path: Path, stub: Path, repo: Path, model: str) -> None:
+    projects = tmp_path / ".claude/projects"
+    Transcript(projects, str(repo), FIRST - timedelta(days=2)).says("why is the suite so slow").answers("Looking.")
+    retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, model=model, effort="medium" if model else "")
+    for stage in retro_run.WORKFLOW.stages:
+        args = (stub / f"{stage.name.replace('-', ' ')}.argv").read_text().splitlines()
+        assert args[args.index("--model") + 1] == (model or stage.model), stage.name
+        assert args[args.index("--effort") + 1] == ("medium" if model else stage.effort), stage.name
+
+
 def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_three_from_git_history(
         tmp_path: Path, stub: Path, repo: Path) -> None:
     runs = [retro(tmp_path, repo, FIRST, SINCE)] + [retro(tmp_path, repo, FIRST + n * WEEK) for n in (1, 2, 3)]
@@ -297,31 +311,24 @@ def test_a_run_stopped_or_killed_ends_the_stage_it_is_in(
         assert last_logged(tmp_path).startswith("stopped: SIGTERM during read-fresh, which ended with it")
 
 
-@pytest.mark.parametrize("kind", ["workflow retro", "repo retro", "planned repo retro"])
+@pytest.mark.parametrize("kind", ["workflow retro", "repo retro"])
 def test_a_resumed_run_keeps_its_period_and_runs_only_the_stages_that_left_out_a_file(
         tmp_path: Path, stub: Path, repo: Path, code: Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
-    repo, name, tracker = {"workflow retro": (repo, "agents", None), "repo retro": (code, "dotfiles", None),
-                           "planned repo retro": (tmp_path / "quartz-knowledge-base", "quartz-knowledge-base", code)}[kind]
-    if tracker:
-        plan_quartz(tmp_path, code)
+    repo, name = {"workflow retro": (repo, "agents"), "repo retro": (code, "dotfiles")}[kind]
     monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
     with pytest.raises(SystemExit):
-        if tracker:
-            retro_run.run_retro(repo, tmp_path / "data", [], SINCE, until=FIRST, tracker=tracker)
-        else:
-            retro(tmp_path, repo, FIRST, SINCE)
+        retro(tmp_path, repo, FIRST, SINCE)
     assert last_logged(tmp_path, name).startswith("failed: synthesize left out report.md")
     run = tmp_path / f"data/{name}/runs" / retro_run.dirname(FIRST)
     for argv in stub.glob("*.argv"):
         argv.unlink()
     monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
 
-    assert retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], resume=run, tracker=tracker) == run
+    assert retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], resume=run) == run
 
     assert [p.stem for p in stub.glob("*.argv")] == ["synthesize"], "the stages that wrote what they owe ran once"
-    agent = (tracker or repo) / "agent"
-    assert git(agent, "show", "--name-only", "--format=", "HEAD").split()[-1] == \
-        ("retro/quartz/report.md" if tracker else "retro/report.md")
+    agent = repo / "agent"
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split()[-1] == "retro/report.md"
     message = git(agent, "log", "-1", "--format=%B")
     assert f"Retro-since: {retro_run.stamp(SINCE)}" in message and f"Retro-until: {retro_run.stamp(FIRST)}" in message
     assert last_logged(tmp_path, name).startswith("committed ")
@@ -413,17 +420,22 @@ def code(tmp_path: Path) -> Path:
     return code
 
 
-def test_a_repo_retro_reads_its_repos_commits_and_proposed_tickets_and_no_session(
+def test_a_repo_retro_reads_its_repos_commits_its_proposed_tickets_and_the_sessions_that_worked_in_them(
         tmp_path: Path, stub: Path, code: Path) -> None:
     projects = tmp_path / ".claude/projects"
-    Transcript(projects, str(code), SINCE + timedelta(days=2)).says("the backup failed again")
+    worked = Transcript(projects, str(code), SINCE + timedelta(days=2)).says("no, the backup must retry once only")
+    Transcript(projects, str(tmp_path / "elsewhere"), SINCE + timedelta(days=2)).says("SOMEWHERE-ELSE")
 
     run = retro_run.run_retro(code, tmp_path / "data", [projects], SINCE, until=FIRST)
 
-    assert (stub / "order").read_text().split("\n")[:-1] == ["follow up", "lens pass", "synthesize"]
-    assert not any((run / d).exists() for d in ("sessions", "sample", "sessions.jsonl", "batches.json")), \
-        "no session was digested (retro-semi-automated#P10)"
-    assert not (tmp_path / "data/dotfiles/digest-cache").exists()
+    assert (stub / "order").read_text().split("\n")[:-1] == ["read fresh", "follow up", "lens pass", "synthesize"]
+    assert [p.stem for p in (run / "sessions").glob("*.md")] == [worked.sid]
+    assert [b["digests"] for b in json.loads((run / "batches.json").read_text())] == [[f"sessions/{worked.sid}.md"]]
+    seen = (stub / "read fresh.seen").read_text()
+    args = (stub / "read fresh.argv").read_text().splitlines()
+    assert "sessions/" in seen and "previous" not in seen and "--add-dir" not in args and "Bash" not in args[args.index("--tools") + 1], \
+        "read-fresh reads the digests in its run directory alone, before any earlier report"
+    assert not (run / "permissions").exists(), "the permission data is the workflow retro's"
     assert "backup: retry once" in (run / "git/dotfiles.md").read_text()
     assert (run / "touched.md").is_file()
     assert (run / "proposed/flaky-backup.md").read_text() == ticket("proposed")
@@ -514,7 +526,7 @@ def test_a_run_that_fails_before_its_stages_says_why_as_its_last_line(tmp_path: 
     assert not list(stub.glob("*.argv"))
 
 
-# ── a repo planned from another project's tracker ────────────────────────────
+# ── the repos a tracker plans ────────────────────────────────────────────────
 
 
 def tickets(run: Path, kind: str) -> list[str]:
@@ -524,109 +536,94 @@ def tickets(run: Path, kind: str) -> list[str]:
     return named
 
 
-def test_a_repo_planned_from_another_projects_tracker_gets_its_report_there_reading_the_tickets_naming_it(
+def test_a_repo_retro_reads_every_repo_its_tracker_plans_and_keeps_one_report(
         tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
     agent = code / "agent"
     (agent / "tickets/backup-timer.md").write_text(ticket("review"))  # a session's edit, staged
     git(agent, "add", "tickets/backup-timer.md")
 
-    run = retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
+    run = retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
 
-    assert (stub / "order").read_text().split("\n")[:-1] == ["follow up", "lens pass", "synthesize"]
-    assert tickets(run, "proposed") == ["search-index"] and tickets(run, "in-flight") == ["theme-toggle"]
-    assert "only the tickets whose `repos:` names `quartz`" in (run / "proposed.md").read_text(), \
-        "the stages are told the list is the planned repo's alone"
-    record = (run / "git/quartz-knowledge-base.md").read_text()
-    assert "quartz: dark mode" in record
-    filed = record.split("### Filed")[1].split("###")[0]
-    assert "- search-index (" in filed and "- theme-toggle (" in filed and "flaky-backup" not in filed and "rotate-keys" not in filed
-    assert "THEME-TOGGLE-REPORT" in record, "its tickets' worker reports are read with them"
+    assert tickets(run, "proposed") == ["flaky-backup", "rotate-keys", "search-index"]
+    assert tickets(run, "in-flight") == ["backup-timer", "theme-toggle"]
+    assert sorted(p.name for p in (run / "git").glob("*.md")) == ["dotfiles.md", "quartz-knowledge-base.md", "secrets.md"]
+    assert "quartz: dark mode" in (run / "git/quartz-knowledge-base.md").read_text()
+    assert "THEME-TOGGLE-REPORT" in (run / "git/dotfiles.md").read_text(), "the tracker's worker reports are read"
+    assert "- 1 quartz.config.ts" in (run / "touched.md").read_text().split(f"## {quartz}")[1]
+    assert f"- {quartz}" in (run / "prompts/lens-pass.md").read_text().split("## Steps")[0], "the lens pass reads quartz's code"
+    args = (stub / "lens pass.argv").read_text().splitlines()
+    denied = args[args.index("--disallowedTools") + 1:args.index("--allowedTools")]
+    allowed = args[args.index("--allowedTools") + 1:args.index("--tools")]
+    assert str(quartz) in args[args.index("--add-dir") + 1:args.index("--disallowedTools")]
+    assert not refused(f"git -C {quartz} log -p -- quartz.config.ts", allowed, denied), "the listed repo's history is read"
     subject, _, *files = git(agent, "show", "--name-only", "--format=%s", "HEAD").split("\n")
-    assert subject == f"retro(quartz): the repo retro of {SINCE.date()} to {FIRST.date()}"
-    assert [f for f in files if f] == ["retro/quartz/report.html", "retro/quartz/report.md"]
+    assert subject == f"retro: the repo retro of {SINCE.date()} to {FIRST.date()}"
+    assert [f for f in files if f] == ["retro/report.html", "retro/report.md"]
     assert git(agent, "diff", "--cached", "--name-only").split() == ["tickets/backup-timer.md"], \
-        "nothing else is committed in the project's agent repo, nor unstaged"
-    assert not (agent / "retro/report.md").exists() and not (quartz / "agent").exists()
-    for stage in ("follow up", "lens pass", "synthesize"):
-        args = (stub / f"{stage}.argv").read_text().splitlines()
-        denied = args[args.index("--disallowedTools") + 1:args.index("--allowedTools")]
-        allowed = args[args.index("--allowedTools") + 1:args.index("--tools")]
-        assert f"Read(/{agent / 'sessions'}/**)" in denied, "no stage may read the project's session pages"
-        assert refused(f"git -C {agent} show HEAD:sessions/0123abcd/session.md", allowed, denied)
-        assert not refused(f"git -C {quartz} log -p -- quartz.config.ts", allowed, denied), "the repo's history is read"
+        "nothing else is committed in the agent repo, nor unstaged"
+    assert not (quartz / "agent").exists()
 
 
-def test_the_projects_own_repo_retro_leaves_the_tickets_of_a_repo_with_a_report_of_its_own(
+@pytest.mark.parametrize("why", ["it has an agent repo of its own", "its table says retro = false",
+                                 "its table says retro = false, and it sits inside the project's repo"])
+def test_a_repo_retro_leaves_out_a_listed_repo_its_own_tracker_reads_or_its_table_leaves_out(
+        tmp_path: Path, stub: Path, code: Path, quartz: Path, why: str) -> None:
+    """The dotfiles' list names jarvis, whose own tracker's retro reads it, the knowledge base max
+    writes himself, or the secrets inside the dotfiles, which `retro = false` leaves out: neither
+    its code and git, nor the sessions that worked in it alone, are this retro's."""
+    agent = code / "agent"
+    listing = (agent / "repos.toml").read_text()
+    if why.endswith("inside the project's repo"):
+        other = code / "secrets"
+        listing = listing.replace('path = "secrets"\n', 'path = "secrets"\nretro = false\n')
+    else:
+        other = tmp_path / ("jarvis" if why.startswith("it has") else "kb")
+        other.mkdir()
+        git(other, "init", "-q", "-b", "main")
+        if why.startswith("it has"):
+            (other / "agent").mkdir()
+            git(other / "agent", "init", "-q", "-b", "main")
+            commit(other / "agent", {"tickets/x.md": ticket("proposed")}, "file x", SINCE + timedelta(days=1))
+        listing += f'\n[{other.name}]\npath = "../{other.name}"\n' + ("" if why.startswith("it has") else "retro = false\n")
+    commit(other, {"main.py": "1"}, "OTHER-REPO-COMMIT", SINCE + timedelta(days=1))
+    commit(agent, {"repos.toml": listing}, f"list {other.name}", SINCE + timedelta(days=1))
+    projects = tmp_path / ".claude/projects"
+    in_quartz = Transcript(projects, str(quartz), SINCE + timedelta(days=2)).says("the graph is wrong")
+    Transcript(projects, str(other), SINCE + timedelta(days=2)).says("OTHER-REPO-SESSION")
+
+    run = retro_run.run_retro(code, tmp_path / "data", [projects], SINCE, until=FIRST)
+
+    read = {"dotfiles.md", "quartz-knowledge-base.md", "secrets.md"} - {f"{other.name}.md"}
+    assert {p.name for p in (run / "git").glob("*.md")} == read
+    assert f"## {other}" not in (run / "touched.md").read_text()
+    assert f"- {other}\n" not in (run / "prompts/lens-pass.md").read_text()
+    assert [p.stem for p in (run / "sessions").glob("*.md")] == [in_quartz.sid]
+    assert not any("OTHER-REPO" in p.read_text() for p in run.rglob("*.md"))
+
+
+def test_a_repo_retro_runs_on_a_commit_in_any_repo_its_tracker_plans(
         tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
-    retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
-
-    run = retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST + timedelta(hours=1))
-
-    assert tickets(run, "proposed") == ["flaky-backup", "rotate-keys"] and tickets(run, "in-flight") == ["backup-timer"]
-    assert "leaves out the tickets whose `repos:` names `quartz`" in (run / "in-flight.md").read_text()
-    record = (run / "git/dotfiles.md").read_text()
-    filed = record.split("### Filed")[1].split("###")[0]
-    assert "- rotate-keys (" in filed and "search-index" not in filed and "theme-toggle" not in filed
-    assert "THEME-TOGGLE-REPORT" not in record
-    assert git(code / "agent", "show", "--name-only", "--format=", "HEAD").split() == ["retro/report.html", "retro/report.md"]
-
-
-def test_a_planned_repos_retro_is_gated_on_its_own_last_run_and_reads_its_own_earlier_report(
-        tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
-    first = retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
+    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
     commit(quartz, {"notes.md": "1"}, "quartz: a note", FIRST + timedelta(days=1))
-    retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + timedelta(days=2))  # the project's own run, after it
 
-    second = retro_run.run_retro(quartz, tmp_path / "data", [], until=FIRST + WEEK, if_active=True, tracker=code)
-    started = next(line for line in reversed((tmp_path / "data/quartz-knowledge-base/runs.log").read_text().splitlines())
+    retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
+    started = next(line for line in reversed((tmp_path / "data/dotfiles/runs.log").read_text().splitlines())
                    if " started: " in line)
-    assert f"{retro_run.stamp(FIRST)} to {retro_run.stamp(FIRST + WEEK)}" in started
     assert f"new since: a commit at {retro_run.stamp(FIRST + timedelta(days=1))} in {quartz}" in started
-    assert (second / "previous/current.md").read_text() == (first / "report.md").read_text(), \
-        "the earlier report it reads is its own, not the project's"
 
     with pytest.raises(SystemExit) as stopped:
-        retro_run.run_retro(quartz, tmp_path / "data", [], until=FIRST + 2 * WEEK, if_active=True, tracker=code)
+        retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + 2 * WEEK, if_active=True)
     assert stopped.value.code == 3
-    assert last_logged(tmp_path, "quartz-knowledge-base") == f"skipped: no commit in {quartz} since {retro_run.stamp(FIRST + WEEK)}"
+    assert last_logged(tmp_path, "dotfiles") == \
+        f"skipped: no commit in {code}, {quartz}, {code / 'secrets'} since {retro_run.stamp(FIRST + WEEK)}"
 
 
-def test_a_planned_repos_run_is_resumed_only_for_the_report_it_started_for(
-        tmp_path: Path, stub: Path, code: Path, quartz: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    other = tmp_path / "notes-project"  # another project whose tracker also lists quartz
-    for r in (other, other / "agent"):
-        r.mkdir()
-        git(r, "init", "-q", "-b", "main")
-    commit(other / "agent", {"repos.toml": f'[kb]\npath = "{quartz}"\n', "tickets/x.md": ticket("open")}, "list kb", SINCE)
-    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
-    with pytest.raises(SystemExit):
-        retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
-    run = tmp_path / "data/quartz-knowledge-base/runs" / retro_run.dirname(FIRST)
-    head = git(other / "agent", "rev-parse", "HEAD")
+def test_a_repo_retro_whose_tracker_lists_a_repo_that_is_not_there_says_why(tmp_path: Path, stub: Path, code: Path) -> None:
+    commit(code / "agent", {"repos.toml": '[gone]\npath = "../moved-away"\n'}, "list a repo", SINCE)
 
-    with pytest.raises(SystemExit, match=f"is a run for {code / 'agent/retro/quartz/report.md'}"):
-        retro_run.run_retro(quartz, tmp_path / "data", [], resume=run, tracker=other)
+    with pytest.raises(SystemExit) as failed:
+        retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
 
-    assert git(other / "agent", "rev-parse", "HEAD") == head and not (other / "agent/retro").exists()
-
-
-@pytest.mark.parametrize("case", ["a repo the project does not list", "a repo with an agent repo of its own",
-                                  "a name a file in retro/ holds"])
-def test_a_retro_given_a_tracker_that_cannot_hold_its_report_is_refused_with_the_reason(
-        tmp_path: Path, stub: Path, repo: Path, code: Path, quartz: Path, case: str) -> None:
-    agent = code / "agent"
-    if case == "a repo the project does not list":
-        target, said = tmp_path / "jarvis", f"lists no repo at {tmp_path / 'jarvis'}"
-        target.mkdir()
-        git(target, "init", "-q")
-    elif case == "a repo with an agent repo of its own":
-        target, said = repo, "has an agent repo of its own"
-    else:
-        commit(agent, {"retro/quartz": "a file\n"}, "a file where quartz's report would go", SINCE)
-        target, said = quartz, "is a file, where the report of the repo"
-    head = git(agent, "rev-parse", "HEAD")
-
-    with pytest.raises(SystemExit, match=said):
-        retro_run.run_retro(target, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
-
-    assert git(agent, "rev-parse", "HEAD") == head and not list(stub.glob("*.argv"))
+    assert failed.value.code == 1
+    assert last_logged(tmp_path, "dotfiles") == f"failed: the check for something new: {tmp_path / 'moved-away'} is no git repo"
+    assert not list(stub.glob("*.argv"))

@@ -26,9 +26,11 @@ UNTIL = datetime(2026, 10, 12, tzinfo=UTC)
 
 
 def collect(tmp_path: Path, repos: list[Path] = (), since: datetime = SINCE) -> Path:
+    """What a workflow retro's collect writes of sessions, git and permissions."""
     run = tmp_path / "data" / "runs" / "1"
-    retro_collect.collect_sessions(since, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
-                                   list(repos), sample_seed=0)
+    projects = [tmp_path / ".claude" / "projects"]
+    retro_collect.collect_sessions(since, UNTIL, run, tmp_path / "data" / "cache", projects, list(repos), sample_seed=0)
+    retro_collect.collect_permissions(since, run, projects)
     return run
 
 
@@ -368,18 +370,71 @@ def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_pat
     assert "1.0.0" not in versions
 
 
-def test_touched_names_the_files_the_periods_commits_touched_that_the_repo_still_tracks_most_touched_first(
+def test_touched_names_per_repo_the_files_the_periods_commits_touched_that_it_still_tracks_most_touched_first(
         tmp_path: Path) -> None:
-    repo = tmp_path / "proj"
-    repo.mkdir()
-    git(repo, "init", "-q", "-b", "main")
+    repo, listed = tmp_path / "proj", tmp_path / "kb"
+    for r in (repo, listed):
+        r.mkdir()
+        git(r, "init", "-q", "-b", "main")
     commit(repo, {"old.py": "1"}, "before the period", SINCE - timedelta(days=1))
     commit(repo, {"a.py": "1", "b.py": "1"}, "one", SINCE + timedelta(days=1))
     commit(repo, {"a.py": "2", "gone.py": "1"}, "two", SINCE + timedelta(days=2))
     commit(repo, {"gone.py": None}, "three", SINCE + timedelta(days=3))
     commit(repo, {"b.py": "2", "late.py": "1"}, "after the period", UNTIL + timedelta(days=1))
+    commit(listed, {"note.md": "1"}, "a note", SINCE + timedelta(days=1))
     run = tmp_path / "data" / "runs" / "1"
 
-    retro_collect.collect_touched(SINCE, UNTIL, run, repo)
+    retro_collect.collect_touched(SINCE, UNTIL, run, [repo, listed])
 
-    assert re.findall(r"^- (.+)$", (run / "touched.md").read_text(), re.M) == ["2 a.py", "1 b.py"]
+    sections = (run / "touched.md").read_text().split("\n## ")[1:]
+    assert [(head.splitlines()[0], re.findall(r"^- (.+)$", head, re.M)) for head in sections] == [
+        (str(repo), ["2 a.py", "1 b.py"]), (str(listed), ["1 note.md"])]
+
+
+def test_a_repo_retro_reads_the_sessions_that_worked_in_its_repos_their_removed_sibling_worktrees_included(
+        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Helferline's tracker plans a repo outside its project root: a session works on it from the
+    project root, from a worktree under the root, or from a worktree beside the repo that dispatch
+    removed before the run."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    project, api = tmp_path / "helferline", tmp_path / "api"
+    for r in (project, project / "agent", api):
+        r.mkdir(parents=True, exist_ok=True)
+        git(r, "init", "-q", "-b", "main")
+    commit(project, {".gitignore": "agent/\n"}, "start", SINCE - timedelta(days=9))
+    commit(project / "agent", {"tickets/login.md": ticket("open", ("api",))}, "file login", SINCE - timedelta(days=9))
+    commit(api, {"README.md": "1"}, "start", SINCE - timedelta(days=9))
+    live, removed, other = tmp_path / "dispatch/api-review", api.parent / "api-login", api.parent / "api-old"
+    for worktree in (live, removed):
+        git(api, "worktree", "add", "-q", "-b", worktree.name, str(worktree))
+    other.mkdir()  # another project that happens to share the prefix
+    (tmp_path / "api-link").symlink_to(api)
+    day = SINCE + timedelta(days=1)
+
+    def session(cwd: Path, start: datetime = day) -> Transcript:
+        return Transcript(projects, str(cwd), start).says("go on")
+
+    root_edits_worktree = session(project).calls("Edit", {"file_path": f"{project}/.worktrees/login/x.py"}, "ok")
+    edits_under_the_root = session(tmp_path).calls("Edit", {"file_path": f"{project}/.worktrees/login/y.py"}, "ok")
+    edits_live_worktree = session(tmp_path).calls("Edit", {"file_path": f"{live}/login.py", "old_string": "a"}, "ok")
+    edits_removed_worktree = session(tmp_path).calls("Write", {"file_path": f"{removed}/login.py", "content": "b"}, "ok")
+    from_the_home = session(tmp_path).calls("Bash", {"command": "make -C ~/api-link test"}, "ok")
+    a_heredoc = session(tmp_path).calls("Bash", {"command": f"bash <<'EOF'\n{api}/.venv/bin/pytest -q\nEOF"}, "ok")
+    only_said = session(tmp_path).says(f"compare it with {api}/login.py").answers(f"I'll read {api}/login.py.")
+    a_neighbour = session(tmp_path).calls("Bash", {"command": f"ls {other}/ && cat {api}2/x"}, "ok")
+    before_the_period = session(tmp_path, SINCE - timedelta(days=2)).calls("Read", {"file_path": f"{api}/README.md"}, "1")
+    before_the_period.at = day
+    before_the_period.says("now something else").calls("Read", {"file_path": "/etc/hosts"}, "localhost")
+    older_in_api = session(api, UNTIL - timedelta(weeks=4))
+    older_elsewhere = session(tmp_path / "elsewhere", UNTIL - timedelta(weeks=4))
+    git(api, "worktree", "remove", str(removed))
+    run = tmp_path / "data" / "runs" / "1"
+
+    retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [projects], [project, api], sample_seed=0,
+                                   agent=project / "agent", worked=retro_collect.Worked.of([project, api]))
+
+    worked = {root_edits_worktree.sid, edits_under_the_root.sid, edits_live_worktree.sid, edits_removed_worktree.sid, from_the_home.sid, a_heredoc.sid}
+    assert {p.stem for p in (run / "sessions").glob("*.md")} == worked
+    assert {p.stem for p in (run / "sample").glob("*.md")} == {older_in_api.sid}
+    assert {json.loads(r)["id"] for r in (run / "sessions.jsonl").read_text().splitlines()} == worked | {older_in_api.sid}
+    assert not {only_said.sid, a_neighbour.sid, before_the_period.sid, older_elsewhere.sid} & {p.stem for p in run.rglob("*.md")}

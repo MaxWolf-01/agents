@@ -1,6 +1,6 @@
 # The living report
 
-One report per repo, `retro/report.md` in that repo's agent repo, or `retro/<name>/report.md` in the agent repo of the project whose tracker plans it, rewritten whole by every run; git history holds every run's copy. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
+One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run; git history holds every run's copy. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
 
 ## Rules
 
@@ -12,7 +12,7 @@ One report per repo, `retro/report.md` in that repo's agent repo, or `retro/<nam
 
 ## max's verdicts
 
-A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md` (or that repo's `retro/<name>/report.md`): the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
+A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`: the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
 
 Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts and wait for it to end, then write them into the report as it stands.
 
@@ -32,16 +32,24 @@ What orders the findings and decides what a run reports, loosely, on four things
 3. **How often it happens**, and is expected to.
 4. **How robust the available fix is**: whether it simplifies or adds, and whether mechanism can fix it at all, or a better model or the harness's makers will fix the quirk first.
 
-Deletions and narrowings come first. A defect class that recurs and that a tool could catch gets its check proposed, weighed like any other fix. A pattern rooted in the model's own habit, with no line to delete, is reported as that, with what was tried. A count backs a finding and is never a number a later run tries to move.
+Deletions and narrowings come first. A defect class that recurs gets the shape of the code that would make it impossible to write, where one would, and otherwise the check a tool could make, weighed like any other fix. A correction of a fact, an agent lacking what max had to tell it, enters as a finding once its class recurs; seen once, it goes under Watched. A pattern rooted in the model's own habit, with no line to delete, is reported as that, with what was tried. A count backs a finding and is never a number a later run tries to move.
 
 A candidate is weighed the same way; its **Weighing**, or an architecture candidate's impact, orders the Candidates section.
 
+### What is already written
+
+Before a finding or candidate enters the report, look for the guidance that already covers its case: a skill, a `CLAUDE.md`, a doc or a rule the agent reads, in the repos and skills the run can read. What is there decides:
+
+- **Guidance that covers the case clearly, where the agent reads it as it acts**, makes it an execution problem. Seen once, it proposes nothing, and goes under Watched as one line. Once it recurs (a Watched line seen again, or the same miss in two sessions), or once it costs max significant time, attention or tokens, it is a finding, and its proposal moves the guidance up a rung of the agents repo's `PRINCIPLES.md` #1, as high as will hold: the code shaped so the mistake cannot be written; then a lint, type, test or script that goes red on it; then a line of a reviewer's checklist. The written line is retired once the mechanism covers it.
+- **Guidance that covers it where the agent does not read it as it acts** (buried in a long file, under a heading about something else, behind a pointer that does not fire) gets a placement fix: the proposal moves the guidance to where the agent acts, and writes no second copy of it.
+- **A skill the model invokes itself that held the guidance and did not fire** in the sessions gets a proposal to tune its description, the trigger that decides when it fires.
+
 ## Shape, in this order
 
-A repo retro's report has no Findings and no Versions, its `ids:` line names the highest `A<n>` alone, and its top recommendation is a candidate.
+A repo retro's report has no Versions.
 
 ```markdown
-# <Workflow retro | Repo retro>: <repo>
+# <Workflow retro | Repo retro>: <the project>
 
 Run <date of the period's end>, over <start> to <end>. ids: F<highest>, A<highest>
 
@@ -73,12 +81,16 @@ What the lens pass proposes for the code, every code lens's together, in order o
 
 - **Code lens**: the section of `stages/lens-pass.md`'s The code lenses it came from
 - **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them, its **Proposal** standing for the solution (benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
-- **Pointed at by**: the commits, proposed tickets or friction that pointed the pass at it, each with its date
+- **Pointed at by**: the commits, proposed tickets, friction or corrections of max's that pointed the pass at it, each with its date
 - **State** and **History**, as a finding's
 
 ## Proposed tickets
 
 The repo's proposed tickets, as `proposed.md` names them, grouped by the cause they share. Each group: its slugs, the cause in a sentence, and the finding or candidate it is (`F<n>`, `A<n>`), or "no finding". A ticket that shares its cause with no other stays out.
+
+## Watched
+
+Each execution problem, and each correction of a fact, seen once, as one line: `- <what the agent missed>: <the guidance that covers it, by path, or the fact it lacked>. "<verbatim>" (<source>, <date>)`. A run that sees one again makes it a finding, weighed as a repeat, both sightings its evidence. A line no run has seen again in the eight weeks after its date leaves.
 
 ## Versions
 
