@@ -30,7 +30,7 @@ def collect(tmp_path: Path, repos: list[Path] = (), since: datetime = SINCE) -> 
     run = tmp_path / "data" / "runs" / "1"
     projects = [tmp_path / ".claude" / "projects"]
     retro_collect.collect_sessions(since, UNTIL, run, tmp_path / "data" / "cache", projects, list(repos), sample_seed=0)
-    retro_collect.collect_permissions(since, run, projects)
+    retro_collect.collect_permissions(run, projects)
     return run
 
 
@@ -82,6 +82,28 @@ def test_a_digest_keeps_maxs_messages_verbatim_and_no_tool_output(tmp_path: Path
     assert "! ERROR Bash: rm: cannot remove 'x': Permission denied" in digest
     assert "look at this line of a log" in digest and "chars clipped" in digest and pasted.strip() not in digest
     assert "TOOL-OUTPUT-MARKER" not in digest
+
+
+def test_a_digest_marks_the_calls_the_auto_mode_classifier_allowed_and_names_the_ones_it_blocked(
+        tmp_path: Path, projects: Path) -> None:
+    # The permissionDecision shapes Claude Code 2.1.305 writes on a tool result's entry.
+    by_classifier = {"decision": "accept", "source": "config", "reasonType": "classifier"}
+    by_rule = {"decision": "accept", "source": "config", "reasonType": "rule"}
+    blocked = "Permission for this action was denied by the Claude Code auto mode classifier. Reason: [Git Destructive]."
+    t = (Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1)).says("clean up the branch")
+         .calls("Bash", {"command": "git reset --hard origin/main"}, "HEAD is now at 1a2b3c", decision=by_classifier)
+         .calls("Read", {"file_path": "/home/u/repos/agents/README.md"}, "readme", decision=by_rule)
+         .calls("Bash", {"command": "git push --force"}, blocked, error=True, denial="automode-blocked",
+                decision={"decision": "reject", "source": "config", "reasonType": "classifier"})
+         .says("no, that threw away my edits"))
+
+    digest = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+
+    assert '→ Bash [classifier allowed] {"command": "git reset --hard origin/main"}' in digest
+    assert '→ Read {"file_path": "/home/u/repos/agents/README.md"}' in digest
+    assert '→ Bash {"command": "git push --force"}' in digest
+    assert f"! DENIED Bash (automode-blocked): {blocked}" in digest
+    assert digest.count("[classifier allowed]") == 1
 
 
 def test_a_digest_marks_what_max_did_to_a_turn_and_what_the_harness_did_to_it(tmp_path: Path, projects: Path) -> None:
@@ -295,26 +317,15 @@ def test_git_holds_a_commit_of_the_period_beneath_one_dated_before_it(tmp_path: 
     assert "DATED-BEFORE-IT" not in record
 
 
-def test_permissions_hold_each_profiles_rules_its_auto_mode_config_and_its_interactive_uncovered_bash_calls_of_the_period(
-        tmp_path: Path, projects: Path) -> None:
+def test_permissions_hold_each_profiles_rules_and_its_auto_mode_config(tmp_path: Path, projects: Path) -> None:
     profile = projects.parent
     profile.mkdir(parents=True)
-    settings = {"permissions": {"allow": ["Bash(make check)"], "deny": ["Bash(git push --force *)"]},
+    settings = {"permissions": {"allow": ["Bash(make check)"], "deny": ["AskUserQuestion"]},
                 "autoMode": {"allow": ["Pushing to my own branches"]}, "theme": "dark"}
     (profile / "settings.json").write_text(json.dumps(settings))
-    t = Transcript(projects, "/home/u/repos/agents", SINCE - timedelta(hours=1))
-    t.calls("Bash", {"command": "npm publish"}, "published")
-    t.at = SINCE + timedelta(days=1)
-    t.says("check and deploy").calls("Bash", {"command": "make check && make deploy"}, "ok")
-    t.calls("Bash", {"command": "cat README.md"}, "readme")
-    headless = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1), entrypoint="sdk-cli")
-    headless.calls("Bash", {"command": "make release"}, "released")  # a `claude -p` run, which prompts nobody
 
     permissions = collect(tmp_path) / "permissions" / "claude"
-    scan = json.loads((permissions / "scan.json").read_text())
 
-    assert [r["example"] for r in scan["would_prompt"]] == ["make deploy"]
-    assert [r["example"] for r in scan["auto_approved"]] == ["cat README.md"]
     assert json.loads((permissions / "rules.json").read_text()) == {
         "settings.json": {"permissions": settings["permissions"], "autoMode": settings["autoMode"]}}
     assert json.loads((permissions / "auto-mode.json").read_text()) == {"profile": str(profile), "args": "auto-mode config"}

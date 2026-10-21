@@ -27,7 +27,7 @@ Two weekly timers in max's dotfiles run the retros on his laptop: `workflow-retr
 
 ## The parts
 
-- `retro_collect.py`, stage 1, by script: what the later stages read, which its docstring lists per kind. `scan_unapproved.py` is its scan of the Bash calls no allowlist rule covers.
+- `retro_collect.py`, stage 1, by script: what the later stages read, which its docstring lists per kind.
 - `stages/`, a prompt per later stage, each one model run. Both kinds run read-fresh, follow-up, the lens pass and synthesize; the workflow retro runs go-deep before the lens pass.
-- `LEADING-WORDS.md`, the workflow retro's leading words and max's questions, which go-deep searches the period's sessions for; the code lenses are the lens pass's own, in its prompt. `PERMISSIONS.md`, what go-deep's permissions reading knows of its data and the bar a proposed rule meets; `REPORT.md`, the living report's shape, its rules, the weighing, the watched list, and how a session writes max's verdicts.
+- `LEADING-WORDS.md`, the workflow retro's leading words and max's questions, which go-deep searches the period's sessions for; the code lenses are the lens pass's own, in its prompt. `PERMISSIONS.md`, what go-deep's permissions reading knows of its data and the shape of an auto mode entry it proposes, which `auto_mode_critique.py` checks; `REPORT.md`, the living report's shape, its rules, the weighing, the watched list, and how a session writes max's verdicts.
 - `retro_run.py`, the run: collect, the stages of the project's kind in order, then the commit of the report's two files alone.

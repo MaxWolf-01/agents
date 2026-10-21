@@ -62,7 +62,7 @@ if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
-    "go deep") mkdir -p deep && for f in leading-words permissions; do echo "deep" > "deep/$f.md"; done ;;
+    "go deep") mkdir -p deep && for f in leading-words permissions critique; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
     synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
 esac
@@ -236,6 +236,20 @@ def test_every_stage_runs_on_its_own_model_unless_the_run_names_one(
         args = (stub / f"{stage.name.replace('-', ' ')}.argv").read_text().splitlines()
         assert args[args.index("--model") + 1] == (model or stage.model), stage.name
         assert args[args.index("--effort") + 1] == ("medium" if model else stage.effort), stage.name
+
+
+def test_go_deep_alone_may_run_the_auto_mode_critique_and_on_its_own_run_directory_alone(
+        tmp_path: Path, stub: Path, repo: Path) -> None:
+    run = retro(tmp_path, repo, FIRST, SINCE)
+    critique = f"{retro_run.AUTO_MODE_CRITIQUE} {run}"
+    for stage in retro_run.WORKFLOW.stages[1:]:
+        args = (stub / f"{stage.name.replace('-', ' ')}.argv").read_text().splitlines()
+        denied = args[args.index("--disallowedTools") + 1:args.index("--allowedTools")]
+        allowed = args[args.index("--allowedTools") + 1:args.index("--tools")]
+        assert refused(critique, allowed, denied) == (stage.name != "go-deep"), stage.name
+        assert refused(f"{retro_run.AUTO_MODE_CRITIQUE} {tmp_path}", allowed, denied), stage.name
+        assert refused(f"{critique}; rm -rf {run}", allowed, denied), stage.name
+    assert critique in (run / "prompts/go-deep.md").read_text(), "its prompt names the command its rule allows"
 
 
 def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_three_from_git_history(
