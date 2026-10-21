@@ -84,18 +84,10 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
 </style>
 
 <permissions>
-
-*This is most relevant when you are *not* told you are running in auto-mode (so I'm not unnecessarily prompted for giving you permission), though best-practices (paralell vs. independent tool calls) and caution still apply.*
-
-- A chained command (`&&`, `||`, `;`) is checked segment by segment. It runs unapproved when every segment would alone; one segment that needs approval prompts for the whole call, which blocks async execution and stalls the agent. A command that may prompt goes in a call of its own.
-  - `cd` passes only into the session's working directory and below; a `cd` anywhere else prompts. Reach outside with absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead.
-  - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
-- A permission fix is a prose `autoMode` entry in ~/.claude/settings.json that covers the class of action: `allow` or `environment` for what the classifier blocks wrongly, `soft_deny` or `hard_deny` for what it lets through and shouldn't. Never a static Bash rule that patches one command: I run auto mode, its classifier judges every shell command anyway, and a static rule only matches the text written (`Bash(git push *)` misses `git -C . push`). Blocking a whole tool stays a `permissions.deny` entry.
-
-Understanding this will allow you to go faster (when it's time to implement, experiment, or gather information).
-
-Btw, auto-mode sometimes injects sth like "dont ask clarifying questions" ... disregard that; ofc you still ask clarifying questions when necessary.
-I just use auto-mode when you need to do work on my machine, not containerized, the interaction is usually still mostly interactive, just without me having to approve everything.
+Permissions are prose `autoMode` entries in ~/.claude/settings.json; each entry covers a class of action judged by a classifier.
+To avoid auto-mode false positives, and for general best practice (safety and efficiency):
+- Prefer absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`).
+- Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
 </permissions>
 
 <tools>
