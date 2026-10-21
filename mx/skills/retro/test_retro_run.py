@@ -473,11 +473,11 @@ def test_a_repo_whose_agent_directory_is_no_repo_of_its_own_is_refused_with_the_
     assert not (code / "agent/retro").exists() and not list(stub.glob("*.argv"))
 
 
-def test_a_repo_retros_first_run_takes_the_four_weeks_before_it(tmp_path: Path, stub: Path, code: Path) -> None:
+def test_a_repo_retros_first_run_takes_the_eight_weeks_before_it(tmp_path: Path, stub: Path, code: Path) -> None:
     retro_run.run_retro(code, tmp_path / "data", [], until=FIRST)
 
     message = git(code / "agent", "log", "-1", "--format=%B")
-    assert f"Retro-since: {retro_run.stamp(FIRST - timedelta(weeks=4))}" in message
+    assert f"Retro-since: {retro_run.stamp(FIRST - timedelta(weeks=8))}" in message
 
 
 def test_a_repo_retro_with_no_commit_since_its_last_run_is_skipped_and_one_with_a_commit_runs(

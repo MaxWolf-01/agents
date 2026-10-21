@@ -21,7 +21,7 @@ which its own tracker's retro reads, and the sessions of every profile that work
 stages log in as the profile `CLAUDE_CONFIG_DIR` names, as every `claude` does.
 
 A run's period starts where the last run committed to the report ended, or at --since; a
-repo retro's first run, given no --since, takes the four weeks before it. Everything a run writes
+repo retro's first run, given no --since, takes the eight weeks before it. Everything a run writes
 but the report lives in its run directory, `<data>/<repo>/runs/<end of period>/`, outside every git
 repo: what collect gathered, each stage's prompt, notes and output, and the new report. Each event
 of a run is a line of `<data>/<repo>/runs.log`.
@@ -89,7 +89,7 @@ EFFORT = "high"
 SKIPPED = 3  # the exit status of an --if-active run that found nothing new
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
-FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
+FIRST_PERIOD = timedelta(weeks=8)  # a repo retro's first run, given no --since
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
 REPORT_PATH = f"{retro_collect.RETRO}/report.md"  # in the agent repo
 RUN_LOG = HERE.parent / "run-log" / "run-log"
@@ -578,7 +578,7 @@ class Args:
     focus: str = ""
     """What max names for this run to look at: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass."""
     since: str = ""
-    """The period's start, an ISO date or time, UTC where it names no offset; by default the end of the last run committed to the report, and for a repo retro's first run four weeks before its end."""
+    """The period's start, an ISO date or time, UTC where it names no offset; by default the end of the last run committed to the report, and for a repo retro's first run eight weeks before its end."""
     seed: list[Path] = field(default_factory=list)
     """Files the run's later stages read as earlier reports, beside those in git history; no two may share a name."""
     data: Path = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "retro"
