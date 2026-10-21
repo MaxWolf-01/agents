@@ -1,3 +1,8 @@
+## 1.0.76
+
+- The board watcher's test counts the cadence from the run's own clock
+- One retro per tracker, its sessions read for max's corrections and their cause
+
 ## 1.0.75
 
 - proposed tickets are more general; codebase arch report has more creative freedom
