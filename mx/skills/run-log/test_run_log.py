@@ -72,10 +72,10 @@ def lines(where: Path) -> list[dict]:
 def test_a_run_leaves_one_line_with_what_claude_reported_and_prints_the_answer(tmp_path: Path) -> None:
     fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, TURN_C, RESULT))
     done = run_log(tmp_path, "run", "--site", "review", "--ticket", "warm-preset", "--axis", "tests", "--range", "a1b2c3d..e4f5a6b", "--",
-                   "claude", "-p", "--model", "opus", "--effort", "medium", "--tools", "", stdin="the brief")
+                   "claude", "-p", "--model", "opus", "--effort", "medium", "--tools", "", stdin="the prompt")
     assert done.returncode == 0, done.stderr
     assert done.stdout == "The answer.\n", "the caller sees what the model answered"
-    assert (tmp_path / "stdin").read_text() == "the brief", "claude reads the caller's stdin"
+    assert (tmp_path / "stdin").read_text() == "the prompt", "claude reads the caller's stdin"
     assert "--verbose\n--output-format\nstream-json" in (tmp_path / "argv").read_text()
     (line,) = lines(tmp_path)
     assert {k: line[k] for k in ("site", "ticket", "axis", "attempt", "range", "model", "effort", "session", "ran", "exit", "end")} == {

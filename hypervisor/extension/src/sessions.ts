@@ -55,15 +55,15 @@ const BRIEFLY = "Your answer goes back to the hypervisor, an agent that coordina
 
 /**
  * Opens a tmux window named `name` in the tmux session of the repo `dir` lies in, running interactive Claude Code in
- * auto mode in `dir` with `brief` as its first prompt. The repo's tmux session is started if it does not run yet.
+ * auto mode in `dir` with `prompt` as its first prompt. The repo's tmux session is started if it does not run yet.
  */
-export async function spawn(config: SessionConfig, { dir, name, brief }: { dir: string; name: string; brief: string }): Promise<string> {
+export async function spawn(config: SessionConfig, { dir, name, prompt }: { dir: string; name: string; prompt: string }): Promise<string> {
 	const where = await directory(config.home, dir);
 	const window = slug(name);
 	const group = slug(path.basename(await repo(where)));
 	if (!window) throw new Error(`"${name}" leaves no window name; use letters, digits, - or _`);
-	if (!brief.trim()) throw new Error("the brief is empty");
-	const claude = ["claude", "--permission-mode", "auto", "--name", window, "--", `${brief.trim()}\n\n${reportBack(config.store)}`];
+	if (!prompt.trim()) throw new Error("the prompt is empty");
+	const claude = ["claude", "--permission-mode", "auto", "--name", window, "--", `${prompt.trim()}\n\n${reportBack(config.store)}`];
 	const running = await run("tmux", ["has-session", "-t", `=${group}`]).then(
 		() => true,
 		() => false,
@@ -78,7 +78,7 @@ export async function spawn(config: SessionConfig, { dir, name, brief }: { dir: 
 	await append(config.store, SPAWNED, spawned);
 	const started = `Started ${spawned.window} in ${where}. max steps in with: tmux switch-client -t ${pane || `=${group}:${window}`}`;
 	if (await trusted(config.home, where)) return started;
-	return `${started}\nClaude Code has no record of being trusted in ${shown(config.home, where)}, so its trust dialog may hold the brief until max accepts it in that window.`;
+	return `${started}\nClaude Code has no record of being trusted in ${shown(config.home, where)}, so its trust dialog may hold the prompt until max accepts it in that window.`;
 }
 
 /** Sends `message` to a session's inbox socket, as a cross-session message from the hypervisor. */
@@ -129,7 +129,7 @@ export async function delegation(config: SessionConfig, { task, dir }: { task: s
 }
 
 /**
- * The line every orchestrator's brief and every message the hypervisor tells ends with: how to report back, to the
+ * The line every orchestrator's prompt and every message the hypervisor tells ends with: how to report back, to the
  * inbox of the store this hypervisor watches.
  */
 export function reportBack(store: string): string {

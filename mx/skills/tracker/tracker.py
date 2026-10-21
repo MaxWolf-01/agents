@@ -251,7 +251,7 @@ def context(slug: Annotated[str, tyro.conf.Positional]) -> int:
 
 
 def assembled(ticket: Ticket, tracker: Tracker) -> str:
-    """The one assembly every reader of a ticket's context gets: the worker's brief, the reviewer's
+    """The one assembly every reader of a ticket's context gets: the worker's prompt, the reviewer's
     spec. The ticket comes first, since it is what is being built; its ancestors follow in the order
     the work widens."""
     written = [f"## {ticket.slug}\n{ticket.body.strip()}"]

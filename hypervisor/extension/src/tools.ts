@@ -56,11 +56,11 @@ export function sessionTools(config: SessionConfig, work: Background): ToolDefin
 			name: "start_session",
 			label: "Start session",
 			description:
-				"Start an orchestrator: interactive Claude Code in auto mode, in a new tmux window of the repo's tmux session, with the brief as its first prompt. Its reports wait in your inbox; it pings you when it needs max. look shows what it is doing.",
+				"Start an orchestrator: interactive Claude Code in auto mode, in a new tmux window of the repo's tmux session, with the prompt as its first message. Its reports wait in your inbox; it pings you when it needs max. look shows what it is doing.",
 			parameters: Type.Object({
 				dir: dir("The repo's directory"),
 				name: Type.String({ description: "The window's name: the ticket's slug, or a few words for the activity." }),
-				brief: Type.String({ description: "The orchestrator's first prompt: what max wants done, in his words where you have them." }),
+				prompt: Type.String({ description: "The orchestrator's first prompt: what max wants done, in his words where you have them." }),
 			}),
 			execute: async (_id, params) => answer(await spawn(config, params)),
 		}),

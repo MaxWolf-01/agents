@@ -8,7 +8,7 @@ One seam: the two scripts' command lines, run as subprocesses over a toy project
 stub on the `DISPATCH_RUNNER` seam dispatch-ctl documents, so what runs is dispatch and dispatch-ctl
 themselves. The toy is a project in the layout every project has: a code repo, and its `agent/` a
 git repo of its own inside it that the code repo ignores. The oracles are
-`agent/tickets/ticket-file-contract.md` (P4, that a worker's brief is the ticket's body with every
+`agent/tickets/ticket-file-contract.md` (P4, that a worker's prompt is the ticket's body with every
 ancestor's, assembled by the one function; P7, that a worker writes no ticket file and reports
 instead; `needs-user` as the one field that keeps a ticket from a worker) and `/mx:tracker`'s Ticket
 state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands). A ticket's
@@ -47,12 +47,12 @@ HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSY
 UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
 
 # A worker as dispatch-ctl leaves the seam for one: argv and the log-then-status contract are the
-# real runner's, and it keeps the brief it was sent so the check can read what a spawn carried.
+# real runner's, and it keeps the prompt it was sent so the check can read what a spawn carried.
 RUNNER = """#!/usr/bin/env bash
 set -eu
 message=$1 slug=$2 run_id=$4
 state=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-cp "$message" "$state/$run_id.brief"
+cp "$message" "$state/$run_id.prompt"
 printf 'stub: built %s\\n' "$slug" >> "$state/$run_id.log"
 printf 'attempts=1 exit=0 report=no session=stub\\n' > "$state/$run_id.status"
 """
@@ -394,13 +394,13 @@ def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
 
 @pytest.mark.full_path
 def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
-    """`ticket-file-contract#P4`'s worker half: the brief is the ticket's body and every ancestor's,
+    """`ticket-file-contract#P4`'s worker half: the prompt is the ticket's body and every ancestor's,
     which is what `tracker context` assembles for the review's `--spec` too."""
     run(toy, "claim", "warm-preset")
     said = spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n")
     assert said.returncode == 0, said.stderr
-    (brief,) = (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief")
-    written = brief.read_text()
+    (prompt,) = (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.prompt")
+    written = prompt.read_text()
     assert written.startswith("Work the ticket warm-preset.\n")
     assert "## warm-preset" in written and "One preset, warm." in written
     assert "## parent ticket: lamp-ui" in written and "The whole of giving the lamp presets." in written
@@ -499,7 +499,7 @@ def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: P
     said = spawn(toy, staged, "name-the-presets", "Work it.\n")
     assert said.returncode != 0
     assert "needs the user in the loop" in said.stderr, said.stderr
-    assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
+    assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.prompt"))
 
 
 def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, staged: Path) -> None:
@@ -513,7 +513,7 @@ def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, staged: Path) 
     said = spawn(toy, staged, "warm-preset", "Work it.\n")
     assert said.returncode != 0
     assert "warm-preset.md:" in said.stderr and "this assumption has no anchor" in said.stderr, said.stderr
-    assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
+    assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.prompt"))
 
 
 @pytest.mark.full_path
@@ -1530,7 +1530,7 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
         toy: Path, staged: Path) -> None:
     """`tickets-land-in-listed-repos#P5`: the host gets a bare repo for each repo warm-preset names
     and none for `secrets`, which the project lists and the ticket does not; the host's directory
-    listing is the oracle. Each is cut where the brief says, from its base: `Backend` inside the
+    listing is the oracle. Each is cut where the prompt says, from its base: `Backend` inside the
     ticket worktree at the path the project keeps it at, from its integration branch, and `jarvis`
     beside it, from origin's `main`, which is ahead of the local one. The fetch brings each branch
     back, `push` sends each base again once it moves, the cleanup takes each worktree and branch off
@@ -1552,9 +1552,9 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
                     (hosted / "jarvis-warm-preset", jarvis_base)):
         assert git(at, "branch", "--show-current").strip() == "ticket/warm-preset", at
         assert git(at, "rev-parse", "HEAD~1").strip() == cut.strip(), at
-    (brief,) = state.glob("*.brief")
-    assert "- Backend: `Backend/` in your worktree, from `development`" in brief.read_text()
-    assert "- jarvis: `../jarvis-warm-preset`, beside your worktree, from `main`" in brief.read_text()
+    (prompt,) = state.glob("*.prompt")
+    assert "- Backend: `Backend/` in your worktree, from `development`" in prompt.read_text()
+    assert "- jarvis: `../jarvis-warm-preset`, beside your worktree, from `main`" in prompt.read_text()
 
     fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert fetched.returncode == 0, fetched.stderr
@@ -1609,8 +1609,8 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
     for name, cut in (("Backend", parents), ("jarvis", git(repos["jarvis"], "rev-parse", "origin/main").strip())):
         assert git(held[name], "rev-parse", "--path-format=absolute", "--git-common-dir").strip() == str(repos[name] / ".git")
         assert git(repos[name], "rev-parse", "ticket/warm-preset~1").strip() == cut, name
-    (brief,) = state.glob("*.brief")
-    assert "- Backend: `Backend/` in your worktree, from `lamp-ui`" in brief.read_text()
+    (prompt,) = state.glob("*.prompt")
+    assert "- Backend: `Backend/` in your worktree, from `lamp-ui`" in prompt.read_text()
 
     fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
     assert fetched.returncode == 0, fetched.stderr
@@ -1627,7 +1627,7 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
 @pytest.mark.full_path
 def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, staged: Path) -> None:
     """`tickets-land-in-listed-repos#P5` across spawns: `jarvis` named by mistake and dropped from
-    `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the brief stops
+    `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the prompt stops
     naming it; while its worktree carries a commit the spawn stops instead, with that commit kept. A
     ticket that names none any more leaves the host holding no listed worktree, and
     that spawn makes no host call a ticket that never named a repo would not make."""
@@ -1665,7 +1665,7 @@ def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, s
         "lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp-warm-preset", "lamp.git"]
     assert not git(hosted / "lamp-jarvis.git", "branch", "--list", "ticket/warm-preset")
     assert (hosted / "lamp-warm-preset" / "Backend").is_dir()
-    newest = max(state.glob("*.brief"), key=lambda brief: brief.stat().st_mtime_ns).read_text()
+    newest = max(state.glob("*.prompt"), key=lambda prompt: prompt.stat().st_mtime_ns).read_text()
     assert "- Backend: `Backend/` in your worktree" in newest and "jarvis" not in newest
 
     said = respawn("")
@@ -1796,7 +1796,7 @@ def test_a_listed_repo_dropped_from_repos_after_the_spawn_is_fetched_and_its_run
 @pytest.mark.full_path
 def test_a_nested_repos_place_the_code_repo_already_fills_is_cut_there(toy: Path, staged: Path) -> None:
     """The code repo records `Backend` as a submodule, so its worktree comes with an empty `Backend/`:
-    the spawn cuts Backend's ticket branch into it all the same, where the brief says it is."""
+    the spawn cuts Backend's ticket branch into it all the same, where the prompt says it is."""
     repos = staged_listed(toy)
     git(toy, "update-index", "--add", "--cacheinfo", f"160000,{git(repos['Backend'], 'rev-parse', 'HEAD').strip()},Backend")
     git(toy, "commit", "-q", "-m", "Backend as a submodule")

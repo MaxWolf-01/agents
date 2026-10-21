@@ -14,12 +14,12 @@ Everything you read and write is in the run directory, `{{run}}`, your working d
 
 ## Steps
 
-1. Read `batches.json`. Spawn one subagent per batch and one for `git/`, in parallel, each given the reader's brief below: the path of this prompt, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
+1. Read `batches.json`. Spawn one subagent per batch and one for `git/`, in parallel, each given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
 2. When they return, check that every batch and `git/` has its notes file and that each holds a section per digest. Spawn a fresh subagent for any that is missing or cut short.
 
 The stage is done when `notes/` holds a file for every batch in `batches.json` and one for `git/`.
 
-## The reader's brief
+## The reader's prompt
 
 You read part of a {{kind}}'s period, from {{since}} to {{until}}, to find the friction worth fixing and the cause behind each of max's corrections. A batch named `sample-…` holds older sessions instead, from before the period, read the same way: what they show tells the later stages whether a pattern is older than the period. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
 

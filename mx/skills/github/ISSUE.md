@@ -46,7 +46,7 @@ beside it `upstream-<repo>-<slug>.body.md`, holding the body alone, written per
 [The body](#the-body). It writes those files; it never files the issue.
 
 The main session then **sanity checks** the body against what the session actually
-knows, since the subagent worked from a brief and can have drifted, and takes it
+knows, since the subagent worked from a prompt and can have drifted, and takes it
 through the skill's publishing gate. After max's yes: `gh issue create -R <repo>
 --title <title> --body-file <body file>` with the label the template assigns.
 
