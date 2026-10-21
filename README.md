@@ -42,6 +42,7 @@ Inspiration from:
   - [Software Fundamentals Matter More Than Ever](https://youtu.be/v4F1gFy-hqg)
   - [Full Walkthrough: Workflow for AI Coding — Matt Pocock](https://youtu.be/-QFHIoCo-Ko)
 - https://github.com/mitsuhiko/agent-stuff
+- https://github.com/cursor/plugins/tree/main/pstack
 - [Simple Made Easy](https://mwolf.dev/library/simple-made-easy/simple-made-easy)
 - https://github.com/cathrynlavery/diagram-design
 

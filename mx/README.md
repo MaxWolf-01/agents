@@ -136,6 +136,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:show` | show, don't tell; explain via artifact (diagram, comparison, demo, explainer page, …) |
 | `/mx:fork` | delegate to an agent that inherits the full conversation |
 | `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |
+| `/mx:benchmark-checklist`, `/mx:attack-the-premise` | vet a perf number before trusting it; question the assumption two failed attempts shared |
 | `/mx:improve-codebase-architecture`, `/mx:bloat-audit`, `/mx:retro` | codebase health; `/mx:retro` works the repo's living report, which a weekly retro keeps |
 | `/mx:research` | primary-source investigation → findings on the ticket that asked |
 | `/mx:codex` | second opinion from a different model |
