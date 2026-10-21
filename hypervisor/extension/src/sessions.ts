@@ -55,7 +55,7 @@ const BRIEFLY = "Your answer goes back to the hypervisor, an agent that coordina
 
 /**
  * Opens a tmux window named `name` in the tmux session of the repo `dir` lies in, running interactive Claude Code in
- * auto mode in `dir` with `prompt` as its first prompt. The repo's tmux session is started if it does not run yet.
+ * auto mode in `dir` with `prompt` as its first message. The repo's tmux session is started if it does not run yet.
  */
 export async function spawn(config: SessionConfig, { dir, name, prompt }: { dir: string; name: string; prompt: string }): Promise<string> {
 	const where = await directory(config.home, dir);
