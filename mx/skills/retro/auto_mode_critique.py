@@ -41,16 +41,21 @@ NO_CRITIQUE = "No critique was generated"
 def critique(run: Path) -> bool:
     """Write `deep/critique.md` for the entries in `deep/auto-mode.json`; whether the critique ran
     and said something, or there was nothing to check."""
+    if not (run / PROPOSED).is_file():
+        return failed(run, f"no {PROPOSED} was written")
     try:
-        proposed = json.loads((run / PROPOSED).read_text()) if (run / PROPOSED).is_file() else {}
+        proposed = json.loads((run / PROPOSED).read_text())
     except json.JSONDecodeError as e:
         return failed(run, f"{PROPOSED} is no JSON: {e}")
+    shape = f"where autoMode takes {', '.join(SECTIONS)}, each a list of entries"
     if not isinstance(proposed, dict) or (unknown := set(proposed) - set(SECTIONS)):
-        return failed(run, f"{PROPOSED} holds {sorted(unknown) if isinstance(proposed, dict) else type(proposed).__name__}, "
-                           f"where autoMode takes {', '.join(SECTIONS)}")
+        return failed(run, f"{PROPOSED} holds {sorted(unknown) if isinstance(proposed, dict) else type(proposed).__name__}, {shape}")
+    if lists := [s for s, rules in proposed.items() if not (isinstance(rules, list) and all(isinstance(r, str) for r in rules))]:
+        return failed(run, f"{PROPOSED} holds {', '.join(lists)} as no list of entries, {shape}")
     entries = {section: proposed[section] for section in SECTIONS if proposed.get(section)}
     if not entries:
-        return written(run, "No auto mode entries were proposed.", True)
+        written(run, "No auto mode entries were proposed.")
+        return True
     with tempfile.TemporaryDirectory(prefix="auto-mode-critique-") as profile:
         credentials = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / ".credentials.json"
         if credentials.is_file():
@@ -67,17 +72,18 @@ def critique(run: Path) -> bool:
     text = "\n".join(line for line in done.stdout.splitlines() if not line.startswith("Analyzing your auto mode rules")).strip()
     if not text or NO_CRITIQUE in text:
         return failed(run, f"claude auto-mode critique printed no critique: {text or 'nothing'}")
-    return written(run, text, True)
+    written(run, text)
+    return True
 
 
 def failed(run: Path, why: str) -> bool:
-    return written(run, f"No critique: {why}", False)
+    written(run, f"No critique: {why}")
+    return False
 
 
-def written(run: Path, body: str, ok: bool) -> bool:
+def written(run: Path, body: str) -> None:
     (run / CRITIQUE).parent.mkdir(parents=True, exist_ok=True)
     (run / CRITIQUE).write_text(f"# The critique of {PROPOSED}\n\n{body}\n")
-    return ok
 
 
 @dataclass

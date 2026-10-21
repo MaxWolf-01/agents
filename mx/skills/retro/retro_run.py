@@ -93,7 +93,7 @@ FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
 REPORT_PATH = f"{retro_collect.RETRO}/report.md"  # in the agent repo
 RUN_LOG = HERE.parent / "run-log" / "run-log"
-CRITIQUE = HERE / "auto_mode_critique.py"
+AUTO_MODE_CRITIQUE = HERE / "auto_mode_critique.py"
 # `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
 # path outside the work tree it diffs files from disk, `--no-index` or not, so it reads any file;
 # `log -p` and `show` read the same history from the repo's objects alone.
@@ -132,7 +132,7 @@ SYNTHESIZE = Stage("synthesize", REPORT)
 WORKFLOW = Kind("workflow retro", (
     READ_FRESH,
     FOLLOW_UP,
-    Stage("go-deep", ("deep/leading-words.md", "deep/permissions.md", "deep/critique.md"), runs=(CRITIQUE,)),
+    Stage("go-deep", ("deep/leading-words.md", "deep/permissions.md", "deep/critique.md"), runs=(AUTO_MODE_CRITIQUE,)),
     LENS_PASS,
     SYNTHESIZE,
 ))
@@ -216,7 +216,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
                                                           since=stamp(since), until=stamp(until),
                                                           focus=focus, seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
-                      critique=f"{CRITIQUE} {run}",
+                      critique=f"{AUTO_MODE_CRITIQUE} {run}",
                       kind=kind.name, agent=str(agent), repos="\n".join(f"- {r}" for r in repos),
                       code="\n".join(f"- {r}" for r in code),
                       sessions="every interactive session of max's, from every Claude Code profile" if kind is WORKFLOW
@@ -468,10 +468,9 @@ def end(process: subprocess.Popen, grace: float = 60) -> None:
 def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
     """The command line of a stage's model run. It starts from none of the host's settings, and
     `--restricted` confines its file tools to the run directory and, after read-fresh, what is
-    `within` its reach; the one write rule covers the run directory alone, the scripts it runs run
-    on the run directory alone, git's options that write
-    a file or read one outside the repo are denied, and every other write is refused, since nobody
-    is there to approve it."""
+    `within` its reach; the one write rule covers the run directory alone, the stage's scripts may
+    be run on the run directory alone, git's options that write a file or read one outside the repo
+    are denied, and every other write is refused, since nobody is there to approve it."""
     tools, allowed, add = "Read,Grep,Glob,Write,Edit,Agent", [f"Edit(/{run}/**)"], []
     if not stage.fresh:
         tools += ",Bash"

@@ -241,13 +241,13 @@ def test_every_stage_runs_on_its_own_model_unless_the_run_names_one(
 def test_go_deep_alone_may_run_the_auto_mode_critique_and_on_its_own_run_directory_alone(
         tmp_path: Path, stub: Path, repo: Path) -> None:
     run = retro(tmp_path, repo, FIRST, SINCE)
-    critique = f"{retro_run.CRITIQUE} {run}"
+    critique = f"{retro_run.AUTO_MODE_CRITIQUE} {run}"
     for stage in retro_run.WORKFLOW.stages[1:]:
         args = (stub / f"{stage.name.replace('-', ' ')}.argv").read_text().splitlines()
         denied = args[args.index("--disallowedTools") + 1:args.index("--allowedTools")]
         allowed = args[args.index("--allowedTools") + 1:args.index("--tools")]
         assert refused(critique, allowed, denied) == (stage.name != "go-deep"), stage.name
-        assert refused(f"{retro_run.CRITIQUE} {tmp_path}", allowed, denied), stage.name
+        assert refused(f"{retro_run.AUTO_MODE_CRITIQUE} {tmp_path}", allowed, denied), stage.name
         assert refused(f"{critique}; rm -rf {run}", allowed, denied), stage.name
     assert critique in (run / "prompts/go-deep.md").read_text(), "its prompt names the command its rule allows"
 

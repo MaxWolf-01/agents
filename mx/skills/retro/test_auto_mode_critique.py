@@ -36,7 +36,7 @@ def saw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "saw"
 
 
-def critique(run: Path, proposed: dict | None, says: str) -> tuple[int, str]:
+def critique(run: Path, proposed: object, says: str) -> tuple[int, str]:
     if proposed is not None:
         (run / "deep").mkdir(parents=True)
         (run / "deep" / "auto-mode.json").write_text(json.dumps(proposed))
@@ -63,8 +63,8 @@ def test_a_critique_that_printed_none_is_written_as_none_and_fails(tmp_path: Pat
     assert "No critique:" in written
 
 
-@pytest.mark.parametrize("proposed", [None, {}])
-def test_no_entries_proposed_is_said_and_runs_no_critique(tmp_path: Path, saw: Path, proposed: dict | None) -> None:
+@pytest.mark.parametrize("proposed", [{}, {"allow": [], "soft_deny": []}])
+def test_no_entries_proposed_is_said_and_runs_no_critique(tmp_path: Path, saw: Path, proposed: dict) -> None:
     status, written = critique(tmp_path / "run", proposed, "unused")
 
     assert status == 0
@@ -72,9 +72,19 @@ def test_no_entries_proposed_is_said_and_runs_no_critique(tmp_path: Path, saw: P
     assert not (saw / "settings.json").exists()
 
 
-def test_a_section_auto_mode_has_none_of_is_refused_with_the_sections_it_takes(tmp_path: Path, saw: Path) -> None:
-    status, written = critique(tmp_path / "run", {"deny": [ENTRY]}, "unused")
+def test_no_proposed_entries_file_is_no_critique_and_fails(tmp_path: Path, saw: Path) -> None:
+    status, written = critique(tmp_path / "run", None, "unused")
 
     assert status == 1
-    assert "'deny'" in written and "soft_deny" in written
+    assert "No critique: no deep/auto-mode.json was written" in written
+    assert not (saw / "settings.json").exists()
+
+
+@pytest.mark.parametrize("proposed", [{"deny": [ENTRY]}, {"soft_deny": ENTRY}, [ENTRY]])
+def test_entries_in_another_shape_than_auto_modes_are_refused_with_the_shape_it_takes(
+        tmp_path: Path, saw: Path, proposed: object) -> None:
+    status, written = critique(tmp_path / "run", proposed, "unused")
+
+    assert status == 1
+    assert "No critique:" in written and "soft_deny" in written and "list of entries" in written
     assert not (saw / "settings.json").exists()
