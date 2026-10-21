@@ -1,3 +1,9 @@
+## 1.0.77
+
+- The retro proposes auto mode entries in both directions, checked by the critique
+- A tracker's first retro reads eight weeks back, set by --first-weeks
+- pstack's benchmark-checklist and attack-the-premise join mx, and the agents repo is MIT
+
 ## 1.0.76
 
 - The board watcher's test counts the cadence from the run's own clock
