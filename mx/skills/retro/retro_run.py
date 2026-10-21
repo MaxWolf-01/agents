@@ -21,7 +21,7 @@ which its own tracker's retro reads, and the sessions of every profile that work
 stages log in as the profile `CLAUDE_CONFIG_DIR` names, as every `claude` does.
 
 A run's period starts where the last run committed to the report ended, or at --since; a
-repo retro's first run, given no --since, takes the four weeks before it. Everything a run writes
+repo retro's first run, given no --since, takes the eight weeks before it (--first-weeks). Everything a run writes
 but the report lives in its run directory, `<data>/<repo>/runs/<end of period>/`, outside every git
 repo: what collect gathered, each stage's prompt, notes and output, and the new report. Each event
 of a run is a line of `<data>/<repo>/runs.log`.
@@ -89,7 +89,7 @@ EFFORT = "high"
 SKIPPED = 3  # the exit status of an --if-active run that found nothing new
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
-FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
+FIRST_WEEKS = 8  # how far back a repo retro's first run reads, given no --since; --first-weeks overrides it
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
 REPORT_PATH = f"{retro_collect.RETRO}/report.md"  # in the agent repo
 RUN_LOG = HERE.parent / "run-log" / "run-log"
@@ -145,14 +145,14 @@ def kind_of(repo: Path) -> Kind:
 
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
               seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None,
-              if_active: bool = False, model: str = "", effort: str = "") -> Path:
+              if_active: bool = False, model: str = "", effort: str = "", first_weeks: int = FIRST_WEEKS) -> Path:
     """A whole retro on `repo`, or the rest of the one `resume` names; returns its run directory.
     The handlers of STOP are the caller's again afterwards, for a caller that goes on in the same
     process: a signal left ignored is inherited by every process it starts later, which no TERM then
     stops. `model` and `effort`, where given, replace every stage's own."""
     found = {s: signal.getsignal(s) for s in STOP}
     try:
-        return retro(repo, data, projects, since, focus, seed, until, resume, if_active, model, effort)
+        return retro(repo, data, projects, since, focus, seed, until, resume, if_active, model, effort, first_weeks)
     finally:
         for s, handler in found.items():
             signal.signal(s, handler)
@@ -160,7 +160,7 @@ def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime 
 
 def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None, focus: str,
           seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool,
-          model: str = "", effort: str = "") -> Path:
+          model: str = "", effort: str = "", first_weeks: int = FIRST_WEEKS) -> Path:
     repo = repo.expanduser().resolve()
     if not repo.is_dir():
         sys.exit(f"{repo} does not exist")
@@ -178,7 +178,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         until = until or datetime.now(UTC)
         if since is None and not runs and kind is WORKFLOW:
             sys.exit(f"no earlier run of this retro in {agent}/{REPORT_PATH}'s history: pass --since")
-        since = since or (runs[0][1] if runs else until - FIRST_PERIOD)
+        since = since or (runs[0][1] if runs else until - timedelta(weeks=first_weeks))
         home = data.expanduser() / repo.name.lstrip(".")
         run = home / "runs" / dirname(until)
         base = blob(agent, REPORT_PATH)
@@ -578,7 +578,9 @@ class Args:
     focus: str = ""
     """What max names for this run to look at: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass."""
     since: str = ""
-    """The period's start, an ISO date or time, UTC where it names no offset; by default the end of the last run committed to the report, and for a repo retro's first run four weeks before its end."""
+    """The period's start, an ISO date or time, UTC where it names no offset; by default the end of the last run committed to the report, and for a repo retro's first run `--first-weeks` before its end. A run after a gap reads the whole gap, since the last report."""
+    first_weeks: int = FIRST_WEEKS
+    """How many weeks a repo retro's first run reads back, given no --since."""
     seed: list[Path] = field(default_factory=list)
     """Files the run's later stages read as earlier reports, beside those in git history; no two may share a name."""
     data: Path = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "retro"
@@ -598,4 +600,4 @@ class Args:
 if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
     run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed,
-              resume=args.resume, if_active=args.if_active, model=args.model, effort=args.effort)
+              resume=args.resume, if_active=args.if_active, model=args.model, effort=args.effort, first_weeks=args.first_weeks)
