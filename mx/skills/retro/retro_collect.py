@@ -11,10 +11,10 @@ every git work tree. `retro_run.py` runs it as a run's collect stage; its subcom
 - `sessions/<id>.md`: a digest of every interactive session with an entry in the period, from
   every Claude Code profile given, holding the period's days alone; in a repo retro, of those
   alone that worked in the repos its tracker plans (`Worked`). A digest keeps max's messages
-  verbatim, pasted text clipped; every tool call's input, error and denial in full; the model's
-  text; and the session page's turn records. It keeps no tool output. Beside them it marks
-  interrupts, rewinds, messages queued while the agent worked, hook send-backs, context
-  compactions and how long each turn took.
+  verbatim, pasted text clipped; every tool call's input, error and denial in full, and which calls
+  the auto mode classifier allowed; the model's text; and the session page's turn records. It
+  keeps no tool output. Beside them it marks interrupts, rewinds, messages queued while the agent
+  worked, hook send-backs, context compactions and how long each turn took.
 - `sample/<id>.md`: digests of about 20 older sessions, from two to eight weeks before the end
   of the period, drawn at random, weighted to sessions with more of max's messages; in a repo
   retro, from those that worked in its repos.
@@ -24,10 +24,9 @@ every git work tree. `retro_run.py` runs it as a run's collect stage; its subcom
 - `proposed.md` and `in-flight.md`, given an agent repo: its commit at collect time and the slugs
   of the tickets proposed, and of those in flight (open, claimed or review), at that commit, each
   as it stood in `proposed/<slug>.md` and `in-flight/<slug>.md`.
-- `permissions/<profile>/`, what a workflow retro reads beside them, for each profile: `scan.json`,
-  the Bash calls of the period no allowlist rule covers, as `scan_unapproved.py` buckets them;
-  `rules.json`, the permission rules and auto mode settings of the profile's own settings files;
-  and `auto-mode.json`, the effective auto mode config `claude auto-mode config` prints for it, or
+- `permissions/<profile>/`, what a workflow retro reads beside them, for each profile: `rules.json`,
+  the permission rules and auto mode settings of the profile's own settings files; and
+  `auto-mode.json`, the effective auto mode config `claude auto-mode config` prints for it, or
   `auto-mode.failed` saying why there is none.
 
 `git` writes `git/<repo>.md` alone, for each repo given: its commits in the period with their
@@ -66,7 +65,6 @@ from typing import NamedTuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "session-page"))
-import scan_unapproved  # noqa: E402
 import session_page  # noqa: E402  what counts as the user's own message, as the session page reads it
 import tracker  # noqa: E402  a ticket file and the repo list, as the tracker reads them
 
@@ -75,6 +73,7 @@ SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the p
 PASTE_CLIP = 600  # pasted text in a message of max's
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
+CLASSIFIER_ALLOWED = "[classifier allowed]"  # a digest's mark on a call auto mode's classifier let run
 # An absolute path, or one from the home, in any string of a tool call's input: a field of its own, or a word of a
 # command or of a file's text.
 NAMED_PATH = re.compile(r"(?<![\w.~/$-])~?/[^\s\"'`;|&<>(){}\[\],]*")
@@ -199,7 +198,7 @@ def refuse_unless_git(repos: list[Path]) -> None:
 SETTINGS = ("settings.json", "settings.local.json")  # a profile's own settings files
 
 
-def collect_permissions(since: datetime, run: Path, projects: list[Path]) -> None:
+def collect_permissions(run: Path, projects: list[Path]) -> None:
     """`permissions/<profile>/` for each profile's directory of transcripts in `projects`."""
     for root in projects:
         profile = root.parent
@@ -207,9 +206,6 @@ def collect_permissions(since: datetime, run: Path, projects: list[Path]) -> Non
         out.mkdir(parents=True, exist_ok=True)
         settings = [profile / name for name in SETTINGS if (profile / name).is_file()]
         (out / "rules.json").write_text(json.dumps({p.name: rules(p) for p in settings}, indent=1) + "\n")
-        commands = scan_unapproved.scan_sessions(root, since.timestamp()) if root.is_dir() else []
-        found = scan_unapproved.scan(scan_unapproved.load_allowlist(*settings), commands)
-        (out / "scan.json").write_text(json.dumps(found, indent=1) + "\n")
         for stale in ("auto-mode.json", "auto-mode.failed"):
             (out / stale).unlink(missing_ok=True)
         name, text = auto_mode(profile, run)
@@ -432,7 +428,7 @@ class _Inline:
         return map(f, *items)
 
 
-CACHE_FORMAT = 8  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 9  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -475,6 +471,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     headings: dict[str, int] = {}  # each day's heading: its index in `lines`
     day = None
     calls: dict[str, str] = {}
+    called: dict[str, int] = {}  # each call's line in `lines`
     parents: Counter = Counter()
     versions: dict[str, dict[str, list[str]]] = {}
     models: dict[str, dict[str, list[str]]] = {}
@@ -513,6 +510,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                     if at:
                         paths.setdefault(at.date().isoformat(), set()).update(named_paths(block.get("input")))
                     put(at, f"→ {block.get('name', '?')} {json.dumps(block.get('input'), ensure_ascii=False)}")
+                    called[block.get("id", "")] = len(lines) - 1
         elif kind == "system":
             sub = e.get("subtype")
             if sub == "stop_hook_summary" and (e.get("preventedContinuation") or e.get("hookErrors")):
@@ -536,6 +534,10 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
         elif kind == "user" and session_page.prompted(e):
             content = e.get("message", {}).get("content")
             for block in content if isinstance(content, list) else []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" and classifier_allowed(e) \
+                        and (i := called.get(block.get("tool_use_id", ""))) is not None:
+                    name = calls[block["tool_use_id"]]
+                    lines[i] = lines[i].replace(f"→ {name} ", f"→ {name} {CLASSIFIER_ALLOWED} ", 1)
                 if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
                     name = calls.get(block.get("tool_use_id", ""), "?")
                     error = flatten(block.get("content"))
@@ -579,6 +581,12 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
                   page_at=starts[-1] - 1 if interactive else 0,
                   paths={day: sorted(named) for day, named in paths.items()} if interactive else {})
+
+
+def classifier_allowed(entry: dict) -> bool:
+    """Whether a tool result's entry says the auto mode classifier judged the call and let it run."""
+    decision = entry.get("permissionDecision")
+    return isinstance(decision, dict) and decision.get("decision") == "accept" and decision.get("reasonType") == "classifier"
 
 
 def named_paths(value: object) -> Iterable[str]:
@@ -781,7 +789,7 @@ def main(command: Sessions | Git) -> None:
     cache = command.cache or command.run.parent / "digest-cache"
     refuse_inside_git(command.run, cache)
     collect_sessions(since, datetime.now(UTC), command.run, cache, command.projects, command.repos, agent=command.agent)
-    collect_permissions(since, command.run, command.projects)
+    collect_permissions(command.run, command.projects)
 
 
 if __name__ == "__main__":

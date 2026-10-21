@@ -93,6 +93,7 @@ FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
 REPORT_PATH = f"{retro_collect.RETRO}/report.md"  # in the agent repo
 RUN_LOG = HERE.parent / "run-log" / "run-log"
+CRITIQUE = HERE / "auto_mode_critique.py"
 # `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
 # path outside the work tree it diffs files from disk, `--no-index` or not, so it reads any file;
 # `log -p` and `show` read the same history from the repo's objects alone.
@@ -109,6 +110,8 @@ class Stage:
     """Files in the run directory the stage writes; `{batch}` stands for each batch's name."""
     fresh: bool = False
     """Confined to the run directory, which holds no earlier report while it runs."""
+    runs: tuple[Path, ...] = ()
+    """Scripts the stage may run, each given the run directory and nothing else."""
     model: str = MODEL
     """The model the stage and its subagents run on; a run's --model overrides it for every stage."""
     effort: str = EFFORT
@@ -129,7 +132,7 @@ SYNTHESIZE = Stage("synthesize", REPORT)
 WORKFLOW = Kind("workflow retro", (
     READ_FRESH,
     FOLLOW_UP,
-    Stage("go-deep", ("deep/leading-words.md", "deep/permissions.md")),
+    Stage("go-deep", ("deep/leading-words.md", "deep/permissions.md", "deep/critique.md"), runs=(CRITIQUE,)),
     LENS_PASS,
     SYNTHESIZE,
 ))
@@ -213,6 +216,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
                                                           since=stamp(since), until=stamp(until),
                                                           focus=focus, seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
+                      critique=f"{CRITIQUE} {run}",
                       kind=kind.name, agent=str(agent), repos="\n".join(f"- {r}" for r in repos),
                       code="\n".join(f"- {r}" for r in code),
                       sessions="every interactive session of max's, from every Claude Code profile" if kind is WORKFLOW
@@ -271,7 +275,7 @@ def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path,
     retro_collect.collect_sessions(since, until, run, home / "digest-cache", projects, repos, agent=agent,
                                    worked=None if kind is WORKFLOW else retro_collect.Worked.of(repos, left_out))
     if kind is WORKFLOW:
-        retro_collect.collect_permissions(since, run, projects)
+        retro_collect.collect_permissions(run, projects)
     write_batches(run)
     retro_collect.collect_touched(since, until, run, code)
 
@@ -464,7 +468,8 @@ def end(process: subprocess.Popen, grace: float = 60) -> None:
 def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
     """The command line of a stage's model run. It starts from none of the host's settings, and
     `--restricted` confines its file tools to the run directory and, after read-fresh, what is
-    `within` its reach; the one write rule covers the run directory alone, git's options that write
+    `within` its reach; the one write rule covers the run directory alone, the scripts it runs run
+    on the run directory alone, git's options that write
     a file or read one outside the repo are denied, and every other write is refused, since nobody
     is there to approve it."""
     tools, allowed, add = "Read,Grep,Glob,Write,Edit,Agent", [f"Edit(/{run}/**)"], []
@@ -475,6 +480,7 @@ def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
                   *(f"Read(/{h}/**)" for h in within.hidden)]
         add = ["--add-dir", *map(str, within.read), "--disallowedTools", *denied]
         allowed += [f"Bash(git -C {d} {sub}{rest})" for d in within.git for sub in GIT_READS for rest in ("", " *")]
+        allowed += [f"Bash({script} {run})" for script in stage.runs]
     return ["bash", str(RUN_LOG), "run", "--site", f"retro-{stage.name}", "--timeout", str(STAGE_TIMEOUT), "--",
             "claude", "-p", "--model", stage.model, "--effort", stage.effort,
             "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",

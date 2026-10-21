@@ -40,13 +40,14 @@ class Transcript:
         return self.add({"type": "assistant", "message": {"model": "claude-opus-5-5", "role": "assistant",
                                                           "content": [{"type": "text", "text": text}]}})
 
-    def calls(self, tool: str, inputs: dict, result: str, error: bool = False, denial: str | None = None) -> "Transcript":
+    def calls(self, tool: str, inputs: dict, result: str, error: bool = False, denial: str | None = None,
+              decision: dict | None = None) -> "Transcript":
         tid = f"toolu_{uuid.uuid4().hex[:12]}"
         self.add({"type": "assistant", "message": {"model": "claude-opus-5-5", "role": "assistant",
                                                    "content": [{"type": "tool_use", "id": tid, "name": tool, "input": inputs}]}})
         return self.add({"type": "user", "message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": tid, "content": result, "is_error": error}]},
-            **({"toolDenialKind": denial} if denial else {})})
+            **({"toolDenialKind": denial} if denial else {}), **({"permissionDecision": decision} if decision else {})})
 
 
 IDENTITY = {"GIT_AUTHOR_NAME": "max", "GIT_AUTHOR_EMAIL": "max@example.org", "GIT_COMMITTER_NAME": "max",

@@ -1,6 +1,6 @@
 # A workflow retro: go deep
 
-You run the go-deep stage of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}, for the repo `{{repo}}`. Its job is depth: a few patterns traced to the lines that produce them, with the smallest fix for each; a search of the whole period for the retro's leading words; and a reading of its permission prompts, denials and near misses. max found a broad, ranked list of findings mostly noise; what he used from the first retro, run by hand in October 2026, was its two deep-dives.
+You run the go-deep stage of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}, for the repo `{{repo}}`. Its job is depth: a few patterns traced to the lines that produce them, with the smallest fix for each; a search of the whole period for the retro's leading words; and a reading of what auto mode's classifier blocked that max wanted, and let through that he did not. max found a broad, ranked list of findings mostly noise; what he used from the first retro, run by hand in October 2026, was its two deep-dives.
 
 {{focus}}
 
@@ -16,7 +16,7 @@ You may read the repos below and run git's read commands in them as `git -C <rep
 2. Spawn, in parallel, one subagent per pattern, one for the leading words and one for the permissions, each with its brief below and the paths it needs.
 3. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
-The stage is done when `deep/` holds a file per pattern, `deep/leading-words.md` and `deep/permissions.md`.
+The stage is done when `deep/` holds a file per pattern, `deep/leading-words.md`, `deep/permissions.md` and `deep/critique.md`.
 
 ## A deep-dive's brief
 
@@ -36,14 +36,12 @@ The file: a section per word and per question the period shows, a question's und
 
 ## The permissions' brief
 
-Write `{{run}}/deep/permissions.md`.
+Write `{{run}}/deep/permissions.md`, and `{{run}}/deep/auto-mode.json` for the critique, which writes `{{run}}/deep/critique.md`.
 
-Read `{{skills}}/retro/PERMISSIONS.md`, what to know about the permission data and the bar a proposed rule is held to. Then the period's permission friction, in three directions:
+Read `{{skills}}/retro/PERMISSIONS.md`: the permission data, the two directions the classifier errs in, and the shape of an entry. Then:
 
-- prompts and blocks max approved unchanged, and auto mode classifier rejections that were overeager, the main friction now: a rule too cautious, or a harmless action shaped to trip one;
-- blocks an agent got past by rephrasing the same action;
-- incidents nothing blocked, git hygiene that nearly went wrong among them.
+1. Find the period's false blocks and false allows. Read every `! DENIED` line in `sessions/`, each with the turns around it, so what max did next is in view; then the `[classifier allowed]` calls max's next turn stopped, undid or corrected, and the incidents nothing blocked, found in what he said after them. Read each profile's `rules.json` and `auto-mode.json`.
+2. Group the false blocks by what the classifier lacked (the rule that fired, the fact it did not have) and the false allows by the class of action, and word an entry per group. Done when every event you found is in a group, or named as one a single entry would overfit to.
+3. Write the entries, none included, into `deep/auto-mode.json`, as a settings file's `autoMode` holds them (`{"allow": [...], "soft_deny": [...]}`, a section with no entry left out), and run `{{critique}}`, written exactly so, which is the one command besides git's reads you may run. It writes what `claude auto-mode critique` found into `deep/critique.md`. Rework an entry the critique shows too wide, too narrow or unclear, and run it again; where it printed no critique, run it once more.
 
-Read every `! DENIED` line in `sessions/`, each with the turns around it, so what max did next is in view, and the auto mode rejections above all; then `permissions/<profile>/scan.json`, the commands no allowlist rule covers; and each profile's rules, `rules.json` and `auto-mode.json`. For incidents, search the digests for what went wrong with no prompt in the way: a destructive command, a commit or push on the wrong branch, work lost.
-
-The file: a section per direction, each item with its quotes, their source and absolute date, how often, and a proposal: the rule to add, narrow or delete, in which profile's settings file, with what it would have changed in the period. A proposed auto mode change names `claude auto-mode critique` as its check, which max runs once he has applied it: the critique reads only the rules a profile holds. What max takes up, he applies in a session. Reply with the file's path alone.
+The file: a section per direction, each entry with its section of `autoMode`, its text whole, the events it would have changed (each with a quote, its source and absolute date), how often, and what the critique found of it and what you changed in answer; then the events left out of any entry, and why. Where the critique printed none, say the entries go to max unchecked. What max takes up, he applies in a session. Reply with the file's path alone.
