@@ -67,8 +67,8 @@ function answer(request: Request) {
 	if (f.name === "failing") return { status: 400, error: "the stand-in refuses" };
 	// max's turn, in flight when /explore arrives: in one he writes again, in the other it starts a session.
 	if (f.name === "called-off" && f.requests.length === 1) return { text: "noted", delay: 400 };
-	if (f.name === "busy" && f.requests.length === 1) return { tool: "start_session", input: { dir: "~", name: "x", brief: "y" }, delay: 400 };
-	if (f.tool && !result) return { tool: f.tool, input: { dir: "~", name: "x", brief: "y" } };
+	if (f.name === "busy" && f.requests.length === 1) return { tool: "start_session", input: { dir: "~", name: "x", prompt: "y" }, delay: 400 };
+	if (f.tool && !result) return { tool: f.tool, input: { dir: "~", name: "x", prompt: "y" } };
 	return { text: `finding ${f.requests.length}: ${result ? JSON.stringify(result.content) : "max reads papers on ALife"}`, delay: f.name === "interrupted" ? 400 : 0 };
 }
 

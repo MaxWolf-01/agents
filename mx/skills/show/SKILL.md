@@ -95,7 +95,7 @@ How a row's medium gets made. An open set, not a menu; combining media is normal
 
 ## Who builds it
 
-Every artifact is built by a subagent or a fork, never by the session answering the user, so its render and debug loop stays out of that session's context. A subagent works from a brief: the artifact, its output path, and the sources on disk to read. A fork of the session (invoke `mx:fork`) is taken when the conversation itself is the source the artifact needs and no file carries it.
+Every artifact is built by a subagent or a fork, never by the session answering the user, so its render and debug loop stays out of that session's context. A subagent works from a prompt: the artifact, its output path, and the sources on disk to read. A fork of the session (invoke `mx:fork`) is taken when the conversation itself is the source the artifact needs and no file carries it.
 
 The builder is done once it has seen the artifact and reviewed its prose. It looks at its own render (Produce and present), then runs one `/mx:writing-for-humans` pass over the artifact's text and fixes what the pass finds, and only then hands back the path.
 

@@ -56,7 +56,7 @@ _Avoid_: checkpoint (a context checkpoint is a session's), gate (orient's gate r
 
 **Ticket context**:
 A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
-_Avoid_: brief (a ticket's brief is one section of it), spec, background
+_Avoid_: brief (the brief is one section of it), spec, background
 
 **Proposed**:
 The status of a ticket an agent filed that the user has not yet ruled on: off the frontier until a triage promotes it to open.
@@ -86,9 +86,9 @@ _Avoid_: ask, call (a call is a design decision), needs-human entry, queue item
 The board's one group for every ticket whose next step is the user's own time.
 _Avoid_: needs my review, needs human, inbox
 
-**Ticket brief**:
-The few sentences under a ticket's name that tell the user, reading cold, what the ticket is and why it matters.
-_Avoid_: summary, description, tldr
+**Brief**:
+A ticket's opening section: the agent's account, in its own words and read cold, of the goal the ticket serves and the problem it solves.
+_Avoid_: summary, description, tldr, brief for what an agent is handed to start work (that is its prompt)
 
 **Board briefing**:
 The board's own account of where the tracker stands and what to take up next, written by a model.

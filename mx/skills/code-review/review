@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One code review's mechanics: a `claude -p` reviewer per axis, each on the
-# brief composed from the templates in briefs/, each leaving a report the
+# prompt composed from the templates in prompts/, each leaving a report the
 # caller reads. `/mx:code-review` is the judgment around it: which fixed
 # point, where the spec is, light or full, and what to do with the findings.
 #
@@ -12,31 +12,31 @@
 #                  pinned to SHAs, so it holds still while they read and
 #                  stays what the range says: <merge-base>..<HEAD>, short.
 #                  Uncommitted work is in no part of it.
-#   --axes   which axes to run, one brief each, all of them at once. Default:
+#   --axes   which axes to run, one prompt each, all of them at once. Default:
 #            correctness and standards, plus spec when --spec names one, plus
 #            tests when the diff touches test files too. An axis is a file in
-#            briefs/, and a repo with no spec runs two of the four.
+#            prompts/, and a repo with no spec runs two of the four.
 #   --spec   what the work was asked for: a ticket's slug, whose body and
 #            every ancestor's `tracker context` assembles into the report
-#            directory, or any file (an issue body fetched to one, a brief),
+#            directory, or any file (an issue body fetched to one, a prompt),
 #            and whatever discussion the reviewers should not reopen. The spec
 #            and tests axes both read it, so both need it.
-#   --light  one reviewer over the correctness and standards briefs joined,
+#   --light  one reviewer over the correctness and standards prompts joined,
 #            reporting as the `light` axis. With --spec it takes the spec
-#            brief too, so one reviewer judges the diff against what was asked
+#            prompt too, so one reviewer judges the diff against what was asked
 #            for as well.
 #   --effort every reviewer's effort, `medium` by default.
 #   --model  every reviewer's model, `opus` by default.
-#   --minutes every reviewer's time budget, which its brief states and it
+#   --minutes every reviewer's time budget, which its prompt states and it
 #            paces its work to, 10 by default; a budget, not a timeout.
-# Reports land in <repo>/agent/reviews/<range>/<axis>.md, the brief each
-# reviewer read under briefs/ beside them and its output in <axis>.log, and
+# Reports land in <repo>/agent/reviews/<range>/<axis>.md, the prompt each
+# reviewer read under prompts/ beside them and its output in <axis>.log, and
 # the reports' paths are this script's own output. Exit 1 names an axis whose
 # report never arrived, to re-run with --axes. One review of a range runs at a
 # time: a second is refused while the first, or anything it started, is alive.
 #
 # A reviewer starts from none of the caller's setup: no settings files, MCP
-# servers, skills or memory, so what it works from is its brief, the same on
+# servers, skills or memory, so what it works from is its prompt, the same on
 # every machine.
 #
 # A reviewer runs on `--permission-mode manual`: it reads anything, runs the
@@ -53,7 +53,7 @@
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-templates=$skill/briefs
+templates=$skill/prompts
 # Every read of a ticket file goes through the one command that parses one.
 tracker=$skill/../tracker/tracker.py
 # Every reviewer runs through it, one line per axis in the run log.
@@ -146,7 +146,7 @@ touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)skills/|(^|/)\.?claude/(commands|a
 touches '(^|/)GLOSSARY(-MAP)?\.md$|(^|/)decisions/' && formats=1 || formats=
 
 if [ -n "$light" ]; then
-    [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
+    [ -z "$axes" ] || die "--light is one reviewer over the joined prompts; drop --axes"
     axes=light
 elif [ -z "$axes" ]; then
     axes=correctness,standards
@@ -155,16 +155,16 @@ elif [ -z "$axes" ]; then
 fi
 axis_list=${axes//,/ }
 for axis in $axis_list; do
-    [ -f "$templates/$axis.md" ] || die "no axis named $axis: briefs/$axis.md is not there"
+    [ -f "$templates/$axis.md" ] || die "no axis named $axis: prompts/$axis.md is not there"
     case $axis in
         spec|tests) [ -n "$spec" ] || die "the $axis axis judges the work against what was asked for: pass --spec <slug|path>" ;;
     esac
 done
 
 dir=$root/agent/reviews/$range
-mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
+mkdir -p "$dir/prompts" || die "cannot create $dir/prompts"
 # The ticket and its ancestry as one file, assembled the one way a worker's
-# brief is: the reviewer reads what the work was asked for and the work the
+# prompt is: the reviewer reads what the work was asked for and the work the
 # ticket is part of, and nothing else of the tracker.
 if [ -n "$slug" ]; then
     spec=$dir/ticket.md
@@ -195,7 +195,7 @@ standards=$(bullets "${sources[@]}") || exit 1
 # whoever reads the tests when no Tests axis runs: the one light reviewer, or a
 # standards reviewer on a diff with no spec behind it. The rest of /mx:testing
 # is the generator's half of the test-smell baseline, and stays out.
-testing_jobs=$dir/briefs/testing-jobs.md
+testing_jobs=$dir/prompts/testing-jobs.md
 awk '/^---$/ && n < 2 { n++; next } n < 2 { next } /^## / { exit } { print }' \
     "$skill/../testing/SKILL.md" > "$testing_jobs" && [ -s "$testing_jobs" ] ||
     die "cannot take the three jobs from $skill/../testing/SKILL.md"
@@ -249,8 +249,8 @@ done < <(checkouts)
 # A directory git no longer lists would stop this run's own checkout being added.
 [ ! -e "$checkout" ] || rm -rf "$checkout"
 
-# The brief a reviewer reads, whole: the preamble, the axis's own template, and
-# for the light axis the briefs it folds together. The templates hold every
+# The prompt a reviewer reads, whole: the preamble, the axis's own template, and
+# for the light axis the prompts it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
 render() { # <axis>
     local axis=$1 parts part text one sources_block commits left
@@ -260,8 +260,8 @@ render() { # <axis>
     case $axis in
         light) parts="preamble correctness standards light"
                # The one reviewer judges the diff against what was asked for
-               # too, where the caller named it, on the spec axis's brief; with
-               # no --spec that part is left out, and the brief's own words say
+               # too, where the caller named it, on the spec axis's prompt; with
+               # no --spec that part is left out, and the prompt's own words say
                # which of the two it is.
                [ -z "$spec" ] || parts="$parts spec"
                # Full messages, so the one reviewer gets the author's account
@@ -271,7 +271,7 @@ render() { # <axis>
     esac
     text=
     for part in $parts; do
-        [ -f "$templates/$part.md" ] || die "briefs/$part.md, part of the $axis brief, is not there"
+        [ -f "$templates/$part.md" ] || die "prompts/$part.md, part of the $axis prompt, is not there"
         one=$(cat "$templates/$part.md")
         one=${one//'{{REPORT}}'/$dir/$axis.md}
         one=${one//'{{DIFF_COMMAND}}'/$diff_cmd}
@@ -280,7 +280,7 @@ render() { # <axis>
         one=${one//'{{CHECKOUT}}'/$checkout}
         one=${one//'{{MINUTES}}'/$minutes}
         left=$(printf '%s' "$one" | grep -o '{{[A-Z_]*}}' | sort -u | grep -v '^{{COMMITS}}$' | tr '\n' ' ')
-        [ -z "$left" ] || die "briefs/$part.md asks for ${left% }, which this script does not substitute"
+        [ -z "$left" ] || die "prompts/$part.md asks for ${left% }, which this script does not substitute"
         # The commit messages go in last, and are checked over above: a message
         # that happens to hold a placeholder is text under review, never an
         # instruction to this script.
@@ -290,16 +290,16 @@ render() { # <axis>
     printf '%s' "$text"
 }
 
-# Every brief before any reviewer, so a broken template fails the run rather
+# Every prompt before any reviewer, so a broken template fails the run rather
 # than one axis of it. An earlier run's report goes at the same time: the range
 # is the same for the same branch state, and a stale report left in place would
 # read as this run's.
 for axis in $axis_list; do
-    render "$axis" > "$dir/briefs/$axis.md" || exit 1
+    render "$axis" > "$dir/prompts/$axis.md" || exit 1
     rm -f "$dir/$axis.md"
 done
 
-# After the briefs, so a template this run cannot render costs nothing: the
+# After the prompts, so a template this run cannot render costs nothing: the
 # checkout outlives only a run that started.
 case " $axis_list " in *" tests "*)
     echo "+ git worktree add --detach $checkout $head" >&2
@@ -325,8 +325,8 @@ reviewer() { # <axis>
     # Echoed whole and quoted as a shell reads it, redirections and working
     # directory included, so the transcript holds the command that produced a
     # report, or the one that produced nothing, down to its empty argument.
-    echo "+ (cd $(printf %q "$cwd") && $(printf '%q ' "${cmd[@]}")< $(printf %q "$dir/briefs/$axis.md") > $(printf %q "$dir/$axis.log"))" >&2
-    ( cd "$cwd" && "${cmd[@]}" < "$dir/briefs/$axis.md" > "$dir/$axis.log" 2>&1 )
+    echo "+ (cd $(printf %q "$cwd") && $(printf '%q ' "${cmd[@]}")< $(printf %q "$dir/prompts/$axis.md") > $(printf %q "$dir/$axis.log"))" >&2
+    ( cd "$cwd" && "${cmd[@]}" < "$dir/prompts/$axis.md" > "$dir/$axis.log" 2>&1 )
     rc=$?
     echo "review: the $axis reviewer exited $rc" >&2
     # Whatever it left there, and whether it finished or died: the checkout is

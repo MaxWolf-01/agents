@@ -87,10 +87,10 @@ test("a window name is letters, digits, - and _, starting with neither - nor _",
 	fc.assert(fc.property(fc.string(), (text) => assert.match(slug(text), /^([A-Za-z0-9][A-Za-z0-9_-]*)?$/)));
 });
 
-test("spawn starts the repo's tmux session with the window, runs claude in auto mode with the brief, and records the window", async () => {
+test("spawn starts the repo's tmux session with the window, runs claude in auto mode with the prompt, and records the window", async () => {
 	const { home: at, store, repo } = home();
 	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
-	assert.equal(await spawn({ home: at, store }, { dir: "my.repo", name: "board fix", brief: " fix the board " }), `Started my-repo:board-fix in ${repo}. max steps in with: tmux switch-client -t %5`);
+	assert.equal(await spawn({ home: at, store }, { dir: "my.repo", name: "board fix", prompt: " fix the board " }), `Started my-repo:board-fix in ${repo}. max steps in with: tmux switch-client -t %5`);
 	const opened = called().find((c) => c.argv[0] === "new-session")!;
 	assert.deepEqual(opened.argv, ["new-session", "-d", "-s", "my-repo", "-n", "board-fix", "-c", repo, "-P", "-F", "#{pane_id} #{pane_pid}", "claude", "--permission-mode", "auto", "--name", "board-fix", "--", `fix the board\n\n${reportBack(store)}`]);
 	assert.deepEqual(
@@ -102,12 +102,12 @@ test("spawn starts the repo's tmux session with the window, runs claude in auto 
 test("spawn opens a window in a repo session that runs, and refuses a window name it already has", async () => {
 	const { home: at, store, repo } = home();
 	answering({ "tmux list-windows": { out: "zsh\nother\n" }, "tmux new-window": { out: "%9 77\n" } });
-	await spawn({ home: at, store }, { dir: repo, name: "board-fix", brief: "b" });
+	await spawn({ home: at, store }, { dir: repo, name: "board-fix", prompt: "b" });
 	assert.deepEqual(called().find((c) => c.argv[0] === "new-window")!.argv.slice(0, 5), ["new-window", "-d", "-t", "=my-repo:", "-n"]);
 	answering({ "tmux list-windows": { out: "zsh\nboard-fix\n" } });
-	await assert.rejects(spawn({ home: at, store }, { dir: repo, name: "board-fix", brief: "b" }), /my-repo:board-fix exists already/);
+	await assert.rejects(spawn({ home: at, store }, { dir: repo, name: "board-fix", prompt: "b" }), /my-repo:board-fix exists already/);
 	assert.ok(!called().some((c) => c.argv[0] === "new-window"));
-	await assert.rejects(spawn({ home: at, store }, { dir: "nowhere", name: "x", brief: "b" }), /nowhere is not a directory/);
+	await assert.rejects(spawn({ home: at, store }, { dir: "nowhere", name: "x", prompt: "b" }), /nowhere is not a directory/);
 });
 
 test("spawn names the tmux session for the repo the directory lies in, a linked worktree's for its main one", async () => {
@@ -121,23 +121,23 @@ test("spawn names the tmux session for the repo the directory lies in, a linked 
 	mkdirSync(plain);
 	for (const [where, session] of [[path.join(repo, "sub", "deeper"), "my-repo"], [worktree, "my-repo"], [plain, "notes"]]) {
 		answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
-		await spawn({ home: at, store }, { dir: where, name: "w", brief: "b" });
+		await spawn({ home: at, store }, { dir: where, name: "w", prompt: "b" });
 		const opened = called().find((c) => c.argv[0] === "new-session")!.argv;
 		assert.equal(opened[opened.indexOf("-s") + 1], session, where);
 		assert.equal(opened[opened.indexOf("-c") + 1], where, "claude runs where it was asked to");
 	}
 });
 
-test("spawn says when Claude Code has never been trusted where it starts, since its trust dialog then holds the brief", async () => {
+test("spawn says when Claude Code has never been trusted where it starts, since its trust dialog then holds the prompt", async () => {
 	const { home: at, store, repo } = home();
 	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
-	assert.doesNotMatch(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /trust/, "a directory below a trusted one is trusted");
+	assert.doesNotMatch(await spawn({ home: at, store }, { dir: repo, name: "w", prompt: "b" }), /trust/, "a directory below a trusted one is trusted");
 	writeFileSync(path.join(at, ".claude.json"), JSON.stringify({ projects: { [at]: { hasTrustDialogAccepted: false }, [path.join(at, "other")]: { hasTrustDialogAccepted: true } } }));
 	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
-	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /\nClaude Code has no record of being trusted in ~\/my\.repo, so its trust dialog may hold the brief until max accepts it in that window\.$/);
+	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", prompt: "b" }), /\nClaude Code has no record of being trusted in ~\/my\.repo, so its trust dialog may hold the prompt until max accepts it in that window\.$/);
 	rmSync(path.join(at, ".claude.json"));
 	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
-	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /trust dialog may hold the brief/, "no config at all");
+	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", prompt: "b" }), /trust dialog may hold the prompt/, "no config at all");
 });
 
 /** A registry entry for `pid` in `home`'s Claude Code config directory `config`. */

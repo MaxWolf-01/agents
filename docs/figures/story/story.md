@@ -154,7 +154,7 @@ step: 13
 It plans the wave: tickets that touch disjoint files run together, and tickets that share a surface go to one worker in turn. Each ticket's host is picked as its worker starts.
 
 step: 14
-`dispatch claim` writes claimed, and the worker starts from a prompt. The ticket and its ancestry are its whole brief.
+`dispatch claim` writes claimed, and the worker starts from a prompt. The ticket and its ancestry are everything it is told of the work.
 
 step: 15
 Each worker runs in a worktree of its own, on the branch `ticket/<slug>`. It builds, reviews its code and finishes by committing its report; it writes no ticket file.

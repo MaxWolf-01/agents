@@ -386,13 +386,13 @@ sibling_of() { echo "../$1-$2"; } # <name> <slug>
 # host (P5), and one an earlier spawn of the ticket was given and this one is not loses its
 # worktree and branch there (`dispatch-ctl spawn`'s --repo). Each repo travels to the spawn as a
 # --repo group in `listed_args`. A ticket that names none sends none, and the spawn call empties the
-# host's record of them; no other call is made. The brief's lines for them go in `listed_brief`.
+# host's record of them; no other call is made. The prompt's lines for them go in `listed_prompt`.
 stage_listed() { # <host> <slug>
     local name top place from
-    listed_brief= listed_args=()
+    listed_prompt= listed_args=()
     ticket_listed "$2"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
-    listed_brief="The listed repos your ticket names are each on \`ticket/$2\`, cut from the branch named here, at the path given; that branch is yours as the other two are, and your work in that repo is committed on it:"
+    listed_prompt="The listed repos your ticket names are each on \`ticket/$2\`, cut from the branch named here, at the path given; that branch is yours as the other two are, and your work in that repo is committed on it:"
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
@@ -400,9 +400,9 @@ stage_listed() { # <host> <slug>
         if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
         else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
-            listed_brief+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
+            listed_prompt+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
         else
-            listed_brief+=$'\n'"- $name: \`$(sibling_of "$name" "$2")\`, beside your worktree, from \`$from\`"
+            listed_prompt+=$'\n'"- $name: \`$(sibling_of "$name" "$2")\`, beside your worktree, from \`$from\`"
         fi
     done
     [ "$1" = local ] && return 0
@@ -453,11 +453,11 @@ push() {
 # assembles it for a review's --spec too. A resume sends the message alone: the
 # context is already in the conversation it resumes. The composed file keeps
 # the message's name, since that is what the host stages it under.
-briefed() { # <subcommand> <slug> <message> → the file to copy
+prompted() { # <subcommand> <slug> <message> → the file to copy
     if [ "$1" != spawn ]; then echo "$3"; return 0; fi
     composed=$state/prompts/$base/spawn/${3##*/}
     mkdir -p "$(dirname "$composed")" || return 1
-    { cat "$3"; [ -z "${listed_brief:-}" ] || printf '\n%s\n' "$listed_brief"; echo; "$tracker" context "$2"; } > "$composed" || return 1
+    { cat "$3"; [ -z "${listed_prompt:-}" ] || printf '\n%s\n' "$listed_prompt"; echo; "$tracker" context "$2"; } > "$composed" || return 1
     echo "$composed"
 }
 
@@ -552,7 +552,7 @@ ctl() {
     if [ -n "$carries" ]; then
         message=$(message_of "$name")
         [ -f "$message" ] || die "no message for $2 here; write one: dispatch prompt $2 < <file>"
-        carry=$(briefed "$sub" "$2" "$message") || die "could not assemble $2's brief; \`tracker context $2\` says why"
+        carry=$(prompted "$sub" "$2" "$message") || die "could not assemble $2's prompt; \`tracker context $2\` says why"
         copy_to "$host" "$scratch" "$carry"
     fi
     # The permission mode travels only when set here; unset, the host's default holds.

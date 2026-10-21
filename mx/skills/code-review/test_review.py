@@ -5,13 +5,13 @@
 """Checks for `review`'s range lock, its reviewers' launch line and what `--spec` reads. Run: uv run test_review.py
 
 The seam is the script itself, run in a scratch repo with a stand-in `claude` on PATH that
-records its arguments, works for a set time and writes the report its brief names. The oracles
+records its arguments, works for a set time and writes the report its prompt names. The oracles
 are the user's rulings in `agent/tickets/review-launcher.md`: D113, a review that was killed,
 by kill -9 or a crash, never blocks a later one, and a review that is still running, or anything
 it started, is never disturbed by another; D114 and D115, a reviewer starts from none of the
 caller's setup and runs Opus at the effort the caller gives, `medium` by default; and
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
-every ancestor's, assembled by the one command that assembles a worker's brief.
+every ancestor's, assembled by the one command that assembles a worker's prompt.
 """
 
 import json
@@ -29,8 +29,8 @@ import pytest
 REVIEW = Path(__file__).parent / "review"
 
 FAKE_CLAUDE = r"""#!/usr/bin/env bash
-brief=$(cat)
-report=$(printf '%s' "$brief" | grep -o '/[^ `]*/agent/reviews/[^ `]*\.md' | grep -v '/briefs/' | head -1)
+prompt=$(cat)
+report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/agent/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
 printf '%s\n' "$@" > "$FAKE_ARGV"
 sleep "${FAKE_REVIEW_SECS:-0}"
 [ -n "$report" ] && [ -z "${FAKE_NO_REPORT:-}" ] && echo "No findings." > "$report"
@@ -145,15 +145,15 @@ def test_a_killed_review_does_not_block_the_next_one(repo):
 
 def test_a_second_review_of_a_running_range_is_refused_and_touches_nothing(repo):
     with running(repo, "--axes", "tests", "--spec", spec(repo)) as first:
-        briefs = review_dir(repo) / "briefs"
-        before = {path.name: path.stat().st_mtime_ns for path in briefs.iterdir()}
+        prompts = review_dir(repo) / "prompts"
+        before = {path.name: path.stat().st_mtime_ns for path in prompts.iterdir()}
 
         second = run(repo, "--axes", "tests", "--spec", spec(repo))
 
         assert second.returncode == 1
         assert "is running" in second.stderr
         assert (review_dir(repo) / "checkout").exists()
-        assert {path.name: path.stat().st_mtime_ns for path in briefs.iterdir()} == before
+        assert {path.name: path.stat().st_mtime_ns for path in prompts.iterdir()} == before
         assert first.poll() is None
 
 
@@ -254,14 +254,14 @@ def ticketed(repo: Path) -> Path:
 
 
 def test_every_reviewer_is_given_a_time_budget_the_caller_can_change(repo):
-    """The budget is the brief's, which the reviewer paces its work to; the clock it checks against
+    """The budget is the prompt's, which the reviewer paces its work to; the clock it checks against
     is `date`, so every reviewer may run that."""
     assert run(repo, "--light").returncode == 0
-    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
-    assert "You have 10 minutes." in brief
+    prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
+    assert "You have 10 minutes." in prompt
     assert "Bash(date)" in launched(repo)
     assert run(repo, "--light", "--minutes", "25").returncode == 0
-    assert "You have 25 minutes." in (review_dir(repo) / "briefs" / "light.md").read_text()
+    assert "You have 25 minutes." in (review_dir(repo) / "prompts" / "light.md").read_text()
     refused = run(repo, "--light", "--minutes", "soon")
     assert refused.returncode != 0 and "--minutes takes a whole number" in refused.stderr
 
@@ -280,7 +280,7 @@ def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     assert assembled.startswith("## lamp-presets")
     assert "## parent ticket: lamp" in assembled
     assert "What the whole lamp is for." in assembled
-    assert str(review_dir(repo) / "ticket.md") in (review_dir(repo) / "briefs" / "spec.md").read_text()
+    assert str(review_dir(repo) / "ticket.md") in (review_dir(repo) / "prompts" / "spec.md").read_text()
 
 
 def test_a_spec_given_as_a_slug_that_names_no_ticket_is_refused_before_any_reviewer(repo):
@@ -290,41 +290,41 @@ def test_a_spec_given_as_a_slug_that_names_no_ticket_is_refused_before_any_revie
 
     assert done.returncode == 1
     assert "neither a file nor a ticket of this tracker" in done.stderr
-    assert not (review_dir(repo) / "briefs").exists(), "nothing was rendered, so nothing was started"
+    assert not (review_dir(repo) / "prompts").exists(), "nothing was rendered, so nothing was started"
 
 
 def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo):
-    """One reviewer, and the ticket's context in its brief: a small ticketed diff is read against
-    what the ticket asked for rather than on its own terms, by the spec axis's own brief."""
+    """One reviewer, and the ticket's context in its prompt: a small ticketed diff is read against
+    what the ticket asked for rather than on its own terms, by the spec axis's own prompt."""
     ticketed(repo)
 
     done = run(repo, "--light", "--spec", "lamp-presets")
 
     assert done.returncode == 0, done.stderr
-    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
-    assert "## Spec: does it faithfully implement what was asked for?" in brief
-    assert str(review_dir(repo) / "ticket.md") in brief
+    prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
+    assert "## Spec: does it faithfully implement what was asked for?" in prompt
+    assert str(review_dir(repo) / "ticket.md") in prompt
     assert (review_dir(repo) / "ticket.md").read_text().startswith("## lamp-presets")
 
 
 def test_light_mode_without_a_spec_carries_no_spec_part(repo):
     assert run(repo, "--light").returncode == 0
-    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
-    assert "## Spec:" not in brief
+    prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
+    assert "## Spec:" not in prompt
     assert not (review_dir(repo) / "ticket.md").exists()
 
 
-def sources(brief: Path) -> list[Path]:
-    return [Path(line[2:]) for line in brief.read_text().splitlines() if line.startswith("- /")]
+def sources(prompt: Path) -> list[Path]:
+    return [Path(line[2:]) for line in prompt.read_text().splitlines() if line.startswith("- /")]
 
 
 def test_the_tests_reviewer_reads_the_test_smells_and_the_three_jobs_and_no_more_of_testing(repo):
     """The rest of /mx:testing restates the test-smell baseline for whoever writes a test, so the
-    reviewer of one is handed the baseline and the three jobs its brief asks about: the skill's
+    reviewer of one is handed the baseline and the three jobs its prompt asks about: the skill's
     body above its first section, which a heading put above the jobs would cut short."""
     assert run(repo, "--axes", "tests", "--spec", spec(repo)).returncode == 0
 
-    given = sources(review_dir(repo) / "briefs" / "tests.md")
+    given = sources(review_dir(repo) / "prompts" / "tests.md")
     assert [path.name for path in given] == ["TEST-SMELLS.md", "testing-jobs.md"]
     body = (REVIEW.parent.parent / "testing" / "SKILL.md").read_text().split("---\n", 2)[2]
     jobs = given[1].read_text()
@@ -336,18 +336,18 @@ def test_the_tests_reviewer_reads_the_test_smells_and_the_three_jobs_and_no_more
 def test_the_light_reviewer_of_a_diff_with_tests_reads_what_the_tests_reviewer_does(repo):
     assert run(repo, "--light").returncode == 0
 
-    given = sources(review_dir(repo) / "briefs" / "light.md")
+    given = sources(review_dir(repo) / "prompts" / "light.md")
     assert [path.name for path in given[-2:]] == ["TEST-SMELLS.md", "testing-jobs.md"]
     assert not any(path.parent.name == "testing" for path in given), "the whole testing skill was handed over"
 
 
-@pytest.mark.parametrize(("touches_tests", "args", "brief", "handed"), [
+@pytest.mark.parametrize(("touches_tests", "args", "prompt", "handed"), [
     (True, ("--axes", "standards"), "standards", True),
     (True, ("--axes", "standards,tests", "--spec", "SPEC"), "standards", False),
     (False, ("--light",), "light", False),
     (False, ("--axes", "standards"), "standards", False),
 ])
-def test_the_test_sources_go_to_whoever_reads_the_tests_when_no_tests_axis_runs(repo, touches_tests, args, brief, handed):
+def test_the_test_sources_go_to_whoever_reads_the_tests_when_no_tests_axis_runs(repo, touches_tests, args, prompt, handed):
     """The light or standards reviewer of a diff that touches tests reads them in the Tests
     reviewer's place; beside a Tests axis, or on a diff with no test in it, nobody else needs the
     baseline (`/mx:code-review`, What binds the review)."""
@@ -356,7 +356,7 @@ def test_the_test_sources_go_to_whoever_reads_the_tests_when_no_tests_axis_runs(
 
     assert run(repo, *(spec(repo) if arg == "SPEC" else arg for arg in args)).returncode == 0
 
-    given = [path.name for path in sources(review_dir(repo) / "briefs" / f"{brief}.md")]
+    given = [path.name for path in sources(review_dir(repo) / "prompts" / f"{prompt}.md")]
     if handed:
         assert given[-2:] == ["TEST-SMELLS.md", "testing-jobs.md"]
     else:
@@ -367,7 +367,7 @@ def test_a_spec_given_as_a_file_is_read_as_the_file(repo):
     done = run(repo, "--axes", "spec", "--spec", spec(repo))
 
     assert done.returncode == 0, done.stderr
-    assert spec(repo) in (review_dir(repo) / "briefs" / "spec.md").read_text()
+    assert spec(repo) in (review_dir(repo) / "prompts" / "spec.md").read_text()
     assert not (review_dir(repo) / "ticket.md").exists()
 
 

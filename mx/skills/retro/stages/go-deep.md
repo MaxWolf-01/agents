@@ -13,12 +13,12 @@ You may read the repos below and run git's read commands in them as `git -C <rep
 ## Steps
 
 1. Pick the patterns: one to three, by the weighing, from the fresh notes and the standing findings that recurred or came back. A focus max named is one of them. A pattern stage 2 saw in several of the period's sessions outranks one seen once, and one the older sample shows too is no new one, and one that cost max outranks one that cost an agent the same.
-2. Spawn, in parallel, one subagent per pattern, one for the leading words and one for the permissions, each with its brief below and the paths it needs.
+2. Spawn, in parallel, one subagent per pattern, one for the leading words and one for the permissions, each with its prompt below and the paths it needs.
 3. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
 The stage is done when `deep/` holds a file per pattern, `deep/leading-words.md`, `deep/permissions.md` and `deep/critique.md`.
 
-## A deep-dive's brief
+## A deep-dive's prompt
 
 Pattern: <the pattern, and the notes and follow-up sections it comes from>. Write `{{run}}/deep/<a slug for the pattern>.md`.
 
@@ -26,7 +26,7 @@ Read the sources qualitatively, past the notes: the digests the pattern shows in
 
 The file: the pattern in a sentence; how often and where, with quotes, each with its source and absolute date; the cause; the proposal, naming what it deletes or narrows and where it lands; the weighing; and what you could not settle. Reply with the file's path alone.
 
-## The leading words' brief
+## The leading words' prompt
 
 Write `{{run}}/deep/leading-words.md`.
 
@@ -34,7 +34,7 @@ Write `{{run}}/deep/leading-words.md`.
 
 The file: a section per word and per question the period shows, a question's under its number and its text, each instance with what happened, a quote with its source and absolute date, and its cause where you can tell; whether the older sample shows it too; and, last, what recurs across words and questions. Reply with the file's path alone.
 
-## The permissions' brief
+## The permissions' prompt
 
 Write `{{run}}/deep/permissions.md`, and `{{run}}/deep/auto-mode.json` for the critique, which writes `{{run}}/deep/critique.md`.
 

@@ -35,7 +35,7 @@ Where no order was found, run **light** (below), which takes none. With one in h
 
 ### 3. What binds the review
 
-The standards sources are the script's to gather, by what the diff touches, and the brief it writes for each axis is the record of which ones bound this review. Two are this skill's own: [`SMELLS.md`](SMELLS.md), the **smell baseline**, a fixed set of code smells the Standards axis applies to every diff even when the repo documents nothing; and [`TEST-SMELLS.md`](TEST-SMELLS.md), the **test-smell baseline**, read by the Tests axis, or by whoever reads the tests when no Tests axis runs. The Standards reviewer checks a glossary entry or an ADR the diff touches against its format: the agent that wrote it has just settled the mechanism behind it and reads that as the definition, and the reviewer reads it cold.
+The standards sources are the script's to gather, by what the diff touches, and the prompt it writes for each axis is the record of which ones bound this review. Two are this skill's own: [`SMELLS.md`](SMELLS.md), the **smell baseline**, a fixed set of code smells the Standards axis applies to every diff even when the repo documents nothing; and [`TEST-SMELLS.md`](TEST-SMELLS.md), the **test-smell baseline**, read by the Tests axis, or by whoever reads the tests when no Tests axis runs. The Standards reviewer checks a glossary entry or an ADR the diff touches against its format: the agent that wrote it has just settled the mechanism behind it and reads that as the definition, and the reviewer reads it cold.
 
 ### 4. Run the reviewers
 
@@ -45,7 +45,7 @@ The standards sources are the script's to gather, by what the diff touches, and 
 !`${CLAUDE_SKILL_DIR}/review --help`
 ```
 
-It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). The judgment it leaves you is `--effort` and `--minutes`, higher for a large diff; `run-log report --site review` shows what past rounds cost and took per axis and effort. For a cross-model review, run the same briefs through `/mx:codex` instead.
+It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). The judgment it leaves you is `--effort` and `--minutes`, higher for a large diff; `run-log report --site review` shows what past rounds cost and took per axis and effort. For a cross-model review, run the same prompts through `/mx:codex` instead.
 
 ### 5. Aggregate
 
