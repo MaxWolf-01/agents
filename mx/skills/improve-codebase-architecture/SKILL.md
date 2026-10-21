@@ -33,6 +33,7 @@ Then walk the codebase. Don't follow rigid heuristics; explore organically and n
 - Where does behaviour sit inside a decorated entry point (a route handler, a CLI command, a task), where every test of it pays the framework's setup?
 - Which seams have a stated contract and no property checking it?
 - Where does a seam's invariant resist being stated cleanly, or its test need heavy fakes? That is a finding about the seam.
+- Where does a comment explain a surprise in the code beside it? The surprise is the finding: code shaped so it needs no such comment is the candidate.
 - Where would a change that looks right from the one file an agent opened be wrong for the repo? The next contributor is an agent that sees only the files it opened, copies the nearest example and takes the shortest path that compiles. So both of two ways to do one task keep gaining callers, internals a caller can import become part of the interface, and lists kept in sync by hand drift apart. The candidate leaves one way, the easiest path.
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
