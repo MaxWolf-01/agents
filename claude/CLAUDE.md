@@ -68,15 +68,21 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
   - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
   - Undo a commit with `git revert <sha>` (`-m 1` for a merge), never `git reset`: a revert adds a commit, so whatever landed on top of yours in the meantime survives. Before an amend or rebase, check the commit is unpushed and still the tip. NEVER AMEND WITHOUT CHECKING.
 
-- Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones (reading an external repo, a throwaway experiment) go in /var/tmp so they don't clutter home.
-- Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
-
+Commit, merge, and push -- when and how:
 - Commit as you go without asking. Once my yes for a merge into the integration branch is in, merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-ticket view; the detail history carries the trailers). The integration branch is the branch the work branches from and merges into: usually the default branch, `dev` where that layer exists. A batch that went up as a GitHub PR **stack** (PRs based on each other, one merge box) merges on GitHub, never locally; `/mx:gh-stack` before touching a stack.
-- A commit subject is a conventional commit, `type(scope): imperative summary` (`feat(subagents): report delivery via named file`), unless the repo's own history follows another convention; the body opens with what the change gives its reader, in a sentence, then the why. A merge commit's subject states what the branch as a whole delivered, with no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
-- Push freely, any branch, master included, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours; in short, anything hard to reverse, or with real cost (time, money, a broken system) when wrong. Merging worktrees into the integration branch counts as a ship-shaped action. Committing and pushing work to a ticket branch is not.
+- Push freely, any branch, master included, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours; in short, anything hard to reverse, or with real cost (time, money, a broken system, someone's attention) when wrong. Merging worktrees into the integration branch counts as a ship-shaped action. Committing and pushing work to a ticket branch is not.
 - My yes for a merge into the integration branch is my word on that work (ship, merge, accept, or the like), given after you showed it to me, or up front for a change I named myself; a review I am in holds every merge until I end it. A standing yes carries work up a ticket tree only as far as `/mx:tracker`, State, says.
-- For releases, I almost always have a Makefile workflow that automates the mechanical parts, and avoids common mistakes, and documents the flow in code itself -- use that, before doing it manually.
-- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+- Releases: Almost always automated via a Makefile/just; look for it and use it rather than taking manual steps.
+
+Commit messages:
+  - Conventional -- unless a repo clearly follows another convention -- `type(scope): imperative summary (the what)`, the body carries the why (and optionally details on the what).
+  - A merge commit's subject states what the branch as a whole delivered, with no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
+  - Include a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+
+Miscl hygiene:
+- Unless you have a very good reason not to, clone from the remote/github url and not `git clone /path/to/repo`. 
+- Ephemeral clones (reading an external repo, a throwaway experiment) go in /var/tmp so they don't clutter home.
+- Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
 </git>
 
 <style>
