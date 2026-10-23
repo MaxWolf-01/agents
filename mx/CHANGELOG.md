@@ -1,3 +1,12 @@
+## 1.0.84
+
+- feat(wrap): /mx:wrap checks a session for what is left, then cleans it up to close
+- fix(tests): flaky checks wait on what they check, and dispatch fixes a flaky check at once
+- fix(code-review): review writes its reports outside every working tree
+- test(render-lint): the board-row collision page becomes two fixtures
+- Revert "test(render-lint): the board-row collision page becomes two fixtures"
+- test(render-lint): the board-row collision page becomes two fixtures
+
 ## 1.0.83
 
 - docs(dispatch): the worker contract's scratch sentence moved beside the listed-repo rule
