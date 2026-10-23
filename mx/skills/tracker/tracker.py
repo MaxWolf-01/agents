@@ -33,6 +33,8 @@ Examples:
     tracker retire                       # every finished tree out, committed
     tracker retire --dry-run             # what that would take out, changing nothing
     tracker hook                         # install the pre-commit hook that runs `check`
+    tracker hook --sync                  # and the hook keeping two main checkouts in step
+    tracker sync                         # this project's main checkouts in step with their upstreams now
 """
 
 from __future__ import annotations
@@ -54,6 +56,8 @@ import tyro
 import yaml
 from tyro.extras import SubcommandApp
 
+import in_step  # two main checkouts of a repo kept in step through git, beside this script
+
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
@@ -72,6 +76,10 @@ OWN_REPOS = (None, "code", "agent")  # what a range names a repo every project h
 TICKETS = Path("agent") / "tickets"
 REPO_LIST = "repos.toml"  # beside the tickets, in the agent repo
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
+SYNC_HOOK = "tracker sync --here"  # what the sync hook runs, and how a project is known to have one
+# What `hook` installs: each hook's name, the file beside this one it is, and what it runs.
+HOOKS = {"pre-commit": ("pre-commit", "tracker check"), "post-commit": ("post-commit", SYNC_HOOK),
+         "post-merge": ("post-commit", SYNC_HOOK)}
 
 
 # ---- the commands ----------------------------------------------------------
@@ -1293,25 +1301,128 @@ def run(cwd: Path, *args: str, aside: bool = False) -> None:
 
 
 @app.command(name="hook")
-def hook() -> int:
+def hook(sync: bool = False) -> int:
     """Install the pre-commit hook that runs `tracker check` over the staged ticket files and
     reports, into the repository the working directory is in, from any worktree of it. Prints the
-    path it wrote. Leaves a pre-commit hook this did not write standing, and says so.
+    path of each hook it wrote. Leaves a hook this did not write standing, and says so.
 
     It is the agent repo that wants one, since that is where every ticket file and report is
     written. The hook is the `pre-commit` file beside this one, which dispatch also installs in a
     worker host's agent repo.
+
+    Args:
+        sync: install the sync hook too, as post-commit and post-merge, which makes this project
+            one with two main checkouts kept in step (`tracker sync --help`). Run in the agent
+            repo's main checkout, on each machine that holds one.
     """
-    script = (Path(__file__).resolve().parent / "pre-commit").read_text()
-    repo = Path.cwd()
-    into = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
-    if into.exists() and into.read_text() != script:
-        raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
-    into.parent.mkdir(parents=True, exist_ok=True)
-    into.write_text(script)
-    into.chmod(0o755)
-    print(into)
+    here_ = Path(__file__).resolve().parent
+    hooks = Path(git(Path.cwd(), "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
+    standing = []
+    for name, (source, runs) in HOOKS.items():
+        if runs == SYNC_HOOK and not sync:
+            continue
+        script, into = (here_ / source).read_text(), hooks / name
+        if into.exists() and into.read_text() != script:
+            standing.append(f"{into} is a {name} hook this did not write; add `{runs}` to it by hand")
+            continue
+        into.parent.mkdir(parents=True, exist_ok=True)
+        into.write_text(script)
+        into.chmod(0o755)
+        print(into)
+    refuse(standing)
     return 0
+
+
+# ---- two main checkouts ---------------------------------------------------
+
+
+@app.command(name="sync")
+def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
+    """Bring this project's main checkouts in step with their upstreams, where the project keeps
+    two of them, one per machine (`tracker hook --sync` makes it one that does): push what this
+    checkout has that the upstream lacks, replay it on top of what the other checkout pushed first,
+    and push again. Says a line for each checkout that moved, or that could not.
+
+    The checkouts are the agent repo's main checkout, on the branch it has out, and the checkout of
+    the code repo and of each listed repo that has its integration branch out; a ticket branch is
+    never synced. Each merge stays a merge of the same ticket tip, which is what `land` reads.
+
+    It runs on its own as well: on the agent repo after every commit and before every ticket write,
+    and on each integration branch once dispatch has merged into it. A project with no sync hook is
+    left alone, and nothing is said. A checkout whose remote does not answer is left as it is, its
+    commits waiting for the next sync. A conflict, the two machines having changed the same lines,
+    pushes nothing and leaves the checkout as it was. Another branch here, or a ticket a local merge
+    carries, may be built on the commits a replay would copy; then the upstream is merged in
+    instead, which rewrites nothing.
+    Exit 1: a conflict, a rebase or merge underway, or a remote that refused the push; the line says
+    which file or why.
+
+    Args:
+        here: only the checkout the working directory is in, and only where it is a main checkout
+            on a branch other than a ticket branch: what the sync hook runs.
+        resolve: on a conflict, leave the replay stopped at it for a person to resolve and
+            continue, rather than undoing it.
+    """
+    if here:
+        top = toplevel(Path.cwd())
+        if top != main_checkout(top) or ticket_branch_out(top):
+            return 0
+        found = [top]
+    else:
+        root = tracker_root(Path.cwd())
+        if not kept_in_step(root):
+            return 0
+        found = in_step_checkouts(root)
+    outcomes = [in_step.sync(top, resolve) for top in found]
+    if here:  # the hook fires inside a rebase or cherry-pick, whose own output says it is underway
+        outcomes = [outcome for outcome in outcomes if outcome.outcome != "underway"]
+    for outcome in outcomes:
+        if outcome.said:
+            print(outcome.said, file=sys.stderr)
+    return 1 if any(outcome.outcome in in_step.FAILS for outcome in outcomes) else 0
+
+
+def kept_in_step(root: Path) -> bool:
+    """Whether the project of the tracker at `root` keeps two main checkouts in step: its agent repo
+    has the sync hook installed."""
+    hooks = tried(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+    found = Path(hooks.stdout.strip()) / "post-commit"
+    return hooks.returncode == 0 and found.is_file() and SYNC_HOOK in found.read_text()
+
+
+def in_step_checkouts(root: Path) -> list[Path]:
+    """The checkouts `sync` keeps in step for the tracker at `root`. A listed repo this machine does
+    not hold is said and left out, so it stops no other repo's sync."""
+    agent, code = toplevel(root), project_root(root)
+    found = [agent] if agent != code and not ticket_branch_out(agent) else []
+    found += [one for one in [checkout_with(code, origin_head(code))] if one]
+    for name in repo_list(root):
+        try:
+            listed = resolved(root, name)
+        except Refused as missing:
+            print(f"tracker: {name} is not synced: {missing}", file=sys.stderr)
+            continue
+        found += [one for one in [checkout_with(listed.path, listed.integration)] if one]
+    return found
+
+
+def checkout_with(repo: Path, branch: str | None) -> Path | None:
+    """The worktree of `repo` that has `branch` out, where one has, a rebase of it included, which
+    git lists as a detached HEAD: a sync's replay stopped there for a person is still that branch's."""
+    listed = tried(repo, "worktree", "list", "--porcelain").stdout
+    for entry in listed.split("\n\n"):
+        lines = entry.splitlines()
+        if not branch or not lines:
+            continue
+        top = Path(lines[0].removeprefix("worktree "))
+        if f"branch refs/heads/{branch}" in lines:
+            return top
+        if "detached" in lines:
+            gitdir = Path(tried(top, "rev-parse", "--absolute-git-dir").stdout.strip())
+            rebased = [gitdir / step / "head-name" for step in ("rebase-merge", "rebase-apply")]
+            if any(head.is_file() and head.read_text().strip() == f"refs/heads/{branch}" for head in rebased):
+                return top
+    return None
 
 
 # ---- what the tracker's rules refuse ---------------------------------------
@@ -2072,10 +2183,18 @@ def writing() -> Tracker:
     """The tracker a write lands in, refused from a ticket branch. A worker holds both repos on
     `ticket/<slug>` branches, and this command answers from either with the orchestrator's main
     checkout, which is on no branch of the round: a write typed there would land in the live
-    tracker, off every branch and swept into whatever the next ticket commit carries."""
+    tracker, off every branch and swept into whatever the next ticket commit carries.
+
+    Where the project keeps two main checkouts, the agent repo is synced first, so the write lands
+    on what the other machine wrote, and a conflict refuses it."""
     for top in checkouts_at(Path.cwd()):
         if built := ticket_branch_out(top):
             raise Refused([f"{built} is the branch {top} has out, and a ticket file is written in the agent repo's main checkout, never from a ticket branch"])
+    root = tracker_root(Path.cwd())
+    if kept_in_step(root) and (synced := in_step.sync(toplevel(root))).said:
+        if synced.outcome in in_step.HOLDS_WRITES:
+            raise Refused([synced.said, "the write waits until the two checkouts are in step"])
+        print(synced.said, file=sys.stderr)
     return here()
 
 
