@@ -185,8 +185,8 @@ def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
         return None
     # The run inherits nothing from the machine: no settings file, so none of the user's CLAUDE.md,
     # output style, hooks, allowlist or plugins; no MCP server, connectors included; no skill; no
-    # memory. A briefing session is none of the user's conversations, and the repo's own CLAUDE.md is
-    # a file it reads like any other.
+    # memory. A briefing session is none of the user's conversations, and the repo's own AGENTS.md or
+    # CLAUDE.md is a file it reads like any other.
     try:
         done = subprocess.run(
             [str(RUN_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",

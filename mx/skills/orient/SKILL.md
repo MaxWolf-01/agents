@@ -21,7 +21,7 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | Handoff           | `agent/handoffs/YYYY-MM-DD-slug.md`  | committed; retired by the session that picks it up (`/mx:handoff`)    | a session compacted for a fresh one to start from                                                                                                                                              |
 | Retro             | `agent/retro/`                       | durable; the report rewritten whole and committed by every retro run (`/mx:retro`) | the living report, `report.md`, and the page built from it; `<name>/`, the same for a repo with no agent repo of its own that this tracker plans; in the agents repo's, `repos`, the other repos the workflow retro collects |
 
-Every `agent/` row above is in the **agent repo**, a git repo of its own inside the one it plans. Layout, state, and claiming: `/mx:tracker`. A fact that fits none of these (a gotcha, a vendor quirk, knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project CLAUDE.md if it's navigational.
+Every `agent/` row above is in the **agent repo**, a git repo of its own inside the one it plans. Layout, state, and claiming: `/mx:tracker`. A fact that fits none of these (a gotcha, a vendor quirk, knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project's AGENTS.md if it's navigational.
 
 ## The main flow: intent → ship
 

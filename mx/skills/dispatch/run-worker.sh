@@ -115,11 +115,11 @@ git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
     printf '%s runner: no agent repo at %s/agent, so no report of this run can be committed\n' \
         "$(date -u +%FT%TZ)" "$PWD" >> "$DISPATCH_WORKLOG"
 
-# What the worker inherits from this host: the project's own settings and CLAUDE.md, and the mx
-# plugin its contract names skills from, which brings the plugin's hooks along. Not the user's
-# settings, CLAUDE.md or output style, written for a human at a terminal in a conversation this
-# worker is not in (worker-prompt.md stands in for them), nor their hooks and other plugins, nor
-# an MCP server, the host's connectors and the project's `.mcp.json` alike, nor auto memory.
+# What the worker inherits from this host: the project's own settings and AGENTS.md or CLAUDE.md,
+# and the mx plugin its contract names skills from, which brings the plugin's hooks along. Not the
+# user's settings, CLAUDE.md or output style, written for a human at a terminal in a conversation
+# this worker is not in (worker-prompt.md stands in for them), nor their hooks and other plugins,
+# nor an MCP server, the host's connectors and the project's `.mcp.json` alike, nor auto memory.
 common=(
     -p
     --permission-mode "$permission_mode"
