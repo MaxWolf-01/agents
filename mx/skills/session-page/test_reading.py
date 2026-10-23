@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
+from session_page import Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
 from session_checks import messages_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
@@ -302,6 +302,22 @@ def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line(
     with pytest.raises(RecordError, match=re.escape(reason)) as refused:
         render_session(worked_example, transcript, now=NOW)
     assert str(refused.value).startswith(f"{record}:{line}: ")
+
+
+def test_a_block_under_a_question_after_its_options_is_refused_and_told_where_it_goes(tmp_path: Path) -> None:
+    """session-page-question-continuation-lands-on-last-option: a draft quoted at the question's
+    indent after its options once rendered inside the last option; it is refused, pointing at
+    Details, while a line wrapped deeper than an option's `-` still continues that option."""
+    record = tmp_path / "07.md"
+    question = ("---\ndate: 2026-10-23\n---\n\n# Thomas's roles comment\n\n## Questions\n\n"
+                "- [Q20] **Post this reply on Thomas's roles comment?**\n"
+                "  - (a) As written below. *my pick*\n  - (b) With your\n    changes.\n")
+    record.write_text(question)
+    assert [o.text for o in read_turn(record).questions[0].options] == ["As written below.", "With your changes."]
+    record.write_text(f"{question}\n  > Done across the stack.\n")
+    with pytest.raises(RecordError, match=re.escape("goes in ## Details, which the question links as [text](#t07)")) as refused:
+        read_turn(record)
+    assert str(refused.value).startswith(f"{record}:14: text under Q20 after its sub-items")
 
 
 # A chat turn's record of any reply. A carriage return is left out: reading a file turns one into a

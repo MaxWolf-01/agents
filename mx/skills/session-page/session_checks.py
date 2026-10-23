@@ -286,6 +286,9 @@ UNPARSEABLE = {
     "a second Why": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (b) None.\n"
                  "  - Why: seconds.\n  - Why: again.\n", 13),
+    "a block at the question's indent after its options": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **Post this reply?**\n  - (a) As written below. *my pick*\n  - (b) With your changes.\n"
+                 "\n  > Done across the stack.\n", 13),
     "a blind question that also offers options": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Blind: agent/show/r/blind-q7.html\n"
                  "  - (a) A light review. *my pick*\n  - (b) None.\n", 9),

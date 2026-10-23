@@ -625,15 +625,19 @@ BLIND = re.compile(r"Blind:\s*(\S+)")
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question | TicketQuestion, ...]:
     """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
-    and at most one `Why: text`, as sub-items; a line indented under an item continues it. A blind
-    question carries one `Blind: path` sub-item, its test page, and nothing else. A ticket's question
-    is `- [<ticket> D3]` alone, since its words live in its ticket; what the ticket holds under it is
-    read by `read_session`."""
+    and at most one `Why: text`, as sub-items; a line indented deeper than an item's `-` continues it.
+    A blind question carries one `Blind: path` sub-item, its test page, and nothing else. A line back
+    at the question's indent once its sub-items began is refused: markdown would show it under the
+    question, but continuing the last sub-item would put it inside that option. A ticket's
+    question is `- [<ticket> D3]` alone, since its words live in its ticket; what the ticket holds
+    under it is read by `read_session`."""
     items: list[dict | TicketQuestion] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
+    dash = 0  # the indent of that part's `-`, which a continuation line goes deeper than
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
             continue
+        indent = len(line) - len(line.lstrip())
         if m := TICKET_QUESTION_ITEM.fullmatch(line):
             if m.group(3).strip():
                 raise RecordError(path, n, f"{m.group(1)} {m.group(2)} is a ticket's question, whose words live in its ticket: "
@@ -646,12 +650,13 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
             part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None,
                     "blind": None, "line": n}
             items.append(part)
+            dash = 0
         elif line.startswith("- "):
             raise RecordError(path, n, "a question is `- [Q7] **headline** detail`, or `- [<ticket> D3]` for a ticket's question")
         elif not items:
             raise RecordError(path, n, "text before the first question")
         elif m := SUB_ITEM.fullmatch(line):
-            item = items[-1]
+            item, dash = items[-1], indent
             if o := OPTION.fullmatch(m.group(1)):
                 part = {"letter": o.group(1), "text": o.group(2)}
                 item["options"].append(part)
@@ -667,8 +672,11 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
                 item["blind"], part = b.group(1), None
             else:
                 raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Why: text` or `Blind: path`")
-        elif line.startswith(" ") and part is not None:
+        elif line.startswith(" ") and part is not None and indent > dash:
             part["text"] = f"{part['text']} {line.strip()}".strip()
+        elif line.startswith(" ") and indent <= dash:
+            raise RecordError(path, n, f"text under {items[-1]['tag']} after its sub-items, which would show inside the last one; "
+                                       f"what a question leans on beyond its detail line goes in ## Details, which the question links as [text](#t{int(path.stem):02d})")
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
     questions: list[Question | TicketQuestion] = []
