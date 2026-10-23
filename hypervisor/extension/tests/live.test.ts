@@ -198,7 +198,7 @@ test("hv signs pi in with max's personal account's setup-token, and with none wh
 			return started.filter((arg) => arg.startsWith("ANTHROPIC_OAUTH_TOKEN="));
 		};
 		assert.deepEqual(tokenPassed("sk-ant-oat01-personal"), ["ANTHROPIC_OAUTH_TOKEN=sk-ant-oat01-personal"]);
-		assert.deepEqual(tokenPassed(""), [], "pi falls back to what /login stored");
+		assert.deepEqual(tokenPassed(""), [], "pi signs in with what /login stored, if anything");
 	} finally {
 		rmSync(at, { recursive: true, force: true });
 	}

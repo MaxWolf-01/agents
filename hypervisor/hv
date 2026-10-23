@@ -6,7 +6,8 @@
 # Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
 # sessions in optchat-pi/, and the extension's files, which extension/src/live.ts lists. The fork is the checkout
 # $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else max's personal account's setup-token, the
-# CLAUDE_CODE_OAUTH_TOKEN of secrets/creds/env/claude-personal.env, else what /login stored.
+# CLAUDE_CODE_OAUTH_TOKEN of secrets/creds/env/claude-personal.env; but a login pi stored in optchat-pi/auth.json wins
+# over both, since pi reads the environment only for a provider it holds no credential for.
 #
 # A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/instructions.md.
 # `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
