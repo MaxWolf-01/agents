@@ -13,6 +13,7 @@ def test_a_show_directory_of_no_live_work_is_named_and_one_of_live_work_is_not(t
     code, agent = checkout(tmp_path, {
         "agent/tickets/board-papercuts.md": "# Board papercuts\n",
         "agent/tickets/next-record.md": "Cut from `agent/show/architecture-review-2026-10-23/a22.html`.\n",
+        "agent/tickets/session-recall.md": "Drawn in `agent/sessions/0a1b2c3d/show/work-containers/index.html`.\n",
         "agent/show/board-papercuts/index.html": "",
         "agent/show/in-flight/report.md": "",
         "agent/show/lifelong-hypervisor/index.html": "",
