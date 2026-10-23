@@ -185,13 +185,22 @@ const SMALL = {
 	"image/png": png(3, 2).toString("base64"),
 };
 
-/** read's whole result, as the model gets it: its text, and each image with its type and, for a PNG, its size. */
+/** An encoded PNG's or JPEG's width x height, read from its header, so a check holds whichever pi's resizer picked. */
+function dimensions(bytes: Buffer): string {
+	if (bytes.readUInt32BE(0) === 0x89504e47) return `${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}`;
+	for (let at = 2; at < bytes.length; at += 2 + bytes.readUInt16BE(at + 2)) {
+		if (bytes[at + 1] >= 0xc0 && bytes[at + 1] <= 0xc3) return `${bytes.readUInt16BE(at + 7)}x${bytes.readUInt16BE(at + 5)}`;
+	}
+	throw new Error("neither a PNG nor a JPEG with a frame header");
+}
+
+/** read's whole result, as the model gets it: its text, and each image with its type and, for a PNG or JPEG, its size. */
 async function readImage(spelled: string, model?: object) {
 	const result = await tools.get("read")!.execute("check", { path: spelled } as never, undefined, undefined, { model } as never);
 	const images = result.content.flatMap((part) => {
 		if (part.type !== "image") return [];
-		const bytes = Buffer.from(part.data, "base64");
-		return [{ mimeType: part.mimeType, size: part.mimeType === "image/png" ? `${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}` : undefined, data: part.data }];
+		const scaled = ["image/png", "image/jpeg"].includes(part.mimeType);
+		return [{ mimeType: part.mimeType, size: scaled ? dimensions(Buffer.from(part.data, "base64")) : undefined, data: part.data }];
 	});
 	return { text: result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"), images };
 }
@@ -213,10 +222,10 @@ test("hypervisor-reads-images#P3: a larger image is scaled to the model's limits
 	writeFileSync(path.join(home, "shots/wide.png"), png(3000, 1500));
 	const plain = await readImage("shots/wide.png");
 	assert.match(plain.text, /: image\/png, \d+ bytes, 3000x1500, shown at 2000x1000$/);
-	assert.deepEqual(plain.images.map((image) => image.size ?? image.mimeType), ["2000x1000"]);
+	assert.deepEqual(plain.images.map((image) => image.size), ["2000x1000"]);
 	const small = await readImage("shots/wide.png", { inputLimits: { images: { resize: { maxWidth: 600, maxHeight: 600 } } } });
 	assert.match(small.text, /shown at 600x300$/);
-	assert.deepEqual(small.images.map((image) => image.size ?? image.mimeType), ["600x300"]);
+	assert.deepEqual(small.images.map((image) => image.size), ["600x300"]);
 });
 
 test("hypervisor-reads-images#P3: an image file too large, or one that does not decode, is named without its bytes", async () => {

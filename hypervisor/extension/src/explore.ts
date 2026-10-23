@@ -175,8 +175,9 @@ async function places({ home, store }: ReadToolsConfig) {
 }
 
 /**
- * An image file as the model sees it, after a line naming it: scaled by pi's own resizer, as pi's read tool does, to
- * `limits`, the model's where pi knows them. Nothing when the file is not an image.
+ * An image file as the model sees it, after a line naming it, scaled by pi's resizer as pi's own read tool scales it:
+ * to `limits`, the model's image limits when pi knows them and pi's defaults otherwise. Returns nothing when the file
+ * is not an image.
  */
 async function readImage(file: string, shown: string, limits?: Parameters<typeof resizeImage>[2]) {
 	const info = await regularFile(file);
@@ -185,7 +186,7 @@ async function readImage(file: string, shown: string, limits?: Parameters<typeof
 	const named = `${shown}: ${mimeType}, ${info.size} bytes`;
 	if (info.size > IMAGE_BYTES) return answer(`${named}, over the ${IMAGE_BYTES / 1_000_000} MB an image is read up to`);
 	const image = await resizeImage(await readFile(file), mimeType, limits);
-	if (image === null) return answer(`${named}; it could not be decoded, or not scaled below the model's image limits`);
+	if (image === null) return answer(`${named}; it could not be decoded or scaled below the model's image limits, or pi's image library did not load`);
 	const size = image.wasResized ? `${image.originalWidth}x${image.originalHeight}, shown at ${image.width}x${image.height}` : `${image.width}x${image.height}`;
 	return { content: [{ type: "text" as const, text: `${named}, ${size}` }, { type: "image" as const, data: image.data, mimeType: image.mimeType }], details: undefined };
 }
