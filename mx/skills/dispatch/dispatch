@@ -14,8 +14,10 @@
 # ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
 #                 spawn names the host, user@host or `local`; later commands
-#                 find it from the slug, and `probe` with no --host asks every
-#                 host this branch has a run on. --setup-cmd replaces the line
+#                 find it from the slug. `probe` with no --host first retires
+#                 the run of each ticket done or out of the tracker whose work
+#                 merged, then asks every host this branch has a run on.
+#                 --setup-cmd replaces the line
 #                 each new worktree there runs first (default `make install`,
 #                 under `nix develop -c` with a flake.nix). `resume` claims a
 #                 ticket in `review` again; `cleanup` forgets the run.
@@ -50,8 +52,7 @@
 # ps [--color] [--follow]
 #                 every worker on every host, for a human; the orchestrator's
 #                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
-#                 --follow keeps the table on screen, redrawn as the hosts
-#                 change, over one ssh login per host, until Ctrl-C.
+#                 --follow redraws the table as the hosts change, until Ctrl-C.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
@@ -491,6 +492,8 @@ message_of() { echo "$state/prompts/$base/prompt-$1.md"; } # <name>
 # spawned on, so each worker's line goes behind the host it is on, and a host
 # that cannot answer says so where its workers would have been.
 probe_all() {
+    # Its own lines are the orchestrator's to read beside the probe's, never in them.
+    sweep >&2
     hosts=$(hosts_used)
     [ -n "$hosts" ] || die "no run recorded for $base; nothing has been spawned from here"
     rc=0
@@ -919,6 +922,64 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
         fi
     done
     return $rc
+}
+
+# The run of every ticket that is `done` or has left the tracker, retired (`retire`) whoever wrote
+# the `done` and whichever branch the run was spawned from: one written by `tracker` itself, or a
+# tree `tracker retire` took out, leaves a run nothing else would ever come back to. A run whose
+# worker is running stays, and so does one holding work not merged into a branch here (`retirable`);
+# each says why on every sweep until that changes.
+sweep() {
+    local spawned slug h
+    [ -f "$runs" ] || return 0
+    read_tracker || { echo "dispatch: the tracker did not read, so no run of a done ticket was retired" >&2; return 0; }
+    while IFS=$'\t' read -r spawned slug h; do
+        case $(field "$slug" status) in done | "") ;; *) continue ;; esac
+        # A subshell each: the run is found under the branch it was spawned from, and one that
+        # stays stops no other.
+        ( base=$spawned; retire_swept "$slug" "$h" )
+    done < <(awk -F'\t' '{ at[$1 FS $2] = $3 } END { for (k in at) print k FS at[k] }' "$runs")
+}
+
+retire_swept() { # <slug> <host>
+    local why left=done up
+    [ -n "$(field "$1" status)" ] || left="gone from the tracker"
+    up=$(field "$1" parent)
+    why=$(retirable "$1" "$2" "$up") || {
+        echo "dispatch: $1 is $left, and its run on $2 stays: ${why:-its branches could not be read}" >&2
+        return 1
+    }
+    # shellcheck disable=SC2046
+    retire "$1" "$up" $(field "$1" repos)
+}
+
+# Whether <slug>'s run on <host> may go; where it may not, exit 1 and why: its worker is running,
+# the host did not answer, or a branch the host holds for the ticket, in the code repo, the agent
+# repo or a listed repo, has a tip this machine lacks or is merged into no branch here but a ticket
+# branch. A read that fails keeps the run as well.
+retirable() { # <slug> <host> <its parent ticket, or nothing>
+    local probed state at top tip
+    probed=$(on_host "$2" bash "$(scratch_dir "$2")/dispatch-ctl" probe 2> /dev/null)
+    [ $? -ne 255 ] || { echo "$2 did not answer"; return 1; }
+    state=$(awk -v n="dispatch-$repo-$1" '$1 == n { print $2 }' <<< "$probed")
+    [ "$state" != running ] || { echo "its worker is still running"; return 1; }
+    for at in code agent $(on_host "$2" cat "$(scratch_dir "$2")/repos-$1" 2> /dev/null | cut -f1); do
+        [ "$at" = code ] || [ "$at" = agent ] || [ ${#listed_top[@]} -gt 0 ] || listed "$3"
+        top=$(repo_at "$at")
+        [ -n "$top" ] || { echo "$2 holds its branch in $at, which \`tracker repos\` does not list"; return 1; }
+        if [ "$2" = local ]; then
+            tip=$(git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1")
+        else
+            tip=$(git -C "$top" ls-remote --heads "$(remote_of "$at" "$2")" "refs/heads/ticket/$1") ||
+                { echo "ticket/$1 in $at could not be read on $2"; return 1; }
+            tip=${tip%%[[:space:]]*}
+        fi
+        [ -n "$tip" ] || continue
+        git -C "$top" cat-file -e "$tip^{commit}" 2> /dev/null ||
+            { echo "ticket/$1 in $at holds commits this machine lacks; fetch them, or let them go with \`dispatch ctl cleanup $1\` from $base"; return 1; }
+        git -C "$top" for-each-ref --contains "$tip" --format='%(refname)' refs/heads refs/remotes | grep -qv '/ticket/' ||
+            { echo "ticket/$1 in $at is merged into no branch here; \`dispatch ctl cleanup $1\` from $base retires it once that work is merged or let go"; return 1; }
+    done
 }
 
 # The user's accept of a parent ticket ruled whole, written and committed by the tracker (`tracker
