@@ -105,15 +105,30 @@ def test_a_session_commits_its_artefacts_with_its_records_less_what_a_show_direc
 ) -> None:
     """A session's own work's artefacts sit under `show/` in its directory and reach history with its
     records; what the agent repo ignores under its own `show/` (a runnable artefact's `out/`, a
-    rendered PNG) stays out of the commit, though the commit force-adds."""
+    rendered PNG, whatever its name is spelt in) stays out of the commit, though the commit
+    force-adds."""
     (agent / ".gitignore").write_text("sessions/\nshow/**/out/\nshow/**/*.png\n")
     show = worked_example / "show"
-    for path, text in {"figure.html": "<svg/>", "figure.png": "png", "demo/run": "#!/bin/sh\n", "demo/out/result.txt": "1"}.items():
+    for path, text in {"figure.html": "<svg/>", "abläufe.png": "png", "demo/run": "#!/bin/sh\n",
+                       "demo/out/result.txt": "1"}.items():
         (show / path).parent.mkdir(parents=True, exist_ok=True)
         (show / path).write_text(text)
     end()
-    assert committed(agent) == [f"sessions/{worked_example.name}/{path}"
-                                for path in [*RECORDS[:1], "show/demo/run", "show/figure.html", *RECORDS[1:]]]
+    assert sorted(committed(agent)) == sorted(f"sessions/{worked_example.name}/{path}"
+                                              for path in [*RECORDS, "show/demo/run", "show/figure.html"])
+
+
+def test_an_artefact_the_resumed_session_deleted_leaves_history_when_it_ends_again(
+    agent: Path, worked_example: Path,
+) -> None:
+    """P2 for artefacts: once committed, one deleted is committed as gone rather than left in status."""
+    (worked_example / "show").mkdir()
+    (worked_example / "show" / "figure.html").write_text("<svg/>")
+    end_hook.commit_records(worked_example)
+    (worked_example / "show" / "figure.html").unlink()
+    end_hook.commit_records(worked_example)
+    assert committed(agent) == [f"sessions/{worked_example.name}/show/figure.html"]
+    assert in_status(agent) == []
 
 
 def test_records_in_flight_stay_out_of_status_and_edits_to_committed_ones_show(

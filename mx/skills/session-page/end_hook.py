@@ -10,8 +10,9 @@ the artefacts of its own work under `show/`, in a commit holding those paths and
 a `Session:` trailer. `sessions/` stays ignored, so the records are force-added; once tracked, git
 shows their later edits regardless. The page (`index.html`) is derived and stays out, and so is
 whatever under `show/` the agent repo's ignore rules for its own `show/` keep out (a runnable
-artefact's `out/`, a PNG rendered on demand), since force-adding would otherwise sweep it in. A session that ends again after a resume commits what
-changed since; one whose records are as last committed commits nothing.
+artefact's `out/`, a PNG rendered on demand), which a force-add would otherwise sweep in. A session
+that ends again after a resume commits what changed since; one whose records are as last
+committed commits nothing.
 
 The commit runs in a child detached from the hook, since every SessionEnd hook shares a budget of
 about a second and a half, and git killed mid-commit leaves the index locked for every session
@@ -77,7 +78,11 @@ def commit_records(directory: Path) -> str:
     paths = [f"{session_id}/{name}" for name in RECORDS if (directory / name).exists()]
     if not paths:
         return "no records"
-    paths += [f"{session_id}/{ARTEFACTS}/{path}" for path in artefacts(directory)]
+    try:
+        paths += artefacts(directory)
+        without = ""
+    except RuntimeError as error:  # the records still go; the artefacts wait for the next end
+        without = f", without its artefacts: {error}"
     message = f"session {session_id}: its records as it ended"
     deadline = time.monotonic() + LOCK_WAIT
     while True:
@@ -87,7 +92,7 @@ def commit_records(directory: Path) -> str:
                 return "nothing changed since the last commit"
             done = git(sessions, "commit", "--quiet", "-m", message, "--trailer", f"Session: {session_id}", "--", *paths)
             if done.returncode == 0:
-                return "committed " + " ".join(f"{sessions.name}/{path}" for path in paths)
+                return "committed " + " ".join(f"{sessions.name}/{path}" for path in paths) + without
         if "index.lock" not in done.stderr or time.monotonic() > deadline:
             unstaged = git(sessions, "reset", "--quiet", "--", *paths)
             left = "unstaged" if unstaged.returncode == 0 else f"left staged: {unstaged.stderr.strip()}"
@@ -96,18 +101,26 @@ def commit_records(directory: Path) -> str:
 
 
 def artefacts(directory: Path) -> list[str]:
-    """The files under the session's `show/`, relative to it, less those the agent repo would ignore
-    were they under its own `show/`: one set of rules says what a show directory keeps, wherever it
-    sits. `check-ignore --no-index` reads the rules for a path that need not exist."""
-    show = directory / ARTEFACTS
+    """The files under the session's `show/`, relative to `sessions/`, less those the agent repo would
+    ignore were they under its own `show/`: one set of rules says what a show directory keeps,
+    wherever it sits. With them, the committed ones since deleted, so their removal is committed
+    too. `check-ignore --no-index` reads the rules for a path that need not exist. Raises
+    RuntimeError, git's own words, where git cannot say which files it ignores."""
+    sessions, show = directory.parent, directory / ARTEFACTS
+    prefix = f"{directory.name}/{ARTEFACTS}/"
     files = sorted(str(path.relative_to(show)) for path in show.rglob("*") if path.is_file())
+    tracked = git(sessions, "ls-files", "-z", "--", prefix).stdout.split("\0")
+    gone = [path for path in tracked if path and not (sessions / path).exists()]
     if not files:
-        return []
-    asked = subprocess.run(["git", "-C", str(directory.parent.parent), "check-ignore", "--no-index", "--stdin"],
-                           input="".join(f"{ARTEFACTS}/{directory.name}/{path}\n" for path in files),
+        return gone
+    # -z on both ends: without it git quotes a path holding a non-ASCII character
+    asked = subprocess.run(["git", "-C", str(sessions.parent), "check-ignore", "--no-index", "--stdin", "-z"],
+                           input="".join(f"{ARTEFACTS}/{directory.name}/{path}\0" for path in files),
                            capture_output=True, text=True)
-    ignored = set(asked.stdout.splitlines())
-    return [path for path in files if f"{ARTEFACTS}/{directory.name}/{path}" not in ignored]
+    if asked.returncode not in (0, 1):  # 1 is "none of them ignored"
+        raise RuntimeError(f"git check-ignore failed: {asked.stderr.strip()}")
+    ignored = set(asked.stdout.split("\0"))
+    return [prefix + path for path in files if f"{ARTEFACTS}/{directory.name}/{path}" not in ignored] + gone
 
 
 def git(where: Path, *args: str) -> subprocess.CompletedProcess:
