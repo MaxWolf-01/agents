@@ -405,7 +405,7 @@ The old QIF exporter has three users left and blocks the storage rewrite; decide
 
 ## Questions
 
-- [D1] **Drop it, keep it read-only, or move its users to the CSV export?** Dropping it costs three users an export they run monthly; keeping it read-only keeps the storage rewrite waiting.
+- [D1] **Drop it, keep it read-only, or move its users to the CSV export?** Dropping it costs three users an export they run monthly; keeping it read-only keeps the storage rewrite waiting; moving them means writing each of the three a mapping from their QIF categories to the CSV columns, which nobody has scoped yet.
 - [D2] **Ask the three users what they export QIF for.** Whether the CSV export already covers it is the thing nobody here knows, and only you can ask them.
 """)
     write(repo / "agent/tickets/pick-a-date-library.md", """---
