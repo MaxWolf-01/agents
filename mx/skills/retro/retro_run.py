@@ -72,6 +72,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import urllib.parse
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -82,6 +83,7 @@ import tyro
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import retro_collect  # noqa: E402
+import qualified  # noqa: E402  what a qualified tag on the report's page names, which the page links
 from retro_collect import git, parse_time, stamp  # noqa: E402
 
 MODEL = "claude-opus-5-5"
@@ -91,7 +93,7 @@ STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an 
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_WEEKS = 8  # how far back a repo retro's first run reads, given no --since; --first-weeks overrides it
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
-REPORT_PATH = f"{retro_collect.RETRO}/report.md"  # in the agent repo
+REPORT_PATH = f"{qualified.RETRO}/report.md"  # in the agent repo
 RUN_LOG = HERE.parent / "run-log" / "run-log"
 AUTO_MODE_CRITIQUE = HERE / "auto_mode_critique.py"
 # `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
@@ -527,7 +529,7 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
                   kind: Kind) -> tuple[bool, str]:
     """Copy the run's report and page into the report's directory and commit those two files alone.
     Whether it committed, and the line the run log gets, saying what was committed or why nothing was."""
-    paths = [f"{retro_collect.RETRO}/{name}" for name in REPORT]
+    paths = [f"{qualified.RETRO}/{name}" for name in REPORT]
     gitdir = Path(git(agent, "rev-parse", "--absolute-git-dir").strip())
     if busy := [op for marker, op in IN_PROGRESS.items() if (gitdir / marker).exists()]:
         return False, f"not committed: {agent} is mid-{busy[0]}; the report stays in {run}"
@@ -536,9 +538,10 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
     if changed := git(agent, "status", "--porcelain", "--", *paths).strip():
         changes = ", ".join(line[3:] for line in changed.splitlines())
         return False, f"not committed: {changes} has changes of its own in {agent}; the report stays in {run}"
-    (agent / retro_collect.RETRO).mkdir(parents=True, exist_ok=True)
+    (agent / qualified.RETRO).mkdir(parents=True, exist_ok=True)
     for name in REPORT:
-        shutil.copy(run / name, agent / retro_collect.RETRO / name)
+        shutil.copy(run / name, agent / qualified.RETRO / name)
+    link_tags(agent)
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
@@ -551,6 +554,15 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
         restore(agent, paths)
         return False, f"not committed: git {e.cmd[3]} failed ({(e.stderr or e.stdout).strip()}); the report stays in {run}"
     return True, f"committed {git(agent, 'rev-parse', '--short', 'HEAD').strip()} in {agent}"
+
+
+def link_tags(agent: Path) -> None:
+    """Make each qualified tag on the report's page in `agent` a link to what it names, as the
+    tracker and the reviews stand now, the report's own entries included."""
+    retro = agent / qualified.RETRO
+    page = retro / "report.html"
+    page.write_text(qualified.link_html(page.read_text(), qualified.cites(agent),
+                                        lambda c: urllib.parse.quote(os.path.relpath(agent / c.path, retro)) + c.anchor))
 
 
 def restore(agent: Path, paths: list[str]) -> None:

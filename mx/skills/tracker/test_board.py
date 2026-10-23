@@ -1364,6 +1364,22 @@ def test_the_watcher_notices_an_artefact_landing_in_a_show_directory(repo: Path,
     assert tracker_snapshot(tracker, repo) != written
 
 
+def test_a_qualified_tag_on_the_board_links_to_what_it_names_or_is_struck_where_that_is_gone(
+    repo: Path, tracker: Path, tmp_path: Path,
+) -> None:
+    """tags-linked-on-board-and-review-pages: a tag naming another ticket's question links to that
+    ticket's row with the question as its hover words, and one naming an entry the retro's report
+    does not hold shows as gone, linking nowhere."""
+    ticket(tracker / "cites.md", "open", brief="Waits on second D1, and on retro F9.")
+    (tracker / "second.md").write_text((tracker / "second.md").read_text()
+                                       + "\n## Questions\n\n- [D1] **Ship it now?** Or wait for the suite.\n")
+    out = tmp_path / "out" / "board.html"
+    render(tracker, repo, out)
+    page = out.read_text()
+    assert '<a class="qualified" href="#t-second" title="second D1 · Ship it now? Or wait for the suite.">second D1</a>' in page
+    assert '<s class="qualified gone" title="retro F9 · no longer in the retro&#x27;s report">retro F9</s>' in page
+
+
 # ---- the sessions behind a ticket ------------------------------------------
 # The spec's Decision: the sessions a ticket lists come from the `Session:` trailer on every commit
 # that changed its file, on every branch, and take their title and working directory from their

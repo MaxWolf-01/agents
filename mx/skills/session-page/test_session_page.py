@@ -239,23 +239,27 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
 
 def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
     """fewer-workflow-concepts' tag rule: a ticket's question, detail entry, property and
-    assumption, and another session's question, named in prose by their qualified tag, the ticket's
-    slug as code or not, each link to their home with what they name as the hover preview. Words
-    that only look like one, a tag of a ticket that holds no such tag, and a tag inside a link of
-    its own stay text. Pins the format: the links are in the record's prose."""
+    assumption, a retro entry, and another session's question, named in prose by their qualified
+    tag, the ticket's slug as code or not, each link to their home with what they name as the hover
+    preview. A tag of a ticket that holds no such tag is struck through, linking nowhere
+    (tags-linked-on-board-and-review-pages). Words that only look like one, and a tag inside a link
+    of its own, stay text. Pins the format: the links are in the record's prose."""
     other = tmp_path / SESSIONS / "8e0f1c22-0000-0000-0000-000000000000"
     (other / "turns").mkdir(parents=True)
     (other / PAGE).write_text("")
     (other / "turns" / "01.md").write_text(record(1, {"asks": ["Q3"], "answered": {}, "superseded": {}}))
     (other / "turns" / "02.md").write_text(record(2, {"asks": [], "answered": {"Q3": "a"}, "superseded": {}}))
     directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D7]", details=(
-        f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3; "
+        f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3, as retro F2 asked; "
         f"8e0f1c22 Q3 asked the same. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
+    (tmp_path / "agent" / "retro").mkdir()
+    (tmp_path / "agent" / "retro" / "report.md").write_text("# Workflow retro: agents\n\n## Findings\n\n### F2 Builds add machinery\n")
     details = sections_of(render_session(directory, transcript, now=NOW))["01"]
     linked = {text: (attrs["href"], attrs["title"]) for attrs, text in anchors(details) if attrs.get("class") == "qualified"}
     ticket = f"../../../agent/tickets/{TWO_MAIN}.md"
     assert {text: href for text, (href, _) in linked.items()} == {
         f"{TWO_MAIN} D5": ticket, f"{TWO_MAIN} D6": ticket, f"{TWO_MAIN}#P1": ticket, f"{TWO_MAIN} A3": ticket,
+        "retro F2": "../../../agent/retro/report.md",
         "8e0f1c22 Q3": f"../../../{other.relative_to(tmp_path)}/{PAGE}#q3",
     }
     assert {text: title.split(" · ", 1)[1] for text, (_, title) in linked.items()} == {
@@ -263,9 +267,11 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
         f"{TWO_MAIN} D6": "Friction the suite took four minutes.",
         f"{TWO_MAIN}#P1": "A ticket file is written in one checkout only.",
         f"{TWO_MAIN} A3": "one remote per checkout.",
+        "retro F2": "Builds add machinery",
         "8e0f1c22 Q3": "What about Q3? · answered a",
     }
     assert details.count('class="qualified"') == len(linked), "a tag inside a link of its own was linked again"
+    assert f'<s title="{TWO_MAIN} D9 · no longer in its ticket" class="qualified gone">{TWO_MAIN} D9</s>' in details
 
 
 def test_a_ticket_question_put_to_the_user_again_waits_under_the_turn_that_put_it_last(tmp_path: Path) -> None:

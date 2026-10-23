@@ -943,8 +943,9 @@ def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -
 
 UP = "../" * (len(SESSIONS.parts) + 1)  # from the page to the repo root
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
-# what a ticket's qualified tag names, in the tracker of the page being rendered (`qualified.resolver`)
-NAMES: ContextVar[Callable[[str, str], qualified.Named | None] | None] = ContextVar("NAMES", default=None)
+AGENT = tracker.TICKETS.parent  # the agent repo, from the repo root
+# what a qualified tag names, in the agent repo of the page being rendered (`qualified.cites`)
+NAMES: ContextVar[Callable[[re.Match], qualified.Cited | None] | None] = ContextVar("NAMES", default=None)
 
 KEYS = [
     ("j k", "next, previous turn"),
@@ -979,7 +980,7 @@ def waits(q: Question | Cited, settled: dict[str, Settled]) -> bool:
 
 def page(session: Session, now: datetime) -> str:
     """The session page, with every path a record writes resolved from the session's repo root."""
-    root, names = ROOT.set(session.root), NAMES.set(qualified.resolver(session.root / tracker.TICKETS))
+    root, names = ROOT.set(session.root), NAMES.set(qualified.cites(session.root / AGENT))
     try:
         return assemble(view(session), now)
     finally:
@@ -1533,17 +1534,18 @@ def links_in_line(state, silent: bool) -> bool:
 
 # Another session's question, qualified by the first eight characters of that session's id, as its
 # page's bar shows them: `e5ca76dc Q3`.
-SESSION_QUESTION = re.compile(r"(?<![\w/.-])([0-9a-f]{8}) (Q\d+)\b")
+SESSION_QUESTION = re.compile(r"(?<![\w/.-])(?P<session>[0-9a-f]{8}) (?P<question>Q\d+)\b")
 TAGGED = re.compile(f"{qualified.QUALIFIED.pattern}|{SESSION_QUESTION.pattern}")
 # What follows a ticket's slug, or a session's id, written as code: `` `<ticket>` D6 ``.
-TAG_AFTER = re.compile(r"[ #][DPAQ]\d+\b")
+TAG_AFTER = re.compile(r"[ #][A-Z]\d+\b")
 
 
 def qualified_tags(state) -> None:
     """Each qualified tag in a record's text made a link to what it names, with that as its hover
-    preview: a ticket's `<ticket> D6` (a question or a detail entry), `P3` or `A21`, and another
-    session's `<session> Q3`. The ticket's slug may be code. Text that names nothing stays text, and
-    so does text that sits inside a link."""
+    preview: a ticket's `<ticket> D6` (a question or a detail entry), `P3` or `A21`, a retro entry,
+    a review finding, and another session's `<session> Q3`. The ticket's slug may be code. A tag
+    naming what no longer exists is struck through, saying why on hover. Text that names nothing
+    stays text, and so does text that sits inside a link."""
     if state.env.get("paths", True) and NAMES.get() is not None:
         for token in state.tokens:
             if token.type == "inline" and token.children:
@@ -1580,21 +1582,23 @@ def split_tags(text: str) -> list[Token]:
     return out + [Token("text", "", 0, content=text[at:])]
 
 
-def linked(found: tuple[str, str], inner: list[Token]) -> list[Token]:
+def linked(found: tuple[str | None, str], inner: list[Token]) -> list[Token]:
     path, preview = found
+    if path is None:
+        return [Token("s_open", "s", 1, attrs={"title": preview, "class": "qualified gone"}), *inner, Token("s_close", "s", -1)]
     return [Token("link_open", "a", 1, attrs={"href": path, "title": preview, "class": "qualified"}),
             *inner, Token("link_close", "a", -1)]
 
 
-def named_by(m: re.Match | None) -> tuple[str, str] | None:
+def named_by(m: re.Match | None) -> tuple[str | None, str] | None:
     """Where a qualified tag's link goes, from the repo root, and its hover preview; None where it
-    names nothing."""
+    names nothing, and no link where what it named no longer exists."""
     if m is None:
         return None
-    if m.group(1):
-        found = NAMES.get()(m.group(1), m.group(2))
-        return (ticket_path(found.ticket), found.preview) if found else None
-    return session_question(m.group(3), m.group(4))
+    if m["session"]:
+        return session_question(m["session"], m["question"])
+    found = NAMES.get()(m)
+    return found and (found.path and f"{AGENT / found.path}{found.anchor}", found.preview)
 
 
 def session_question(prefix: str, tag: str) -> tuple[str, str] | None:

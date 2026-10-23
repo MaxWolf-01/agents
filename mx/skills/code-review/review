@@ -252,6 +252,15 @@ done < <(checkouts)
 # The prompt a reviewer reads, whole: the preamble, the axis's own template, and
 # for the light axis the prompts it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
+# The letter an axis's finding ids open with, which a citation of a finding
+# qualifies with its range: `review <range> S13`.
+finding_id() { # <axis>
+    case $1 in
+        correctness) echo C ;; standards) echo S ;; spec) echo R ;; tests) echo T ;; light) echo L ;;
+        *) printf '%s' "${1:0:1}" | tr a-z A-Z ;;
+    esac
+}
+
 render() { # <axis>
     local axis=$1 parts part text one sources_block commits left
     parts="preamble $axis"
@@ -279,6 +288,7 @@ render() { # <axis>
         one=${one//'{{SPEC}}'/$spec}
         one=${one//'{{CHECKOUT}}'/$checkout}
         one=${one//'{{MINUTES}}'/$minutes}
+        one=${one//'{{ID}}'/$(finding_id "$axis")}
         left=$(printf '%s' "$one" | grep -o '{{[A-Z_]*}}' | sort -u | grep -v '^{{COMMITS}}$' | tr '\n' ' ')
         [ -z "$left" ] || die "prompts/$part.md asks for ${left% }, which this script does not substitute"
         # The commit messages go in last, and are checked over above: a message

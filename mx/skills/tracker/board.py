@@ -87,6 +87,7 @@ import tyro
 
 import briefing  # the board briefing: the session that writes it, and the cache it lives in, beside this script
 import github  # the state of the pull requests and issues the tickets name, beside this script
+import qualified  # what a qualified tag the page shows names, which the page links
 import tracker  # the one parser of a ticket file, and the rules it refuses one by, beside this script
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "session-page"))
@@ -202,10 +203,17 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     already read."""
     reading = read(root, repo, out)
     stamp = content_stamp(reading)
-    out.write_text(render_page(reading, stamp, stamp_path(out).name))
+    out.write_text(linked_tags(render_page(reading, stamp, stamp_path(out).name), root.parent, out.parent))
     write_stamp(out, stamp)
     print(out)
     return statuses(reading.tickets)
+
+
+def linked_tags(page: str, agent: Path, here: Path) -> str:
+    """The page with each qualified tag it shows a link: a ticket's to its row, anything else's to
+    the file it lives in, in the agent repo at `agent`."""
+    return qualified.link_html(page, qualified.cites(agent),
+                               lambda c: ref_anchor(c.ticket) if c.ticket else href(agent / c.path, here) + c.anchor)
 
 
 def stamp_path(out: Path) -> Path:
