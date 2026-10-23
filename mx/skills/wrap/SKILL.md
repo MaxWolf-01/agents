@@ -1,14 +1,14 @@
 ---
 name: wrap
-description: "Make the session closable, or say what keeps it open. Use when the user asks whether the session is done, can be closed, or has anything left."
+description: "Is this session closable? Finish what is left, or clean up so it can close."
+disable-model-invocation: true
 ---
 
-The user is about to close this session, and whatever only the chat holds goes with it.
+The user is asking whether this session can be closed, often after time away from it. They no longer know where it stands; you do.
 
-1. **Stop what this session started**: its worktrees, branches, tmux sessions, jobs, servers and workers, and report only those. Scratch files can stay, and so does anything the session page links to.
-2. **Empty the chat.** Each loose end and open question goes to a ticket (`/mx:tracker`), each lesson to its home (`CLAUDE.md` or `AGENTS.md`, an ADR or the glossary through `/mx:domain-modelling`), and a script worth running again into the repo. A chore the session can do itself is done, not handed to the user.
-3. **Tell whoever runs on what shipped**, such as a sibling session or a deployed agent: send it, or draft the message for the user to send.
-4. **Answer in a line or two**, one of:
-   - closable: what landed, and that nothing waits on the user;
-   - continued in a fresh session: write the handoff (`/mx:handoff`);
-   - not done: what is left, and whose move it is.
+1. **Check what is left.** Look back over the session: work started and not landed, a ruling the user gave that is not acted on yet, something you said you would do. If anything is left, say what it is and do it, or put to the user what only they can decide. The session stays open, and the steps below wait until nothing is left. Where the rest is better done in a fresh session (the context is full, or the user is stopping for now), write the handoff (`/mx:handoff`).
+2. **Nothing left: clean up.**
+   - Stop what this session started: its worktrees, branches, tmux sessions, jobs, servers and workers. Report only those. Scratch files can stay, and so does anything the session page links to.
+   - Move what only the chat holds. Each loose end and open question goes to a ticket (`/mx:tracker`), each lesson to its home (`CLAUDE.md` or `AGENTS.md`, an ADR or the glossary through `/mx:domain-modelling`), and a script worth running again into the repo. A chore the session can do itself is done, not handed to the user.
+   - Tell whoever runs on what shipped, such as a sibling session or a deployed agent: send it, or draft the message for the user to send.
+3. **Answer in a line or two**: closable, with what landed, and that nothing waits on the user.
