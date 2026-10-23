@@ -21,7 +21,6 @@ test_reading.py checks.
 """
 
 import html
-import itertools
 import json
 import re
 import shutil
@@ -32,11 +31,10 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from session_checks import SESSION, TURN_ANCHOR, elements, rows_of, sections_of, text_of, turns_on, view_of
+from session_checks import DRAWN, SESSION, TURN_ANCHOR, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
-DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
 
 
 def waiting(page: View) -> list[str]:
@@ -45,58 +43,6 @@ def waiting(page: View) -> list[str]:
 
 
 # ---- sessions to render -----------------------------------------------------
-
-
-@st.composite
-def sessions(draw: st.DrawFn) -> tuple[list[dict], set[str]]:
-    """A session's turns as data, and the questions open at the end of it.
-
-    Each turn draws a fate for every question still open before it (left alone, answered with an
-    option's letter or with the user's own words, or superseded by one this turn asks) and then
-    asks questions of its own.
-    """
-    turns: list[dict] = []
-    open_tags: list[str] = []
-    tags = itertools.count(1)
-    for _ in range(draw(st.integers(min_value=1, max_value=5))):
-        turn: dict = {"asks": [], "answered": {}, "superseded": {}}
-        for tag in list(open_tags):
-            fate = draw(st.sampled_from(["open", "answered", "superseded"]))
-            if fate == "answered":
-                turn["answered"][tag] = draw(st.sampled_from(["a", "b", "neither: split it in two"]))
-                open_tags.remove(tag)
-            elif fate == "superseded":
-                replacement = f"Q{next(tags)}"
-                turn["superseded"][tag] = replacement
-                turn["asks"].append(replacement)
-                open_tags[open_tags.index(tag)] = replacement
-        for _ in range(draw(st.integers(min_value=0, max_value=2))):
-            tag = f"Q{next(tags)}"
-            turn["asks"].append(tag)
-            open_tags.append(tag)
-        turns.append(turn)
-    return turns, set(open_tags)
-
-
-def record(number: int, turn: dict, headline: str = "", details: str = "") -> str:
-    """One `turns/NN.md` in the shape the Decisions give it: frontmatter for what the renderer
-    reads as data, an H1, and the sections the turn has."""
-    front = [f"date: 2026-09-{20 + number:02d}"]
-    for name in ("answered", "superseded"):
-        if turn[name]:
-            front.append(f"{name}:")
-            front += [f"  {tag}: {json.dumps(value)}" for tag, value in turn[name].items()]
-    body = [f"# {headline or f'Round {number}'}"]
-    if turn["asks"]:
-        body += ["", "## Questions", ""]
-        for tag in turn["asks"]:
-            body += [
-                f"- [{tag}] **What about {tag}?** What hangs on it.",
-                "  - (a) One way. *my pick*",
-                "  - (b) The other way.",
-            ]
-    body += ["", "## Details", "", details or f"What turn {number} settled."]
-    return "---\n" + "\n".join(front) + "\n---\n\n" + "\n".join(body) + "\n"
 
 
 def write_transcript(path: Path, messages: list[str]) -> Path:

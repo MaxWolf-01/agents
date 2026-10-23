@@ -151,6 +151,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         chats=tuple(paired[c.path] for c in chats),
         settled=settled,
         began=turn_start(entries),
+        spoke=spoke_in(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
         root=root,
         directory=directory,
@@ -350,6 +351,7 @@ class Session:
     chats: tuple[Chat, ...] = ()  # oldest first
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
+    spoke: datetime | None = None  # when the turn holding the user's last message began (spoke_in)
     described: datetime | None = None  # when the transcript last shows session.md written
     previous: str = ""  # the session whose continuation handoff this one picked up, where that one has a page
     following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
@@ -748,11 +750,26 @@ def turn_start(entries: list[dict]) -> datetime | None:
     Claude Code marks a turn's end with a `turn_duration` line once its Stop hooks let it end, so a
     Stop hook's send-back ends no turn. A message queued mid-turn joins the turn it arrived in, a
     tool result is part of the turn that called the tool, and a local command starts no turn."""
+    return max(turn_starts(entries), default=None)
+
+
+def spoke_in(entries: list[dict]) -> datetime | None:
+    """When the turn that holds the user's last message began, read as `turn_start` reads the
+    newest: a message queued mid-turn belongs to the turn it arrived in. None where the user has
+    said nothing yet."""
+    spoken = said(entries)
+    if not spoken:
+        return None
+    return max((at for at in turn_starts(entries) if at <= spoken[-1][0]), default=spoken[-1][0])
+
+
+def turn_starts(entries: list[dict]) -> list[datetime]:
+    """When each turn began, as `turn_start` reads the newest."""
     local = local_commands(entries)
     started = (entry for entry in entries
                if prompted(entry) and entry.get("uuid") not in local and flat(entry.get("message", {}).get("content")))
     ended = (entry for entry in entries if entry.get("type") == "system" and entry.get("subtype") == "turn_duration")
-    return max((datetime.fromisoformat(entry["timestamp"]) for entry in (*started, *ended) if "timestamp" in entry), default=None)
+    return [datetime.fromisoformat(entry["timestamp"]) for entry in (*started, *ended) if "timestamp" in entry]
 
 
 def flat(content: object) -> str:

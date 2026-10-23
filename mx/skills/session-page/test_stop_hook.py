@@ -36,9 +36,10 @@ import session_page
 import stop_hook
 import turn_review
 from session_checks import (
-    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_ANCHOR, TURN_STARTS, UNPARSEABLE, appended, elements, logged,
-    messages_of, payload, turns_on, unreachable, view_of, with_write,
+    BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
+    UNPARSEABLE, appended, elements, logged, messages_of, payload, sessions, turns_on, unreachable, view_of, with_write,
 )
+from session_checks import record as drawn_record
 from session_page import PAGE, PREVIOUS, SESSIONS
 from stop_hook import decide
 
@@ -98,6 +99,11 @@ def shown(capsys: pytest.CaptureFixture) -> str:
     return said["systemMessage"]
 
 
+def first_line(message: str) -> str:
+    """The line of the hook's message that links the page; the open questions follow it."""
+    return message.splitlines()[0]
+
+
 def said_back(capsys: pytest.CaptureFixture) -> str:
     return json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
 
@@ -133,7 +139,7 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
         (directory / PAGE).unlink(missing_ok=True)
         run(payload(directory, transcript) | {"cwd": str(cwd)})
         assert (directory / PAGE).is_file(), cwd
-        assert shown(capsys).endswith((directory / PAGE).as_uri()), cwd
+        assert first_line(shown(capsys)).endswith((directory / PAGE).as_uri()), cwd
     assert not (worktree / "agent").exists()
     monkeypatch.chdir(tmp_path_factory.mktemp("loose"))
     with pytest.raises(SystemExit, match="in no project with an agent repo"):
@@ -379,7 +385,7 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
         str(worked_example.parents[len(SESSIONS.parts)] / "agent/show/session-page/round-3" / page)
         for page in ("pages.html", "spec.html")]
-    assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
+    assert first_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the hub ----------------------------------------------------------------
@@ -428,7 +434,7 @@ def test_the_hooks_line_links_the_sessions_unit_where_a_hub_answers_and_the_page
     port = hub(status) if status else None
     link = f"http://127.0.0.1:{port}/u/{worked_example.name}" if unit else (worked_example / PAGE).as_uri()
     run(payload(worked_example, transcript))
-    assert shown(capsys) == f"session page · waiting on you: Q7 · {link}"
+    assert first_line(shown(capsys)) == f"session page · waiting on you · {link}"
 
 
 @pytest.fixture
@@ -470,7 +476,7 @@ def test_a_hub_port_that_cannot_be_asked_is_no_hub(
     run(payload(worked_example, transcript))
     assert [entry["opened"].startswith("started ") for entry in logged(attended, "page")] == [True]
     assert logged(attended, "excluded")
-    assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
+    assert first_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the sessions directory kept out of the agent repo's status -------------
@@ -647,21 +653,117 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
 # ---- the line under the turn ------------------------------------------------
 
 ANSWERS_Q7 = "---\ndate: 2026-09-23\nanswered:\n  Q7: a\n---\n\n# Round 4\n\n## Details\n\nThe light review it is.\n"
+ASKS_NOTHING = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe ledger has one bank.\n"
+Q7 = "What reviews a turn's own prose?"  # the headline record 04 asks Q7 by
 
 
 def test_a_turn_that_wrote_a_record_ends_on_the_hooks_line_naming_what_waits(
     worked_example: Path, transcript: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
-    """stop-hook-prints-the-page-link#P1: the worked example's record 04 leaves Q7 open, and a record
-    05 answering it leaves nothing; either way the line ends on the page's link."""
+    """stop-hook-prints-the-page-link#P1 and turn-end-line-names-the-open-questions: the worked
+    example's record 04 asks Q7 after the user's last message, so the line under it names Q7 by its
+    headline, new; a record 05 answering it, after the user spoke again, leaves nothing. Either way
+    the first line ends on the page's link."""
     link = (worked_example / PAGE).as_uri()
     run(payload(worked_example, transcript))
-    assert shown(capsys) == f"session page · waiting on you: Q7 · {link}"
-    record = worked_example / "turns" / "05.md"
-    record.write_text(ANSWERS_Q7)
-    with_write(unrecorded, "Write", record)
+    assert shown(capsys) == f"session page · waiting on you · {link}\nQ7 new · {Q7}"
+    fifth = worked_example / "turns" / "05.md"
+    fifth.write_text(ANSWERS_Q7)
+    with_write(unrecorded, "Write", fifth)
     run(payload(worked_example, unrecorded))
     assert shown(capsys) == f"session page · nothing waiting on you · {link}"
+
+
+def test_a_question_asked_before_the_users_last_message_is_not_new(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """turn-end-line-names-the-open-questions#P2: the user spoke after record 04 asked Q7, and the
+    turn that answered wrote a record leaving Q7 open, so Q7 is still named and no longer new."""
+    fifth = worked_example / "turns" / "05.md"
+    fifth.write_text(ASKS_NOTHING)
+    with_write(unrecorded, "Write", fifth)
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}"]
+
+
+# A question whose headline links another, as session 168b5d8b's turn 3 asked one with `[Q6](#q6)`
+# in it, and carries emphasis and code besides.
+ASKS_WITH_MARKDOWN = (
+    "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Questions\n\n"
+    "- [Q8] **Fold [Q7](#q7) into the _light_ review in `turn_review.py`?** What it would replace.\n"
+    "  - (a) Fold it. *my pick*\n  - (b) Keep both.\n"
+)
+
+
+def test_a_headline_reaches_the_line_as_plain_text(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """turn-end-line-names-the-open-questions, story 1: the terminal renders no markdown, so a link
+    in a headline reaches the line as its text, and emphasis and code without their marks."""
+    fifth = worked_example / "turns" / "05.md"
+    fifth.write_text(ASKS_WITH_MARKDOWN)
+    with_write(unrecorded, "Write", fifth)
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}", "Q8 new · Fold Q7 into the light review in turn_review.py?"]
+
+
+# What starts a drawn turn: the user's own prompt; a finished task, with the user saying nothing;
+# or a finished task, with the user queuing a message once the turn has written its record.
+STARTS = ("typed", "task", "queued")
+
+
+@st.composite
+def started_sessions(draw: st.DrawFn) -> tuple[list[dict], set[str], list[str]]:
+    """A drawn session (`sessions`) with what started each of its turns."""
+    turns, open_tags = draw(sessions())
+    return turns, open_tags, draw(st.lists(st.sampled_from(STARTS), min_size=len(turns), max_size=len(turns)))
+
+
+def started_transcript(path: Path, directory: Path, starts: list[str]) -> Path:
+    """A transcript in which turn n starts at hour n as `starts` says, writes its record at half
+    past, and, but for the turn ending now, ends at ten to the next hour, as Claude Code marks a
+    turn's end once its Stop hooks let it."""
+    lines = []
+    for number, start in enumerate(starts, start=1):
+        hour = f"2026-09-23T{number:02d}"
+        prompt = {"type": "user", "message": {"role": "user", "content": f"What I asked in turn {number}."}}
+        lines.append((prompt if start == "typed" else TASK_DONE) | {"timestamp": f"{hour}:00:00.000Z", "uuid": f"u{number}"})
+        call = {"type": "tool_use", "name": "Write", "input": {"file_path": str(directory / "turns" / f"{number:02d}.md")}}
+        lines.append({"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": f"{hour}:30:00.000Z"})
+        if start == "queued":
+            lines.append({"type": "attachment", "timestamp": f"{hour}:40:00.000Z",
+                          "attachment": {"type": "queued_command", "prompt": f"Also, about turn {number}."}})
+        if number < len(starts):
+            lines.append(TURN_ENDED | {"timestamp": f"{hour}:50:00.000Z"})
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+    return path
+
+
+@settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+@given(drawn=started_sessions())
+def test_the_line_names_each_open_question_once_oldest_first_and_marks_the_new_ones(
+    drawn: tuple[list[dict], set[str], list[str]], tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """turn-end-line-names-the-open-questions#P1 and P2, over sessions whose questions meet every
+    fate and whose turns the user, a task or both started: the lines under the link are the open
+    questions the draw left, each once, oldest first, each by its headline; one is new exactly where
+    the turn that asked it is the one holding the user's last message, or a later one."""
+    turns, open_tags, starts = drawn
+    directory = tmp_path_factory.mktemp("project") / SESSIONS / DRAWN
+    (directory / "turns").mkdir(parents=True)
+    for number, turn in enumerate(turns, start=1):
+        (directory / "turns" / f"{number:02d}.md").write_text(drawn_record(number, turn))
+    transcript = started_transcript(directory.parent / "transcript.jsonl", directory, starts)
+    asked_in = {tag: number for number, turn in enumerate(turns, start=1) for tag in turn["asks"]}
+    spoke = max((number for number, start in enumerate(starts, start=1) if start != "task"), default=0)
+    decision = decide(payload(directory, transcript), directory)
+    lines = [line.split(" · ") for line in decision.waiting]
+    tags = [head.split()[0] for head, _ in lines]
+    assert tags == sorted(open_tags, key=lambda tag: int(tag[1:]))
+    for (head, headline), tag in zip(lines, tags):
+        assert headline == f"What about {tag}?"
+        assert head == (f"{tag} new" if asked_in[tag] >= spoke else tag)
+    assert decision.shown == f"session page · {'waiting on you' if open_tags else 'nothing waiting on you'}"
 
 
 UNRECORDED = {
@@ -1009,19 +1111,12 @@ def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
     run: Callable[[dict], None], request: pytest.FixtureRequest,
 ) -> None:
     """turns-end-on-their-recap#P3 and P4: the records the write hook never saw are still checked
-    at the turn's end, and the send-back asks the turn to end on its recap."""
+    at the turn's end, and the send-back asks the turn to end on its recap, which
+    (turn-end-line-names-the-open-questions#P3) lists no question: the hook's message names them."""
     run(arrange(worked_example, transcript, request))
     said = said_back(capsys)
     assert stop_hook.RECAP in said and "without a reply" not in said
-
-
-def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> None:
-    """turns-end-on-their-recap#P4 as recap-states-action-items amends it: what waits on the user,
-    as action items, one plain line each, each open question named by what it decides, and no
-    pointer to the page. A phrase pin: each part is RECAP's own wording of the ticket's."""
-    for part in ("what waits on the user", "action items", "one plain line each", "named by what it decides",
-                 "no line points at the page"):
-        assert part in stop_hook.RECAP
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1])
 
 
 def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
