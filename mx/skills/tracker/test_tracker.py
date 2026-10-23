@@ -2586,6 +2586,18 @@ def test_a_ticket_changed_on_both_machines_stops_at_a_conflict_naming_it_and_pus
     assert (pc.tickets / "shared.md").read_text() == stopped, "no write lands inside the stopped replay"
 
 
+def test_a_replay_of_the_integration_branch_left_stopped_holds_the_next_sync(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, pc, _ = machines
+    for one, says in ((laptop, "the laptop's lamp\n"), (pc, "pc's lamp\n")):
+        (one.code / "src.txt").write_text(says)
+        git(one.code, "commit", "-q", "-am", "the lamp, by hand")
+    assert run(laptop.code, "sync").code == 0
+    stopped = run(pc.code, "sync", "--resolve")
+    assert stopped.code == 1 and "src.txt" in stopped.err, stopped.said
+    again = run(pc.code, "sync")
+    assert again.code == 1 and f"{pc.code}: a rebase is underway" in again.err, again.said
+
+
 def test_uncommitted_changes_that_conflict_with_what_came_in_are_left_as_they_were_and_nothing_is_pushed(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, pc, origin = machines
     ticket(laptop.tickets, "shared", priority=2)
@@ -2670,9 +2682,9 @@ def test_a_checkout_with_no_network_commits_as_today_and_pushes_once_it_is_back(
 
 
 @pytest.mark.parametrize("landed", [False, True])
-def test_commits_a_ticket_branch_is_built_on_are_never_replayed_and_copied(machines: tuple[Machine, Machine, Path], landed: bool) -> None:
+def test_commits_a_ticket_is_built_on_are_never_replayed_and_copied(machines: tuple[Machine, Machine, Path], landed: bool) -> None:
     """Whether the ticket branch is still out or has merged and been deleted: a merge of it holds the
-    original commits as much as the branch does."""
+    original commits as much as the branch does, so the other machine's commits are merged in."""
     laptop, pc, origin = machines
     (laptop.code / "src.txt").write_text("the lamp, by hand\n")
     git(laptop.code, "commit", "-q", "-am", "by hand on main")  # unpushed: no hook pushes the code repo
@@ -2685,9 +2697,11 @@ def test_commits_a_ticket_branch_is_built_on_are_never_replayed_and_copied(machi
     before = tip(laptop.code, "main")
 
     said = run(laptop.code, "sync")
-    assert said.code == 1 and ("merge shade" if landed else "ticket/shade") in said.err, said.said
-    assert tip(laptop.code, "main") == before, "left as it was"
-    assert upstream(origin, "code") == tip(pc.code, "main")
+    assert said.code == 0, said.said
+    assert upstream(origin, "code") == tip(laptop.code, "main")
+    assert git(laptop.code, "log", "--format=%s", "main").splitlines().count("by hand on main") == 1, "no copy of it"
+    for kept in (before, tip(pc.code, "main")):
+        assert git(laptop.code, "merge-base", "--is-ancestor", kept, "main") == "", "the upstream is merged in, rewriting nothing"
 
 
 def test_a_remote_that_refuses_the_push_is_said_and_exits_1(machines: tuple[Machine, Machine, Path]) -> None:

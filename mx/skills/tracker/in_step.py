@@ -10,14 +10,16 @@ The replay keeps each merge a merge of the same commit: a `--no-ff` merge of a t
 redone onto the new base with the ticket's tip still its second parent, since that merge is how the
 tracker finds what a ticket landed (decisions/0001-every-merge-is-no-ff.md). `git rebase
 --rebase-merges` would rewrite the ticket's own commits onto the new base too, and the merge would
-no longer hold the tip. For the same reason a commit some other branch here is built on is never
-replayed: the copy and the original would both end up on the branch once that one merges.
+no longer hold the tip. For the same reason commits something else here is built on, a branch or
+a ticket one of them merges, are never replayed: the copy and the original would both end up on the
+branch. The upstream is merged in instead.
 """
 
 from __future__ import annotations
 
 import fcntl
 import os
+import re
 import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -42,6 +44,8 @@ UNDERWAY = {"rebase-merge": "a rebase", "rebase-apply": "a rebase", "MERGE_HEAD"
             "CHERRY_PICK_HEAD": "a cherry-pick", "REVERT_HEAD": "a revert", "BISECT_LOG": "a bisect"}
 
 Outcome = Literal["pushed", "pulled", "current", "offline", "conflict", "underway", "refused", "skipped"]
+HOLDS_WRITES = ("conflict", "underway")  # a ticket write waits for these to be settled
+FAILS = (*HOLDS_WRITES, "refused")  # what `tracker sync` exits 1 on
 
 
 @dataclass(frozen=True)
@@ -118,62 +122,67 @@ def replay(top: Path, branch: str, resolve: bool) -> Synced:
     """This checkout's own commits, oldest first along the first parents, redone on top of the
     upstream: a commit picked, a merge merged again from the same second parent with its own
     message. A commit whose change the upstream already holds comes out empty and is dropped, which
-    is a claim both machines wrote alike. Uncommitted changes are set aside for it and put back."""
-    todo, merged = [], {}
+    is a claim both machines wrote alike. Uncommitted changes are set aside for it and put back.
+
+    Where something else here is built on those commits, the upstream is merged in instead, which
+    rewrites nothing: a ticket cut from them, or merged, carries the originals."""
+    todo, merged = [], set()
     commits = git(top, "rev-list", "--first-parent", "--reverse", "@{u}..HEAD").split()
     for commit in commits:
         parents = git(top, "rev-list", "--parents", "-n", "1", commit).split()[1:]
         todo.append(f"merge -C {commit} {parents[1]}" if len(parents) == 2 else f"pick {commit}")
-        if len(parents) == 2:
-            merged[parents[1]] = f"the merge {git(top, 'log', '-1', '--format=%s', commit).strip()!r}"
-    if under := built_on(top, branch, commits, merged):
-        return Synced("refused", f"{top}: {', '.join(under)} {'is' if len(under) == 1 else 'are'} built on commits of {branch} the upstream lacks, and replaying them would copy those commits, so {branch} was left as it is; merge the upstream in by hand (`git -C {top} merge @{{u}}`), then `tracker sync`")
+        merged |= set(parents[1:])
     before = git(top, "rev-parse", "HEAD").strip()
-    stashed = tried(top, "rev-parse", "-q", "--verify", "refs/stash").stdout.strip()
+    if commits and built_on(top, branch, commits[0], merged):
+        return settled(top, before, resolve, "merge", tried(top, "merge", "-q", "--autostash", "--no-edit", "@{u}"))
     script = Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "tracker-sync-todo"
     script.write_text("\n".join(todo or ["noop"]) + "\n")
     try:
         done = tried(top, "rebase", "-i", "--autostash", "--empty=drop", "@{u}", env={"GIT_SEQUENCE_EDITOR": f"cp '{script}'"})
     finally:
         script.unlink(missing_ok=True)
+    return settled(top, before, resolve, "rebase", done)
+
+
+def built_on(top: Path, branch: str, oldest: str, merged: set[str]) -> bool:
+    """Whether another branch here, or a ticket tip the branch's own commits merge (whose branch
+    may be gone), is built on `oldest`, the first of those commits, and so on every one of them."""
+    under = set(git(top, "for-each-ref", "--contains", oldest, "--format=%(refname:short)", "refs/heads").split()) - {branch}
+    return bool(under) or any(tried(top, "merge-base", "--is-ancestor", oldest, tip).returncode == 0 for tip in merged)
+
+
+def settled(top: Path, before: str, resolve: bool, how: Literal["rebase", "merge"], done: subprocess.CompletedProcess) -> Synced:
+    """What a replay or a merge of the upstream, `done`, left: the commits taken in, a conflict
+    undone or left stopped for a person, or a refusal that ran nothing."""
     files = tried(top, "diff", "--name-only", "--diff-filter=U").stdout.split()
     if done.returncode == 0 and files:
-        return unstashed(top, before, stashed, files)
+        return unstashed(top, before, done, files)
     if done.returncode == 0:
         return Synced("pulled")
-    stopped = (Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "rebase-merge").exists()
     if files and resolve:
-        return Synced("conflict", f"{top}: {', '.join(files)} changed here and upstream both; the replay is stopped at it: resolve, `git rebase --continue`, then `tracker sync`")
-    if stopped:
-        tried(top, "rebase", "--abort")
+        go_on = "`git rebase --continue`" if how == "rebase" else "`git commit`"
+        return Synced("conflict", f"{top}: {', '.join(files)} changed here and upstream both; the {how} is stopped at it: resolve, {go_on}, then `tracker sync`")
+    if underway_in(top):
+        tried(top, how, "--abort")
     if files:
         return Synced("conflict", f"{top}: {', '.join(files)} changed here and upstream both, so nothing was pushed and the checkout is as it was; `tracker sync --resolve` stops at the conflict for you to resolve")
-    return Synced("refused", f"{top}: the replay onto the upstream did not run ({said_by(done)}), so nothing was pushed and the checkout is as it was")
+    return Synced("refused", f"{top}: the {how} onto the upstream did not run ({said_by(done)}), so nothing was pushed and the checkout is as it was")
 
 
-def built_on(top: Path, branch: str, commits: list[str], merged: dict[str, str]) -> list[str]:
-    """What else here is built on one of `commits`, the branch's own: another branch, or a ticket
-    tip one of them merges (`merged`, each tip with how it is named), whose branch may be gone."""
-    tips = {line.split()[0]: line.split()[1] for line in
-            git(top, "for-each-ref", "--format=%(objectname) %(refname:short)", "refs/heads").splitlines()
-            if line.split()[1] != branch}
-    tips |= merged
-    return sorted({name for tip, name in tips.items() for commit in commits
-                   if tried(top, "merge-base", "--is-ancestor", commit, tip).returncode == 0})
-
-
-def unstashed(top: Path, before: str, stashed: str, files: list[str]) -> Synced:
+def unstashed(top: Path, before: str, done: subprocess.CompletedProcess, files: list[str]) -> Synced:
     """The checkout put back as it was before a replay whose commits went through and whose
     uncommitted changes, set aside for it, conflict with what came in: git leaves the conflict in
-    the working tree and the changes in the stash, on top of what the stash held before."""
-    ours = tried(top, "rev-parse", "-q", "--verify", "refs/stash").stdout.strip()
-    if not ours or ours == stashed:
+    the working tree and the changes in the stash, under the name it printed. The stash is shared
+    by every worktree and session, so only that entry is touched, and none at all where it is not
+    found."""
+    printed = re.search(r"Created autostash: ([0-9a-f]+)", done.stdout + done.stderr)
+    entries = [line.split() for line in git(top, "stash", "list", "--format=%gd %H").splitlines()]
+    ours = next((entry for entry in entries if printed and entry[1].startswith(printed[1])), None)
+    if not ours:
         raise Failed(f"{', '.join(files)} conflict with uncommitted changes, which are not in the stash where the replay put them; nothing was reset, so look at `git status` and `git stash list`")
     git(top, "reset", "-q", "--hard", before)
-    git(top, "stash", "apply", "-q", ours)
-    for line in git(top, "stash", "list", "--format=%gd %H").splitlines():
-        if line.split()[1] == ours:
-            git(top, "stash", "drop", "-q", line.split()[0])
+    git(top, "stash", "apply", "-q", ours[1])
+    git(top, "stash", "drop", "-q", ours[0])
     return Synced("conflict", f"{top}: {', '.join(files)} changed upstream and in uncommitted changes here, so nothing was pushed and the checkout is as it was; commit or set those changes aside, then `tracker sync`")
 
 

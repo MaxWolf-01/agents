@@ -1351,9 +1351,10 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
     and on each integration branch once dispatch has merged into it. A project with no sync hook is
     left alone, and nothing is said. A checkout whose remote does not answer is left as it is, its
     commits waiting for the next sync. A conflict, the two machines having changed the same lines,
-    pushes nothing and leaves the checkout as it was. So does a commit another branch here is built
-    on, which a replay would copy. Exit 1: a conflict, a rebase or merge underway, a commit another
-    branch is built on, or a remote that refused the push; the line says which file or why.
+    pushes nothing and leaves the checkout as it was. Where a replay would copy commits something
+    else here is built on, a branch or a ticket merged here, the upstream is merged in instead.
+    Exit 1: a conflict, a rebase or merge underway, or a remote that refused the push; the line says
+    which file or why.
 
     Args:
         here: only the checkout the working directory is in, and only where it is a main checkout
@@ -1372,10 +1373,12 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
             return 0
         found = in_step_checkouts(root)
     outcomes = [in_step.sync(top, resolve) for top in found]
+    if here:  # the hook, fired from inside whatever is underway, which says so itself
+        outcomes = [outcome for outcome in outcomes if outcome.outcome != "underway"]
     for outcome in outcomes:
         if outcome.said:
             print(outcome.said, file=sys.stderr)
-    return 1 if any(outcome.outcome in ("conflict", "underway", "refused") for outcome in outcomes) else 0
+    return 1 if any(outcome.outcome in in_step.FAILS for outcome in outcomes) else 0
 
 
 def kept_in_step(root: Path) -> bool:
@@ -1403,12 +1406,21 @@ def in_step_checkouts(root: Path) -> list[Path]:
 
 
 def checkout_with(repo: Path, branch: str | None) -> Path | None:
-    """The worktree of `repo` that has `branch` out, where one has."""
+    """The worktree of `repo` that has `branch` out, where one has, a rebase of it included, which
+    git lists as a detached HEAD: a sync's replay stopped there for a person is still that branch's."""
     listed = tried(repo, "worktree", "list", "--porcelain").stdout
     for entry in listed.split("\n\n"):
         lines = entry.splitlines()
-        if branch and f"branch refs/heads/{branch}" in lines:
-            return Path(lines[0].removeprefix("worktree "))
+        if not branch or not lines:
+            continue
+        top = Path(lines[0].removeprefix("worktree "))
+        if f"branch refs/heads/{branch}" in lines:
+            return top
+        if "detached" in lines:
+            gitdir = Path(tried(top, "rev-parse", "--absolute-git-dir").stdout.strip())
+            rebased = [gitdir / step / "head-name" for step in ("rebase-merge", "rebase-apply")]
+            if any(head.is_file() and head.read_text().strip() == f"refs/heads/{branch}" for head in rebased):
+                return top
     return None
 
 
@@ -2179,7 +2191,7 @@ def writing() -> Tracker:
             raise Refused([f"{built} is the branch {top} has out, and a ticket file is written in the agent repo's main checkout, never from a ticket branch"])
     root = tracker_root(Path.cwd())
     if kept_in_step(root) and (synced := in_step.sync(toplevel(root))).said:
-        if synced.outcome in ("conflict", "underway"):
+        if synced.outcome in in_step.HOLDS_WRITES:
             raise Refused([synced.said, "the write waits until the two checkouts are in step"])
         print(synced.said, file=sys.stderr)
     return here()
