@@ -896,6 +896,8 @@ def test_a_round_sent_back_before_its_review_keeps_its_report_beside_the_next(to
         if resumed.with_suffix(".status").exists():
             break
         time.sleep(0.5)
+    else:
+        pytest.fail("round two left no status line 30s after its resume")
 
     assert run(toy, "fetch", "warm-preset").returncode == 0
     said = run(toy, "review", "warm-preset")
@@ -1522,6 +1524,29 @@ def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> No
     assert status_of(toy, "warm-preset") == "review"
     assert by_hand.read_text() == "the code in a repo dispatch does not read\n"
     assert not (toy.parent / "bin" / "diffview.args").exists()
+
+
+def test_a_round_with_no_code_lands_on_a_review_told_to_merge_it(toy: Path) -> None:
+    """A research ticket's round, its code branch empty: no code merge says its build was read, so a
+    review leaves its agent branch unmerged, and `review --merge` merges it and writes `done`."""
+    agent = toy / "agent"
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("status: open", "status: review"))
+    git(agent, "commit", "-q", "-am", "warm-preset for review")
+    git(toy, "branch", "ticket/warm-preset")
+    built_on(agent, "ticket/warm-preset", "main", "notes.md")
+    tip = git(agent, "rev-parse", "ticket/warm-preset").strip()
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    merged = subprocess.run(["git", "-C", str(agent), "merge-base", "--is-ancestor", tip, "main"])
+    assert merged.returncode == 1, "the agent branch waits for the word that its build was read"
+
+    said = run(toy, "review", "warm-preset", "--merge")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert git(agent, "rev-parse", "main~1^2").strip() == tip, "merged --no-ff, then landed"
 
 
 # `tickets-land-in-listed-repos`: a ticket's round lands in the listed repos its `repos:` names
@@ -2383,12 +2408,13 @@ def round_ranges(toy: Path) -> list[str]:
             for name, top in (("code", toy), ("agent", toy / "agent"))]
 
 
-def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path) -> None:
+@pytest.mark.parametrize("landing", ["review", "accept"])
+def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path, landing: str) -> None:
     """The squash is one commit on `development`, and the ticket's two commits on no branch there:
-    the review after it records `Backend@<merge>^..<merge>`, which no branch could give it, deletes
-    the ticket branch the pull request carried, records the code and agent repos' ranges, writes
-    `done`, which the tracker's done check allows, and renders the page over what landed in place of
-    the one it rendered before. Origin's refs are as GitHub left them."""
+    the review or the accept after it records `Backend@<merge>^..<merge>`, which no branch could
+    give it, deletes the ticket branch the pull request carried, records the code and agent repos'
+    ranges, writes `done`, which the tracker's done check allows, and renders the page over what
+    landed in place of the one it rendered before. Origin's refs are as GitHub left them."""
     backend = on_github(toy)
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
@@ -2400,7 +2426,7 @@ def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_tick
 
     theirs, merge = merged_on_github(backend, "squash")
     origin = git(toy.parent / "Backend.git", "for-each-ref")
-    done = run(toy, "review", "warm-preset")
+    done = run(toy, landing, "warm-preset")
     assert done.returncode == 0, done.stderr
     only_read(toy)
     assert git(toy.parent / "Backend.git", "for-each-ref") == origin

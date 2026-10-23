@@ -781,7 +781,8 @@ def test_each_rounds_report_reaches_the_ticket_once(tickets: Path, repo: Path) -
     """`land-takes-a-round-whole`'s first criterion. A round sent back before its review is
     imported at the resume, so the next round's report lands beside it; a resume whose round wrote
     no report of its own, and a report committed again with the same words (a rebased branch),
-    bring nothing in twice; one committed again with new words within a round is that round's."""
+    bring nothing in twice. A round's report is read at its boundary, its tip, so one it committed
+    twice before then is imported once, as it stands last."""
     path = ticket(tickets, "warm-preset", status="claimed")
     first = reported(repo, "warm-preset")
     assert run(repo, "import", "warm-preset").code == 0
@@ -828,9 +829,10 @@ def test_the_ids_a_report_defines_are_numbered_past_the_tickets_and_its_mentions
 - [D4] **Assumptions**
   - A1 `lamp.py:3`: one socket.
 """, status="claimed")
+    ticket(tickets, "lamp-ui")
     reported(repo, "warm-preset", """## Comments
 
-Warm lands; D3 is still the user's, and D1 below asks the rest.
+Warm lands; D3 is still the user's, and D1 below asks the rest, as lamp-ui D1 did; `docs/D1.md` has it.
 
 - [D2] **Assumptions**
   - A1 `lamp.py:41`: 2700K, as D1 assumes until ruled; A2 holds it.
@@ -845,7 +847,7 @@ Warm lands; D3 is still the user's, and D1 below asks the rest.
     assert [q["tag"] for q in read["questions"]] == ["D3", "D5"]
     assert [a["id"] for a in read["assumptions"]] == [1, 2, 3]
     written = (tickets / "warm-preset.md").read_text()
-    assert "Warm lands; D3 is still the user's, and D5 below asks the rest." in written
+    assert "Warm lands; D3 is still the user's, and D5 below asks the rest, as lamp-ui D1 did; `docs/D1.md` has it." in written
     assert "- [D6] **Assumptions**" in written
     assert "A2 `lamp.py:41`: 2700K, as D5 assumes until ruled; A3 holds it." in written
     assert "A3 `lamp.py:42`: the fade, which A2 needs." in written
@@ -2666,6 +2668,8 @@ def test_a_round_whose_branches_were_deleted_after_their_merge_lands_from_the_me
     for top in (split, agent):
         merged(top, "ticket/one-flow")
         git(top, "branch", "-q", "-D", "ticket/one-flow")
+    built(split, "ticket/one-flow-two", "main", "another flow, whose slug the first's begins")
+    merged(split, "ticket/one-flow-two")
     said, read = printed(split, "land", "one-flow")
     assert said.code == 0, said.said
     assert [(one["repo"], one["merged"]) for one in read["round"]] == [("code", True), ("agent", True)]
@@ -2689,8 +2693,13 @@ def test_every_write_leaves_the_ticket_it_wrote_committed(split: Path) -> None:
     clean("one-flow", "new", "one-flow", "--priority", "2", "--size", "M", "--status", "open")
     path = agent / "tickets" / "one-flow.md"
     path.write_text(path.read_text() + "\n## Questions\n\n- [D1] **Warm?** Or cool.\n")
+    (agent / "notes.txt").write_text("somebody else's, staged\n")
+    git(agent, "add", "notes.txt")
     clean("one-flow", "set", "one-flow", "status=claimed", "--message", "claim one-flow")
     assert subjects(agent)[0] == "claim one-flow" and "[D1]" in git(agent, "show", "HEAD:tickets/one-flow.md")
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == ["tickets/one-flow.md"]
+    assert git(agent, "status", "--porcelain", "--", "notes.txt") == "A  notes.txt\n", "what else was staged stays staged"
+    git(agent, "rm", "-q", "--cached", "notes.txt")  # a merge, which `accept` makes below, takes a clean index
     clean("one-flow", "rule", "one-flow", "D1", "warm")
     built(split, "ticket/one-flow", "main", "the flow")
     reported(agent, "one-flow")

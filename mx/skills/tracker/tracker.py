@@ -512,13 +512,14 @@ def land(slug: Annotated[str, tyro.conf.Positional], merge: bool = False, dry_ru
     committed that the ticket lacks (as `import` brings it), the merge of its agent branch, its
     status and its ranges. The round is the ticket's `ticket/<slug>` branch in the code repo this
     runs in, in the agent repo, and in each listed repo its `repos:` names; a branch deleted after
-    its merge is read off that merge, on the branch it merged into, by the subject that names it.
+    its merge is read off that merge, on the branch it merged into, by a subject naming the branch
+    as git's own `Merge branch 'ticket/<slug>'` and GitHub's `Merge pull request` do.
 
-    Once every branch of the round outside the agent repo has merged into the branch it cut from,
-    one of them with a commit of its own, the agent branch merges --no-ff into the branch the agent
-    repo has out, under git's own subject. With --merge it merges there whatever the others hold,
-    which is how a round with no code merges, and is refused while one of them has not merged.
-    Once every branch has merged, the ticket gets the round's ranges and is `done`, except a child
+    The agent branch merges --no-ff into the branch the agent repo has out, under git's own subject,
+    once the round's other branches have all merged and one of them carries a commit: the code
+    merge is the sign the build was read. A round with no code gives no such sign, so its agent
+    branch merges only with --merge, which is refused while another branch of the round has not
+    merged. Once every branch has merged, the ticket gets the round's ranges and is `done`, except a child
     ticket merged into its parent's branch: that one waits in `review` for its parent's ruling. A
     `done` here is held to the rules `set` holds every `done` to, and a merged round they refuse is
     refused with the reason and nothing written; an open question refuses it before the agent
@@ -531,8 +532,8 @@ def land(slug: Annotated[str, tyro.conf.Positional], merge: bool = False, dry_ru
          "round": [{"repo": "str", "tip": "str", "merged": bool, "range": "str|null"}]}
 
     `merging` says the landing merged the agent branch, or with --dry-run would; the round is read
-    after that merge, and with --dry-run before it. A range is `<repo>@<first>..<last>`, from the ticket's own fork point, which
-    a --no-ff merge keeps findable once the branch has merged
+    after that merge, and with --dry-run before it. A range is `<repo>@<first>..<last>`, from the
+    ticket's own fork point, which a --no-ff merge keeps findable once the branch has merged
     (decisions/0001-every-merge-is-no-ff.md); none for a branch that committed nothing, nor for a
     merged tip no merge of its own brought in, which git cannot tell from one.
 
@@ -599,8 +600,7 @@ def landing(slug: str, merge: bool = False, dry_run: bool = False, accepting: bo
     ticket = tracker.ticket(slug)
     body, changes, message = ticket.path.read_text(), {}, ""
     if brought := report_into(ticket, tracker):
-        body, changes, commit = brought
-        message = f"{slug} for review" if ticket.status != "review" else f"{slug}: the report of {commit}"
+        body, changes, message = brought
     # the ticket as the import leaves it, which every rule below is read against
     start = read(ticket.path, written_with(body, changes)) if changes else ticket
     branches = round_of(ticket, tracker)
@@ -738,9 +738,10 @@ def round_tip(top: Path, slug: str, bases: Sequence[str]) -> str | None:
 
 def merged_tip(top: Path, slug: str, bases: Sequence[str]) -> str | None:
     """The second parent of the newest merge on one of `bases`' first-parent lines whose subject
-    names `ticket/<slug>`, as git's own `Merge branch 'ticket/<slug>'` does: the tip a deleted ticket
-    branch had when it merged. None where no merge names it."""
-    named = re.compile(rf"(?<![\w/-])ticket/{re.escape(slug)}(?![\w-])")
+    names `ticket/<slug>`, as git's own `Merge branch 'ticket/<slug>'` and GitHub's `Merge pull
+    request #7 from owner/ticket/<slug>` do: the tip a deleted ticket branch had when it merged.
+    None where no merge names it."""
+    named = re.compile(rf"(?<![\w-])ticket/{re.escape(slug)}(?![\w-])")
     for onto in bases:
         for line in tried(top, "log", "--first-parent", "--merges", "--format=%P%x09%s", onto, "--").stdout.splitlines():
             parents, _, subject = line.partition("\t")
@@ -1131,9 +1132,9 @@ def import_report(slug: Annotated[str, tyro.conf.Positional]) -> int:
 
     The report is `show/<slug>/report.md` on the agent repo's `ticket/<slug>` branch, or on the tip
     the merge of that branch brought in where the branch is gone. The ticket lacks it unless
-    `reports:` names the commit that last wrote it, or one that wrote the same text, or its closing
-    comment stands in the ticket word for word, which is how one imported before `reports:` was
-    kept reads. A ticket neither claimed nor in review takes none in, and says so.
+    `reports:` names the commit that last wrote it, or one that wrote the same text; a ticket with
+    no `reports:` lacks it unless its closing comment stands in the ticket word for word. A ticket
+    neither claimed nor in review takes none in, and says so.
 
     Each id the report defines, a `[Dn]` tag or an `An` assumption, is numbered past the highest of
     its kind the ticket carries, in the report's own order, and each mention of it in the report
@@ -1150,19 +1151,19 @@ def import_report(slug: Annotated[str, tyro.conf.Positional]) -> int:
     brought = report_into(ticket, tracker)
     if not brought:
         return 0
-    body, changes, commit = brought
+    body, changes, message = brought
     after, written = written_into(ticket, changes, tracker, body)
     ticket.path.write_text(written)
-    commit_tickets(tracker, f"{slug} for review" if ticket.status != "review" else f"{slug}: the report of {commit}", [ticket.path])
+    commit_tickets(tracker, message, [ticket.path])
     asked = len(after.questions) - len(ticket.questions)
-    print(f"{slug}: the report of {commit[:12]}, its closing comment and {asked} question{'s' if asked != 1 else ''}; status: {ticket.status} → review")
+    print(f"{slug}: the report of {after.meta['reports'][-1]}, its closing comment and {asked} question{'s' if asked != 1 else ''}; status: {ticket.status} → review")
     return 0
 
 
 def report_into(ticket: Ticket, tracker: Tracker) -> tuple[str, dict[str, str], str] | None:
     """The ticket file's text with the report its round carries and it lacks, the fields that report
-    brings (the commit it came from under `reports:`, and `review`), and that commit; None where
-    there is none to bring, which is said."""
+    brings (the commit it came from under `reports:`, and `review`), and the message its commit
+    carries; None where there is none to bring, which is said."""
     top = toplevel(tracker.root)
     tip = round_tip(top, ticket.slug, (head(top),))
     if tip and (wrote := tickets_written(top, tracker, tip)):
@@ -1178,7 +1179,8 @@ def report_into(ticket: Ticket, tracker: Tracker) -> tuple[str, dict[str, str], 
     body, broken = landed(ticket, ticket.path.read_text(), text, called, tracker)
     refuse(broken)
     recorded = [str(one) for one in ticket.meta.get("reports") or []]
-    return body, {"reports": rendered([*recorded, commit]), "status": "review"}, commit
+    message = f"{ticket.slug} for review" if ticket.status != "review" else f"{ticket.slug}: the report of {commit}"
+    return body, {"reports": rendered([*recorded, commit]), "status": "review"}, message
 
 
 def pending_report(ticket: Ticket, tracker: Tracker, top: Path, tip: str | None) -> tuple[tuple[str, str, Path] | None, str]:
@@ -1195,7 +1197,7 @@ def pending_report(ticket: Ticket, tracker: Tracker, top: Path, tip: str | None)
     recorded = [str(one) for one in ticket.meta.get("reports") or []]
     comment = read_report(Path(path), text).comment.strip()
     if any(commit.startswith(one) or tried(top, "rev-parse", "-q", "--verify", f"{one}:{path}").stdout.strip() == blob for one in recorded) \
-            or (comment and comment in ticket.body):
+            or (not recorded and comment and comment in ticket.body):
         return None, f"the report on ticket/{ticket.slug} is one {ticket.slug} already carries, so this round left none of its own to import"
     return (commit, text, Path(f"ticket/{ticket.slug}:{path}")), ""
 
@@ -1219,24 +1221,34 @@ def landed(ticket: Ticket, was: str, text: str, path: Path, tracker: Tracker) ->
     if report.refusals:
         return was, list(report.refusals)
     before = read(ticket.path, was)
-    written = with_report(was, before, read_report(path, renumbered(text, report, before)))
+    written = with_report(was, before, read_report(path, renumbered(text, report, before, tracker.tickets)))
     broken = caused(ticket, read(ticket.path, written), tracker, was, written)
     return written, [f"{path}: this report would leave the ticket saying what no reader can read, at the lines it lands on:", *broken] if broken else []
 
 
-# an id a report defines, `D3` or `A12`, wherever it is mentioned, and never inside a word or a path
-OWN_ID = re.compile(r"(?<![\w/#-])([DA])(\d+)(?!\w)")
+# an id a report defines, `D3` or `A12`, wherever it is mentioned, and never inside a word or a path;
+# group 1 is the word before it, which names another ticket in a handle, `lamp-ui D3`
+OWN_ID = re.compile(r"(?:([a-z0-9][a-z0-9-]*) )?(?<![\w/#-])([DA])(\d+)(?!\w)")
 
 
-def renumbered(text: str, report: Report, ticket: Ticket) -> str:
+def renumbered(text: str, report: Report, ticket: Ticket, slugs: Iterable[str] = ()) -> str:
     """The report's text with each id it defines numbered past the highest of its kind the ticket
-    carries, in the report's own order, and each mention of one moved with it. The tags and the
-    assumptions run as two sequences, each of them the ticket's for good."""
+    carries, in numeric order, and each mention of one moved with it, but for a handle naming one of
+    `slugs`, another ticket's id. The tags and the assumptions run as two sequences, each of them
+    the ticket's for good."""
     highest = {"D": max((int(tag[1:]) for tag, _ in tags_of(ticket)), default=0),
                "A": max((one.id for one in ticket.assumptions), default=0)}
     defined = {"D": sorted({int(tag[1:]) for tag in report.tags}), "A": sorted({one.id for one in report.assumptions})}
     moved = {(kind, old): str(highest[kind] + n) for kind, ids in defined.items() for n, old in enumerate(ids, start=1)}
-    return OWN_ID.sub(lambda found: found[1] + moved.get((found[1], int(found[2])), found[2]), text)
+    others = set(slugs) - {ticket.slug}
+
+    def move(found: re.Match) -> str:
+        before = f"{found[1]} " if found[1] else ""
+        if found[1] in others:
+            return found[0]
+        return before + found[2] + moved.get((found[2], int(found[3])), found[3])
+
+    return OWN_ID.sub(move, text)
 
 
 def tags_of(ticket: Ticket) -> list[tuple[str, int]]:

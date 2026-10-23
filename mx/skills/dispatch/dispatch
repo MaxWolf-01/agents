@@ -578,7 +578,10 @@ ctl() {
     if [ "$sub" = resume ]; then
         fetch_round "$name" || die "fetching $name's round from $host failed, so it was not resumed"
         run "$tracker" import "$name" || die "the tracker refused $name's report, so it was not resumed; the lines above say why"
+        # Claimed again at once, so a resume that fails below leaves a ticket in somebody's hands
+        # rather than one reading as a build waiting for the user.
         read_tracker "$name" || exit 1
+        reclaim "$name"
     fi
     # Every spawn pushes this branch of both repos to a remote host, so a ticket branch cuts from
     # its current tip; a local host cuts from these checkouts.
@@ -615,7 +618,6 @@ ctl() {
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -z "$carries" ] || mv "$state/prompts/$base/round/ticket-$2.next" "$state/prompts/$base/round/ticket-$2.md"
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
-    [ "$sub" = resume ] && reclaim "$2"
     return 0
 }
 
@@ -763,7 +765,7 @@ covers() { # <page> <spec...>
 # `accept` (`tracker land --help`); with --dry-run, what it would write, and nothing written.
 # `tracked` is the ticket as the landing leaves it, and `written` the round's ranges,
 # `<repo>@<range>` per branch of it that committed something, merged or not.
-land() { # <land|accept> <slug> [--merge] [--dry-run]
+round_read() { # <land|accept> <slug> [--merge] [--dry-run]
     tracked=$(run "$tracker" "$@") || exit 1
     mapfile -t written < <(jq -r '.round[].range // empty' <<< "$tracked")
 }
@@ -812,18 +814,21 @@ render_page() { # <slug> [<spec the page may show>...]
     fi
 }
 
-review() { # <slug> [--merge | --accept]
-    locate --read "$1"
-    id=$1
-    # The tracker's `land`, or for a ticket ruled alone its `accept`, which lands as `land --merge`
-    # does and refuses what leaves it short of done.
-    how=land merge=()
+review() { # <slug> [--merge]
     case ${2:-} in
-        "") ;;
-        --merge) merge=(--merge) ;;
-        --accept) how=accept merge=(--merge) ;;
+        "" | --merge) ;;
         *) die "review takes --merge after the slug, or nothing" ;;
     esac
+    locate --read "$1"
+    landed_round "$1" land "$1" ${2:+"$2"}
+}
+
+# A review's work, landing <slug>'s round with the tracker command given: `land` for a review, or
+# `accept` for a ticket ruled alone, which lands as `land --merge` does and refuses what leaves it
+# short of done.
+landed_round() { # <slug> <land|accept> <its arguments...>
+    id=$1
+    landing=("${@:2}")
     branch=ticket/$id
     rounds=$(rounds_of "$id")
     named=$(field "$id" repos)
@@ -847,7 +852,8 @@ review() { # <slug> [--merge | --accept]
         is_merged "$name" "$tip" || unmerged+=("$name")
     done
     if [ ${#unmerged[@]} -gt 0 ]; then
-        land land "$id" "${merge[@]}" --dry-run
+        # Without --merge, which a listed branch only GitHub can say has landed would refuse.
+        round_read land "$id" --dry-run
         page_specs "$id"
         shown=("${specs[@]}")
         land_on_github "$id" "${unmerged[@]}" || asked=1
@@ -857,7 +863,7 @@ review() { # <slug> [--merge | --accept]
     # and committed by the tracker. A round whose branches carry no commit at all built nothing:
     # there is no range, nothing to render and nothing to rule on, which is a worker that stopped
     # before its first commit.
-    if [ "$how" = accept ]; then land accept "$id"; else land land "$id" "${merge[@]}"; fi
+    round_read "${landing[@]}"
     [ ${#written[@]} -gt 0 ] || return 0
     up=$(field "$id" parent)
     retiring=$(jq -r 'select(.merged and .tickets[0].status == "done") | "yes"' <<< "$tracked")
@@ -1000,9 +1006,9 @@ retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its 
 accept() { # <slug>
     locate --read
     id=$1
-    # A ticket ruled alone is landed by a review that takes its accept.
+    # A ticket ruled alone lands as a review does, through its accept.
     if [ -z "$(jq -r --arg p "$id" '.tickets[] | select(.parent == $p) | .slug' <<< "$tracked")" ]; then
-        review "$id" --accept
+        landed_round "$id" accept "$id"
         return
     fi
     if [ -n "$(jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?' <<< "$tracked")" ]; then
