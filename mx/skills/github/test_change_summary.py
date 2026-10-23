@@ -33,6 +33,7 @@ FAKE_CLAUDE = r"""#!/usr/bin/env bash
 n=$(( $(cat "$FAKE_DIR/calls" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$FAKE_DIR/calls"
 printf '%s\0' "$@" > "$FAKE_DIR/argv.$n"
+printf '%s' "${FORCE_PROMPT_CACHING_5M:-}" > "$FAKE_DIR/cache.$n"
 cat > "$FAKE_DIR/stdin.$n"
 pwd > "$FAKE_DIR/cwd.$n"
 ls -A > "$FAKE_DIR/ls.$n"
@@ -125,6 +126,7 @@ def test_the_model_call_loads_no_settings_plugins_mcp_tools_commands_or_session(
     assert claude.flag("--tools") == ""
     assert {"--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"} <= set(argv)
     assert "--system-prompt" in argv
+    assert (claude.dir / "cache.1").read_text() == "1", "the call writes its cache at the 5-minute rate"
 
 
 def test_the_model_runs_where_no_project_file_is_in_reach(claude: Claude) -> None:

@@ -284,6 +284,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert turn_review.record_shape(turn_review.RULES.read_text()) in system
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
+    assert (claude / "cache").read_text() == "1", "the reviewer writes its cache at the 5-minute rate"
 
 
 # ---- P2: a write that breaks the records goes back at once ------------------
@@ -514,6 +515,7 @@ def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: dict | 
     (where / "claude").write_text(
         "#!/usr/bin/env bash\n"
         f'printf "%s\\0" "$@" > "{where}/argv"\n'
+        f'printf "%s" "${{FORCE_PROMPT_CACHING_5M:-}}" > "{where}/cache"\n'
         f'cat > "{where}/stdin"\n'
         + (f"echo {json.dumps(json.dumps(result))}\n" if result else "echo 'API Error: overloaded'\n")
         + f"{then}\n")
