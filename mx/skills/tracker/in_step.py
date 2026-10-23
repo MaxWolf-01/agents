@@ -1,25 +1,16 @@
-"""Two main checkouts of one repo, the laptop's and another machine's, kept in step through git.
+"""Two main checkouts of one agent repo, the laptop's and another machine's, kept in step through git.
 
-A checkout in step has pushed every commit of its branch to the branch's upstream and holds every
-commit the upstream has. Getting there is a fetch, then the local commits replayed on top of what
-the other checkout pushed, then a push; a push refused because the other checkout pushed in between
-goes round again. Two machines that changed the same lines of one file stop at a conflict, as any
-git rebase does, and nothing is pushed.
-
-The replay keeps each merge a merge of the same commit: a `--no-ff` merge of a ticket branch is
-redone onto the new base with the ticket's tip still its second parent, since that merge is how the
-tracker finds what a ticket landed (decisions/0001-every-merge-is-no-ff.md). `git rebase
---rebase-merges` would rewrite the ticket's own commits onto the new base too, and the merge would
-no longer hold the tip. For the same reason a commit is never replayed where another branch here
-is built on it, or a ticket a local merge carries: the copy and the original would both end up on
-the branch. The sync merges the upstream in instead, which rewrites nothing.
+A checkout in step has pushed every commit of its branch to the branch's upstream. A push refused
+because the other checkout pushed first merges what it pushed, a plain merge that rewrites nothing,
+and pushes again. Two machines that changed the same lines of one file stop at a conflict, as any
+git merge does: the merge is left for whoever resolves it, and nothing is pushed until it is
+committed.
 """
 
 from __future__ import annotations
 
 import fcntl
 import os
-import re
 import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -27,15 +18,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-# Set for every git command a sync runs: the commits its replay makes fire the commit hook, which
-# would otherwise start a sync of the checkout this one holds the lock of.
+# Set for every git command a sync runs: the merge it makes fires the merge hook, which would
+# otherwise start a sync of the checkout this one holds the lock of.
 SYNCING = "TRACKER_SYNCING"
 # What git hands a hook, which would make a sync act on the commit's temporary index or another
 # worktree rather than the checkout it names.
 HOOK_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY")
 # How long a fetch or a push may take before the remote counts as unreachable: a captive portal
-# answers nothing rather than refusing, and every ticket write waits on the fetch. An HTTPS remote
-# that stalls mid-transfer is cut sooner, by git's own low-speed limit, without capping a large one.
+# answers nothing rather than refusing, and the commit that fired the hook waits on it. An HTTPS
+# remote that stalls mid-transfer is cut sooner, by git's own low-speed limit.
 NETWORK_SECONDS = 30
 NETWORK_CONFIG = ("-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=10")
 # Pushes refused because the other checkout pushed first, before this one gives up for now.
@@ -44,8 +35,7 @@ UNDERWAY = {"rebase-merge": "a rebase", "rebase-apply": "a rebase", "MERGE_HEAD"
             "CHERRY_PICK_HEAD": "a cherry-pick", "REVERT_HEAD": "a revert", "BISECT_LOG": "a bisect"}
 
 Outcome = Literal["pushed", "pulled", "current", "offline", "conflict", "underway", "refused", "skipped"]
-HOLDS_WRITES = ("conflict", "underway")  # a ticket write waits for these to be settled
-FAILS = (*HOLDS_WRITES, "refused")  # what `tracker sync` exits 1 on
+FAILS = ("conflict", "underway", "refused")  # what `tracker sync` exits 1 on
 
 
 @dataclass(frozen=True)
@@ -61,23 +51,20 @@ class Failed(Exception):
     """A git command that has to succeed for the sync to know where it stands, and did not."""
 
 
-def sync(top: Path, resolve: bool = False) -> Synced:
-    """Bring the checkout at `top` in step with its branch's upstream. A conflict is undone, leaving
-    the checkout as it was, unless `resolve`, which leaves the replay stopped at it for a person."""
+def sync(top: Path) -> Synced:
+    """Bring the checkout at `top` in step with its branch's upstream."""
     if os.environ.get(SYNCING):
         return Synced("skipped")
     try:
         with locked(top):
-            # first, and under the lock: a replay stopped for a person has HEAD detached, and would
-            # otherwise read as a checkout with no branch to sync
             if underway := underway_in(top):
-                return Synced("underway", f"{top}: {underway} is underway, so nothing was synced; `tracker sync` once it is done")
+                return Synced("underway", f"{top}: {underway} is underway, so nothing was pushed; once it is committed, the commit pushes")
             branch = git(top, "branch", "--show-current").strip()
             remote = tried(top, "config", f"branch.{branch}.remote").stdout.strip() if branch else ""
             merge = tried(top, "config", f"branch.{branch}.merge").stdout.strip() if branch else ""
             if not remote or not merge or remote == ".":  # detached, or a branch with no upstream
                 return Synced("skipped")
-            return in_step(top, branch, remote, merge, resolve)
+            return in_step(top, branch, remote, merge)
     except Failed as failed:
         return Synced("refused", f"{top}: {failed}")
 
@@ -95,95 +82,39 @@ def underway_in(top: Path) -> str | None:
     return None
 
 
-def in_step(top: Path, branch: str, remote: str, merge: str, resolve: bool) -> Synced:
+def in_step(top: Path, branch: str, remote: str, merge: str) -> Synced:
+    """Push what the upstream lacks; where the other checkout pushed first, merge it and push again.
+    With nothing to push, what the upstream has is merged in, which is a fast-forward."""
     pulled = 0
     for _ in range(ROUNDS):
+        if count(top, "@{u}..HEAD"):
+            pushed = tried(top, *NETWORK_CONFIG, "push", "--porcelain", remote, f"HEAD:{merge}", timeout=NETWORK_SECONDS)
+            if pushed.returncode == 0:
+                return Synced("pushed", f"{top}: {branch} pushed to {remote}" + (f", after merging {pulled} commit(s) from it" if pulled else ""))
+            if not raced(pushed):
+                if any(line.startswith("To ") for line in pushed.stdout.splitlines()):  # it answered, and said no
+                    return Synced("refused", f"{top}: {remote} refused {branch}: {said_by(pushed)}")
+                return unreachable(top, branch, remote, pushed)
         fetched = tried(top, *NETWORK_CONFIG, "fetch", "-q", remote, timeout=NETWORK_SECONDS)
         if fetched.returncode != 0:
             return unreachable(top, branch, remote, fetched)
-        if behind := count(top, "HEAD..@{u}"):
-            replayed = replay(top, branch, resolve)
-            if replayed.outcome != "pulled":
-                return replayed
-            pulled += behind
-        if not (ahead := count(top, "@{u}..HEAD")):
+        if not (behind := count(top, "HEAD..@{u}")):
+            if count(top, "@{u}..HEAD"):
+                continue  # the push raced a remote that has since settled: push again
             return Synced("pulled", f"{top}: {branch} took {pulled} commit(s) from {remote}") if pulled else Synced("current")
-        pushed = tried(top, *NETWORK_CONFIG, "push", "--porcelain", remote, f"HEAD:{merge}", timeout=NETWORK_SECONDS)
-        if pushed.returncode == 0:
-            return Synced("pushed", f"{top}: {branch} pushed {ahead} commit(s) to {remote}" + (f", after taking {pulled} from it" if pulled else ""))
-        if not raced(pushed):
-            if any(line.startswith("To ") for line in pushed.stdout.splitlines()):  # it answered, and said no
-                return Synced("refused", f"{top}: {remote} refused {branch}: {said_by(pushed)}")
-            return unreachable(top, branch, remote, pushed)
+        merged = tried(top, "merge", "-q", "--no-edit", "@{u}")
+        if merged.returncode != 0:
+            return stopped(top, branch, remote, merged)
+        pulled += behind
     return Synced("refused", f"{top}: {remote} moved on before each of {ROUNDS} pushes of {branch}; `tracker sync` tries again")
 
 
-def replay(top: Path, branch: str, resolve: bool) -> Synced:
-    """This checkout's own commits, oldest first along the first parents, redone on top of the
-    upstream: a commit picked, a merge merged again from the same second parent with its own
-    message. A commit whose change the upstream already holds comes out empty and is dropped, which
-    is a claim both machines wrote alike. Uncommitted changes are set aside for it and put back.
-
-    Where something else here is built on those commits, the upstream is merged in instead, which
-    rewrites nothing: a ticket cut from them, or merged, carries the originals."""
-    todo, merged = [], set()
-    commits = git(top, "rev-list", "--first-parent", "--reverse", "@{u}..HEAD").split()
-    for commit in commits:
-        parents = git(top, "rev-list", "--parents", "-n", "1", commit).split()[1:]
-        todo.append(f"merge -C {commit} {parents[1]}" if len(parents) == 2 else f"pick {commit}")
-        merged |= set(parents[1:])
-    before = git(top, "rev-parse", "HEAD").strip()
-    if commits and built_on(top, branch, commits[0], merged):
-        return settled(top, before, resolve, "merge", tried(top, "merge", "-q", "--autostash", "--no-edit", "@{u}"))
-    script = Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "tracker-sync-todo"
-    script.write_text("\n".join(todo or ["noop"]) + "\n")
-    try:
-        done = tried(top, "rebase", "-i", "--autostash", "--empty=drop", "@{u}", env={"GIT_SEQUENCE_EDITOR": f"cp '{script}'"})
-    finally:
-        script.unlink(missing_ok=True)
-    return settled(top, before, resolve, "rebase", done)
-
-
-def built_on(top: Path, branch: str, oldest: str, merged: set[str]) -> bool:
-    """Whether another branch here, or a ticket tip the branch's own commits merge (whose branch
-    may be gone), is built on `oldest`, the first of those commits, and so on every one of them."""
-    under = set(git(top, "for-each-ref", "--contains", oldest, "--format=%(refname:short)", "refs/heads").split()) - {branch}
-    return bool(under) or any(tried(top, "merge-base", "--is-ancestor", oldest, tip).returncode == 0 for tip in merged)
-
-
-def settled(top: Path, before: str, resolve: bool, how: Literal["rebase", "merge"], done: subprocess.CompletedProcess) -> Synced:
-    """What a replay or a merge of the upstream, `done`, left: the commits taken in, a conflict
-    undone or left stopped for a person, or a refusal that ran nothing."""
-    files = tried(top, "diff", "--name-only", "--diff-filter=U").stdout.split()
-    if done.returncode == 0 and files:
-        return unstashed(top, before, done, files)
-    if done.returncode == 0:
-        return Synced("pulled")
-    if files and resolve:
-        go_on = "`git rebase --continue`" if how == "rebase" else "`git commit`"
-        return Synced("conflict", f"{top}: {', '.join(files)} changed here and upstream both; the {how} is stopped at it: resolve, {go_on}, then `tracker sync`")
-    if underway_in(top):
-        tried(top, how, "--abort")
-    if files:
-        return Synced("conflict", f"{top}: {', '.join(files)} changed here and upstream both, so nothing was pushed and the checkout is as it was; `tracker sync --resolve` stops at the conflict for you to resolve")
-    return Synced("refused", f"{top}: the {how} onto the upstream did not run ({said_by(done)}), so nothing was pushed and the checkout is as it was")
-
-
-def unstashed(top: Path, before: str, done: subprocess.CompletedProcess, files: list[str]) -> Synced:
-    """The checkout put back as it was before a replay whose commits went through and whose
-    uncommitted changes, set aside for it, conflict with what came in: git leaves the conflict in
-    the working tree and the changes in the stash, under the name it printed. The stash is shared
-    by every worktree and session, so only that entry is touched, and none at all where it is not
-    found."""
-    printed = re.search(r"Created autostash: ([0-9a-f]+)", done.stdout + done.stderr)
-    entries = [line.split() for line in git(top, "stash", "list", "--format=%gd %H").splitlines()]
-    ours = next((entry for entry in entries if printed and entry[1].startswith(printed[1])), None)
-    if not ours:
-        raise Failed(f"{', '.join(files)} conflict with uncommitted changes, which are not in the stash where the replay put them; nothing was reset, so look at `git status` and `git stash list`")
-    git(top, "reset", "-q", "--hard", before)
-    git(top, "stash", "apply", "-q", ours[1])
-    git(top, "stash", "drop", "-q", ours[0])
-    return Synced("conflict", f"{top}: {', '.join(files)} changed upstream and in uncommitted changes here, so nothing was pushed and the checkout is as it was; commit or set those changes aside, then `tracker sync`")
+def stopped(top: Path, branch: str, remote: str, merged: subprocess.CompletedProcess) -> Synced:
+    """A merge of the upstream that did not go through: a conflict, left for whoever resolves it, or
+    a merge git would not start, which changed nothing."""
+    if files := tried(top, "diff", "--name-only", "--diff-filter=U").stdout.split():
+        return Synced("conflict", f"{top}: {', '.join(files)} changed here and at {remote} both, so the merge of {remote}'s {branch} is stopped at the conflict and nothing was pushed; resolve it and commit, and the commit pushes")
+    return Synced("refused", f"{top}: the merge of {remote}'s {branch} did not run ({said_by(merged)}), so nothing was pushed; `tracker sync` once that is cleared")
 
 
 def unreachable(top: Path, branch: str, remote: str, failed: subprocess.CompletedProcess) -> Synced:
@@ -212,7 +143,7 @@ def count(top: Path, span: str) -> int:
 @contextmanager
 def locked(top: Path) -> Iterator[None]:
     """One sync of a repo at a time on this machine: two sessions committing at once would otherwise
-    replay the same checkout twice over."""
+    merge into the same checkout twice over."""
     common = Path(git(top, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
     with (common / "tracker-sync.lock").open("w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
@@ -227,10 +158,10 @@ def git(top: Path, *args: str) -> str:
     return done.stdout
 
 
-def tried(top: Path, *args: str, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
-    """A git command whose failing is an answer: a remote that does not answer, a replay that stops."""
+def tried(top: Path, *args: str, timeout: float | None = None) -> subprocess.CompletedProcess:
+    """A git command whose failing is an answer: a remote that does not answer, a merge that stops."""
     given = {key: value for key, value in os.environ.items() if key not in HOOK_ENV}
-    given |= {SYNCING: "1", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env or {})}
+    given |= {SYNCING: "1", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
     try:
         return subprocess.run(["git", "-C", str(top), *args], capture_output=True, text=True, env=given, timeout=timeout)
     except subprocess.TimeoutExpired:

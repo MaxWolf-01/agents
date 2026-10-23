@@ -93,15 +93,6 @@ field() { # <slug> <field>
 # The commit ranges a ticket's rounds have landed as, one per line; nothing before the first of them lands.
 rounds_of() { field "$1" diff; } # <slug>
 
-# <command> run, then the project's main checkouts synced (`tracker sync --help`), which pushes the
-# merge the command followed. In a subshell, so a command that exits early is still followed by it.
-then_sync() { # <command> [args...]
-    local rc
-    ( "$@" ); rc=$?
-    run "$tracker" sync || rc=1
-    return $rc
-}
-
 # Once a `done` is committed, every tree it finished leaves the tracker in a commit of its own. A
 # retirement the tracker refuses is said, and the `done` stands.
 retire_trees() {
@@ -1521,8 +1512,8 @@ case $cmd in
     ctl)     shift; ctl "$@" ;;
     wait)    shift; wait_ "$@" ;;
     fetch)   shift; fetch "$@" ;;
-    review)  shift; then_sync review "$@" ;;
-    accept)  shift; then_sync accept "$@" ;;
+    review)  shift; review "$@" ;;
+    accept)  shift; accept "$@" ;;
     ps)      shift; ps_ "$@" ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;
