@@ -2424,18 +2424,18 @@ def test_a_parents_accept_records_its_branch_in_a_listed_repo_a_child_of_it_name
 
 
 # ---- two main checkouts ----------------------------------------------------
-# The oracle is `two-main-checkouts-synced-by-git` in the dotfiles tracker: two clones of one
-# project, each writing tickets and merging, end with the same tracker and the same integration
-# branch with no write lost; a refused push takes what the other machine pushed and pushes again; a
-# conflict on one ticket stops, says which file and pushes nothing; a clone with no network commits
-# as today and pushes once the network is back. And decisions/0001-every-merge-is-no-ff.md: a
-# ticket's merge keeps the ticket's tip as its second parent.
+# The oracle is `two-main-checkouts-synced-by-git` in the dotfiles tracker and its parent's ruling of
+# 2026-10-23: two clones of one project, each writing tickets, end with the same tracker with no
+# write lost; every commit in the agent repo is pushed at once, and a refused push merges what the
+# other machine pushed and pushes again; a conflict on one ticket stops there, says which file and
+# pushes nothing, leaving the merge to resolve; a clone with no network commits as today and pushes
+# once the network is back. Nothing pulls before a ticket write, and no integration branch is
+# pushed on its own.
 
 
 @dataclass(frozen=True)
 class Machine:
-    """One machine's main checkouts of a project: its code repo, with the agent repo inside it and
-    the listed repo `lib` beside that."""
+    """One machine's main checkouts of a project: its code repo, with the agent repo inside it."""
 
     code: Path
 
@@ -2446,10 +2446,6 @@ class Machine:
     @property
     def tickets(self) -> Path:
         return self.agent / "tickets"
-
-    @property
-    def lib(self) -> Path:
-        return self.code / "lib"
 
 
 def with_tracker() -> dict[str, str]:
@@ -2470,15 +2466,13 @@ def cloned(tmp_path: Path, synced: bool = True) -> tuple[Machine, Machine, Path]
     repos."""
     seed = tmp_path / "seed"
     (seed / "agent" / "tickets").mkdir(parents=True)
-    for at in (seed, seed / "agent", seed / "lib"):
+    for at in (seed, seed / "agent"):
         initialised(at)
-    (seed / ".gitignore").write_text("/agent/\n/lib/\n")
+    (seed / ".gitignore").write_text("/agent/\n")
     (seed / "src.txt").write_text("the lamp\n")
-    (seed / "lib" / "lib.txt").write_text("the lamp's library\n")
     ticket(seed / "agent" / "tickets", "shared")
-    (seed / "agent" / "repos.toml").write_text('[lib]\npath = "lib"\n')
     origin = tmp_path / "origin"
-    for repo, at in (("code", seed), ("agent", seed / "agent"), ("lib", seed / "lib")):
+    for repo, at in (("code", seed), ("agent", seed / "agent")):
         git(at, "add", "-A")
         git(at, "commit", "-q", "-m", f"the {repo} repo")
         git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin / f"{repo}.git"))
@@ -2486,7 +2480,7 @@ def cloned(tmp_path: Path, synced: bool = True) -> tuple[Machine, Machine, Path]
     found = []
     for host in ("laptop", "pc"):
         code = tmp_path / host
-        for repo, at in (("code", code), ("agent", code / "agent"), ("lib", code / "lib")):
+        for repo, at in (("code", code), ("agent", code / "agent")):
             git(tmp_path, "clone", "-q", str(origin / f"{repo}.git"), str(at))
             git(at, "config", "user.email", f"{host}@example.com")
             git(at, "config", "user.name", host)
@@ -2506,45 +2500,26 @@ def upstream(origin: Path, repo: str) -> str:
     return git(origin / f"{repo}.git", "rev-parse", "main").strip()
 
 
-def merged_ticket(at: Path, slug: str) -> str:
-    """A ticket branch built and merged `--no-ff` into the integration branch, as the Accept does;
-    answers the ticket's tip."""
-    git(at, "checkout", "-q", "-b", f"ticket/{slug}")
-    (at / f"{slug}.txt").write_text(f"what {slug} built\n")
-    git(at, "add", "-A")
-    git(at, "commit", "-q", "-m", slug)
-    own = tip(at, "HEAD")
-    git(at, "checkout", "-q", "main")
-    git(at, "merge", "-q", "--no-ff", "-m", f"merge {slug}", f"ticket/{slug}")
-    git(at, "branch", "-q", "-d", f"ticket/{slug}")  # retired with its landing
-    return own
-
-
-def test_two_main_checkouts_writing_tickets_and_merging_end_in_step_with_no_write_lost(machines: tuple[Machine, Machine, Path]) -> None:
+def test_two_main_checkouts_writing_tickets_end_in_step_with_no_write_lost(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, pc, origin = machines
     ticket(laptop.tickets, "from-the-laptop")
     assert commit_with_hooks(laptop.agent, "file from-the-laptop").returncode == 0
     ticket(pc.tickets, "from-pc")
-    assert commit_with_hooks(pc.agent, "file from-pc").returncode == 0  # replayed on the laptop's, then pushed
-    lamp, shade = merged_ticket(laptop.code, "lamp"), merged_ticket(pc.code, "shade")
-    bulb, socket = merged_ticket(laptop.lib, "bulb"), merged_ticket(pc.lib, "socket")
-    for one in (laptop, pc, laptop):  # what dispatch review runs once a merge is in; the laptop's last, to take pc's
-        assert run(one.code, "sync").code == 0
+    said = commit_with_hooks(pc.agent, "file from-pc")  # refused, then merged with the laptop's, then pushed
+    assert said.returncode == 0 and "after merging 1 commit(s)" in said.stderr, said.stderr
+    assert run(laptop.code, "sync").code == 0
 
-    for repo, here, there in (("agent", laptop.agent, pc.agent), ("code", laptop.code, pc.code), ("lib", laptop.lib, pc.lib)):
-        assert tip(here, "main") == tip(there, "main") == upstream(origin, repo), repo
+    assert tip(laptop.agent, "main") == tip(pc.agent, "main") == upstream(origin, "agent")
     assert {path.name for path in laptop.tickets.glob("*.md")} == {"shared.md", "from-the-laptop.md", "from-pc.md"}
-    for at, tips in ((pc.code, {lamp, shade}), (pc.lib, {bulb, socket})):
-        merges = git(at, "log", "--merges", "--format=%P", "main").split("\n")
-        assert {line.split()[1] for line in merges if line} == tips, "each merge still holds its ticket's tip"
+    assert len(git(pc.agent, "rev-list", "--parents", "-n", "1", "main").split()) == 3, "a merge, not a rebase"
 
 
-def test_a_push_refused_because_the_other_machine_pushed_first_takes_its_commits_and_pushes_again(machines: tuple[Machine, Machine, Path]) -> None:
+def test_a_push_refused_because_the_other_machine_pushed_first_merges_its_commits_and_pushes_again(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, pc, origin = machines
     ticket(laptop.tickets, "from-the-laptop")
     git(laptop.agent, "add", "-A")
     git(laptop.agent, "commit", "-q", "-m", "file from-the-laptop")  # no hooks: it waits to race pc's push
-    # pc's first push finds the laptop's push landing between its fetch and its push
+    # pc's first push finds the laptop's push landing while it is under way
     once = pc.code / "raced"
     hooks = Path(git(pc.agent, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
     (hooks / "pre-push").write_text(f'#!/bin/sh\n[ -e "{once}" ] && exit 0\ntouch "{once}"\ngit -C "{laptop.agent}" push -q origin main\n')
@@ -2553,12 +2528,12 @@ def test_a_push_refused_because_the_other_machine_pushed_first_takes_its_commits
     said = commit_with_hooks(pc.agent, "file from-pc")
 
     assert said.returncode == 0 and once.exists(), said.stderr
-    assert "after taking 1 from it" in said.stderr, said.stderr
+    assert "after merging 1 commit(s)" in said.stderr, said.stderr
     assert upstream(origin, "agent") == tip(pc.agent, "main")
     assert {"file from-the-laptop", "file from-pc"} <= set(git(pc.agent, "log", "--format=%s").splitlines())
 
 
-def test_a_ticket_changed_on_both_machines_stops_at_a_conflict_naming_it_and_pushes_nothing(machines: tuple[Machine, Machine, Path]) -> None:
+def test_a_ticket_changed_on_both_machines_stops_the_merge_naming_it_and_pushes_nothing_until_it_is_resolved(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, pc, origin = machines
     ticket(laptop.tickets, "shared", status="claimed")
     assert commit_with_hooks(laptop.agent, "claim shared").returncode == 0
@@ -2569,36 +2544,21 @@ def test_a_ticket_changed_on_both_machines_stops_at_a_conflict_naming_it_and_pus
     assert said.returncode == 0, "the commit stands; it is the push that waits"
     assert "tickets/shared.md" in said.stderr and "nothing was pushed" in said.stderr, said.stderr
     assert upstream(origin, "agent") == pushed
-    assert git(pc.agent, "log", "-1", "--format=%s").strip() == "reprioritise shared"
-    assert git(pc.agent, "status", "--porcelain") == "", "the checkout is left as it was, not mid-rebase"
-    refused = run(pc.code, "set", "shared", "size=L")
-    assert refused.code == 1 and "tickets/shared.md" in refused.err, refused.said
-
-    kept = run(pc.code, "sync", "--resolve")
-    assert kept.code == 1 and "tickets/shared.md" in kept.err, kept.said
-    stopped = (pc.tickets / "shared.md").read_text()
-    assert "<<<<<<<" in stopped, "the replay is left stopped at the conflict"
-    assert upstream(origin, "agent") == pushed
+    assert "<<<<<<<" in (pc.tickets / "shared.md").read_text(), "the merge is left stopped at the conflict"
     again = run(pc.code, "sync")
-    assert again.code == 1 and "a rebase is underway" in again.err, again.said
-    while_stopped = run(pc.code, "set", "shared", "size=L")
-    assert while_stopped.code == 1 and "a rebase is underway" in while_stopped.err, while_stopped.said
-    assert (pc.tickets / "shared.md").read_text() == stopped, "no write lands inside the stopped replay"
+    assert again.code == 1 and "a merge is underway" in again.err, again.said
+    ticket(pc.tickets, "while-merging")
+    assert (pc.tickets / "while-merging.md").exists() and run(pc.code, "set", "while-merging", "priority=2").code == 0, \
+        "a ticket write is not refused meanwhile"
+
+    ticket(pc.tickets, "shared", status="claimed", priority=3)  # the resolution, committed as a merge is
+    git(pc.agent, "add", "tickets/shared.md")
+    resolved = subprocess.run(["git", "-C", str(pc.agent), "commit", "-q", "--no-edit"], capture_output=True, text=True, env=with_tracker())
+    assert resolved.returncode == 0, resolved.stderr
+    assert upstream(origin, "agent") == tip(pc.agent, "main"), "committing the resolution pushes it"
 
 
-def test_a_replay_of_the_integration_branch_left_stopped_holds_the_next_sync(machines: tuple[Machine, Machine, Path]) -> None:
-    laptop, pc, _ = machines
-    for one, says in ((laptop, "the laptop's lamp\n"), (pc, "pc's lamp\n")):
-        (one.code / "src.txt").write_text(says)
-        git(one.code, "commit", "-q", "-am", "the lamp, by hand")
-    assert run(laptop.code, "sync").code == 0
-    stopped = run(pc.code, "sync", "--resolve")
-    assert stopped.code == 1 and "src.txt" in stopped.err, stopped.said
-    again = run(pc.code, "sync")
-    assert again.code == 1 and f"{pc.code}: a rebase is underway" in again.err, again.said
-
-
-def test_uncommitted_changes_that_conflict_with_what_came_in_are_left_as_they_were_and_nothing_is_pushed(machines: tuple[Machine, Machine, Path]) -> None:
+def test_uncommitted_changes_a_merge_would_overwrite_stop_it_before_it_starts(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, pc, origin = machines
     ticket(laptop.tickets, "shared", priority=2)
     assert commit_with_hooks(laptop.agent, "reprioritise shared").returncode == 0
@@ -2607,33 +2567,9 @@ def test_uncommitted_changes_that_conflict_with_what_came_in_are_left_as_they_we
     said = commit_with_hooks(pc.agent, "file from-pc", "tickets/from-pc.md")
     mine = tip(pc.agent, "main")
 
-    assert "tickets/shared.md" in said.stderr and "nothing was pushed" in said.stderr, said.stderr
-    assert upstream(origin, "agent") == tip(laptop.agent, "main"), "nothing of pc's was pushed"
-    assert git(pc.agent, "log", "-1", "--format=%s").strip() == "file from-pc" and tip(pc.agent, "main") == mine
-    assert "priority: 3" in (pc.tickets / "shared.md").read_text(), "the edit is back where it was, not in a stash"
-    assert git(pc.agent, "stash", "list") == ""
-
-
-def test_an_untracked_file_the_other_machines_commit_would_overwrite_is_said_and_no_conflict_is_claimed(machines: tuple[Machine, Machine, Path]) -> None:
-    laptop, pc, origin = machines
-    ticket(laptop.tickets, "both-filed")
-    assert commit_with_hooks(laptop.agent, "file both-filed").returncode == 0
-    ticket(pc.tickets, "both-filed", priority=2)  # untracked here
-    ticket(pc.tickets, "from-pc")
-    said = commit_with_hooks(pc.agent, "file from-pc", "tickets/from-pc.md")
-
-    assert "did not run" in said.stderr and "changed here and upstream both" not in said.stderr, said.stderr
+    assert "did not run" in said.stderr and "nothing was pushed" in said.stderr, said.stderr
     assert upstream(origin, "agent") == tip(laptop.agent, "main")
-    assert git(pc.agent, "log", "-1", "--format=%s").strip() == "file from-pc"
-
-
-def test_a_write_lands_on_what_the_other_machine_pushed(machines: tuple[Machine, Machine, Path]) -> None:
-    laptop, pc, _ = machines
-    ticket(laptop.tickets, "from-the-laptop")
-    assert commit_with_hooks(laptop.agent, "file from-the-laptop").returncode == 0
-    said = run(pc.code, "set", "from-the-laptop", "priority=2")
-    assert said.code == 0, said.said
-    assert "priority: 2" in (pc.tickets / "from-the-laptop.md").read_text()
+    assert tip(pc.agent, "main") == mine and "priority: 3" in (pc.tickets / "shared.md").read_text()
 
 
 def test_a_ticket_committed_by_path_beside_another_sessions_edit_is_pushed_and_the_edit_kept(machines: tuple[Machine, Machine, Path]) -> None:
@@ -2665,6 +2601,22 @@ def test_a_merge_in_the_agent_repo_is_pushed_as_it_is_made(machines: tuple[Machi
     assert upstream(origin, "agent") == tip(laptop.agent, "main"), merged.stderr
 
 
+def test_a_ticket_write_pulls_nothing_and_no_integration_branch_is_pushed(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, pc, origin = machines
+    ticket(laptop.tickets, "shared", priority=2)
+    assert commit_with_hooks(laptop.agent, "reprioritise shared").returncode == 0
+    before = tip(pc.agent, "main")
+    assert run(pc.code, "set", "shared", "size=L").code == 0
+    assert tip(pc.agent, "main") == before and "priority: 1" in (pc.tickets / "shared.md").read_text()
+    git(pc.agent, "checkout", "--", "tickets/shared.md")
+
+    pushed = upstream(origin, "code")
+    (pc.code / "src.txt").write_text("the lamp, merged\n")
+    git(pc.code, "commit", "-q", "-am", "a merge into the integration branch")
+    assert run(pc.code, "sync").code == 0
+    assert upstream(origin, "code") == pushed
+
+
 def test_a_checkout_with_no_network_commits_as_today_and_pushes_once_it_is_back(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, _, origin = machines
     before = upstream(origin, "agent")
@@ -2673,51 +2625,11 @@ def test_a_checkout_with_no_network_commits_as_today_and_pushes_once_it_is_back(
     ticket(laptop.tickets, "on-the-train")
     said = commit_with_hooks(laptop.agent, "file on-the-train")
     assert said.returncode == 0 and "did not answer" in said.stderr, said.stderr
-    assert run(laptop.code, "set", "on-the-train", "priority=2").code == 0, "a write goes ahead offline"
     assert git(away / "agent.git", "rev-parse", "main").strip() == before
 
     away.rename(origin)
     assert run(laptop.code, "sync").code == 0
     assert upstream(origin, "agent") == tip(laptop.agent, "main")
-
-
-@pytest.mark.parametrize("landed", [False, True])
-def test_commits_a_ticket_is_built_on_are_never_replayed_and_copied(machines: tuple[Machine, Machine, Path], landed: bool) -> None:
-    """Whether the ticket branch is still out or has merged and been deleted: a merge of it holds the
-    original commits as much as the branch does, so the other machine's commits are merged in."""
-    laptop, pc, origin = machines
-    (laptop.code / "src.txt").write_text("the lamp, by hand\n")
-    git(laptop.code, "commit", "-q", "-am", "by hand on main")  # unpushed: no hook pushes the code repo
-    if landed:
-        merged_ticket(laptop.code, "shade")  # cut from it, merged, its branch deleted
-    else:
-        git(laptop.code, "branch", "ticket/shade")  # a worker's branch cut from it
-    merged_ticket(pc.code, "lamp")
-    assert run(pc.code, "sync").code == 0
-    before = tip(laptop.code, "main")
-
-    said = run(laptop.code, "sync")
-    assert said.code == 0, said.said
-    assert upstream(origin, "code") == tip(laptop.code, "main")
-    assert git(laptop.code, "log", "--format=%s", "main").splitlines().count("by hand on main") == 1, "no copy of it"
-    for kept in (before, tip(pc.code, "main")):
-        assert git(laptop.code, "merge-base", "--is-ancestor", kept, "main") == "", "the upstream is merged in, rewriting nothing"
-
-
-def test_a_conflict_while_merging_the_upstream_in_leaves_the_checkout_as_it_was(machines: tuple[Machine, Machine, Path]) -> None:
-    laptop, pc, origin = machines
-    (laptop.code / "src.txt").write_text("the laptop's lamp\n")
-    git(laptop.code, "commit", "-q", "-am", "by hand on main")
-    git(laptop.code, "branch", "ticket/shade")  # built on it, so the upstream is merged in
-    (pc.code / "src.txt").write_text("pc's lamp\n")
-    git(pc.code, "commit", "-q", "-am", "by hand on main")
-    assert run(pc.code, "sync").code == 0
-    before = tip(laptop.code, "main")
-
-    said = run(laptop.code, "sync")
-    assert said.code == 1 and "src.txt" in said.err and "nothing was pushed" in said.err, said.said
-    assert tip(laptop.code, "main") == before and git(laptop.code, "status", "--porcelain") == ""
-    assert upstream(origin, "code") == tip(pc.code, "main")
 
 
 def test_a_remote_that_refuses_the_push_is_said_and_exits_1(machines: tuple[Machine, Machine, Path]) -> None:
@@ -2750,7 +2662,7 @@ def test_the_hook_pushes_only_the_main_checkout_on_a_branch_other_than_a_ticket_
 
 
 def test_a_project_with_no_sync_hook_is_never_fetched_or_pushed(tmp_path: Path) -> None:
-    laptop, pc, origin = cloned(tmp_path, synced=False)
+    laptop, _, origin = cloned(tmp_path, synced=False)
     before = upstream(origin, "agent")
     ticket(laptop.tickets, "from-the-laptop")
     git(laptop.agent, "add", "-A")

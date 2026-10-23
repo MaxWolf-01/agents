@@ -1290,17 +1290,16 @@ def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_a
     assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
 
 
-def test_a_merge_into_the_integration_branch_is_pushed_by_the_review_after_it_and_not_before(toy: Path) -> None:
-    """`two-main-checkouts-synced-by-git` in the dotfiles tracker: a project kept on two machines
-    pushes every merge into its integration branch. The Accept's verification runs between the merge
-    and `dispatch review`, so the merge waits for the review; a claim in the agent repo goes at once."""
+def test_a_claim_in_a_project_kept_on_two_machines_is_pushed_and_its_integration_branch_is_not(toy: Path) -> None:
+    """`two-main-checkouts-synced-by-git` in the dotfiles tracker: every commit in the agent repo
+    goes to its upstream at once, and an integration branch is pushed by whoever merges into it,
+    never by dispatch."""
     agent = toy / "agent"
     origin = toy.parent / "origin"
     for repo, at in (("code", toy), ("agent", agent)):
         git(toy.parent, "init", "-q", "--bare", "-b", "main", str(origin / f"{repo}.git"))
         git(at, "remote", "add", "origin", str(origin / f"{repo}.git"))
         git(at, "push", "-q", "-u", "origin", "main")
-        git(at, "remote", "set-head", "origin", "main")
     hooked = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "hook", "--sync"], cwd=agent,
                             capture_output=True, text=True, env=environment(toy))
     assert hooked.returncode == 0, hooked.stderr
@@ -1311,11 +1310,9 @@ def test_a_merge_into_the_integration_branch_is_pushed_by_the_review_after_it_an
     built_on(agent, "ticket/warm-preset", "main", "warm.md")
     before = git(origin / "code.git", "rev-parse", "main")
     merged_in(toy, "main", "ticket/warm-preset")
-    assert git(origin / "code.git", "rev-parse", "main") == before, "nothing pushes the merge before its verification"
-
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
-    assert git(origin / "code.git", "rev-parse", "main") == git(toy, "rev-parse", "main")
+    assert git(origin / "code.git", "rev-parse", "main") == before
 
 
 def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_section(toy: Path) -> None:
