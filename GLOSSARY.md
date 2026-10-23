@@ -50,7 +50,7 @@ A ticket that is part of another: one slice of it, built and reviewed on its own
 _Avoid_: subtask, sub-ticket, step, hinge
 
 **Ticket context**:
-A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
+A ticket's own body with every ancestor's, and for a parent ticket's close-out review every other child's: the whole of the ticket a worker or a reviewer is given.
 _Avoid_: brief (the brief is one section of it), spec, background
 
 **Proposed**:
