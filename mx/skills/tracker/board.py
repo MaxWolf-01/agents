@@ -88,7 +88,6 @@ from board_page import (  # the page: what it shows as values, their markup and 
     ALONE, COPY_CAP, GRAPH_WINDOW, OVERLAY, PAGE, VIEW_JS, Absence, Artefact, Asked, Block, Briefed, Copy, Group, Mark,
     MarkKind, Pill, Row, View, Worked, absence_html, briefing_html, column_tokens, group_html, pill_html,
 )
-from board_page import MARK_HTML, PAGE_TIP, STYLE, block_html, copy_html, mark_html, row_html  # noqa: F401  the checks read these off board
 import briefing  # the board briefing: the session that writes it, and the cache it lives in, beside this script
 import github  # the state of the pull requests and issues the tickets name, beside this script
 import qualified  # what a qualified tag the page shows names, which the page links
