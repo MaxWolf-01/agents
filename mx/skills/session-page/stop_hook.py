@@ -164,13 +164,14 @@ def hub_unit(session_id: str) -> str:
     try:
         hub.request("GET", HUB_HEALTH)
         answer = hub.getresponse()
-        url = json.loads(answer.read()).get("url") if answer.status == 200 else None
+        said = json.loads(answer.read()) if answer.status == 200 else None
     # Refused, absent or timed out (OSError); something on the socket that speaks no HTTP
-    # (HTTPException), or answers with no address (ValueError, AttributeError).
-    except (OSError, http.client.HTTPException, ValueError, AttributeError):
+    # (HTTPException), or answers with a body that is no JSON (ValueError).
+    except (OSError, http.client.HTTPException, ValueError):
         return ""
     finally:
         hub.close()
+    url = said.get("url") if isinstance(said, dict) else None
     return url + HUB_UNIT.format(session=session_id) if isinstance(url, str) and url else ""
 
 

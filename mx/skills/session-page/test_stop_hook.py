@@ -474,9 +474,14 @@ def speaks_no_http(sockets: Path) -> Iterator[Path]:
     server.close()
 
 
+def plain_file(where: Path) -> Path:
+    (where / "plain").write_text("")
+    return where / "plain"
+
+
 # Each hands back a hub socket the health check cannot ask.
 UNASKABLE = {
-    "a file that is no socket": lambda request: request.getfixturevalue("tmp_path") / "browser" / "claude-browser",
+    "a file that is no socket": lambda request: plain_file(request.getfixturevalue("sockets")),
     "something on the socket that speaks no HTTP": lambda request: request.getfixturevalue("speaks_no_http"),
 }
 
