@@ -10,9 +10,9 @@ The replay keeps each merge a merge of the same commit: a `--no-ff` merge of a t
 redone onto the new base with the ticket's tip still its second parent, since that merge is how the
 tracker finds what a ticket landed (decisions/0001-every-merge-is-no-ff.md). `git rebase
 --rebase-merges` would rewrite the ticket's own commits onto the new base too, and the merge would
-no longer hold the tip. For the same reason commits something else here is built on, a branch or
-a ticket one of them merges, are never replayed: the copy and the original would both end up on the
-branch. The upstream is merged in instead.
+no longer hold the tip. For the same reason a commit is never replayed where another branch here
+is built on it, or a ticket a local merge carries: the copy and the original would both end up on
+the branch. The sync merges the upstream in instead, which rewrites nothing.
 """
 
 from __future__ import annotations

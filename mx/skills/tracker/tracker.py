@@ -1351,8 +1351,9 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
     and on each integration branch once dispatch has merged into it. A project with no sync hook is
     left alone, and nothing is said. A checkout whose remote does not answer is left as it is, its
     commits waiting for the next sync. A conflict, the two machines having changed the same lines,
-    pushes nothing and leaves the checkout as it was. Where a replay would copy commits something
-    else here is built on, a branch or a ticket merged here, the upstream is merged in instead.
+    pushes nothing and leaves the checkout as it was. Another branch here, or a ticket a local merge
+    carries, may be built on the commits a replay would copy; then the upstream is merged in
+    instead, which rewrites nothing.
     Exit 1: a conflict, a rebase or merge underway, or a remote that refused the push; the line says
     which file or why.
 
@@ -1373,7 +1374,7 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
             return 0
         found = in_step_checkouts(root)
     outcomes = [in_step.sync(top, resolve) for top in found]
-    if here:  # the hook, fired from inside whatever is underway, which says so itself
+    if here:  # the hook fires inside a rebase or cherry-pick, whose own output says it is underway
         outcomes = [outcome for outcome in outcomes if outcome.outcome != "underway"]
     for outcome in outcomes:
         if outcome.said:

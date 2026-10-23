@@ -2704,6 +2704,22 @@ def test_commits_a_ticket_is_built_on_are_never_replayed_and_copied(machines: tu
         assert git(laptop.code, "merge-base", "--is-ancestor", kept, "main") == "", "the upstream is merged in, rewriting nothing"
 
 
+def test_a_conflict_while_merging_the_upstream_in_leaves_the_checkout_as_it_was(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, pc, origin = machines
+    (laptop.code / "src.txt").write_text("the laptop's lamp\n")
+    git(laptop.code, "commit", "-q", "-am", "by hand on main")
+    git(laptop.code, "branch", "ticket/shade")  # built on it, so the upstream is merged in
+    (pc.code / "src.txt").write_text("pc's lamp\n")
+    git(pc.code, "commit", "-q", "-am", "by hand on main")
+    assert run(pc.code, "sync").code == 0
+    before = tip(laptop.code, "main")
+
+    said = run(laptop.code, "sync")
+    assert said.code == 1 and "src.txt" in said.err and "nothing was pushed" in said.err, said.said
+    assert tip(laptop.code, "main") == before and git(laptop.code, "status", "--porcelain") == ""
+    assert upstream(origin, "code") == tip(pc.code, "main")
+
+
 def test_a_remote_that_refuses_the_push_is_said_and_exits_1(machines: tuple[Machine, Machine, Path]) -> None:
     laptop, _, origin = machines
     hook = origin / "agent.git" / "hooks" / "pre-receive"
