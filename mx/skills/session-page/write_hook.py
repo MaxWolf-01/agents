@@ -13,8 +13,8 @@ not on the fix.
 - A write that leaves a record of the session unparseable is sent back with the reader's error,
   every time.
 - A turn record whose prose points at another part of the page in words ("under Details") rather
-  than linking it is sent back the same way, every time, and so is one that puts to the user a
-  ticket's question its ticket does not hold open.
+  than linking it is sent back the same way, every time, and so is the turn's own record where it
+  puts to the user a ticket's question its ticket does not hold open.
 - The first write after which the records parse, in a turn that has written its record, gets
   the turn's prose review (`turn_review`), and its findings are sent back. The review runs once
   per turn: an edit after the findings, or a record written later in the turn, is parsed and not
@@ -73,11 +73,15 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if written.parent == directory.resolve() / "turns":
         try:
             check_references(written)
-            check_cited(session, written)
         except RecordError as e:
             return Decision("send back", "reference in words", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
     if (turn := written_this_turn(session)) is None:
         return Decision("allow", "records parse")
+    if turn.path.resolve() == written:
+        try:
+            check_cited(session.root, turn)
+        except RecordError as e:
+            return Decision("send back", "ticket question not open", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
     if turn_review.reviewed_since(session.id, session.began):
         return Decision("allow", "record reviewed this turn")
     if said := turn_review.feedback_on(session, turn):

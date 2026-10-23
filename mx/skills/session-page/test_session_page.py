@@ -32,7 +32,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from session_checks import (
-    DRAWN, SESSION, TURN_ANCHOR, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_ticket,
+    DRAWN, SESSION, TURN_ANCHOR, anchors, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_tickets,
 )
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
@@ -87,7 +87,7 @@ def write_session(directory: Path, turns: list[dict]) -> tuple[Path, Path]:
     the tracker of the project the directory sits in."""
     (directory / "turns").mkdir(parents=True, exist_ok=True)
     if any(turn.get("cites") for turn in turns):
-        write_ticket(directory.parents[len(SESSIONS.parts)], turns)
+        write_tickets(directory.parents[len(SESSIONS.parts)], turns)
     (directory / "session.md").write_text(
         f"---\nsession: {DRAWN}\nrepo: {directory.parent}\n---\n\n"
         "# A session with questions\n"
@@ -212,20 +212,25 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     """ticket-questions-at-the-top-of-the-session-page, its criterion: the question waits among the
     session's own, by the handle `<ticket> D5`, a link to its ticket with the question as its hover
     preview and its words as the ticket has them; once the ticket records the ruling it leaves the
-    top, and its turn shows the ruling. A ticket that no longer holds it lets it go the same way."""
+    top, and its turn shows the ruling. A ticket done with it unruled, or that no longer holds it,
+    lets it go the same way."""
     directory, transcript = ticket_session(tmp_path, f"- [Q1] **One page or two?**\n  - (a) One. *my pick*\n  - (b) Two.\n- [{TWO_MAIN} D5]")
     assert waiting(view_of(directory, transcript)) == ["Q1", f"{TWO_MAIN} D5"]
     top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
     assert "Sync on every commit, or on a timer?" in text_of(top) and "A timer batches" in text_of(top)
-    link = re.search(rf'<a class="qualified" href="([^"]+)"[^>]*title="([^"]+)"[^>]*>{TWO_MAIN} D5</a>', top)
-    assert link and link.group(1) == f"../../../agent/tickets/{TWO_MAIN}.md"
-    assert html.unescape(link.group(2)).startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
+    (link,) = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
+    assert link["href"] == f"../../../agent/tickets/{TWO_MAIN}.md"
+    assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
 
     ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
     ticket.write_text(TICKET.replace("immediate.\n", "immediate.\n  - Ruled 2026-10-24: on every commit.\n"))
     assert waiting(view_of(directory, transcript)) == ["Q1"]
     turn = text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
     assert "on every commit." in turn and "ruled 2026-10-24" in turn
+
+    ticket.write_text(TICKET.replace("status: review", "status: done"))
+    assert waiting(view_of(directory, transcript)) == ["Q1"]
+    assert "is done with it unruled" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
 
     ticket.unlink()
     assert waiting(view_of(directory, transcript)) == ["Q1"]
@@ -242,12 +247,12 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
     (other / "turns").mkdir(parents=True)
     (other / PAGE).write_text("")
     (other / "turns" / "01.md").write_text(record(1, {"asks": ["Q3"], "answered": {}, "superseded": {}}))
+    (other / "turns" / "02.md").write_text(record(2, {"asks": [], "answered": {"Q3": "a"}, "superseded": {}}))
     directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D7]", details=(
         f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3; "
         f"8e0f1c22 Q3 asked the same. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
     details = sections_of(render_session(directory, transcript, now=NOW))["01"]
-    linked = {text_of(text): (href, html.unescape(title)) for href, title, text in
-              re.findall(r'<a href="([^"]+)" title="([^"]+)" class="qualified"[^>]*>(.*?)</a>', details)}
+    linked = {text: (attrs["href"], attrs["title"]) for attrs, text in anchors(details) if attrs.get("class") == "qualified"}
     ticket = f"../../../agent/tickets/{TWO_MAIN}.md"
     assert {text: href for text, (href, _) in linked.items()} == {
         f"{TWO_MAIN} D5": ticket, f"{TWO_MAIN} D6": ticket, f"{TWO_MAIN}#P1": ticket, f"{TWO_MAIN} A3": ticket,
@@ -258,9 +263,18 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
         f"{TWO_MAIN} D6": "Friction the suite took four minutes.",
         f"{TWO_MAIN}#P1": "A ticket file is written in one checkout only.",
         f"{TWO_MAIN} A3": "one remote per checkout.",
-        "8e0f1c22 Q3": "What about Q3?",
+        "8e0f1c22 Q3": "What about Q3? · answered a",
     }
     assert details.count('class="qualified"') == len(linked), "a tag inside a link of its own was linked again"
+
+
+def test_a_ticket_question_put_to_the_user_again_waits_under_the_turn_that_put_it_last(tmp_path: Path) -> None:
+    """A close-out puts a child's call to the user that a tick already put: the question waits once,
+    asked in the later turn, which the user is reading."""
+    directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D5]")
+    (directory / "turns" / "02.md").write_text(
+        f"---\ndate: 2026-10-24\n---\n\n# Close-out\n\n## Questions\n\n- [{TWO_MAIN} D5]\n\n## Details\n\nStill yours.\n")
+    assert [(t.key, q.handle) for t, q in view_of(directory, transcript).waiting] == [("02", f"{TWO_MAIN} D5")]
 
 
 def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Path, transcript: Path) -> None:

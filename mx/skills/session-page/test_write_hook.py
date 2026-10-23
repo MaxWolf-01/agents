@@ -29,7 +29,7 @@ import write_hook
 from session_page import PAGE, SESSIONS
 from stop_hook import RECAP
 from session_checks import (
-    CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
+    CATALOGUE_FIXTURE, CITED_UNPARSEABLE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
     unreachable, with_write,
 )
 from session_checks import payload as stopped
@@ -361,6 +361,7 @@ PUTS = {
     "a question its ticket does not ask": ("two-main-checkouts D4", "two-main-checkouts asks no question D4"),
     "a detail entry of its closing comment": ("two-main-checkouts D3", "two-main-checkouts asks no question D3"),
     "a question its ticket has ruled": ("two-main-checkouts D2", "was ruled 2026-10-20 (drop it.)"),
+    "a question of a ticket done": ("done-checkouts D1", "done-checkouts is done"),
 }
 
 
@@ -371,7 +372,9 @@ def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold
     """ticket-questions-at-the-top-of-the-session-page: a ticket's question waits at the top only
     while its ticket holds it open, so one that names nothing there, or nothing open, would never
     reach the user; the send-back names the line, and one its ticket holds open passes."""
-    (worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md").write_text(TICKET_ASKING)
+    tickets = worked_example.parents[2] / "agent" / "tickets"
+    (tickets / "two-main-checkouts.md").write_text(TICKET_ASKING)
+    (tickets / "done-checkouts.md").write_text(TICKET_ASKING.replace("status: open", "status: done"))
     record = worked_example / "turns" / "04.md"
     text = record.read_text().replace("## Questions\n\n", f"## Questions\n\n- [{handle}]\n", 1)
     assert text != record.read_text(), "record 04 asks a question of its own"
@@ -384,6 +387,32 @@ def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold
     monkeypatch.setattr(turn_review, "review", reviewer())
     record.write_text(text.replace(handle, "two-main-checkouts D1"))
     assert run(wrote(record, writing, "Edit")) == ""
+
+
+def test_an_older_record_whose_ticket_question_was_ruled_since_still_takes_an_edit(
+    worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ticket's question is ruled long after the turn that put it to the user, so only the record
+    the turn writes is checked: fixing a typo in record 03 leaves its ruled question where it is."""
+    (worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md").write_text(TICKET_ASKING)
+    older = worked_example / "turns" / "03.md"
+    older.write_text(older.read_text().replace("## Questions\n\n", "## Questions\n\n- [two-main-checkouts D2]\n", 1).replace("# ", "# Fixed: ", 1))
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    assert run(wrote(older, writing, "Edit")) == ""
+
+
+@pytest.mark.parametrize("text, line, said", CITED_UNPARSEABLE.values(), ids=CITED_UNPARSEABLE)
+def test_a_ticket_question_written_like_the_sessions_own_goes_back_saying_it_lives_in_its_ticket(
+    text: str, line: int, said: str, worked_example: Path, writing: Path, run: Callable[[dict], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Its words, its options and its ruling live in its ticket, and the send-back says so, at the
+    line the reader gave up on."""
+    record = worked_example / "turns" / "04.md"
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text)
+    answer = run(wrote(record, writing))
+    assert answer.startswith(f"{record}:{line}: ") and said in answer
 
 
 # ---- what it leaves alone ---------------------------------------------------

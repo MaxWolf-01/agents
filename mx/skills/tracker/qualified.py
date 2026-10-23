@@ -16,7 +16,12 @@ import tracker
 
 # A qualified tag in text: a ticket's slug, then a space or `#`, then the tag. Only a slug the
 # tracker holds makes it one, so prose that merely looks like it ("step 2 P3") names nothing.
-QUALIFIED = re.compile(r"(?<![\w/.-])([a-z0-9]+(?:-[a-z0-9]+)*)[ #]([DPA]\d+)\b")
+QUALIFIED = re.compile(rf"(?<![\w/.-])({tracker.SLUG.pattern})[ #]([DPA]\d+)\b")
+
+
+def handle(slug: str, tag: str) -> str:
+    """How a page shows a ticket's tag: `<ticket> D6`."""
+    return f"{slug} {tag}"
 
 
 @dataclass(frozen=True)
@@ -26,20 +31,22 @@ class Named:
     ticket: str  # the slug
     tag: str  # D6, P3, A21
     kind: Literal["question", "detail", "property", "assumption"]  # a `Dn` is a question or a closing comment's detail entry
-    path: Path  # the ticket file
     headline: str  # a question's or detail entry's bold headline, a property's or assumption's text
     detail: str = ""  # the rest of a question or detail entry
     ruled: str | None = None  # the date a question was ruled on; None while it is open, and for anything but a question
     answer: str = ""  # a ruled question's answer
+    # Whether its ticket is done: a question still open then is a leftover, which the ruling on the
+    # build filed as a proposed ticket (the tracker skill), so it waits on nobody.
+    done: bool = False
 
     @property
     def handle(self) -> str:
-        return f"{self.ticket} {self.tag}"
+        return handle(self.ticket, self.tag)
 
     @property
     def open(self) -> bool:
-        """Whether it is a question no `Ruled` line answers yet."""
-        return self.kind == "question" and self.ruled is None
+        """Whether it is a question no `Ruled` line answers yet, on a ticket not done."""
+        return self.kind == "question" and self.ruled is None and not self.done
 
     @property
     def preview(self) -> str:
@@ -71,7 +78,7 @@ def resolver(tickets: Path) -> Callable[[str, str], Named | None]:
 
 def named(ticket: tracker.Ticket, tag: str) -> Named | None:
     """What `tag` names in `ticket`, None where it names nothing there."""
-    at = dict(ticket=ticket.slug, tag=tag, path=ticket.path)
+    at = dict(ticket=ticket.slug, tag=tag, done=ticket.status == "done")
     for q in ticket.questions:
         if q.tag == tag:
             return Named(**at, kind="question", headline=q.headline, detail=q.detail, ruled=q.ruled, answer=q.answer)

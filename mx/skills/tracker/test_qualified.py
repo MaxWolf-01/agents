@@ -67,6 +67,13 @@ def test_each_tag_a_ticket_carries_resolves_to_what_it_names(resolve) -> None:
     assert named["A4"].preview == "sync A4 · one remote per checkout."
 
 
+def test_a_question_left_open_on_a_done_ticket_waits_on_nobody(tmp_path: Path) -> None:
+    """The board shows a done ticket no question: one left open there is a leftover the ruling on
+    the build filed as a proposed ticket, so no page lists it as waiting."""
+    (tmp_path / "sync.md").write_text(TICKET.replace("status: review", "status: done"))
+    assert resolver(tmp_path)("sync", "D1").open is False
+
+
 def test_a_tag_names_nothing_where_its_ticket_or_the_tag_is_missing(resolve) -> None:
     assert [resolve(slug, tag) for slug, tag in (("sync", "D9"), ("async", "D1"), ("../sync", "D1"))] == [None, None, None]
 
@@ -75,3 +82,7 @@ def test_a_qualified_tag_is_found_in_text_by_its_slug_and_tag() -> None:
     """Either separator the tracker writes, and never a tag that only ends a longer word or path."""
     text = "sync D1 holds, as does two-main#P3; mx/sync D1, my_sync A4, sync D12x and syncD2 do not."
     assert [m.groups() for m in QUALIFIED.finditer(text)] == [("sync", "D1"), ("two-main", "P3")]
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

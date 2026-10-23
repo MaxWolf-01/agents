@@ -168,8 +168,10 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
 def held_in_tickets(turns: list[Turn], tickets: Path) -> list[Turn]:
     """Each turn with what the tracker at `tickets` holds under every ticket's question it asks: a
     tag that names no question there, a retired ticket's or a closing comment's detail entry, is
-    held as none."""
+    held as none. A ticket's question put to the user in several turns stays with the latest, which
+    is the one the user is reading."""
     resolve = qualified.resolver(tickets)
+    latest = {q.handle: t.number for t in turns for q in t.questions if isinstance(q, Cited)}
 
     def held(q: Question | Cited) -> Question | Cited:
         if not isinstance(q, Cited):
@@ -177,7 +179,8 @@ def held_in_tickets(turns: list[Turn], tickets: Path) -> list[Turn]:
         named = resolve(q.ticket, q.tag)
         return replace(q, named=named if named and named.kind == "question" else None)
 
-    return [replace(t, questions=tuple(map(held, t.questions))) for t in turns]
+    return [replace(t, questions=tuple(held(q) for q in t.questions if not isinstance(q, Cited) or latest[q.handle] == t.number))
+            for t in turns]
 
 
 def title_of(directory: Path) -> str:
@@ -292,7 +295,7 @@ class Cited:
 
     @property
     def handle(self) -> str:
-        return f"{self.ticket} {self.tag}"
+        return qualified.handle(self.ticket, self.tag)
 
     @property
     def headline(self) -> str:
@@ -426,7 +429,7 @@ def read_turn(path: Path) -> Turn:
             raise RecordError(path, line_of(path, name), f"{name}: a mapping of question tags, like `Q1: a`")
         tables[name] = {str(tag): str(value) for tag, value in table.items()}
         for tag in tables[name]:
-            if CITED_ITEM.fullmatch(f"- [{tag}]"):
+            if CITED.fullmatch(tag):
                 raise RecordError(path, line_of(path, tag), f"{name}: {tag} is a ticket's question, which clears once its ticket "
                                                             "records the ruling (`tracker rule`), never here")
             if not TAG.fullmatch(tag):
@@ -514,19 +517,20 @@ def check_references(path: Path) -> None:
                                        "[text](#t07) opens turn 07, [text](#q3) shows question Q3")
 
 
-def check_cited(session: "Session", path: Path) -> None:
-    """Every ticket's question the record at `path` puts to the user is one its ticket holds open.
-    Checked as a record is written, never as the page renders, since a ticket's question is ruled
-    and its ticket retired long after the record that asked it."""
-    turn = next((t for t in session.turns if t.path.resolve() == path.resolve()), None)
-    lines = path.read_text().split("\n")
-    for c in (q for q in (turn.questions if turn else ()) if isinstance(q, Cited) and not q.open):
+def check_cited(root: Path, turn: "Turn") -> None:
+    """Every ticket's question the turn's record puts to the user is one its ticket holds open.
+    Checked on the record the turn writes, never on an older one or as the page renders, since a
+    ticket's question is ruled, and its ticket retired, long after the record that asked it."""
+    lines = turn.path.read_text().split("\n")
+    for c in (q for q in turn.questions if isinstance(q, Cited) and not q.open):
         n = next((n for n, line in enumerate(lines, start=1) if line.startswith(f"- [{c.handle}]")), None)
-        if not (session.root / ticket_path(c.ticket)).is_file():
-            raise RecordError(path, n, f"{c.handle}: the tracker holds no ticket {c.ticket}")
+        if not (root / ticket_path(c.ticket)).is_file():
+            raise RecordError(turn.path, n, f"{c.handle}: the tracker holds no ticket {c.ticket}")
         if c.named is None:
-            raise RecordError(path, n, f"{c.handle}: {c.ticket} asks no question {c.tag} under its ## Questions")
-        raise RecordError(path, n, f"{c.handle} was ruled {c.named.ruled} ({c.named.answer}), so it waits on nobody")
+            raise RecordError(turn.path, n, f"{c.handle}: {c.ticket} asks no question {c.tag} under its ## Questions")
+        if c.named.done:
+            raise RecordError(turn.path, n, f"{c.handle}: {c.ticket} is done, so its open questions wait on nobody")
+        raise RecordError(turn.path, n, f"{c.handle} was ruled {c.named.ruled} ({c.named.answer}), so it waits on nobody")
 
 
 def read_record(
@@ -610,7 +614,8 @@ def split_sections(path: Path, body: str, offset: int, allowed: set[str]) -> tup
 
 
 QUESTION_ITEM = re.compile(r"- \[(Q\d+)\] \*\*(.+?)\*\*(?:\s+(.*))?")
-CITED_ITEM = re.compile(rf"- \[({tracker.SLUG.pattern}) (D\d+)\](.*)")
+CITED = re.compile(rf"({tracker.SLUG.pattern}) (D\d+)")  # a ticket's question, as a turn record names it
+CITED_ITEM = re.compile(rf"- \[{CITED.pattern}\](.*)")
 SUB_ITEM = re.compile(r"\s{2,}- (.*)")
 OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
 PICK = re.compile(r"\s*\*my pick\*\s*")
@@ -724,9 +729,11 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
                     raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
                 settled[tag] = Settled(how, value, turn.number)
         for question in turn.questions:
-            if question.handle in asked:
-                raise RecordError(turn.path, None, f"{question.handle} was already asked in turn {asked[question.handle]:02d}")
-            asked[question.handle] = turn.number
+            if isinstance(question, Cited):
+                continue  # a ticket's question may be put to the user again; `held_in_tickets` keeps the latest
+            if question.tag in asked:
+                raise RecordError(turn.path, None, f"{question.tag} was already asked in turn {asked[question.tag]:02d}")
+            asked[question.tag] = turn.number
     for turn in turns:
         for old, new in turn.superseded.items():
             if new not in asked:
@@ -961,8 +968,13 @@ KEYS = [
 def open_questions(session: Session) -> list[tuple[Turn, Question | Cited]]:
     """The questions waiting on the user, with the turn that asked each, oldest first: the session's
     own that no later turn answered or superseded, and each ticket's question its ticket holds open."""
-    return [(t, q) for t in session.turns for q in t.questions
-            if (q.open if isinstance(q, Cited) else q.tag not in session.settled)]
+    return [(t, q) for t in session.turns for q in t.questions if waits(q, session.settled)]
+
+
+def waits(q: Question | Cited, settled: dict[str, Settled]) -> bool:
+    """Whether the question waits on the user: a ticket's while its ticket holds it open, the
+    session's own until a later turn answers or supersedes it."""
+    return q.open if isinstance(q, Cited) else q.tag not in settled
 
 
 def page(session: Session, now: datetime) -> str:
@@ -1301,7 +1313,7 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     t = r.turn
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
     asked = "".join(asked_cited(q) if isinstance(q, Cited) else asked_question(q, settled[q.tag])
-                    for q in t.questions if (not q.open if isinstance(q, Cited) else q.tag in settled))
+                    for q in t.questions if not waits(q, settled))
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
 <details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
@@ -1421,6 +1433,8 @@ def asked_cited(c: Cited) -> str:
     records it, or that the ticket holds it no more."""
     if c.named is None:
         said = f'<p class="v-meta">{esc(c.handle)} is no longer a question of its ticket</p>'
+    elif c.named.ruled is None:
+        said = f'<p class="v-meta">{ticket_link(c)} is done with it unruled</p>'
     else:
         said = (f'<p class="v-small free"><span class="v-meta">ruling</span> {inline(c.named.answer)}</p>'
                 f'<p class="v-meta">ruled {esc(c.named.ruled)} in {ticket_link(c)}</p>')
@@ -1530,7 +1544,7 @@ def qualified_tags(state) -> None:
     preview: a ticket's `<ticket> D6` (a question or a detail entry), `P3` or `A21`, and another
     session's `<session> Q3`. The ticket's slug may be code. Text that names nothing stays text, and
     so does text that sits inside a link."""
-    if state.env.get("paths", True) and ROOT.get() is not None:
+    if state.env.get("paths", True) and NAMES.get() is not None:
         for token in state.tokens:
             if token.type == "inline" and token.children:
                 token.children = tagged(token.children)
@@ -1578,7 +1592,7 @@ def named_by(m: re.Match | None) -> tuple[str, str] | None:
     if m is None:
         return None
     if m.group(1):
-        found = (NAMES.get() or (lambda slug, tag: None))(m.group(1), m.group(2))
+        found = NAMES.get()(m.group(1), m.group(2))
         return (ticket_path(found.ticket), found.preview) if found else None
     return session_question(m.group(3), m.group(4))
 

@@ -38,7 +38,7 @@ import turn_review
 from session_checks import (
     BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
     UNPARSEABLE, appended, asked_in_order, elements, logged, messages_of, payload, sessions, turns_on, unreachable, view_of,
-    with_write, write_ticket,
+    with_write, write_tickets,
 )
 from session_checks import record as drawn_record
 from session_page import PAGE, PREVIOUS, SESSIONS
@@ -754,7 +754,7 @@ def test_the_line_names_each_open_question_once_oldest_first_and_marks_the_new_o
     project = tmp_path_factory.mktemp("project")
     directory = project / SESSIONS / DRAWN
     (directory / "turns").mkdir(parents=True)
-    write_ticket(project, turns)
+    write_tickets(project, turns)
     for number, turn in enumerate(turns, start=1):
         (directory / "turns" / f"{number:02d}.md").write_text(drawn_record(number, turn))
     transcript = started_transcript(directory.parent / "transcript.jsonl", directory, starts)
