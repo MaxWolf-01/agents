@@ -437,13 +437,14 @@ def cache_key(transcript: Path, records: list[Path]) -> list:
 
 
 def page_records(transcript: Path, repos: list[Path]) -> list[Path]:
-    """The session page's records of a session: `session.md` and its turn records, in the agent
-    repo of the project its working directory is in, else of any repo given."""
+    """The session page's records of a session: `session.md` and its turn records, where the
+    account whose `projects/` holds the transcript keeps them, else as committed in the agent repo
+    of the project its working directory is in, else in that of any repo given."""
     sid = transcript.stem
     cwd = first_cwd(transcript)
-    candidates = []
-    if cwd and Path(cwd).is_dir() and (d := session_page.session_directory(Path(cwd), sid)) is not None:
-        candidates.append(d)
+    candidates = [session_page.pages_directory(transcript.parents[2], sid)]
+    if cwd and Path(cwd).is_dir() and (agent := session_page.agent_repo_at(Path(cwd))) is not None:
+        candidates.append(agent / session_page.SESSIONS.name / sid)
     candidates += [r / "agent" / session_page.SESSIONS.name / sid for r in repos]
     for d in candidates:
         if d.is_dir():

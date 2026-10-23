@@ -18,10 +18,8 @@ A render opens each artefact that this turn's record links with `claude-browser`
 has one, and tells it the session through MX_ORIGIN_SESSION. A ticket file is not an artefact, so
 it never opens. Where the container hub answers, every render opens the page too: the hub lands
 each page in the session's unit and turns a repeat into a reload. Where none does, only the render
-that writes the page first opens it, since a repeat would be another tab. The first render also
-keeps `sessions/` out of the agent repo's `git status`, through that clone's `.git/info/exclude`,
-where nothing ignores it yet. Each open, and the exclude, is a line of the log saying what came of
-it.
+that writes the page first opens it, since a repeat would be another tab. Each open is a line of
+the log saying what came of it.
 
 The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
 whose turn wrote a record shows the user one line of the hook's own under it, as a `systemMessage`:
@@ -49,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
     PAGE, RecordError, Session, Turn, chat_path, chat_record, left_alone, open_questions, page, read_session,
-    resolved, session_directory, written_this_turn,
+    make_session_directory, resolved, session_directory, written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -208,46 +206,16 @@ def open_in_browser(target: str, session_id: str) -> str:
     return f"started {opener}"
 
 
-def exclude_sessions(sessions: Path) -> str:
-    """Add `sessions` to the exclude file of the repo it sits in, unless git already ignores it, and
-    say what came of that. Records in flight stay out of `git status` even where the repo tracks
-    earlier sessions' records: end_hook.py force-adds them, and git shows edits to a tracked file
-    whatever ignores it. The line is anchored at its path from the repo root, so it matches that
-    directory and no other of the same name. Outside git, or where git fails, nothing is written."""
-
-    def git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", str(sessions.parent), *args], capture_output=True, text=True)
-
-    found = git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude", "--show-prefix")
-    if found.returncode != 0:
-        if "not a git repository" in found.stderr:
-            return "not in a git repository"
-        return f"git rev-parse failed: {found.stderr.strip()}"
-    checked = git("check-ignore", "-q", f"{sessions.name}/")
-    if checked.returncode == 0:
-        return "already ignored"
-    if checked.returncode != 1:
-        return f"git check-ignore failed: {checked.stderr.strip()}"
-    exclude, prefix = (found.stdout.splitlines() + [""])[:2]
-    line = f"/{prefix}{sessions.name}/"
-    try:
-        Path(exclude).parent.mkdir(parents=True, exist_ok=True)
-        with Path(exclude).open("a+") as f:
-            f.seek(0)
-            before = f.read()
-            f.write(("\n" if before and not before.endswith("\n") else "") + line + "\n")
-    except OSError as e:
-        return f"{exclude} not written: {e}"
-    return f"added {line} to {exclude}"
-
-
 def main() -> None:
     hook = json.load(sys.stdin)
     session_id = hook["session_id"]
+    if not left_alone():  # the records an mx from before the move left in the agent repo, where there are any
+        make_session_directory(Path(hook["cwd"]), session_id, only_earlier=True)
     directory = session_directory(Path(hook["cwd"]), session_id)
     decision = decide(hook, directory)
     turn_review.log(session_id, verb=decision.verb, why=decision.why, directory=directory and str(directory))
     if decision.verb == "render":
+        make_session_directory(Path(hook["cwd"]), session_id)
         first = not (directory / PAGE).exists()
         if decision.chat:
             decision.chat[0].parent.mkdir(parents=True, exist_ok=True)
@@ -258,8 +226,6 @@ def main() -> None:
         turn_review.log(session_id, opened=opened, page=str(directory / PAGE))
         for artefact in decision.artefacts:
             turn_review.log(session_id, opened=open_in_browser(artefact, session_id), artefact=artefact)
-        if first:
-            turn_review.log(session_id, excluded=exclude_sessions(directory.parent))
         if decision.shown:
             print(json.dumps({"systemMessage": f"{decision.shown} · {unit or (directory / PAGE).as_uri()}"}))
     elif decision.verb == "send back":

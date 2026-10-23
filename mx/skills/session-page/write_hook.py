@@ -12,6 +12,8 @@ not on the fix.
 
 - A write that leaves a record of the session unparseable is sent back with the reader's error,
   every time.
+- A record written in the agent repo's `sessions/<id>/`, where the records went before they moved
+  out of the checkout, is sent back with the directory they go in now: the page never reads it there.
 - A turn record whose prose points at another part of the page in words ("under Details") rather
   than linking it is sent back the same way, every time.
 - The first write after which the records parse, in a turn that has written its record, gets
@@ -50,10 +52,15 @@ class Decision:
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
 
 
+MOVED = ("{written} is where this session's records went before they moved out of the checkout, and the page "
+         "no longer reads them there. Write it again in {directory}, where `session-page` now says they go, and "
+         "carry on with the turn.")
+
+
 def decide(hook: dict, directory: Path | None) -> Decision:
     """What to tell the agent after the write the hook JSON describes, over the session directory."""
     import turn_review
-    from session_page import RecordError, check_references, left_alone, read_session, written_this_turn
+    from session_page import SESSIONS, RecordError, agent_repo_of, check_references, left_alone, read_session, written_this_turn
     from stop_hook import RECAP
 
     if unread := left_alone():
@@ -62,6 +69,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("allow", "no project with an agent repo")
     written = Path(hook["cwd"], hook["tool_input"]["file_path"]).resolve()
     if written.parent not in (directory.resolve(), directory.resolve() / "turns"):
+        agent = agent_repo_of(directory)
+        if agent and written.is_relative_to((agent / SESSIONS.name / directory.name).resolve()):
+            return Decision("send back", "record written where records went before", MOVED.format(written=written, directory=directory))
         return Decision("allow", "no record of this session")
     call = {"type": "assistant", "timestamp": datetime.now(UTC).isoformat(),
             "message": {"content": [{"type": "tool_use", "name": hook["tool_name"], "input": hook["tool_input"]}]}}

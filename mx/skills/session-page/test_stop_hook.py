@@ -39,9 +39,9 @@ import stop_hook
 import turn_review
 from session_checks import (
     BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_ANCHOR, TURN_STARTS, UNPARSEABLE, appended, elements, logged,
-    messages_of, payload, turns_on, unreachable, view_of, with_write,
+    messages_of, payload, project_of, turns_on, unreachable, view_of, with_write,
 )
-from session_page import PAGE, PREVIOUS, SESSIONS
+from session_page import AGENT_REPO, PAGE, PREVIOUS, pages_directory
 from stop_hook import decide
 
 
@@ -110,35 +110,40 @@ def git(where: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(where), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
 
 
-def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in(
+def test_a_session_keeps_its_page_in_one_directory_whichever_worktree_it_ran_in(
     worked_example: Path, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, transcript: Path,
     run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture,
 ) -> None:
-    """Where the Decisions put a session's records, pinned as literals: `agent/sessions/<id>` in
-    the main checkout, which holds the agent repo, from the code repo's main checkout, from a linked
-    worktree of it, which holds no `agent/`, and from inside the agent repo. The command the show
-    skill has the agent run prints that directory from each, and the hook renders the page there.
-    A directory in no project with an agent repo has none, and the command says so."""
+    """Where the Decisions put a session's records, pinned as literals: `session-pages/<id>` under
+    the account's directory, outside every checkout, tied to the agent repo in the main checkout,
+    from the code repo's main checkout, from a linked worktree of it, which holds no `agent/`, and
+    from inside the agent repo. The command the show skill has the agent run prints that directory
+    from each, and the hook renders the page there. A session with no directory yet in no project
+    with an agent repo gets none, and the command says so."""
     main, worktree = tmp_path / "ledger", tmp_path / "ledger-map-columns"
     (main / "agent" / "tickets").mkdir(parents=True)
     git(main, "init", "-q")
     git(main, "commit", "-q", "--allow-empty", "-m", "start")
     git(main, "worktree", "add", "-q", str(worktree))
     git(main / "agent", "init", "-q")
-    directory = tmp_path / "ledger/agent/sessions" / worked_example.name
-    shutil.copytree(worked_example, directory)
+    directory = tmp_path / "claude-config/session-pages" / worked_example.name
+    assert directory == worked_example
+    (directory / AGENT_REPO).unlink()  # its records, not yet tied to the agent repo
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", worked_example.name)
     monkeypatch.setattr(sys, "argv", ["session-page"])
     for cwd in (main, worktree, main / "agent" / "tickets"):
         monkeypatch.chdir(cwd)
         session_page.main()
         assert capsys.readouterr().out == f"{directory}\n", cwd
+        assert (directory / AGENT_REPO).read_text() == f"{main / 'agent'}\n", cwd
         (directory / PAGE).unlink(missing_ok=True)
         run(payload(directory, transcript) | {"cwd": str(cwd)})
         assert (directory / PAGE).is_file(), cwd
         assert shown(capsys).endswith((directory / PAGE).as_uri()), cwd
     assert not (worktree / "agent").exists()
+    assert not (main / "agent" / "sessions").exists()
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "8e0f1c22-0000-0000-0000-000000000000")
     monkeypatch.chdir(tmp_path_factory.mktemp("loose"))
     with pytest.raises(SystemExit, match="in no project with an agent repo"):
         session_page.main()
@@ -164,7 +169,7 @@ def first_turn(tmp_path: Path) -> tuple[Path, Path]:
     said = tmp_path / "first.jsonl"
     titled = {"type": "ai-title", "aiTitle": "Helferline handoff continued", "sessionId": FRESH}
     said.write_text(json.dumps(FIRST_PROMPT) + "\n" + json.dumps(titled) + "\n")
-    return tmp_path / SESSIONS / FRESH, said
+    return pages_directory(session_page.account(), FRESH), said
 
 
 FIRST_REPLIES = {"a one-line reply": "On it: reading the handoff.", "twenty lines": TWENTY_LINES}
@@ -183,12 +188,11 @@ def test_a_sessions_first_turn_that_ends_on_a_reply_starts_its_page_with_that_re
     assert capsys.readouterr().out == ""
     [chat] = chats(directory)
     assert chat.read_text().split("---\n", 2)[2].strip() == reply
-    assert sorted(p.name for p in directory.iterdir()) == [PAGE, "turns"]
+    assert sorted(p.name for p in directory.iterdir()) == [AGENT_REPO, PAGE, "turns"]
     page = (directory / PAGE).read_text()
     assert rows(page) == [chat.stem]
     assert "<title>Helferline handoff continued · session page</title>" in page
     assert opened(browser, 1) == [(FRESH, str(directory / PAGE))]
-    assert [e["excluded"] for e in logged(attended, "excluded")] == ["not in a git repository"]
 
 
 SAID_NOTHING = {"no text": "", "only blank lines": "\n  \n"}
@@ -261,7 +265,7 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
     hook = payload(worked_example, transcript)
     (worked_example / PAGE).write_text(stale_page)
     run(hook)
-    assert sorted(path.name for path in worked_example.iterdir()) == ["index.html", "session.md", "turns"]
+    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "session.md", "turns"]
     assert (worked_example / "index.html").read_text() != stale_page
 
 
@@ -271,7 +275,7 @@ def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
     """The page the hook writes is the renderer's, links included: an artefact carries the path the
     hub finds it by, and a path a record writes as code opens the file, both resolved from the repo
     root the records sit under."""
-    root = worked_example.parents[len(SESSIONS.parts)]
+    root = project_of(worked_example)
     (root / "mx").mkdir()
     (root / "mx" / "tool.py").write_text("")
     newest = worked_example / "turns" / "04.md"
@@ -279,7 +283,7 @@ def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
     run(payload(worked_example, transcript))
     written = (worked_example / PAGE).read_text()
     assert f'{session_page.ARTEFACT}="{root}/agent/show/session-page/round-3/spec.html"' in written
-    assert '<a class="path" href="../../../mx/tool.py"' in written
+    assert f'<a class="path" href="{(root / "mx" / "tool.py").as_uri()}"' in written
 
 
 # ---- what a turn's end opens ------------------------------------------------
@@ -345,7 +349,7 @@ def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_s
     with_write(unrecorded, "Write", record)
     run(payload(worked_example, unrecorded))
     assert shown(capsys)
-    root = worked_example.parents[len(SESSIONS.parts)]
+    root = project_of(worked_example)
     expected = [path.format(root=root, home=Path.home()) for path in handed]
     calls = opened(browser, len(expected) + 1)
     assert sorted(calls) == sorted([(worked_example.name, str(worked_example / PAGE))] + [(worked_example.name, path) for path in expected])
@@ -381,7 +385,7 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     assert (worked_example / PAGE).read_text() != stale_page
     assert [entry["opened"] for entry in logged(attended, "page")] == ["not reopened: no hub answers"]
     assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
-        str(worked_example.parents[len(SESSIONS.parts)] / "agent/show/session-page/round-3" / page)
+        str(project_of(worked_example) / "agent/show/session-page/round-3" / page)
         for page in ("pages.html", "spec.html")]
     assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
@@ -492,16 +496,33 @@ def test_a_hub_socket_that_cannot_be_asked_is_no_hub(
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest, attended: Path,
 ) -> None:
-    """The first render still opens the page, keeps `sessions/` out of the agent repo's status and
-    links the page's file, as it does where nothing listens."""
+    """The first render still opens the page and links the page's file, as it does where nothing
+    listens."""
     monkeypatch.setenv("CONTAINER_HUB_SOCKET", str(hub_socket(request)))
     run(payload(worked_example, transcript))
     assert [entry["opened"].startswith("started ") for entry in logged(attended, "page")] == [True]
-    assert logged(attended, "excluded")
     assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
 
-# ---- the sessions directory kept out of the agent repo's status -------------
+# ---- the records kept out of every checkout ----------------------------------
+
+
+def test_a_session_running_across_the_move_keeps_the_turns_it_recorded_in_the_agent_repo(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], capsys: pytest.CaptureFixture,
+) -> None:
+    """A session whose records an mx from before the move left in the agent repo's `sessions/<id>/`,
+    its page beside them: its next turn's end starts its directory from them, so the page still
+    shows every turn, and leaves the agent repo's copy where it was."""
+    earlier = project_of(worked_example) / "agent" / "sessions" / worked_example.name
+    shutil.move(worked_example, earlier)
+    (earlier / AGENT_REPO).unlink()
+    (earlier / PAGE).write_text("<html>the page the old mx rendered</html>")
+    run(payload(worked_example, transcript, reply="Still on the ledger.") | {"cwd": str(earlier.parents[2])})
+    capsys.readouterr()
+    assert (worked_example / AGENT_REPO).read_text() == f"{earlier.parents[1]}\n"
+    assert {"t01", "t02", "t03", "t04"} <= set(rows((worked_example / PAGE).read_text()))
+    assert sorted(p.name for p in (earlier / "turns").iterdir()) == ["01.md", "02.md", "03.md", "04.md"]
+
 
 
 def status(where: Path) -> list[str]:
@@ -509,84 +530,25 @@ def status(where: Path) -> list[str]:
                           capture_output=True, text=True, check=True).stdout.splitlines()
 
 
-def exclude_file(repo: Path) -> Path:
-    return repo / ".git" / "info" / "exclude"
-
-
-def test_an_agent_repo_that_does_not_ignore_sessions_shows_none_of_them_after_the_first_render(
-    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+def test_a_running_sessions_records_and_page_stay_out_of_every_checkout(
+    first_turn: tuple[Path, Path], run: Callable[[dict], None],
 ) -> None:
-    """The oracle is the ticket agent/tickets/agent-repos-exclude-sessions.md: the first render adds
-    the line to the clone's exclude file, and a later render adds no second one."""
-    agent = worked_example.parents[1]
-    git(agent, "init")
-    (agent / ".gitignore").write_text("transcripts/\n")
-    assert any("sessions/" in line for line in status(agent))
-    for _ in range(2):
-        run(payload(worked_example, transcript))
-    assert [line for line in status(agent) if "sessions/" in line] == []
-    assert exclude_file(agent).read_text().count("/sessions/") == 1
-    assert [entry["excluded"] for entry in logged(attended, "excluded")] == [f"added /sessions/ to {exclude_file(agent)}"]
-
-
-ALREADY_IGNORED = {
-    "by its .gitignore": (".gitignore", "sessions/"),
-    "by its exclude file": (".git/info/exclude", "sessions/"),
-    "by a pattern over what it holds": (".gitignore", "sessions/*"),
-}
-
-
-@pytest.mark.parametrize("where, pattern", ALREADY_IGNORED.values(), ids=ALREADY_IGNORED)
-def test_an_agent_repo_that_already_ignores_sessions_gets_no_line_added(
-    where: str, pattern: str, worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
-) -> None:
-    agent = worked_example.parents[1]
-    git(agent, "init")
-    (agent / where).parent.mkdir(parents=True, exist_ok=True)
-    (agent / where).write_text(f"reviews/\n{pattern}\n")
-    before = exclude_file(agent).read_text() if exclude_file(agent).exists() else None
-    run(payload(worked_example, transcript))
-    assert (exclude_file(agent).read_text() if exclude_file(agent).exists() else None) == before
-    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["already ignored"]
-
-
-def test_an_agent_repo_that_tracks_session_records_still_shows_none_in_flight(
-    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
-) -> None:
-    """The oracle is agent/tickets/session-records-tracked.md's P2: a repo that already tracks
-    earlier sessions' records gets the line too, so a later session's directory, and a tracked
-    session's derived page, stay out of its status."""
-    agent = worked_example.parents[1]
-    git(agent, "init")
-    git(agent, "add", "sessions")
-    git(agent, "commit", "-m", "session records")
-    (worked_example.parent / "a-later-session").mkdir()
-    (worked_example.parent / "a-later-session" / "session.md").write_text("")
-    run(payload(worked_example, transcript))
-    assert [line for line in status(agent) if "sessions/" in line] == []
-    assert [entry["excluded"] for entry in logged(attended, "excluded")] == [f"added /sessions/ to {exclude_file(agent)}"]
-
-
-def test_an_agent_repo_outside_git_is_rendered_and_logged_as_such(
-    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
-) -> None:
-    run(payload(worked_example, transcript))
-    assert (worked_example / PAGE).exists()
-    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["not in a git repository"]
-
-
-def test_an_agent_directory_the_code_repo_tracks_excludes_its_own_sessions_and_no_other(
-    worked_example: Path, transcript: Path, run: Callable[[dict], None],
-) -> None:
-    """The line is anchored at the agent directory's path in the repo, so a `sessions/` elsewhere in
-    the code repo still shows."""
-    project = worked_example.parents[2]
-    git(project, "init")
-    (project / "src" / "sessions").mkdir(parents=True)
-    (project / "src" / "sessions" / "a.py").write_text("")
-    run(payload(worked_example, transcript))
-    assert exclude_file(project).read_text().splitlines()[-1] == "/agent/sessions/"
-    assert [line for line in status(project) if "sessions/" in line] == ["?? src/sessions/a.py"]
+    """session-records-outside-the-checkout's first criterion: a session's first reply makes its
+    directory and its page, and neither the code repo's checkout nor the agent repo's, which ignores
+    nothing, holds anything new, so a copy of the records arriving there from another host has
+    nothing to collide with."""
+    directory, said = first_turn
+    project = project_of(directory) / "ledger"
+    (project / "agent" / "tickets").mkdir(parents=True)
+    for repo in (project, project / "agent"):
+        git(repo, "init")
+        (repo / ".gitignore").write_text("agent/\n" if repo == project else "")
+        git(repo, "add", ".gitignore")
+        git(repo, "commit", "-m", "start")
+    run(payload(directory, said, reply="On it.") | {"cwd": str(project)})
+    assert (directory / PAGE).is_file()
+    assert (directory / AGENT_REPO).read_text() == f"{project / 'agent'}\n"
+    assert status(project) == status(project / "agent") == []
 
 
 # Each is the stand-in's script, None for none, and what the log says came of the open.
@@ -955,7 +917,7 @@ def print_mode(example: Path, transcript: Path, fixtures: pytest.FixtureRequest)
 
 def in_no_project(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     loose = fixtures.getfixturevalue("tmp_path_factory").mktemp("loose")
-    return payload(example, transcript) | {"cwd": str(loose)}
+    return payload(example.parent / FRESH, transcript) | {"cwd": str(loose)}
 
 
 def with_no_directory(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
@@ -1024,7 +986,7 @@ def test_every_decision_is_one_line_in_the_session_pages_log(
     run(hook)
     capsys.readouterr()
     entries = logged(attended, "verb")[before:]
-    directory = str(Path(hook["cwd"]) / SESSIONS / hook["session_id"]) if resolved else None
+    directory = str(pages_directory(session_page.account(), hook["session_id"])) if resolved else None
     assert entries == [{"ts": entries[0]["ts"], "session_id": hook["session_id"], "verb": verb, "why": why, "directory": directory}]
 
 
@@ -1110,7 +1072,7 @@ def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], caps
     capsys.readouterr()
 
     def read(front: str, **pickup: str) -> Path:
-        read.done = pick_up(directory.parents[len(SESSIONS.parts)], front, **pickup)
+        read.done = pick_up(project_of(directory), front, **pickup)
         run(payload(directory, said, reply="On it."))
         capsys.readouterr()
         return before
@@ -1180,7 +1142,7 @@ def test_a_handoff_picked_up_without_the_command_links_nothing(
     continuation handoff read and `git rm`'d by hand writes no `previous`."""
     directory, said = first_turn
     before = handed_over(f"session: {BEFORE}\npurpose: fork")
-    handoff = directory.parents[len(SESSIONS.parts)] / "agent" / "handoffs" / "2026-10-06-ledger.md"
+    handoff = project_of(directory) / "agent" / "handoffs" / "2026-10-06-ledger.md"
     with said.open("a") as f:
         for e in [handoff_read(str(handoff), CONTINUATION), *bash(f"git rm {handoff} && git commit -m 'pick up'")]:
             f.write(json.dumps(e) + "\n")
@@ -1223,7 +1185,7 @@ def test_a_handoff_two_sessions_picked_up_links_forward_to_both(
     second = "0a0b0c0d-0000-0000-0000-000000000000"
     theirs = transcript_of(second)
     theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": second}) + "\n")
-    pick_up(directory.parents[len(SESSIONS.parts)], CONTINUATION, session=second, name="2026-10-05-ledger-bank.md")
+    pick_up(project_of(directory), CONTINUATION, session=second, name="2026-10-05-ledger-bank.md")
     run(payload(directory.parent / second, theirs, reply="On it."))
     capsys.readouterr()
     assert links_to(before / PAGE) == sorted([FRESH, second])

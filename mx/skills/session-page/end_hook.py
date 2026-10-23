@@ -5,11 +5,12 @@
 # ///
 """SessionEnd hook: a session's records reach the agent repo's history as the session ends.
 
-It reads the SessionEnd hook JSON on stdin and commits the session's `session.md` and `turns/`, in a
-commit holding those paths and nothing else, with a `Session:` trailer. `sessions/` stays ignored,
-so the records are force-added; once tracked, git shows their later edits regardless. The page
-(`index.html`) is derived and stays out. A session that ends again after a resume commits what
-changed since; one whose records are as last committed commits nothing.
+It reads the SessionEnd hook JSON on stdin, copies the session's `session.md` and `turns/` from its
+directory, which is outside every checkout, into `sessions/<id>/` of the agent repo the directory
+names, and commits them there, in a commit holding those paths and nothing else, with a `Session:`
+trailer. Where `sessions/` is ignored, the records are force-added. The page (`index.html`) is
+derived and stays where it is. A session that ends again after a resume commits what changed since;
+one whose records are as last committed commits nothing.
 
 The commit runs in a child detached from the hook, since every SessionEnd hook shares a budget of
 about a second and a half, and git killed mid-commit leaves the index locked for every session
@@ -25,13 +26,14 @@ import json
 import os
 import subprocess
 import sys
+import shutil
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import left_alone, session_directory  # noqa: E402
+from session_page import SESSIONS, agent_repo_of, left_alone, session_directory  # noqa: E402
 
 RECORDS = ("session.md", "turns")  # what a session's directory holds that its history keeps
 LOCK_WAIT = 5.0  # seconds the child waits out another process holding the agent repo's index lock
@@ -59,21 +61,32 @@ def main() -> None:
 
 
 def commit_records(directory: Path) -> str:
-    """Commit the records in `directory`, a session's directory under the agent repo's `sessions/`,
-    and say what came of it.
+    """Copy the records in `directory`, a session's, into the agent repo it names and commit them
+    there, and say what came of it.
 
-    Only where `sessions/` sits at the top of a repo of its own: where the agent directory is part of
-    the code repo, the commit would land on whatever branch its main checkout holds and travel to
-    its remote. A commit that fails unstages the records again, since the index is shared and the
-    next session's commit would carry them. Another process's commit landing between the add and
-    the commit could sweep them all the same; the two run back to back to keep that window short."""
-    sessions, session_id = directory.parent, directory.name
-    top = git(sessions, "rev-parse", "--show-toplevel")
-    if top.returncode != 0 or Path(top.stdout.strip()) != sessions.parent.resolve():
+    Only where that agent directory is a repo of its own: where it is part of the code repo, the
+    commit would land on whatever branch its main checkout holds and travel to its remote. A commit
+    that fails unstages the records again, since the index is shared and the next session's commit
+    would carry them. Another process's commit landing between the add and the commit could sweep
+    them all the same; the two run back to back to keep that window short."""
+    session_id = directory.name
+    if (agent := agent_repo_of(directory)) is None:
+        return f"{directory} names no agent repo"
+    top = git(agent, "rev-parse", "--show-toplevel")
+    if top.returncode != 0 or Path(top.stdout.strip()) != agent.resolve():
         return "the agent directory is not a repo of its own"
-    paths = [f"{session_id}/{name}" for name in RECORDS if (directory / name).exists()]
-    if not paths:
+    names = [name for name in RECORDS if (directory / name).exists()]
+    if not names:
         return "no records"
+    sessions = agent / SESSIONS.name
+    kept = sessions / session_id
+    kept.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        if (directory / name).is_dir():
+            shutil.copytree(directory / name, kept / name, dirs_exist_ok=True)
+        else:
+            shutil.copy2(directory / name, kept / name)
+    paths = [f"{session_id}/{name}" for name in names]
     message = f"session {session_id}: its records as it ended"
     deadline = time.monotonic() + LOCK_WAIT
     while True:

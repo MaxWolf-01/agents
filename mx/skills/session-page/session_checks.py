@@ -10,13 +10,14 @@ import html
 import itertools
 import json
 import re
+import urllib.parse
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
 
-from session_page import SESSIONS, Row, View, read_session, view
+from session_page import Row, View, agent_repo_of, read_session, view
 
 SESSION = "e5ca76dc-3093-419b-aa93-b8eb8f35811f"  # the session the worked example is of
 # the sessions the hooks leave alone are marked in the environment, and the suite runs in one of
@@ -111,11 +112,26 @@ def messages_of(page: View) -> dict[str, list[str]]:
 # ---- the hooks' payloads and cases ---------------------------------------------
 
 
+def followed(href: str) -> Path:
+    """The file a link on the page opens, from its file URL."""
+    parts = urllib.parse.urlsplit(href)
+    assert parts.scheme == "file", f"{href} is no file URL"
+    return Path(urllib.parse.unquote(parts.path))
+
+
+def project_of(directory: Path) -> Path:
+    """The project a session's directory belongs to: the repo its agent repo sits in. One the hook
+    has not made yet belongs to the check's own project, which sits beside the check's account
+    (conftest's `registry`)."""
+    agent = agent_repo_of(directory)
+    return agent.parent if agent else directory.parents[2]
+
+
 def payload(directory: Path, transcript: Path, reply: str = "", **rest: object) -> dict:
     """The Stop hook JSON for a turn of the session whose directory is `directory`."""
     return {
         "session_id": directory.name,
-        "cwd": str(directory.parents[len(SESSIONS.parts)]),
+        "cwd": str(project_of(directory)),
         "transcript_path": str(transcript),
         "stop_hook_active": False,
         "last_assistant_message": reply,

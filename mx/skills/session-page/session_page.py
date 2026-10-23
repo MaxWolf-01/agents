@@ -5,10 +5,15 @@
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
-The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
+The directory is `session-pages/<session-id>/` under the directory of the Claude Code account the
+session runs under (`account`), outside every checkout: a copy of it pulled from another host never
+stands in the way of a `git pull` there. It holds `session.md`, one `turns/NN.md` per turn the agent
 recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
-shape RULES.md gives them, and `previous`, which the handoff skill's `pickup.py` writes where the
-session picked up another's continuation handoff. Any of them may be missing: a session's first
+shape RULES.md gives them; `previous`, which the handoff skill's `pickup.py` writes where the
+session picked up another's continuation handoff; and `agent-repo`, the agent repo whose `sessions/`
+the SessionEnd hook commits the records into, from which a record's paths are read. A directory
+inside an agent repo's `sessions/`, as that commit leaves it, reads the same without one. Any of
+the records may be missing: a session's first
 turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
 title, links to the pages of the sessions before and after it across a handoff, the resume
 command, the questions no later turn answered or superseded, then the turns newest first,
@@ -28,6 +33,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
@@ -50,7 +56,11 @@ PAGE = "index.html"  # the rendered page, in the session's own directory
 # handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
 # it, not written.
 PREVIOUS = "previous"
-SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
+# In a session's directory, the agent repo its records are committed into, as a path, written once
+# as the directory is made. Its parent is the repo root a record's paths are from.
+AGENT_REPO = "agent-repo"
+PAGES = "session-pages"  # where a session's directory sits, under the account's directory
+SESSIONS = Path("agent/sessions")  # where the SessionEnd hook commits its records, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
 # The timeline beside the turns, which lists every artefact of the session under its turn, and the
@@ -63,11 +73,14 @@ HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
 
 
-CLI = """Print the directory this session's records go in: `sessions/<session-id>` in the agent repo
-of the project the working directory is in, the same directory from every worktree of that
-project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
+CLI = """Make the directory this session's records go in, where it is not there yet, and print it:
+`session-pages/<session-id>` under the Claude Code account's directory ($CLAUDE_CONFIG_DIR, or
+~/.claude), the same from every directory the session works in, the id being
+$CLAUDE_CODE_SESSION_ID. A new one is tied to the agent repo of the project the working directory
+is in, where the records are committed as the session ends.
 
-Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
+Exits 1, saying why, outside a Claude Code session, or where the session has no directory yet and
+the working directory is in no project with an agent repo.
 
 Examples:
 
@@ -81,26 +94,68 @@ def main() -> None:
     tyro.cli(lambda: None, description=CLI)
     if not (session := os.environ.get("CLAUDE_CODE_SESSION_ID", "")):
         sys.exit("no session id: run it inside a Claude Code session")
-    if (directory := session_directory(Path.cwd(), session)) is None:
+    if (directory := make_session_directory(Path.cwd(), session)) is None:
         sys.exit(f"{Path.cwd()} is in no project with an agent repo")
     print(directory)
 
 
+def account() -> Path:
+    """The directory of the Claude Code account this process runs under."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+
+
 def session_directory(cwd: Path, session: str) -> Path | None:
-    """Where the session's records and page live, whether or not they exist yet. None outside a
-    project with an agent repo."""
-    sessions = sessions_directory(cwd)
-    return sessions / session if sessions else None
+    """Where the session's records and page live, whether or not they exist yet, the same wherever
+    the session works once they do. None where they do not and `cwd` is in no project with an agent
+    repo."""
+    directory = pages_directory(account(), session)
+    return directory if directory.is_dir() or agent_repo_at(cwd) else None
 
 
-def sessions_directory(cwd: Path) -> Path | None:
-    """`sessions/` in the agent repo of the project `cwd` is in, found the way `tracker root` finds
-    the tracker, so every worktree of the project names the same one. None outside a project with an
-    agent repo."""
+def pages_directory(account: Path, session: str) -> Path:
+    """Where a session run under `account` keeps its records and page."""
+    return account / PAGES / session
+
+
+def make_session_directory(cwd: Path, session: str, *, only_earlier: bool = False) -> Path | None:
+    """The session's directory, made where it is not there yet and tied to the agent repo of the
+    project `cwd` is in where it is not tied to one yet. None where it was not there and `cwd` is in
+    no project with an agent repo.
+
+    A new one starts from whatever an mx from before the move left in that agent repo's
+    `sessions/<id>/`, so a session running across the update keeps its turns. `only_earlier` makes
+    one only where there is such a directory to start from."""
+    directory = pages_directory(account(), session)
+    if (directory / AGENT_REPO).is_file():
+        return directory
+    if (agent := agent_repo_at(cwd)) is None:
+        return directory if directory.is_dir() else None
+    if not directory.is_dir():
+        if (earlier := agent / SESSIONS.name / session).is_dir():
+            shutil.copytree(earlier, directory, ignore=shutil.ignore_patterns(PAGE))
+        elif only_earlier:
+            return directory
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / AGENT_REPO).write_text(f"{agent}\n")
+    return directory
+
+
+def agent_repo_at(cwd: Path) -> Path | None:
+    """The agent repo of the project `cwd` is in, found the way `tracker root` finds the tracker, so
+    every worktree of the project names the same one. None outside a project with an agent repo."""
     try:
-        return tracker.tracker_root(cwd).parent / SESSIONS.name
+        return tracker.tracker_root(cwd).parent
     except tracker.Refused:
         return None
+
+
+def agent_repo_of(directory: Path) -> Path | None:
+    """The agent repo a session's directory commits into: the one its `agent-repo` names, or the one
+    it sits in, under `sessions/`. None for a directory with neither."""
+    try:
+        return Path((directory / AGENT_REPO).read_text().strip())
+    except OSError:
+        return directory.parent.parent if directory.parent.name == SESSIONS.name else None
 
 
 def render_session(directory: Path, transcript: Path, now: datetime | None = None) -> str:
@@ -140,7 +195,8 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
               for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front.get("session", directory.name))
-    root = directory.parents[len(SESSIONS.parts)]
+    agent = agent_repo_of(directory)
+    root = agent.parent if agent else started_in(entries) or directory
     previous = predecessor(directory)
     return Session(
         id=session,
@@ -837,7 +893,6 @@ def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -
 
 # ---- the page ---------------------------------------------------------------
 
-UP = "../" * (len(SESSIONS.parts) + 1)  # from the page to the repo root
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 
 KEYS = [
@@ -948,7 +1003,7 @@ def shown_links(turn: Turn, root: Path) -> tuple[Shown, ...]:
     shown, keys = [], itertools.count(1)
     for link in turn.links:
         key = None if link.ticket else next(keys)
-        shown.append(Shown(link, href(link.path), "" if link.ticket else resolved(link.path, root),
+        shown.append(Shown(link, href(link.path, root), "" if link.ticket else resolved(link.path, root),
                            key if key is not None and key <= 9 else None))
     return tuple(shown)
 
@@ -1378,13 +1433,14 @@ for rule in ("fence", "code_block"):
 URL = re.compile(r"[a-z][a-z0-9+.-]*:", re.I)
 
 
-def href(path: str) -> str:
-    """A link from the page: a path from the repo root climbs to it, an absolute or `~` path is
-    its file URL, and a URL stays as it is."""
+def href(path: str, root: Path | None = None) -> str:
+    """A link from the page: a path, from the repo root (`root`, else the page's), absolute or under
+    `~`, is its file URL with its fragment or query kept, since the page sits outside the repo; a URL
+    stays as it is."""
     if URL.match(path):
         return path
-    local = expanded(path)
-    return local.as_uri() if local.is_absolute() else UP + path
+    file = file_part(path)
+    return Path(resolved(file, root or ROOT.get() or Path.cwd())).as_uri() + path[len(file):]
 
 
 def resolved(path: str, root: Path) -> str:

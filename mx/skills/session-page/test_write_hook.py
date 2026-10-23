@@ -26,11 +26,11 @@ import session_page
 import stop_hook
 import turn_review
 import write_hook
-from session_page import PAGE, SESSIONS
+from session_page import PAGE
 from stop_hook import RECAP
 from session_checks import (
     CATALOGUE_FIXTURE, LEFT_ALONE, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
-    unreachable, with_write,
+    project_of, unreachable, with_write,
 )
 from session_checks import payload as stopped
 from write_hook import decide
@@ -57,7 +57,7 @@ def wrote(record: Path, transcript: Path, tool: str = "Write") -> dict:
     directory = record.parent.parent if record.parent.name == "turns" else record.parent
     return {
         "session_id": directory.name,
-        "cwd": str(directory.parents[len(SESSIONS.parts)]),
+        "cwd": str(project_of(directory)),
         "transcript_path": str(transcript),
         "hook_event_name": "PostToolUse",
         "tool_name": tool,
@@ -359,7 +359,7 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     business of this one, broken records or not."""
     (worked_example / "turns" / "04.md").write_text("no frontmatter\n")
     monkeypatch.setattr(turn_review, "review", unreachable)
-    code = worked_example.parents[2] / "src" / "ledger.py"
+    code = project_of(worked_example) / "src" / "ledger.py"
     code.parent.mkdir()
     code.write_text("")
     other = worked_example.parent / "8e0f1c22-0000-0000-0000-000000000000" / "turns" / "01.md"
@@ -371,6 +371,21 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     for path in (code, other, inside):
         assert run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(path)}}) == ""
     assert [entry["why"] for entry in logged(attended, "verb")] == ["no record of this session"], "only the path in its directory is read past the path"
+
+
+def test_a_record_written_where_records_went_before_the_move_goes_back_naming_where_they_go_now(
+    worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session that read its directory from `session-page` before the records moved out of the
+    checkout still has the old one in its context: a record written there is one the page never
+    reads, so the agent hears where to write it."""
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    old = project_of(worked_example) / "agent" / "sessions" / worked_example.name / "turns" / "05.md"
+    old.parent.mkdir(parents=True)
+    record = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
+    old.write_text(record)
+    said = run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(old), "content": record}})
+    assert str(old) in said and f"Write it again in {worked_example}" in said
 
 
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)

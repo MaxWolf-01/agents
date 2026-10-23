@@ -35,7 +35,7 @@ import tyro
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "session-page"))
-from session_page import PAGE, PREVIOUS, RecordError, left_alone, page, read_session, session_directory  # noqa: E402
+from session_page import PAGE, PREVIOUS, RecordError, left_alone, make_session_directory, page, read_session  # noqa: E402
 
 
 @dataclass
@@ -76,11 +76,10 @@ def link(text: str) -> str:
         return f"nothing: a {unread} has no page"
     if not own:
         return "nothing: no session id, so no session directory (run it inside a Claude Code session)"
-    if (directory := session_directory(Path.cwd(), own)) is None:
+    if (directory := make_session_directory(Path.cwd(), own)) is None:
         return f"nothing: {Path.cwd()} is in no project with an agent repo"
     if (directory / PREVIOUS).exists():
         return f"nothing: {directory / PREVIOUS} already names {(directory / PREVIOUS).read_text().strip()}"
-    directory.mkdir(parents=True, exist_ok=True)
     (directory / PREVIOUS).write_text(before + "\n")
     return f"{directory / PREVIOUS} names {before}; its page: {render(directory.parent / before)}"
 

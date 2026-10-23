@@ -24,7 +24,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
-from session_checks import messages_of, rows_of, sections_of, text_of, view_of
+from session_checks import followed, messages_of, project_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -233,26 +233,26 @@ def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
 
 def test_a_link_in_the_details_is_a_path_from_the_repo_root_too(worked_example: Path, transcript: Path) -> None:
     """The Decision resolves every link a record writes, the ones in its prose as well as its
-    Links: followed from the page's directory, it lands on the path the record wrote, in a tab of
+    Links: followed, it lands on the path the record wrote, in a tab of
     its own. A link to a part of the page stays on the page. Pins the format: the links are in the
     record's prose, which reaches the page as markup."""
-    root = worked_example.parents[2]
+    root = project_of(worked_example)
     (worked_example / "turns" / "05.md").write_text(
         "---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Details\n\n"
         "The [second bank](agent/show/ledger/banks.html) is drawn, and [Q7](#q7) still waits.\n")
     section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
     ((href, target),) = re.findall(r'<a href="([^"#][^"]*)"[^>]*?target="([^"]+)"', section)
-    assert (worked_example / href).resolve().relative_to(root.resolve()).as_posix() == "agent/show/ledger/banks.html"
+    assert followed(href).relative_to(root).as_posix() == "agent/show/ledger/banks.html"
     assert target == "_blank"
     assert '<a href="#q7">Q7</a>' in section
 
 
 def test_a_link_is_a_path_from_the_repo_root(worked_example: Path, transcript: Path) -> None:
-    """Each link on the page, followed from the page's own directory, lands on the path the record
-    wrote, from the root of the repo the session directory sits in."""
-    root = worked_example.parents[2]
+    """Each link on the page lands on the path the record wrote, from the root of the repo whose
+    agent repo the session directory names, wherever the directory sits."""
+    root = project_of(worked_example)
     hrefs = [link.href for row in view_of(worked_example, transcript).rows for link in row.links]
-    landed = [(worked_example / href).resolve().relative_to(root.resolve()).as_posix() for href in hrefs]
+    landed = [followed(href).relative_to(root).as_posix() for href in hrefs]
     records = sorted((worked_example / "turns").glob("*.md"), reverse=True)
     assert landed == re.findall(r"\]\(([^)]+)\)", "".join(p.read_text() for p in records))
 
