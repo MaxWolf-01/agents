@@ -2576,8 +2576,14 @@ def test_a_ticket_changed_on_both_machines_stops_at_a_conflict_naming_it_and_pus
 
     kept = run(pc.code, "sync", "--resolve")
     assert kept.code == 1 and "tickets/shared.md" in kept.err, kept.said
-    assert "<<<<<<<" in (pc.tickets / "shared.md").read_text(), "the replay is left stopped at the conflict"
+    stopped = (pc.tickets / "shared.md").read_text()
+    assert "<<<<<<<" in stopped, "the replay is left stopped at the conflict"
     assert upstream(origin, "agent") == pushed
+    again = run(pc.code, "sync")
+    assert again.code == 1 and "a rebase is underway" in again.err, again.said
+    while_stopped = run(pc.code, "set", "shared", "size=L")
+    assert while_stopped.code == 1 and "a rebase is underway" in while_stopped.err, while_stopped.said
+    assert (pc.tickets / "shared.md").read_text() == stopped, "no write lands inside the stopped replay"
 
 
 def test_uncommitted_changes_that_conflict_with_what_came_in_are_left_as_they_were_and_nothing_is_pushed(machines: tuple[Machine, Machine, Path]) -> None:
@@ -2663,17 +2669,23 @@ def test_a_checkout_with_no_network_commits_as_today_and_pushes_once_it_is_back(
     assert upstream(origin, "agent") == tip(laptop.agent, "main")
 
 
-def test_commits_a_ticket_branch_is_built_on_are_never_replayed_and_copied(machines: tuple[Machine, Machine, Path]) -> None:
+@pytest.mark.parametrize("landed", [False, True])
+def test_commits_a_ticket_branch_is_built_on_are_never_replayed_and_copied(machines: tuple[Machine, Machine, Path], landed: bool) -> None:
+    """Whether the ticket branch is still out or has merged and been deleted: a merge of it holds the
+    original commits as much as the branch does."""
     laptop, pc, origin = machines
     (laptop.code / "src.txt").write_text("the lamp, by hand\n")
     git(laptop.code, "commit", "-q", "-am", "by hand on main")  # unpushed: no hook pushes the code repo
-    git(laptop.code, "branch", "ticket/shade")  # a worker's branch cut from it
+    if landed:
+        merged_ticket(laptop.code, "shade")  # cut from it, merged, its branch deleted
+    else:
+        git(laptop.code, "branch", "ticket/shade")  # a worker's branch cut from it
     merged_ticket(pc.code, "lamp")
     assert run(pc.code, "sync").code == 0
     before = tip(laptop.code, "main")
 
     said = run(laptop.code, "sync")
-    assert said.code == 1 and "ticket/shade" in said.err, said.said
+    assert said.code == 1 and ("merge shade" if landed else "ticket/shade") in said.err, said.said
     assert tip(laptop.code, "main") == before, "left as it was"
     assert upstream(origin, "code") == tip(pc.code, "main")
 

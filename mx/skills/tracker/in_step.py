@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import fcntl
 import os
-import re
 import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -42,7 +41,7 @@ ROUNDS = 3
 UNDERWAY = {"rebase-merge": "a rebase", "rebase-apply": "a rebase", "MERGE_HEAD": "a merge",
             "CHERRY_PICK_HEAD": "a cherry-pick", "REVERT_HEAD": "a revert", "BISECT_LOG": "a bisect"}
 
-Outcome = Literal["pushed", "pulled", "current", "offline", "conflict", "refused", "skipped"]
+Outcome = Literal["pushed", "pulled", "current", "offline", "conflict", "underway", "refused", "skipped"]
 
 
 @dataclass(frozen=True)
@@ -64,15 +63,16 @@ def sync(top: Path, resolve: bool = False) -> Synced:
     if os.environ.get(SYNCING):
         return Synced("skipped")
     try:
-        branch = git(top, "branch", "--show-current").strip()
-        remote = tried(top, "config", f"branch.{branch}.remote").stdout.strip() if branch else ""
-        merge = tried(top, "config", f"branch.{branch}.merge").stdout.strip() if branch else ""
-        if not remote or not merge or remote == ".":  # detached, or a branch with no upstream
-            return Synced("skipped")
         with locked(top):
-            # under the lock, so a replay another sync left stopped for a person is seen as one
+            # first, and under the lock: a replay stopped for a person has HEAD detached, and would
+            # otherwise read as a checkout with no branch to sync
             if underway := underway_in(top):
-                return Synced("skipped", f"{top}: {underway} is underway, so {branch} was left as it is; `tracker sync` once it is done")
+                return Synced("underway", f"{top}: {underway} is underway, so nothing was synced; `tracker sync` once it is done")
+            branch = git(top, "branch", "--show-current").strip()
+            remote = tried(top, "config", f"branch.{branch}.remote").stdout.strip() if branch else ""
+            merge = tried(top, "config", f"branch.{branch}.merge").stdout.strip() if branch else ""
+            if not remote or not merge or remote == ".":  # detached, or a branch with no upstream
+                return Synced("skipped")
             return in_step(top, branch, remote, merge, resolve)
     except Failed as failed:
         return Synced("refused", f"{top}: {failed}")
@@ -119,14 +119,17 @@ def replay(top: Path, branch: str, resolve: bool) -> Synced:
     upstream: a commit picked, a merge merged again from the same second parent with its own
     message. A commit whose change the upstream already holds comes out empty and is dropped, which
     is a claim both machines wrote alike. Uncommitted changes are set aside for it and put back."""
-    todo, under = [], set()
-    for commit in git(top, "rev-list", "--first-parent", "--reverse", "@{u}..HEAD").split():
+    todo, merged = [], {}
+    commits = git(top, "rev-list", "--first-parent", "--reverse", "@{u}..HEAD").split()
+    for commit in commits:
         parents = git(top, "rev-list", "--parents", "-n", "1", commit).split()[1:]
         todo.append(f"merge -C {commit} {parents[1]}" if len(parents) == 2 else f"pick {commit}")
-        under |= set(git(top, "for-each-ref", "--contains", commit, "--format=%(refname:short)", "refs/heads").split()) - {branch}
-    if under:
-        return Synced("refused", f"{top}: {', '.join(sorted(under))} is built on commits of {branch} the upstream lacks, so replaying them would copy them; {branch} was left as it is: push it before the other machine's commits arrive, or merge the upstream in by hand")
+        if len(parents) == 2:
+            merged[parents[1]] = f"the merge {git(top, 'log', '-1', '--format=%s', commit).strip()!r}"
+    if under := built_on(top, branch, commits, merged):
+        return Synced("refused", f"{top}: {', '.join(under)} {'is' if len(under) == 1 else 'are'} built on commits of {branch} the upstream lacks, and replaying them would copy those commits, so {branch} was left as it is; merge the upstream in by hand (`git -C {top} merge @{{u}}`), then `tracker sync`")
     before = git(top, "rev-parse", "HEAD").strip()
+    stashed = tried(top, "rev-parse", "-q", "--verify", "refs/stash").stdout.strip()
     script = Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "tracker-sync-todo"
     script.write_text("\n".join(todo or ["noop"]) + "\n")
     try:
@@ -135,7 +138,7 @@ def replay(top: Path, branch: str, resolve: bool) -> Synced:
         script.unlink(missing_ok=True)
     files = tried(top, "diff", "--name-only", "--diff-filter=U").stdout.split()
     if done.returncode == 0 and files:
-        return unstashed(top, before, done, files)
+        return unstashed(top, before, stashed, files)
     if done.returncode == 0:
         return Synced("pulled")
     stopped = (Path(git(top, "rev-parse", "--absolute-git-dir").strip()) / "rebase-merge").exists()
@@ -148,17 +151,29 @@ def replay(top: Path, branch: str, resolve: bool) -> Synced:
     return Synced("refused", f"{top}: the replay onto the upstream did not run ({said_by(done)}), so nothing was pushed and the checkout is as it was")
 
 
-def unstashed(top: Path, before: str, done: subprocess.CompletedProcess, files: list[str]) -> Synced:
+def built_on(top: Path, branch: str, commits: list[str], merged: dict[str, str]) -> list[str]:
+    """What else here is built on one of `commits`, the branch's own: another branch, or a ticket
+    tip one of them merges (`merged`, each tip with how it is named), whose branch may be gone."""
+    tips = {line.split()[0]: line.split()[1] for line in
+            git(top, "for-each-ref", "--format=%(objectname) %(refname:short)", "refs/heads").splitlines()
+            if line.split()[1] != branch}
+    tips |= merged
+    return sorted({name for tip, name in tips.items() for commit in commits
+                   if tried(top, "merge-base", "--is-ancestor", commit, tip).returncode == 0})
+
+
+def unstashed(top: Path, before: str, stashed: str, files: list[str]) -> Synced:
     """The checkout put back as it was before a replay whose commits went through and whose
     uncommitted changes, set aside for it, conflict with what came in: git leaves the conflict in
-    the working tree and the changes in the stash."""
-    stash = re.search(r"Created autostash: ([0-9a-f]+)", done.stdout + done.stderr)
+    the working tree and the changes in the stash, on top of what the stash held before."""
+    ours = tried(top, "rev-parse", "-q", "--verify", "refs/stash").stdout.strip()
+    if not ours or ours == stashed:
+        raise Failed(f"{', '.join(files)} conflict with uncommitted changes, which are not in the stash where the replay put them; nothing was reset, so look at `git status` and `git stash list`")
     git(top, "reset", "-q", "--hard", before)
-    if stash:
-        git(top, "stash", "apply", "-q", stash[1])
-        for line in git(top, "stash", "list", "--format=%gd %H").splitlines():
-            if line.split()[1].startswith(stash[1]):
-                git(top, "stash", "drop", "-q", line.split()[0])
+    git(top, "stash", "apply", "-q", ours)
+    for line in git(top, "stash", "list", "--format=%gd %H").splitlines():
+        if line.split()[1] == ours:
+            git(top, "stash", "drop", "-q", line.split()[0])
     return Synced("conflict", f"{top}: {', '.join(files)} changed upstream and in uncommitted changes here, so nothing was pushed and the checkout is as it was; commit or set those changes aside, then `tracker sync`")
 
 

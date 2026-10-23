@@ -1319,7 +1319,7 @@ def hook(sync: bool = False) -> int:
     hooks = Path(git(Path.cwd(), "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
     standing = []
     for name, (source, runs) in HOOKS.items():
-        if name != "pre-commit" and not sync:
+        if runs == SYNC_HOOK and not sync:
             continue
         script, into = (here_ / source).read_text(), hooks / name
         if into.exists() and into.read_text() != script:
@@ -1352,8 +1352,8 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
     left alone, and nothing is said. A checkout whose remote does not answer is left as it is, its
     commits waiting for the next sync. A conflict, the two machines having changed the same lines,
     pushes nothing and leaves the checkout as it was. So does a commit another branch here is built
-    on, which a replay would copy. Exit 1: a conflict, a checkout left as it was, or a remote that
-    refused the push; the line says which file or why.
+    on, which a replay would copy. Exit 1: a conflict, a rebase or merge underway, a commit another
+    branch is built on, or a remote that refused the push; the line says which file or why.
 
     Args:
         here: only the checkout the working directory is in, and only where it is a main checkout
@@ -1375,7 +1375,7 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
     for outcome in outcomes:
         if outcome.said:
             print(outcome.said, file=sys.stderr)
-    return 1 if any(outcome.outcome in ("conflict", "refused") for outcome in outcomes) else 0
+    return 1 if any(outcome.outcome in ("conflict", "underway", "refused") for outcome in outcomes) else 0
 
 
 def kept_in_step(root: Path) -> bool:
@@ -2179,7 +2179,7 @@ def writing() -> Tracker:
             raise Refused([f"{built} is the branch {top} has out, and a ticket file is written in the agent repo's main checkout, never from a ticket branch"])
     root = tracker_root(Path.cwd())
     if kept_in_step(root) and (synced := in_step.sync(toplevel(root))).said:
-        if synced.outcome == "conflict":
+        if synced.outcome in ("conflict", "underway"):
             raise Refused([synced.said, "the write waits until the two checkouts are in step"])
         print(synced.said, file=sys.stderr)
     return here()
