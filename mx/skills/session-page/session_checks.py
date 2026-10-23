@@ -1,7 +1,7 @@
 """What the session page's checks share beside their fixtures: the worked example's session,
 the markers of a session nobody is sitting at, a turn that wrote no record, a reviewer no check may
-reach, the page as the values it formats and its HTML read back by anchor, and the hooks' payloads
-and cases.
+reach, sessions drawn as data with the records they are written as, the page as the values it
+formats and its HTML read back by anchor, and the hooks' payloads and cases.
 
 They live here rather than in `conftest.py` because a check that imports from `conftest` gets
 whichever conftest Python loaded last under that name, and the tracker's checks keep one too."""
@@ -15,6 +15,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+from hypothesis import strategies as st
 
 from session_page import SESSIONS, Row, View, read_session, view
 
@@ -35,6 +36,65 @@ def unreachable(system: str, prompt: str) -> list[dict]:
     """A reviewer stand-in for a check where no model call may be made. It fails the check through
     `pytest.fail`, which the review's fail-open handler does not catch."""
     pytest.fail("the reviewer was called where no model call may be made")
+
+
+# ---- sessions drawn as data ------------------------------------------------
+
+
+DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
+
+
+@st.composite
+def sessions(draw: st.DrawFn) -> tuple[list[dict], set[str]]:
+    """A session's turns as data, and the questions open at the end of it.
+
+    Each turn draws a fate for every question still open before it (left alone, answered with an
+    option's letter or with the user's own words, or superseded by one this turn asks) and then
+    asks questions of its own.
+    """
+    turns: list[dict] = []
+    open_tags: list[str] = []
+    tags = itertools.count(1)
+    for _ in range(draw(st.integers(min_value=1, max_value=5))):
+        turn: dict = {"asks": [], "answered": {}, "superseded": {}}
+        for tag in list(open_tags):
+            fate = draw(st.sampled_from(["open", "answered", "superseded"]))
+            if fate == "answered":
+                turn["answered"][tag] = draw(st.sampled_from(["a", "b", "neither: split it in two"]))
+                open_tags.remove(tag)
+            elif fate == "superseded":
+                replacement = f"Q{next(tags)}"
+                turn["superseded"][tag] = replacement
+                turn["asks"].append(replacement)
+                open_tags[open_tags.index(tag)] = replacement
+        for _ in range(draw(st.integers(min_value=0, max_value=2))):
+            tag = f"Q{next(tags)}"
+            turn["asks"].append(tag)
+            open_tags.append(tag)
+        turns.append(turn)
+    return turns, set(open_tags)
+
+
+def record(number: int, turn: dict, headline: str = "", details: str = "") -> str:
+    """One `turns/NN.md` in the shape the Decisions give it: frontmatter for what the renderer
+    reads as data, an H1, and the sections the turn has."""
+    front = [f"date: 2026-09-{20 + number:02d}"]
+    for name in ("answered", "superseded"):
+        if turn[name]:
+            front.append(f"{name}:")
+            front += [f"  {tag}: {json.dumps(value)}" for tag, value in turn[name].items()]
+    body = [f"# {headline or f'Round {number}'}"]
+    if turn["asks"]:
+        body += ["", "## Questions", ""]
+        for tag in turn["asks"]:
+            body += [
+                f"- [{tag}] **What about {tag}?** What hangs on it.",
+                "  - (a) One way. *my pick*",
+                "  - (b) The other way.",
+            ]
+    body += ["", "## Details", "", details or f"What turn {number} settled."]
+    return "---\n" + "\n".join(front) + "\n---\n\n" + "\n".join(body) + "\n"
+
 
 
 # ---- the page, read back ----------------------------------------------------
