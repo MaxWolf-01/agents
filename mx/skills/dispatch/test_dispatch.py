@@ -433,8 +433,7 @@ def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, stage
 @pytest.mark.full_path
 def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path, staged: Path) -> None:
     """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `high`
-    when the orchestrator says nothing, by --effort or by DISPATCH_EFFORT, and it reaches the runner
-    with the permission mode."""
+    when the orchestrator says nothing, and it reaches the runner with the permission mode."""
     state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     def logs() -> str:
         return "".join(p.read_text() for p in state.glob("*.log"))
@@ -461,28 +460,20 @@ def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path
     assert "effort=low" in said.stdout, said.stdout
     assert "stub: built warm-preset at low" in logs()
 
-    # DISPATCH_EFFORT in the orchestrator's environment reaches the host, as the permission mode does.
-    said = subprocess.run([str(staged), "ctl", "spawn", "warm-preset", "sonnet"],
-                          cwd=toy, capture_output=True, text=True, env={**env, "DISPATCH_EFFORT": "medium"}, timeout=180)
-    for _ in range(60):
-        if "at medium" in logs():
-            break
-        time.sleep(0.5)
-    assert said.returncode == 0, said.stderr
-    assert "effort=medium" in said.stdout, said.stdout
-    assert "stub: built warm-preset at medium" in logs()
-
 
 @pytest.mark.full_path
 def test_the_effort_set_in_the_orchestrators_environment_reaches_a_remote_host(toy: Path, staged: Path) -> None:
     """`dispatch-forwards-effort`: `DISPATCH_EFFORT=medium dispatch ctl spawn` started five workers at
     high, since ssh carries none of the caller's environment to the host."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
     remote, env = fake_remote(toy)
     run(toy, "claim", "warm-preset")
     said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env={**env, "DISPATCH_EFFORT": "medium"})
-    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    state = waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main").parent
     assert said.returncode == 0, said.stderr
     assert "effort=medium" in said.stdout, said.stdout
+    assert "stub: built warm-preset at medium" in "".join(p.read_text() for p in state.glob("*.log"))
 
 
 @pytest.mark.full_path
