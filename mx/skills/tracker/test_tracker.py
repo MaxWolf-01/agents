@@ -2668,6 +2668,25 @@ def test_an_agent_repo_whose_branch_has_no_upstream_pushes_nothing_and_says_noth
     assert said.returncode == 0 and said.stderr == "", said.stderr
     assert run(laptop.code, "sync") == Run(0, "", "")
     assert upstream(origin, "agent") == before
+    ticket(laptop.tickets, "from-a-bare-shell")
+    git(laptop.agent, "add", "-A")
+    bare = subprocess.run(["git", "-C", str(laptop.agent), "commit", "-q", "-m", "file from-a-bare-shell"], capture_output=True,
+                          text=True, env={**os.environ, "PATH": str(without_tracker(laptop.code))})
+    assert bare.returncode == 0 and "post-commit" not in bare.stderr, "no tracker on PATH, and still nothing to say"
+
+
+def test_the_sync_hook_in_a_code_repo_pushes_nothing(repo: Path, tmp_path: Path) -> None:
+    """A project whose `agent/` is not a repo of its own yet commits its tickets in the code repo,
+    and `tracker hook` there installs the sync hook too; only an agent repo pushes on its own."""
+    origin = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    git(repo, "remote", "add", "origin", str(origin))
+    git(repo, "push", "-q", "-u", "origin", "main")
+    assert run(repo, "hook").code == 0
+    before = git(origin, "rev-parse", "main").strip()
+    (repo / "README.md").write_text("the repo, changed\n")
+    assert commit_with_hooks(repo, "a commit on the code repo's main").returncode == 0
+    assert git(origin, "rev-parse", "main").strip() == before
 
 
 def test_a_sync_hook_this_did_not_write_is_left_standing_and_the_rest_installed(repo: Path) -> None:

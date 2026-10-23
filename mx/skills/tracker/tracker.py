@@ -1337,23 +1337,25 @@ def sync_checkouts(here: bool = False) -> int:
     upstream pushes nothing, and nothing is said.
 
     The sync hook (`tracker hook`) runs this after every commit and merge in that checkout, so a
-    commit there is pushed as it is made. Only the
-    agent repo is synced: an integration branch is pushed by whoever merges into it, and a ticket
-    branch never is. A remote that does not answer leaves the commits waiting for the next sync. A
-    conflict, the two machines having changed the same lines, leaves the merge stopped for whoever
-    resolves it; committing the resolution pushes it. The tracker refuses no write meanwhile, but
+    commit there is pushed as it is made. Only the agent repo is synced: an integration branch is
+    pushed by whoever merges into it, and a ticket branch never is. A remote that does not answer
+    leaves the commits waiting for the next sync. A conflict, the two machines having changed the
+    same lines, leaves the merge stopped for whoever resolves it; committing the resolution pushes
+    it. The tracker refuses no write meanwhile, but
     git takes no commit of single files during a merge, so a ticket commit, the tracker's or
     dispatch's, fails until the resolution is committed, and what it wrote goes in with that.
     Exit 1: a conflict, a merge or rebase underway, or a remote that refused the push; the line says
     which file or why.
 
     Args:
-        here: only the checkout the working directory is in, and only where it is a main checkout
-            on a branch other than a ticket branch: what the sync hook runs.
+        here: only the checkout the working directory is in, and only where it is an agent repo's
+            main checkout on a branch other than a ticket branch: what the sync hook runs, so the
+            hook in a code repo pushes nothing.
     """
     if here:
         top = toplevel(Path.cwd())
-        if top != main_checkout(top) or ticket_branch_out(top):
+        is_agent_repo = top.name == TICKETS.parent.name and (top / TICKETS.name).is_dir()
+        if not is_agent_repo or top != main_checkout(top) or ticket_branch_out(top):
             return 0
     else:
         root = tracker_root(Path.cwd())
