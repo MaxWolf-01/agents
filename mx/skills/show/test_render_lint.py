@@ -178,17 +178,20 @@ def test_a_clipped_title_is_reported_and_the_run_still_passes(tmp_path):
     assert code == 0
 
 
-def test_a_clipped_text_names_the_box_that_cuts_it(tmp_path):
+def test_a_clipped_text_names_every_box_that_cuts_it(tmp_path):
     """A text set to truncate in a box of its own can still be cut by a box around it, which is a
-    different finding: the cutter tells the two apart."""
+    different finding: the cutters tell the two apart, the box that cuts less included."""
     _, findings = lint(
         tmp_path,
         """
         <div style="width:300px"><span class="clip" style="display:block;width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Its own ellipsis, cut where it means to be</span></div>
         <div class="card" style="height:4px;overflow:hidden"><span class="clip" style="display:block;overflow:hidden;white-space:nowrap">Short, cut by the card</span></div>
+        <div class="row" style="height:12px;overflow:hidden"><span class="clip" style="display:block;width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Long and cut both ways, mostly by its own ellipsis</span></div>
         """,
     )
-    assert [(f["text"][:5], f["cutter"].split()[-1]) for f in findings] == [("Its o", "span.clip"), ("Short", "div.card")]
+    assert [(f["text"][:5], [c.split()[-1] for c in f["cutters"]]) for f in findings] == [
+        ("Its o", ["span.clip"]), ("Short", ["div.card"]), ("Long ", ["span.clip", "div.row"]),
+    ]
 
 
 def test_text_a_clip_leaves_nothing_of_is_hidden_rather_than_clipped(tmp_path):

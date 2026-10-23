@@ -18,7 +18,8 @@ Kinds, by severity:
 - tight: an SVG text sits closer to its rect's edge than --pad, in a rect that is a
   box rather than a mask sized to the label (reported, never fatal).
 - clipped: a box with overflow hidden cuts an HTML text off, by an ellipsis or plainly
-  (reported, never fatal: a truncated title is sometimes the design).
+  (reported, never fatal: a truncated title is sometimes the design). The JSON names every
+  box that cuts it, so a reader can tell the box meant to truncate from one that was not.
 - unmeasurable: the page never finished loading or never stopped moving, so nothing on it was
   measured.
 
@@ -140,9 +141,10 @@ MEASURE = r"""
   // that cannot stops at its own frame.
   const far = (overflow, frame, whole) => (['hidden', 'clip'].includes(overflow) ? frame : Math.max(frame, whole))
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
-  // it cannot scroll say how much they cut off, the one that cuts most standing as the cutter.
+  // it cannot scroll say how much they cut off, and which of them cut it at all.
   const clip = (el, r) => {
-    let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, by = null, pos = 'static'
+    let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
+    const by = []
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a)
       // Overflow on the root elements is the viewport's, which cuts every box on the page rather
@@ -159,7 +161,8 @@ MEASURE = r"""
         : { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
       if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY)) {
         const here = Math.max(c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
-        if (here > cut) { cut = here; by = a }
+        cut = Math.max(cut, here)
+        if (here > 2) by.push(a)
       }
       seen = { left: Math.max(seen.left, c.left), top: Math.max(seen.top, c.top), right: Math.min(seen.right, c.right), bottom: Math.min(seen.bottom, c.bottom) }
     }
@@ -177,15 +180,17 @@ MEASURE = r"""
     const range = document.createRange()
     range.selectNodeContents(n)
     const seen = []
-    let cut = 0, by = null
+    let cut = 0
+    const by = new Set()
     for (const r of [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0)) {
       const c = clip(el, r)
-      if (c.cut > cut) { cut = c.cut; by = c.by }
+      cut = Math.max(cut, c.cut)
+      c.by.forEach((a) => by.add(a))
       if (c.seen.right - c.seen.left >= 4 && c.seen.bottom - c.seen.top >= 4) seen.push(c.seen)
     }
     if (!seen.length) continue
     const text = snip(n.nodeValue)
-    if (cut > 2) out.push({ kind: 'clipped', where: 'html', el: at(el), text, by: round(cut), box: box(span(seen)), cutter: at(by) })
+    if (cut > 2) out.push({ kind: 'clipped', where: 'html', el: at(el), text, by: round(cut), box: box(span(seen)), cutters: [...by].map(at) })
     runs.push({ el, text, rects: seen })
   }
   // An overlap is a collision only where the browser paints both texts. At the point the two
@@ -288,7 +293,7 @@ class Args:
     (page_cache.py says how). A copy is never refreshed, so a page linking an address whose content
     moves is measured against the day it was first fetched."""
     json: bool = False
-    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutter": str, the box that cuts most."""
+    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts it."""
 
 
 def main(args: Args) -> None:

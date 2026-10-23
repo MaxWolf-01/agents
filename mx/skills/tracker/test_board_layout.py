@@ -117,9 +117,9 @@ def lint(pages: list[str], width: int) -> list[dict]:
 
 
 def truncates(finding: dict) -> bool:
-    """Whether a finding is text cut off where the board means to cut it: by its own `.clip`
-    (board.clipped_html), rather than by a box around one."""
-    return finding["kind"] == "clipped" and finding["cutter"].split()[-1] == "span.clip"
+    """Whether a finding is text cut off only where the board means to cut it: by its own `.clip`
+    (board.clipped_html), and by no box around one."""
+    return finding["kind"] == "clipped" and all(c.split()[-1] == "span.clip" for c in finding["cutters"])
 
 
 def band_edges(page: str) -> list[int]:
