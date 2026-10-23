@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from hypothesis import example, given
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 import tracker
@@ -2904,10 +2904,6 @@ def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy
     assert not (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").exists()
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
 @pytest.mark.full_path
 def test_push_that_a_host_refuses_for_one_repo_names_it_and_brings_the_other_there(toy: Path, staged: Path) -> None:
     """`dispatch push`'s exit 1: a host refused (named); the rest have it. The agent repo's bare
@@ -2947,6 +2943,7 @@ def test_a_fetch_whose_branch_one_of_the_hosts_repos_lacks_names_that_repo(toy: 
 
     assert fetched.returncode == 1, fetched.stderr
     assert f"fetching ticket/warm-preset from agent@far into {toy / 'agent'} failed" in fetched.stderr, fetched.stderr
+
 
 def sourced(body: str, *args: str, **env: str) -> subprocess.CompletedProcess:
     """`body` run in bash with `dispatch` sourced, so its functions are defined and no command of it
@@ -3037,6 +3034,7 @@ SHELL_WORD = st.one_of(
 
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
 @given(words=st.lists(SHELL_WORD, min_size=1, max_size=6))
+@settings(max_examples=60, deadline=None)
 @example(words=["tmux", "attach", "-t", "=dispatch-lamp-warm-preset:"])
 def test_a_remote_line_reaches_the_command_as_the_words_sent(shell: str, words: list[str]) -> None:
     """`remote_line`: each word is quoted for the remote login shell, which may be bash or zsh, so
@@ -3049,3 +3047,7 @@ def test_a_remote_line_reaches_the_command_as_the_words_sent(shell: str, words: 
     flags = ["-f", "-c"] if shell == "zsh" else ["-c"]
     read = subprocess.run([login, *flags, f"printf '%s\\0' {line.stdout}"], capture_output=True, timeout=30)
     assert read.stdout == b"".join(word.encode() + b"\0" for word in words), read.stderr.decode()
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

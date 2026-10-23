@@ -423,7 +423,8 @@ HANDS = {"test": "TEST-SMELLS.md", "process": "writing-for-agents", "format": "G
 # Files whose names come near those without being any, all in one diff: it hands the reader none.
 NEAR_MISSES = ["src/latest.py", "contest.py", "contests/lamp.py", "inspec/lamp.md", "pkg/attest_lamp.py",
                "docs/testing.md", "lamp_test.md", "README.md", "claude/settings.json", "my-decisions.md",
-               "GLOSSARY.txt"]
+               "GLOSSARY.txt", "MYGLOSSARY.md", "my-decisions/lamp.md", "NOTSKILL.md", "myskills/lamp.sh",
+               "myclaude/agents/lamp.md", "docs/prompt.txt", "prompts/lamp.sh", "prompts/lamp.md"]
 
 
 def handed(repo: Path) -> str:
