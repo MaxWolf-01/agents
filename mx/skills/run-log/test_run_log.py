@@ -82,6 +82,7 @@ def test_a_run_leaves_one_line_with_what_claude_reported_and_prints_the_answer(t
         "site": "review", "ticket": "warm-preset", "axis": "tests", "attempt": None, "range": "a1b2c3d..e4f5a6b", "model": "opus", "effort": "medium",
         "session": "sess-1", "ran": ["claude-opus-5-5", "claude-sonnet-5"], "exit": 0, "end": "success"}
     assert (line["cost_usd"], line["api_s"], line["turns"]) == (0.1234, 3.9, 2)
+    assert (line["session_cost_usd"], line["session_api_s"]) == (0.1234, 3.9), "a first run's share is the whole total"
     assert line["tokens"] == {"input": 22, "output": 70, "cache_read": 1100, "cache_write": 20}, "the result's totals, not the messages'"
     assert line["at"].endswith("Z") and line["id"] and line["host"]
 
@@ -162,6 +163,44 @@ def test_a_timeout_ends_the_run_the_way_a_term_does_and_the_line_says_so(tmp_pat
     assert done.returncode == 0 and done.stdout == "The answer.\n", "a run within its limit is untouched"
     assert lines(tmp_path)[1]["exit"] == 0
     assert "whole number" in run_log(tmp_path, "run", "--site", "x", "--timeout", "soon", "--", "claude").stderr
+
+
+def test_a_resumed_runs_line_carries_its_own_cost_not_the_sessions_running_total(tmp_path: Path) -> None:
+    """A resumed `claude -p` reports the session's cost and API time so far, and `report` adds up
+    every line: a resumed worker counted its earlier runs again. A run that ended without a result
+    leaves its share to the next run's line. The oracle: each line's cost is the reported total
+    minus the total before it, and the lines add up to the session's final total."""
+    fake_claude(tmp_path, stream(INIT, RESULT))
+    run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p")
+    fake_claude(tmp_path, stream(INIT, TURN_A), then="exit 1")
+    run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p", "--resume", "sess-1")
+    fake_claude(tmp_path, stream(INIT, {**RESULT, "total_cost_usd": 0.5, "duration_api_ms": 10000}))
+    run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p", "--resume", "sess-1")
+    first, cut_off, resumed = lines(tmp_path)
+    assert (first["cost_usd"], first["session_cost_usd"]) == (0.1234, 0.1234)
+    assert (cut_off["cost_usd"], cut_off["session_cost_usd"]) == (None, None)
+    assert (resumed["cost_usd"], resumed["api_s"]) == (0.3766, 6.1)
+    assert (resumed["session_cost_usd"], resumed["session_api_s"]) == (0.5, 10.0)
+    rows = json.loads(run_log(tmp_path, "report", "--json").stdout)
+    assert rows["by_site"][0]["cost_usd"] == 0.5
+
+
+def test_report_counts_a_line_from_before_the_fix_as_its_share_of_the_running_total(tmp_path: Path) -> None:
+    """The lines already logged hold the running total in cost_usd. Three runs of one session that
+    reported 1.0, 1.5 and 4.0 cost 4.0 together; a one-run session beside them counts as it is."""
+    def line(**fields: object) -> dict:
+        return {"id": str(fields), "site": "worker", "repo": "agents", "ticket": "warm-preset", "axis": "",
+                "duration_s": 60, "end": "success", "model": "opus", "effort": "high", **fields}
+    (tmp_path / "runs.jsonl").write_text(stream(
+        line(session="s1", at="2026-10-01T10:00:00Z", cost_usd=1.0),
+        line(session="s1", at="2026-10-01T12:00:00Z", cost_usd=1.5),
+        line(session="s2", at="2026-10-01T13:00:00Z", cost_usd=0.25, ticket="lamp"),
+        line(session="s1", at="2026-10-02T09:00:00Z", cost_usd=4.0),
+    ))
+    rows = json.loads(run_log(tmp_path, "report", "--json").stdout)
+    assert {r["key"]: r["cost_usd"] for r in rows["by_ticket"]} == {"warm-preset": 4.0, "lamp": 0.25}
+    rows = json.loads(run_log(tmp_path, "report", "--json", "--since", "2026-10-02").stdout)
+    assert rows["by_site"][0]["cost_usd"] == 2.5, "--since keeps the last run's share, not the session's total"
 
 
 def test_json_prints_the_result_object_for_a_caller_that_reads_it(tmp_path: Path) -> None:

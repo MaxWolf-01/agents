@@ -27,6 +27,9 @@
 #           --json prints the rows as one JSON object instead of tables. Cost
 #           is summed over the runs that reported one; `no_result` counts the
 #           runs that did not. A line no reader can read is counted on stderr.
+#           A line written before `session_cost_usd` existed holds the
+#           session's running total in `cost_usd`; report counts such a line
+#           as that total minus the session's total on its previous line.
 #   needs   prints the commands this script runs, one per line, for a check
 #           of a host or a test's PATH.
 #
@@ -37,8 +40,12 @@
 #   model, effort                             what was asked for
 #   session   the Claude Code session id, which names the transcript
 #   ran       the models that answered, canonical names
-#   cost_usd, duration_s, api_s, turns        what claude's result reported;
-#                                             duration_s is this script's clock
+#   cost_usd, api_s   this run's cost and API time. claude reports a resumed
+#             session's running total, so a run's share is that total minus
+#             the session's total on its previous line in this log; a run
+#             that ended without a result leaves its cost to the next run's
+#   session_cost_usd, session_api_s   the running totals claude reported
+#   duration_s, turns   this script's clock; the turns claude reported
 #   tokens    {input, output, cache_read, cache_write}
 #   exit      claude's exit status, `stopped` for a run ended by TERM or an
 #             interrupt, `timeout` for one --timeout ended
@@ -66,6 +73,24 @@ repo_name() {
     gitdir=$(realpath "$gitdir")
     gitdir=${gitdir%.git}
     basename "${gitdir%/}"
+}
+
+# The line with cost_usd and api_s cut down to this run's share of the
+# session's running totals, which is what claude reports for a resumed
+# session: the totals minus those on the session's last line here that has
+# them. A line written before session_cost_usd existed holds them in
+# cost_usd and api_s.
+this_runs_share() {
+    local line=$1 session earlier
+    session=$(jq -r '.session // empty' <<< "$line")
+    earlier=$( { [ -z "$session" ] || [ ! -f "$log" ] || grep -F "\"session\":\"$session\"" "$log"; } | jq -c -s '
+        map(if has("session_cost_usd") then [.session_cost_usd, .session_api_s] else [.cost_usd, .api_s] end)
+        | map(select(.[0] != null)) | last // [0, 0]')
+    jq -c --argjson earlier "$earlier" '
+        def share($total; $before): if $total == null then null
+            else ($total - ($before // 0)) | if . < 0 then $total else . * 1e7 | round / 1e7 end end;
+        . + {cost_usd: share(.cost_usd; $earlier[0]), api_s: share(.api_s; $earlier[1]),
+             session_cost_usd: .cost_usd, session_api_s: .api_s}' <<< "$line"
 }
 
 run() {
@@ -154,6 +179,7 @@ run() {
             end: ($res.subtype // "no result")
           }' "$raw")
     mkdir -p "$(dirname "$log")"
+    [ -z "$line" ] || line=$(this_runs_share "$line")
     if [ -n "$line" ]; then
         printf '%s\n' "$line" >> "$log"
     else
@@ -215,6 +241,12 @@ report() {
     local rows
     rows=$(jq -c -R -s --arg since "$since" --arg repo "$repo" --arg site "$site" '
         split("\n") | map(fromjson? // empty)
+        # a line from before session_cost_usd: its cost_usd is the running total
+        | group_by(.session) | map(
+            if .[0].session == null then . else sort_by(.at) | reduce .[] as $l ({before: 0, lines: []};
+                (if ($l | has("session_cost_usd")) then $l.session_cost_usd else $l.cost_usd end) as $total
+                | .lines += [if ($l | has("session_cost_usd")) or $total == null then $l else $l + {cost_usd: ($total - .before)} end]
+                | .before = ($total // .before)) | .lines end) | add // []
         | map(select(($since == "" or .at >= $since) and ($repo == "" or .repo == $repo) and ($site == "" or .site == $site)))
         | def rollup(f): group_by(f) | map({
             key: (.[0] | f), runs: length,
