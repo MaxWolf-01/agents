@@ -1,8 +1,8 @@
 import type { Dirent } from "node:fs";
-import { open, readdir, readlink, realpath, stat } from "node:fs/promises";
+import { open, readdir, readFile, readlink, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { detectSupportedImageMimeTypeFromFile, defineTool, resizeImage, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { absolute, claudeConfigs, inside, shown } from "./paths.ts";
 import { run } from "./run.ts";
 import type { SessionConfig } from "./sessions.ts";
@@ -47,6 +47,10 @@ const READ_LINES = 2000;
 const READ_BYTES = 50_000;
 /** Files larger than this are read only up to it. */
 const FILE_BYTES = 5_000_000;
+/** The image types read shows the model, as pi tells them from a file's first bytes. pi's BMP is not among them: no provider takes it as it is. */
+const IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+/** An image file larger than this is named, not decoded. */
+const IMAGE_BYTES = 20_000_000;
 /** A search skips files larger than this. */
 const GREP_FILE_BYTES = 1_000_000;
 const MATCHES = 100;
@@ -74,13 +78,17 @@ export function exploreTools(config: ReadToolsConfig): ToolDefinition[] {
 		defineTool({
 			name: "read",
 			label: "Read",
-			description: `Read a text file, ${READ_LINES} lines or ${READ_BYTES / 1000} kB at most per call; offset and limit page through a longer one.`,
+			description: `Read a text file, ${READ_LINES} lines or ${READ_BYTES / 1000} kB at most per call; offset and limit page through a longer one. A PNG, JPEG, GIF or WebP comes back as the image itself, scaled down to what the model takes.`,
 			parameters: Type.Object({
 				path: pathParam,
 				offset: Type.Optional(Type.Integer({ description: "The first line to read, from 1." })),
 				limit: Type.Optional(Type.Integer({ description: `How many lines to read, at most ${READ_LINES}.` })),
 			}),
-			execute: async (_id, { path: spelled, offset, limit }) => answer(await readText(await (await places(config)).open(spelled), offset, limit)),
+			execute: async (_id, { path: spelled, offset, limit }, _signal, _update, ctx) => {
+				const where = await places(config);
+				const file = await where.open(spelled);
+				return (await readImage(file, where.shown(file), ctx.model?.inputLimits?.images?.resize)) ?? answer(await readText(file, offset, limit));
+			},
 		}),
 		defineTool({
 			name: "ls",
@@ -166,10 +174,32 @@ async function places({ home, store }: ReadToolsConfig) {
 	};
 }
 
-async function readText(file: string, offset = 1, limit = READ_LINES): Promise<string> {
+/**
+ * An image file as the model sees it, after a line naming it, scaled by pi's resizer as pi's own read tool scales it:
+ * to `limits`, the model's image limits when pi knows them and pi's defaults otherwise. Returns nothing when the file
+ * is not an image.
+ */
+async function readImage(file: string, shown: string, limits?: Parameters<typeof resizeImage>[2]) {
+	const info = await regularFile(file);
+	const mimeType = await detectSupportedImageMimeTypeFromFile(file);
+	if (mimeType === null || !IMAGES.has(mimeType)) return undefined;
+	const named = `${shown}: ${mimeType}, ${info.size} bytes`;
+	if (info.size > IMAGE_BYTES) return answer(`${named}, over the ${IMAGE_BYTES / 1_000_000} MB an image is read up to`);
+	const image = await resizeImage(await readFile(file), mimeType, limits);
+	if (image === null) return answer(`${named}; it could not be decoded or scaled below the model's image limits, or pi's image library did not load`);
+	const size = image.wasResized ? `${image.originalWidth}x${image.originalHeight}, shown at ${image.width}x${image.height}` : `${image.width}x${image.height}`;
+	return { content: [{ type: "text" as const, text: `${named}, ${size}` }, { type: "image" as const, data: image.data, mimeType: image.mimeType }], details: undefined };
+}
+
+async function regularFile(file: string) {
 	const info = await stat(file);
 	if (info.isDirectory()) throw new Error("a directory: ls lists it");
 	if (!info.isFile()) throw new Error("not a regular file");
+	return info;
+}
+
+async function readText(file: string, offset = 1, limit = READ_LINES): Promise<string> {
+	const info = await regularFile(file);
 	const handle = await open(file, "r");
 	let bytes: Buffer;
 	try {
