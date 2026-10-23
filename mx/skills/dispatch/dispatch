@@ -9,9 +9,8 @@
 #                 Exit 1: already claimed, or the tracker refused (rule printed).
 # prompt <slug> < <file>
 #                 before a spawn or a resume: stdin is the worker's message,
-#                 staged under the ticket's context as it stands, which a spawn
-#                 sends whole; a resume sends the message, flagged when that
-#                 context changed.
+#                 staged under the ticket's context as it stands; a resume
+#                 sends it alone, flagged when that context changed.
 # ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
 #                 spawn names the host, user@host or `local`; later commands
