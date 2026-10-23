@@ -1256,7 +1256,7 @@ def test_a_run_whose_ticket_was_closed_outside_dispatch_leaves_its_host_at_the_n
 
 @pytest.mark.full_path
 @pytest.mark.parametrize("host, why", [
-    ("local", "ticket/warm-preset in code is merged into no branch here"),
+    ("local", "ticket/warm-preset in code has not merged into main here"),
     ("agent@far", "ticket/warm-preset in code holds commits this machine lacks"),
 ])
 def test_a_run_of_a_ticket_gone_from_the_tracker_with_its_work_merged_nowhere_stays_and_says_why(
@@ -1272,6 +1272,28 @@ def test_a_run_of_a_ticket_gone_from_the_tracker_with_its_work_merged_nowhere_st
     assert f"warm-preset is gone from the tracker, and its run on {host} stays: {why}" in probed.stderr, probed.stderr
     assert "dispatch-lamp-warm-preset exited" in probed.stdout
     assert git(worktree, "log", "-1", "--format=%s").strip() == "warm-preset: the warm preset"
+
+
+@pytest.mark.full_path
+def test_a_run_of_a_ticket_gone_from_the_tracker_whose_worker_is_running_stays(toy: Path, staged: Path) -> None:
+    """A worker still at it when its ticket left the tracker, its branch no further than main: the
+    probe leaves it running in its worktree, and says why."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'attempts=1", 'until [ -e "$state/release" ]; do sleep 0.2; done\nprintf \'attempts=1'))
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    for _ in range(60):
+        if list(state.glob("*.log")):
+            break
+        time.sleep(0.5)
+    tracker_writes(toy, environment(toy), "drop", "warm-preset")
+
+    probed = run(toy, "ctl", "probe")
+    (state / "release").touch()
+    assert "warm-preset is gone from the tracker, and its run on local stays: its worker is still running" in probed.stderr, probed.stderr
+    assert "dispatch-lamp-warm-preset running" in probed.stdout
+    assert (toy.parent / "lamp-warm-preset").is_dir()
 
 
 @pytest.mark.full_path

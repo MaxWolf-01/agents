@@ -661,6 +661,14 @@ merged_into() {
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
+# Whether <tip> in <repo> has merged where its ticket lands: into the branch the run was spawned
+# from (`is_merged`), or, in the code and agent repos, into the branch this checkout has out, which
+# is where a parent's accept has merged the parent's branch by the time it retires the runs under it.
+landed() { # <repo> <tip>
+    is_merged "$1" "$2" 2> /dev/null && return 0
+    case $1 in code | agent) git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" HEAD ;; *) return 1 ;; esac
+}
+
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: the assumptions the tracker read become the page's notes, and the
 # comment ids the ticket's `Addressed:` lines name become its resolved list.
@@ -904,9 +912,11 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
         forget_run "$1"
     fi
     # A local host's cleanup has deleted these already: they were the branches its worktrees held.
-    for top in "$repo_root" "$agent_top"; do
-        git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1" > /dev/null || continue
-        run git -C "$top" branch -q -d "ticket/$1" || return 1
+    for at in code agent; do
+        tip=$(git -C "$(repo_at "$at")" rev-parse -q --verify "refs/heads/ticket/$1") || continue
+        landed "$at" "$tip" ||
+            { echo "dispatch: ticket/$1 in the $at repo is merged into neither $(base_at "$at") nor the branch out here, so it stays" >&2; return 1; }
+        run git -C "$(repo_at "$at")" branch -q -D "ticket/$1" || return 1
     done
     # In every listed repo the caller has read the list of (`listed`): the ticket file that names its
     # repos may be retired by now. A listed repo's checkout here has whatever branch out, so `-d`
@@ -931,21 +941,29 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
 # each says why on every sweep until that changes.
 sweep() {
     local spawned slug h
+    # Each scratch dir probed once, and a host that does not answer asked nothing more, so a host
+    # that is off costs a sweep one connect timeout however many runs it holds.
+    local -A probed=() down=()
     [ -f "$runs" ] || return 0
     read_tracker || { echo "dispatch: the tracker did not read, so no run of a done ticket was retired" >&2; return 0; }
     while IFS=$'\t' read -r spawned slug h; do
         case $(field "$slug" status) in done | "") ;; *) continue ;; esac
+        [ -z "${down[$h]-}" ] || continue
+        if [ -z "${probed["$spawned $h"]+set}" ]; then
+            probed["$spawned $h"]=$(base=$spawned; on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" probe 2> /dev/null)
+            [ $? -ne 255 ] || { down[$h]=1; echo "dispatch: $h did not answer, so its runs of tickets done or out of the tracker stay" >&2; continue; }
+        fi
         # A subshell each: the run is found under the branch it was spawned from, and one that
         # stays stops no other.
-        ( base=$spawned; retire_swept "$slug" "$h" )
+        ( base=$spawned; retire_swept "$slug" "$h" "${probed["$spawned $h"]}" )
     done < <(awk -F'\t' '{ at[$1 FS $2] = $3 } END { for (k in at) print k FS at[k] }' "$runs")
 }
 
-retire_swept() { # <slug> <host>
+retire_swept() { # <slug> <host> <the probe of its scratch dir there>
     local why left=done up
     [ -n "$(field "$1" status)" ] || left="gone from the tracker"
     up=$(field "$1" parent)
-    why=$(retirable "$1" "$2" "$up") || {
+    why=$(retirable "$1" "$2" "$up" "$3") || {
         echo "dispatch: $1 is $left, and its run on $2 stays: ${why:-its branches could not be read}" >&2
         return 1
     }
@@ -954,14 +972,11 @@ retire_swept() { # <slug> <host>
 }
 
 # Whether <slug>'s run on <host> may go; where it may not, exit 1 and why: its worker is running,
-# the host did not answer, or a branch the host holds for the ticket, in the code repo, the agent
-# repo or a listed repo, has a tip this machine lacks or is merged into no branch here but a ticket
-# branch. A read that fails keeps the run as well.
-retirable() { # <slug> <host> <its parent ticket, or nothing>
-    local probed state at top tip
-    probed=$(on_host "$2" bash "$(scratch_dir "$2")/dispatch-ctl" probe 2> /dev/null)
-    [ $? -ne 255 ] || { echo "$2 did not answer"; return 1; }
-    state=$(awk -v n="dispatch-$repo-$1" '$1 == n { print $2 }' <<< "$probed")
+# or a branch the host holds for the ticket, in the code repo, the agent repo or a listed repo, has
+# a tip this machine lacks or one that has not `landed`. A read that fails keeps the run as well.
+retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its scratch dir there>
+    local state at top tip onto
+    state=$(awk -v n="dispatch-$repo-$1" '$1 == n { print $2 }' <<< "$4")
     [ "$state" != running ] || { echo "its worker is still running"; return 1; }
     for at in code agent $(on_host "$2" cat "$(scratch_dir "$2")/repos-$1" 2> /dev/null | cut -f1); do
         [ "$at" = code ] || [ "$at" = agent ] || [ ${#listed_top[@]} -gt 0 ] || listed "$3"
@@ -977,8 +992,8 @@ retirable() { # <slug> <host> <its parent ticket, or nothing>
         [ -n "$tip" ] || continue
         git -C "$top" cat-file -e "$tip^{commit}" 2> /dev/null ||
             { echo "ticket/$1 in $at holds commits this machine lacks; fetch them, or let them go with \`dispatch ctl cleanup $1\` from $base"; return 1; }
-        git -C "$top" for-each-ref --contains "$tip" --format='%(refname)' refs/heads refs/remotes | grep -qv '/ticket/' ||
-            { echo "ticket/$1 in $at is merged into no branch here; \`dispatch ctl cleanup $1\` from $base retires it once that work is merged or let go"; return 1; }
+        landed "$at" "$tip" ||
+            { onto=$(base_at "$at"); echo "ticket/$1 in $at has not merged into ${onto// / or } here; \`dispatch ctl cleanup $1\` from $base retires it once that work is merged or let go"; return 1; }
     done
 }
 
