@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# The worker host's side of dispatch, run through `dispatch ctl` from the scratch
-# dir of the branch ticket branches cut from, <base>. A ticket's worktree holds
-# ticket/<slug> of the code repo, of the agent repo at `agent/` inside it, and of
-# each listed repo its spawn names. Nothing here reads a ticket file, commits,
-# merges or pushes: history stays with the orchestrator.
+# Runs on a worker host, through `dispatch ctl`, from the scratch dir of <base>,
+# the branch ticket branches cut from. A ticket's worktree holds ticket/<slug>
+# of the code repo, of the agent repo at `agent/` inside it, and of each listed
+# repo its spawn names. It reads no ticket file and never commits, merges or pushes.
 #
 # spawn <slug> <model> [session-id] [--effort <level>]
 #       [--repo <name> <base> <place> <git-dir>]...
@@ -50,12 +49,9 @@
 #                             contract a replacement owes
 set -u
 
-# Every state file is plain text in this directory, the scratch dir: `config` (init), `setup`, the
-# project's setup line when the orchestrator gave one (`dispatch ctl --setup-cmd`), `stamp`, the
-# version of these scripts staged here, written by the orchestrator, `repos-<slug>` (`names`),
-# `runner-<slug>`, the orchestrator's DISPATCH_RUNNER for that ticket, `manifest`, one line per
-# run (name TAB run TAB worktree TAB runner), `<run>.status` and `<run>.log`, the runner's,
-# `<name>.install.log` (set_up), and `set-up-<slug>`, what the setup left in the worktree (`foreign`).
+# State is plain text in this scratch dir: config (init), setup (--setup-cmd), stamp (the staged
+# version), manifest (name TAB run TAB worktree TAB runner, a line per run), <run>.status and
+# <run>.log (the runner's), and per ticket the files `names` sets and runner-<slug>.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
@@ -64,15 +60,13 @@ mode=${DISPATCH_PERMISSION_MODE:-auto}
 effort=${DISPATCH_EFFORT:-high}
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
-# Every command that changes something is echoed before it runs, so a transcript shows the
-# primitives, and any step this script got wrong can be redone by hand.
+# Echoes a command that changes something before running it, so a step can be redone by hand.
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch-ctl: $1" >&2; exit 1; }
 
 cfg() { sed -n "s/^$1=//p" "$here/config" | head -1; }
 
-# The `job` this script runs: the first on PATH, else the copy `init` fetches,
-# which is also the one `init` keeps current.
+# Sets `job`: the first on PATH, else the copy `init` fetches.
 fetched_job=$HOME/.local/bin/job
 job_bin_path() { job=$(command -v job || echo "$fetched_job"); }
 job_bin() {
@@ -88,30 +82,24 @@ load() {
         die "$here/config predates the agent repo; the orchestrator's next spawn stages this host again and rewrites it"
 }
 
-# Everything hangs off the ticket, derived in one place: the bare repo and the
-# worktree directory are shared by every branch on this host, and the slug is
-# the ticket's id across the whole tracker, so nothing of two trees collides.
+# Every per-ticket name, derived from the slug, which is unique across the tracker.
 names() {
     slug=$1
     name=dispatch-$repo-$slug
     branch=ticket/$slug
     worktree=$worktrees/$repo-$slug
-    # The agent repo sits inside the code repo in every checkout of a project,
-    # so a worker's copy of it sits inside the worktree it works in.
     agent_worktree=$worktree/agent
-    # The listed repos the ticket's worktree holds, one line each: name TAB git dir TAB base TAB
-    # worktree. Each spawn rewrites it (relist); a resume keeps it.
+    # name TAB git dir TAB base TAB worktree, a line per listed repo; a spawn rewrites it (relist).
     repos_record=$here/repos-$slug
+    # What `deletable` found right after the setup (`foreign`).
     set_up_record=$here/set-up-$slug
-    # What `dispatch` stages for every round: the message the round is started on, and the
-    # ticket's context with that message under it, which the worker reads as $DISPATCH_CONTEXT.
+    # Staged by `dispatch` each round: the message, and the context the worker reads as $DISPATCH_CONTEXT.
     prompt=$here/prompt-$slug.md
     context=$here/context-$slug.md
 }
 
-# The newest manifest line for a name sets `run_id` and `run_runner`, the
-# runner that run was typed with (what its command line shows, whatever
-# DISPATCH_RUNNER says now); both empty when the name has never run.
+# Sets `run_id` and `run_runner` (the runner that run was started with) from the newest manifest
+# line for <name>; both empty when it never ran.
 current_run() {
     run_id= run_runner=
     [ -f "$manifest" ] || return 0
@@ -122,9 +110,8 @@ current_run() {
 # The runner's pid for a run, anchored on the runner's own command line.
 runner_pid() { pgrep -f "^bash $2 .* $1( |$)"; } # <run> <runner>
 
-# The status file is the runner's last act, which makes it the sole authority
-# on a finished run; the pane's process name says nothing, since the runner is
-# the pane process for live and dead workers alike.
+# The status file is the runner's last write, so it alone marks a finished run; the pane's
+# process is the runner whether the worker lives or not.
 run_state() { # <run> <runner> → exited | running | gone
     [ -f "$here/$1.status" ] && { echo exited; return; }
     runner_pid "$1" "$2" >/dev/null && { echo running; return; }
@@ -139,58 +126,39 @@ state_line() { # <name> <run> <runner>
     esac
 }
 
-# The mx install `init` updates and a spawn hands its worker: the user-scope
-# one, as the JSON object `claude plugin list --json` holds for it; nothing
-# where the host has none.
+# The user-scope mx install as `claude plugin list --json` gives it; nothing where there is none.
 listed_mx() {
     claude plugin list --json 2>/dev/null |
         jq -c '[.[] | select(.id == "mx@MaxWolf-01" and .scope == "user")][0] // empty' 2>/dev/null
 }
 
-# init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]: what staging this host
-# runs, once per scratch dir and again whenever the orchestrator stages a different version of
-# these scripts. The defaults are this host's own, ~/repos/dispatch/<repo>.git and
-# <repo>-agent.git and the directory they sit in; a local orchestrator passes its own checkouts
-# and the directory beside them. agent-base is the branch the agent repo's ticket branches cut
-# from, the one its main checkout has out, rarely the code repo's <base>. Prints the mx version
-# the plugin update left.
+# init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]: writes config, creates
+# the bare repos, installs the commit hook, `job` and the mx update. The dirs default to this
+# host's ~/repos/dispatch; agent-base is the agent repo's own base branch. Prints the mx version.
 init() {
     repo=$1 base=$2
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
     worktrees=${4:-$HOME/repos/dispatch}
     agent_dir=${5:-$HOME/repos/dispatch/$repo-agent.git}
     agent_base=${6:-$base}
-    # config is rewritten on every init; the manifest never is: it is the only
-    # record of the runs in flight, and an orchestrator taking over needs it.
+    # The manifest is left alone: it is the only record of the runs in flight.
     printf 'repo=%s\nbase=%s\ngit=%s\nagent=%s\nagentbase=%s\nworktrees=%s\n' \
         "$repo" "$base" "$git_dir" "$agent_dir" "$agent_base" "$worktrees" > "$here/config"
-    # The parent holds every branch's scratch dir: prompts, worklogs, status
-    # lines. No other user on the host has business reading them.
+    # Every scratch dir, with its prompts and worklogs, readable by this user alone.
     chmod 700 "$(dirname "$here")"
-    # Empty, never a clone: history arrives by push from the orchestrator, so
-    # this host authenticates nowhere, and ticket-branch churn stays off the
-    # project's remote, where branch pushes would fire CI. Two of them, since a
-    # project is two repos and a worker holds a branch of each.
+    # Empty: history arrives by push from the orchestrator, so this host holds no credentials.
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
     [ -d "$agent_dir" ] || run git init -q --bare "$agent_dir"
-    # A worker commits its report in the agent repo, and the hook refuses one
-    # the orchestrator's import would, at the same lines, while the worker is
-    # still there to fix it. A hook of another's is the repo owner's and stays.
+    # The tracker's hook refuses a report commit the import would refuse; another hook stays.
     hooks=$(git -C "$agent_dir" rev-parse --path-format=absolute --git-path hooks) || die "no git repo at $agent_dir"
     if [ ! -e "$hooks/pre-commit" ]; then
         run mkdir -p "$hooks" && run install -m 755 "$here/pre-commit" "$hooks/pre-commit" || die "could not install the commit hook into $hooks"
     elif ! cmp -s "$here/pre-commit" "$hooks/pre-commit"; then
         echo "init: $hooks/pre-commit is not the tracker's, so a worker's report is checked first at the import" >&2
     fi
-    # `job` runs the wait loop (wait_). Fetched rather than staged beside this
-    # script, and from a public repo, so the host still authenticates nowhere.
-    # The copy fetched here is fetched again on every init, since a copy never
-    # refreshed keeps modes `job` has since dropped. A `job` anywhere else is
-    # left alone: on the orchestrator's own machine home-manager manages it, in
-    # a read-only directory. Compared as files, since PATH may spell the copy's
-    # directory otherwise than HOME does. Each fetch lands in a file of its own
-    # and replaces the copy only once whole, so neither a failed fetch nor two
-    # inits at once leave the loop without a working copy.
+    # Refreshes the fetched `job` (wait_ runs it); one installed elsewhere may be read-only and
+    # stays. Compared with -ef, since PATH may spell the directory otherwise. The fetch lands in
+    # a file of its own and is renamed into place whole, so a failed or concurrent one breaks nothing.
     job_bin_path
     if [ "$job" -ef "$fetched_job" ] || [ "$job" = "$fetched_job" ]; then
         run mkdir -p "$(dirname "$fetched_job")"
@@ -201,9 +169,7 @@ init() {
             echo "init: could not fetch job from $job_url; dispatch-ctl wait runs its loop on the copy already at $fetched_job" >&2
         fi
     fi
-    # A running worker keeps the version directory it started with (old
-    # versions stay in the plugin cache), so this changes only workers started
-    # from here on. A failed update leaves the installed version, said out loud.
+    # Reaches only workers started from here on: a running one keeps its version directory.
     { run claude plugin marketplace update MaxWolf-01 && run claude plugin update mx@MaxWolf-01; } >&2 ||
         echo "init: plugin update failed; workers run the installed version" >&2
     version=$(listed_mx | jq -r '.version // empty')
@@ -213,23 +179,19 @@ init() {
 checkout() {
     listed_free || exit 1
     run git -C "$git_dir" worktree add "$worktree" -b "$branch" "$base" || exit 1
-    # Inside the code worktree, where every checkout of the project keeps it, so
-    # the paths a worker reads and writes are the ones its ticket names.
     run git -C "$agent_dir" worktree add "$agent_worktree" -b "$branch" "$agent_base" || exit 1
     # Before the setup, which may build what a nested repo holds.
     cut_listed || { remove_worktrees; die "could not cut $branch in a listed repo of $slug"; }
     if ! set_up; then
-        # Unwound, so the next spawn builds again instead of finding a worktree
-        # and starting a worker in a tree that was never set up.
+        # Unwound, so the next spawn sets up afresh rather than reusing a tree never set up.
         remove_worktrees
         die "setup command failed in $worktree; the log above is its tail"
     fi
     deletable > "$set_up_record"
 }
 
-# Whether every listed repo still to be cut is free of <branch>: one there
-# already is somebody's (on a local host the repo is the user's own checkout),
-# and an unwound spawn deletes the branches it cut, so it must have cut them all.
+# Fails when a listed repo still to be cut already has <branch>, which is somebody else's: an
+# unwound spawn deletes every branch in the record, so it must have cut them all.
 listed_free() {
     [ -f "$repos_record" ] || return 0
     while IFS=$'\t' read -r -u 3 held dir _ at; do
@@ -238,9 +200,8 @@ listed_free() {
     done 3< "$repos_record"
 }
 
-# Each listed repo the record names, cut where it is missing: a respawn finds the
-# rest where the spawn before it cut them. --no-track, since a base at origin
-# would otherwise make the worker's branch track the project's own remote.
+# Cuts each listed repo's worktree the record names that is not cut yet. --no-track keeps a
+# branch cut from origin/<base> off the project's remote.
 cut_listed() {
     [ -f "$repos_record" ] || return 0
     while IFS=$'\t' read -r -u 3 _ dir from at; do
@@ -248,9 +209,8 @@ cut_listed() {
     done 3< "$repos_record"
 }
 
-# Whether <worktree> is a worktree of <git dir>, which a directory at that path does not say: a
-# nested repo's place may hold the empty directory of a submodule, or files the code repo tracks,
-# and `git worktree add` refuses one that is not empty. git records a worktree by its real path.
+# Whether <worktree> is a worktree of <git dir>; a directory there may be a submodule's or hold
+# files the code repo tracks. git records a worktree by its real path.
 cut_at() { git -C "$1" worktree list --porcelain 2> /dev/null | grep -qxF "worktree $(realpath -m "$2")"; } # <git dir> <worktree>
 
 # The bare repo a listed repo has on this host, when the orchestrator names none.
@@ -260,17 +220,13 @@ bare_of() { echo "$(dirname "$git_dir")/$repo-$1.git"; } # <name>
 bare() {
     load
     for one; do
-        # Empty, never a clone, as init's two are.
         [ -d "$(bare_of "$one")" ] || run git init -q --bare "$(bare_of "$one")" || die "could not create $(bare_of "$one")"
     done
 }
 
-# The record rewritten from this spawn's --repo groups. Each worktree the old
-# record held and the new one does not is removed with its branch, so the worker
-# holds what its ticket names now; a record that forgot a worktree would leave it
-# where no cleanup finds it. A dropped worktree carrying work (a commit its base
-# does not have, a change not committed) stops the spawn first, with nothing
-# changed: that work may exist nowhere else.
+# Rewrites the record from this spawn's --repo groups and removes, with its branch, each worktree
+# the new record drops. Refuses, changing nothing, when a dropped one holds an uncommitted change
+# or a commit its base lacks.
 relist() {
     local part n dir from at kept= held=
     part=$(mktemp "$repos_record.XXXXXX")
@@ -299,11 +255,9 @@ relist() {
     if [ -s "$part" ]; then mv "$part" "$repos_record"; else rm -f "$part" "$repos_record"; fi
 }
 
+# Runs the setup line in a new worktree: `setup` here, else a default; says which, since a
+# scratch dir new to a host has no `setup` an older one had.
 set_up() {
-    # The setup command is what makes a worktree reproducible on any host: the
-    # project's own, as its docs give it, or its `make install`. A project with
-    # neither gets a ticket, not an environment improvised here.
-    # Which one is said, since a scratch dir new to a host holds no `setup` an older one did.
     local none="$here has no \`setup\` (\`dispatch ctl --setup-cmd\` writes one)" from
     if [ -f "$here/setup" ]; then
         setup=$(cat "$here/setup") from="$here/setup"
@@ -321,12 +275,8 @@ set_up() {
     return 1
 }
 
-# `--effort <level>` and `--repo <name> <base> <place> <git-dir>` after the
-# positional arguments; what is left is positional. A --repo is a listed repo the
-# ticket's `repos:` names: its name on the project's repo list, the branch its
-# ticket branch cuts from, its place inside the ticket worktree (where a repo
-# nested in the project sits in every checkout of it), and its git dir. An empty
-# git dir is its `bare` repo; a local orchestrator passes the repo's own checkout.
+# Splits --effort and --repo groups (into `repos_given`) from the `positional` arguments. An empty
+# <place> puts the repo beside the worktree; an empty <git-dir> is its `bare` repo.
 take_options() {
     positional=() repos_given=()
     while [ $# -gt 0 ]; do
@@ -345,15 +295,13 @@ spawn() {
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
     [ -f "$context" ] || die "no context at $context; \`dispatch ctl\` stages one with every spawn and resume"
-    # Typed into a pane, a missing runner fails where nobody reads it, and the
-    # wait for its worklog below would only say that nothing started.
+    # Checked here: typed into the pane, a missing runner fails where nobody reads it.
     [ -f "$runner" ] || die "no runner at $runner; \`dispatch ctl\` copies DISPATCH_RUNNER here on a spawn or resume"
     current_run "$name"
     if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
     fi
-    # Before the checkout: a host with no mx fails here in seconds, with no
-    # worktree to unwind and without waiting on the update lock.
+    # Before the checkout, so a host with no mx fails with nothing to unwind.
     find_plugin
     [ -n "${resuming:-}" ] || relist
     if [ -d "$worktree" ]; then
@@ -364,23 +312,15 @@ spawn() {
     update_claude
     run_id=$name-$(date +%s)
 
-    # The session is a shell the runner is typed into, so it outlives the
-    # worker and holds its scrollback.
+    # A shell the runner is typed into, so the session outlives the worker and keeps its scrollback.
     tmux has-session -t "=$name:" 2>/dev/null || run tmux new-session -d -s "$name" -c "$worktree"
-    # A pane's environment is the tmux server's, from whenever that started,
-    # not this process's: whatever the worker must inherit from here goes on
-    # the typed line. The profile is set either way, so a server that started
-    # under another profile cannot hand the worker that one.
-    # `=` everywhere a target is named: without it tmux falls back to prefix and
-    # pattern matching, so a new-session that failed would type this line into
-    # whichever session matched, one another worker holds included. The
-    # trailing `:` ends the session name, which tmux otherwise splits at a `.`
-    # (a repo named `.dotfiles`) as the window separator.
+    # The pane has the tmux server's environment, not ours, so what the worker needs goes on the
+    # line. `=` makes tmux match the session name exactly, never another worker's by prefix; the
+    # trailing `:` keeps a `.` in the name from being read as a window separator.
     run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort DISPATCH_PLUGIN_DIR=$plugin_dir DISPATCH_CONTEXT=$context bash $runner $prompt $slug $model $run_id $session_id"
     run tmux send-keys -t "=$name:" Enter
 
-    # The runner creates the log within its first seconds; its absence means the
-    # command never ran: wrong pane, dead shell, bad path.
+    # The runner creates its log at once; no log means the typed line never ran.
     for _ in $(seq 30); do
         [ -f "$here/$run_id.log" ] && break
         sleep 0.5
@@ -394,13 +334,9 @@ spawn() {
     echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version  mx=${plugin_dir##*/}"
 }
 
-# A model alias names whichever model the host's `claude` resolves it to, so a
-# stale launcher runs a worker on an older model without a word, and the API
-# refuses the newest models to an old enough one. The updater cannot be left to
-# itself: a host whose sessions were all print-mode workers was seen to stay
-# versions behind a host with interactive sessions on it. One update at a time per
-# user, whose install it is, since a wave spawns its workers side by side. A
-# failed update is said, and the worker runs on the version that is here.
+# Updates claude on every spawn, since a stale one resolves a model alias to an older model and
+# hosts running only print-mode workers fall behind. Locked per user, as a wave spawns side by
+# side; a failure leaves the installed version. Sets `claude_version`.
 update_claude() {
     ( flock 9; run timeout 300 claude update ) 9>>"$(dirname "$here")/claude-update.lock" >&2 ||
         echo "spawn: claude update failed; $name runs on the claude this host has" >&2
@@ -408,11 +344,8 @@ update_claude() {
     claude_version=${claude_version:-?}
 }
 
-# A worker reads none of the user's settings, so the mx plugin its contract
-# names skills from reaches it by path. Read on every spawn and resume, so a
-# round runs the version this host has now. DISPATCH_PLUGIN_DIR, set, stands in
-# for the listing, which is what the checks use it for; `dispatch` forwards none
-# to a host. The runner keeps it from the worker.
+# Sets `plugin_dir`, the mx install the worker loads by path, as it reads no user settings:
+# DISPATCH_PLUGIN_DIR where set (the tests set it), else the user-scope listing.
 find_plugin() {
     if [ -n "${DISPATCH_PLUGIN_DIR:-}" ]; then
         plugin_dir=$DISPATCH_PLUGIN_DIR
@@ -424,15 +357,9 @@ find_plugin() {
     fi
 }
 
-# The poll is the mechanism: a `tmux wait-for` waiter whose client dies (an
-# ssh hop dropped under it) stays registered and swallows the next signal, so
-# a channel cannot be trusted after an interrupted wait; the status file can.
-# `job wait` is that poll, shared rather than copied: the worklog is what the
-# worker writes as it goes, so its mtime is genuine progress and a --stall or
-# --deadline return is a worker worth looking at. The exit codes are remapped because
-# dispatch asks a different question than job does -- any status line means
-# the worker exited and the ticket is there to be read, whatever code claude
-# left with.
+# Polls the status file through `job wait`; a `tmux wait-for` channel is no use, as a waiter whose
+# client died swallows the next signal. --stall reads the worklog's mtime. job's codes are mapped:
+# any status line is `exited`, whatever claude exited with.
 wait_() {
     load; names "$1"; shift
     current_run "$name"
@@ -458,8 +385,7 @@ wait_() {
 
 probe() {
     [ -f "$manifest" ] || die "no manifest; nothing spawned from $here"
-    # Last manifest line per name is the current run; earlier runs' status files
-    # are history, not state.
+    # The last manifest line per name is its current run.
     tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name run_id worktree run_runner; do
         state_line "$name" "$run_id" "${run_runner:-$runner}"
     done
@@ -473,10 +399,8 @@ stop() {
     [ "$state" = running ] || die "$name is not running (run=$run_id, $state)"
     pid=$(runner_pid "$run_id" "$run_runner")
     pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
-    # The pane shell runs the runner as a job, so the runner leads its own
-    # process group and claude sits in it: one signal reaches both. Were that
-    # ever not so, signalling the group would take the pane shell down too, so
-    # the fallback signals the runner and its children by pid.
+    # The runner leads its process group, claude in it, so one signal reaches both. Where it
+    # does not, the group is the pane shell's, so the runner and its children are signalled by pid.
     if [ "$pgid" = "$pid" ]; then
         run kill -TERM -- "-$pgid"
     else
@@ -503,8 +427,7 @@ resume() {
     fi
     session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$run_id.status")
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
-    # The session id is the harness's own, and means nothing to another one, so a resume with no
-    # DISPATCH_RUNNER runs the runner the run was spawned on.
+    # The session id is the spawning harness's, so with no DISPATCH_RUNNER the run's runner resumes it.
     [ -n "${DISPATCH_RUNNER:-}" ] || runner=$run_runner
     [ ${#repos_given[@]} -eq 0 ] || die "a resume keeps the listed repos its spawn recorded; --repo is a spawn's"
     resuming=1
@@ -535,8 +458,7 @@ move each out of the worktree, or commit it and \`dispatch fetch $slug\`, then c
     else
         echo "no session $name" >&2
     fi
-    # A runner killed with its pane never stops the scope its attempt ran in (run-worker.sh), so
-    # what that attempt left running is stopped here, for every run of this name.
+    # A runner killed with its pane leaves its attempts' scopes running (run-worker.sh).
     if [ -f "$manifest" ] && command -v systemctl > /dev/null; then
         awk -F'\t' -v n="$name" '$1 == n { print $2 }' "$manifest" | while read -r run_id; do
             systemctl --user stop "$run_id-a*.scope" 2> /dev/null
@@ -548,16 +470,14 @@ move each out of the worktree, or commit it and \`dispatch fetch $slug\`, then c
           mv "$manifest.tmp" "$manifest"
         ) 9>>"$manifest.lock"
     fi
-    # A subshell, so a host with no `job` says so and still loses its worktrees.
+    # A subshell, so a host with no `job` still loses its worktrees.
     ( remove_jobs )
     remove_worktrees
     echo "cleaned $name"
 }
 
-# What a cleanup would delete that no spawn put there, one line each: what `deletable` finds less
-# what it found once the setup had run (`set_up_record`), so what the setup leaves (a dependency
-# checked out under .venv, a build output the project does not ignore) stops no cleanup. A
-# worktree cut before that record existed has everything counted.
+# What `deletable` finds less what it found right after the setup (`set_up_record`), so what the
+# setup leaves stops no cleanup.
 foreign() {
     deletable | sort | comm -13 <(sort "$set_up_record" 2> /dev/null) -
 }
@@ -577,10 +497,9 @@ deletable() {
     uncommitted | sed 's/^/  not committed in /'
 }
 
-# Each change not committed in the worktrees a spawn cut, as `<worktree>: <git status line>`, an
-# untracked file on a line of its own, since a directory's one line would read the same once the
-# worker wrote into it. The code worktree's leaves out the worktrees nested in it, which are read
-# on their own.
+# Each change not committed in a worktree a spawn cut, as `<worktree>: <git status line>`, every
+# untracked file listed (-uall) so a directory reads differently once written into. The code
+# worktree's leaves out the worktrees nested in it.
 uncommitted() {
     local dir at nested=()
     while IFS=$'\t' read -r dir at; do
@@ -599,8 +518,7 @@ cut_here() {
     [ ! -f "$repos_record" ] || awk -F'\t' '{ print $2 "\t" $4 }' "$repos_record"
 }
 
-# The `job`s a worker started for its builds and test runs, which it rarely
-# removes itself: each one whose cwd is the worktree or under it, running or not.
+# Removes every `job` whose cwd is in the worktree, running or not.
 remove_jobs() {
     for dir in "${JOB_STATE_DIR:-$HOME/.local/state/jobs}"/*/; do
         cwd=$(sed -n 's/^cwd=//p' "$dir/meta" 2>/dev/null | head -1)
@@ -610,10 +528,8 @@ remove_jobs() {
     done
 }
 
-# A listed repo's worktree and branch, removed as remove_worktrees removes the
-# other two, where this host cut them. With no worktree there was no cut: a spawn
-# that refused over a branch the repo already had leaves that repo in the record,
-# and that branch belongs to whoever made it, so it stays.
+# Removes a listed repo's worktree and branch where this host cut them; with no worktree the
+# branch is somebody else's (listed_free) and stays.
 drop_listed() { # <git dir> <worktree>
     cut_at "$1" "$2" || return 0
     run git -C "$1" worktree remove --force "$2"
@@ -621,14 +537,8 @@ drop_listed() { # <git dir> <worktree>
     return 0
 }
 
-# The bare repos stay: they are the host's copy of the project, every ticket's.
-# --force: the setup command left untracked files (node_modules, .venv) that a
-# plain remove refuses over, and the agent worktree is itself untracked inside
-# the code one. -D: a ticket branch merges into the base branch on the
-# orchestrator's side and never here, so -d would refuse too; the orchestrator
-# has fetched both branches before this runs. The listed repos' and the agent
-# worktree go first, since a nested repo and the agent one live inside the code
-# worktree.
+# Removes the ticket's worktrees and branches, nested ones first; the bare repos stay. --force,
+# for the setup's untracked files; -D, as a ticket branch never merges on this host.
 remove_worktrees() {
     if [ -f "$repos_record" ]; then
         while IFS=$'\t' read -r -u 3 _ dir _ at; do drop_listed "$dir" "$at"; done 3< "$repos_record"

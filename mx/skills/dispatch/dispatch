@@ -1,57 +1,56 @@
 #!/usr/bin/env bash
 # The orchestrator's side of dispatch and its one door to the worker hosts. Run
 # it on the branch ticket branches cut from and merge back into: a parent
-# ticket's, or the trunk for a ticket with no parent. A ticket's
-# branch is ticket/<slug> in the code repo, in the agent repo at `agent/`, and
-# in each listed repo its `repos:` names (`tracker repos --help`).
+# ticket's, or the trunk. A ticket's branch is ticket/<slug> in the code repo,
+# in the agent repo at `agent/`, and in each listed repo its `repos:` names
+# (`tracker repos --help`).
 #
-# claim <slug>    before the spawn. Writes `claimed`, committed in the agent repo.
-#                 Exit 1: already claimed, or the tracker refused (rule printed).
+# claim <slug>    writes `claimed`, committed in the agent repo. Exit 1: already
+#                 claimed, or the tracker refused (rule printed).
 # prompt <slug> < <file>
-#                 before a spawn or a resume: stdin is the worker's message,
-#                 staged under the ticket's context as it stands; a resume
-#                 sends it alone, flagged when that context changed.
+#                 stores stdin as the message of the ticket's next spawn or
+#                 resume, staged under the ticket's context as it stands then;
+#                 a resume sends it alone, flagged when that context changed.
 # ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
 #                 spawn names the host, user@host or `local`; later commands
 #                 find it from the slug. `probe` with no --host first retires
 #                 the run of each ticket done or out of the tracker whose work
 #                 merged, then asks every host this branch has a run on.
-#                 --setup-cmd replaces the line
-#                 each new worktree there runs first (default `make install`,
-#                 under `nix develop -c` with a flake.nix). `resume` fetches the
-#                 round and imports its report first (`tracker import`), then
-#                 claims a ticket in `review` again; `cleanup` forgets the run.
-#                 Exit 1: the ticket needs the user, has no message, or the
-#                 host could not be staged (named).
+#                 --setup-cmd replaces the line each new worktree there runs
+#                 first (default `make install`, under `nix develop -c` with a
+#                 flake.nix). `resume` fetches the round and imports its report
+#                 first (`tracker import`), then claims a ticket in `review`
+#                 again; `cleanup` forgets the run. Exit 1: the ticket needs the
+#                 user, has no message, or the host could not be staged (named).
 # wait <slug> [--stall SECS] [--deadline SECS]
-#                 after a spawn or resume, as a background task. Prints the
-#                 run's probe line when it ends. Exit 0 exited; 1 gone, or the
-#                 host unreachable for two minutes; 2 worklog silent for
-#                 --stall; 5 --deadline passed. The worker runs on.
-# fetch <slug>    once the worker exited. Brings every ticket/<slug> branch here,
-#                 over an earlier fetch. Exit 1: a branch did not come (named).
-# push            after this branch moved under workers that must rebase onto
-#                 it. Pushes it to every host with a run of it. Exit 1: a host
-#                 refused (named); the rest have it.
+#                 prints the run's probe line once it ends. Exit 0 exited; 1
+#                 gone, or the host unreachable for two minutes; 2 worklog
+#                 silent for --stall; 5 --deadline passed. The worker runs on.
+# fetch <slug>    brings every ticket/<slug> branch of the run here, over an
+#                 earlier fetch. Exit 1: a branch did not come (named).
+# push            pushes this branch, and each run's listed bases, to every host
+#                 with a run of it. Exit 1: a host refused (named); the rest
+#                 have it.
 # review <slug> [--merge]
-#                 after every fetch and every code merge: `tracker land`
-#                 (its --help says what a round gives the ticket), a squashed
-#                 or rebased PR read from GitHub first, then renders
-#                 agent/diffviews/<slug>.html; a `done` retires the run.
+#                 lands the round (`tracker land --help` says what it gives the
+#                 ticket), a squashed or rebased PR read from GitHub first, then
+#                 renders agent/diffviews/<slug>.html; a `done` retires the run.
+#                 An unmerged branch leaves the ticket in `review`, waiting for a
+#                 ruling; a merged one is found by its --no-ff merge commit,
+#                 which is how its range is read once the branch is gone.
 #                 Exit 1: a page it didn't render is in the way (named); a PR
 #                 it could not read, or a branch holding commits its PR did
 #                 not carry; the tracker refused, or the run did not retire.
-# accept <slug>   on the user's accept, once its code merged --no-ff here: a
-#                 ticket ruled alone lands as `review --merge`, refused short
-#                 of `done`; a parent ruled whole writes `done` on it and every
-#                 child in `review`, one commit, a squashed or rebased PR of
-#                 its branch read as `review` reads one, their runs retired.
+# accept <slug>   a ticket with no children lands as `review --merge`, refused
+#                 short of `done`; a parent gets `done` on it and every child
+#                 in `review`, one commit, a squashed or rebased PR of its
+#                 branch read as `review` reads one, their runs retired.
 #                 Exit 1: not merged, or the tracker refused; nothing written.
 # ps [--color] [--follow]
-#                 every worker on every host, for a human; the orchestrator's
-#                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
-#                 --follow redraws the table as the hosts change, until Ctrl-C.
+#                 every worker on every host, as a table; --follow redraws it
+#                 as the hosts change, until Ctrl-C. Exit 1: a host or a
+#                 scratch dir unread.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
@@ -63,26 +62,18 @@
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Every scratch dir on a host sits here, relative to the home on either side,
-# since ssh and scp resolve it there; `ps` reads every one under it.
+# Every host's scratch dirs, relative to its home, as ssh and scp resolve it.
 state_root=.local/state/dispatch
-# Every read and write of a ticket file goes through the one command that parses
-# one, which runs here and nowhere else: a worker is handed its ticket's context
-# in its prompt, so no worker host holds a reader of a ticket file.
+# The only reader and writer of ticket files; it runs here, never on a host.
 tracker=$skill/../tracker/tracker.py
-# Every model run on a host leaves a line in that host's log; a fetch or a
-# cleanup is when the orchestrator is talking to the host anyway, so the lines
-# come back here then (`run-log --help`).
+# A fetch or a cleanup pulls the host's run log lines here (`run-log --help`).
 run_log=$skill/../run-log/run-log
 
-# Every command that changes something is echoed before it runs, so a transcript shows the
-# primitives, and any step this script got wrong can be redone by hand.
+# Echoes a command that changes something before running it, so a step can be redone by hand.
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
-# The tracker as `tracker data` reads it, in `tracked`: <slug> alone where one is given, every
-# ticket otherwise. One launch of the tracker answers every field `field` picks out of it, so a
-# command reads a ticket once, and again after each write of it.
+# Sets `tracked` to `tracker data` of <slug>, or of every ticket, which `field` then reads.
 read_tracker() { tracked=$("$tracker" data "$@"); } # [<slug>]
 # <slug>'s <field> in that read: a list one entry a line, nothing for one it leaves empty.
 field() { # <slug> <field>
@@ -92,24 +83,21 @@ field() { # <slug> <field>
 # The commit ranges a ticket's rounds have landed as, one per line; nothing before the first of them lands.
 rounds_of() { field "$1" diff; } # <slug>
 
-# Once a `done` is committed, every tree it finished leaves the tracker in a commit of its own. A
-# retirement the tracker refuses is said, and the `done` stands.
+# `tracker retire` after a committed `done`; a refusal is said, and the `done` stands.
 retire_trees() {
     run "$tracker" retire ||
         echo "dispatch: the done is committed, and \`tracker retire\` refused; run it again once that is fixed" >&2
 }
 
-# The repos a round lands in, by the name its `diff:` range carries, and the branch each one's
-# ticket branches cut from and merge back into. A listed repo's are `listed_top` and `listed_onto`,
-# which `listed` fills.
+# A repo's checkout and base branch, by the name a `diff:` range carries: code, agent, or a listed
+# repo (from `listed`).
 repo_at() { case $1 in code) echo "$repo_root" ;; agent) echo "$agent_top" ;; *) echo "${listed_top[$1]-}" ;; esac; }
 base_at() { case $1 in code) echo "$base" ;; agent) echo "$agent_base" ;; *) echo "${listed_onto[$1]-}" ;; esac; }
 declare -A listed_top=() listed_onto=()
 
-# Every repo on the project's list, read through `tracker repos`, its one reader. Its base is the
-# parent ticket's branch there where the repo has one, and its trunk otherwise, both
-# its own and origin's where it has both: a merge on this machine is local, and a PR's is at origin.
-# Space-separated, since a ref name holds no space.
+# Fills `listed_top` and `listed_onto` for every repo `tracker repos` lists. The base is the parent
+# ticket's branch where the repo has one, else its trunk, local and origin's where both exist,
+# space-separated: a local merge lands on one, a PR's on the other.
 listed() { # <parent slug, or nothing>
     local list name path integration ref refs
     list=$("$tracker" repos) || exit 1
@@ -128,9 +116,8 @@ listed() { # <parent slug, or nothing>
     done <<< "$list"
 }
 
-# The listed repos <slug>'s `repos:` names, in `ticket_repos`, each with `listed_top` filled and the one ref
-# its ticket branch cuts from in `cut_from`; nothing at all for a ticket that names none, whose
-# project may list none. The ticket is the one `read_tracker` read.
+# Sets `ticket_repos` to the listed repos <slug>'s `repos:` names, and `cut_from` to the ref each
+# ticket branch cuts from. Reads the list only when it names one; reads <slug> from `tracked`.
 declare -A cut_from=()
 ticket_listed() { # <slug>
     local name refs
@@ -140,8 +127,7 @@ ticket_listed() { # <slug>
     listed "$(field "$1" parent)"
     for name in "${ticket_repos[@]}"; do
         [ -n "${listed_top[$name]-}" ] || die "$1's repos: names $name, which \`tracker repos\` does not list"
-        # Of a local trunk and origin's, the one ahead, and the local one where the two
-        # have parted: a PR merges at origin, which a local branch may not have taken in yet.
+        # Of local and origin's trunk, the one ahead; the local one where they have diverged.
         read -r -a refs <<< "${listed_onto[$name]}"
         cut_from[$name]=${refs[0]}
         [ ${#refs[@]} -lt 2 ] || ! git -C "${listed_top[$name]}" merge-base --is-ancestor "${refs[0]}" "${refs[1]}" ||
@@ -149,23 +135,17 @@ ticket_listed() { # <slug>
     done
 }
 
-# The remote a repo here pushes to and fetches from on <host>, by the name its range carries. A
-# listed repo's has the project's name in it, since the repo may be another project's code repo,
-# whose own remote for the host names that project's bare repo.
+# The remote for <host> in a repo here. A listed repo's carries the project's name, since that repo
+# may be another project's code repo with a remote of its own for the host.
 remote_of() { case $1 in code | agent) echo "${2//[@.]/-}" ;; *) echo "${2//[@.]/-}-$repo" ;; esac; } # <repo> <host>
 
-# Every command runs on the branch ticket branches cut from and merge back
-# into: a parent ticket's, or the trunk. With --read, the tracker
-# is read first (`read_tracker`), and where it is comes with that read.
+# Sets the repos, branches and paths every command works with, from the checkout it runs in.
+# --read reads the tracker first (`read_tracker`) and takes the tickets' root from it.
 locate() { # [--read [<slug>]]
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
-    # Every path of this repo's own below is relative to its worktree root.
     cd "$repo_root" || die "cannot enter $repo_root"
     base=$(git branch --show-current)
     [ -n "$base" ] || die "detached HEAD; run this on the branch the ticket branches cut from"
-    # A project is two repos: this one, and the agent repo it holds at `agent/`,
-    # where the tickets and the rest of the planning are. Every ticket change is
-    # committed in that repo's main checkout, and never on a ticket branch of either.
     if [ "${1:-}" = --read ]; then
         read_tracker "${@:2}" || exit 1
         tickets=$(jq -r .root <<< "$tracked")
@@ -175,53 +155,38 @@ locate() { # [--read [<slug>]]
     agent_top=$(dirname "$tickets")
     [ "$(git -C "$agent_top" rev-parse --show-toplevel 2>/dev/null)" = "$agent_top" ] ||
         die "$agent_top is no git repo of its own, so this project is not two repos yet; /mx:project-setup splits it out"
-    # Each repo's own: the code repo is on the branch this worktree holds, a parent ticket's or the
-    # trunk, while the agent repo keeps the branch its main checkout has out, since a
-    # ticket file is written there and on no branch of its own.
+    # The agent repo's base is the branch its main checkout has out, where ticket files are written.
     agent_base=$(git -C "$agent_top" branch --show-current)
     [ -n "$agent_base" ] || die "$agent_top is on a detached HEAD; ticket files are written on the branch it has out"
     diffviews=$agent_top/diffviews
     gitdir=$(realpath "$(git rev-parse --git-common-dir)")
-    # The bare repo on a host, its ticket worktrees and its scratch dirs all
-    # carry the repo's name, and nothing records it: the common git dir is
-    # <repo>/.git in a checkout and <repo>.git in the bare repo a host holds, so
-    # one rule reads the name off either.
+    # The repo's name, off <repo>/.git in a checkout or <repo>.git in a bare repo.
     named=${gitdir%.git}
     repo=$(basename "${named%/}")
-    # What a dispatch keeps here, beside the history: which host each ticket's
-    # run went to, and the ticket messages waiting for a spawn to carry them.
+    # The run record and the staged messages, beside the history.
     state=$gitdir/dispatch
     runs=$state/runs
 }
 
-# Per branch, because a concurrent dispatcher may be on another plugin version,
-# and on a shared path its runner and worker prompt would replace this one's
-# under running workers; named after the repo too, because the directory is per
-# user, not per project. Tickets with no parent ticket all dispatch from the
-# trunk, so one repo's share one.
+# One per repo and branch, so a dispatcher on another branch, maybe on another plugin version,
+# never replaces the scripts this one's workers run.
 scratch_dir() { # <host>
     d=$state_root/$repo-$base
     [ "$1" = local ] && d=$HOME/$d
     echo "$d"
 }
 
-# A command on a worker host, or here when the host is this machine. The
-# keepalive collapses a dead connection in ~30s, so a suspended laptop's
-# `wait` fails fast and retries instead of hanging on a connection that will
-# never speak again. The connect timeout is for a host that is off, which `ps`
-# asks alongside the rest; BatchMode because `ps` asks its hosts at once and in
-# the background, where a passphrase prompt would be several on one terminal.
+# A command on a worker host, or here for `local`. The keepalive drops a dead connection in ~30s,
+# so `wait` retries rather than hangs; BatchMode, since `ps` asks its hosts at once in the
+# background, where a passphrase prompt would have no terminal of its own.
 ssh_options=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 on_host() { # <host> <command...>
     h=$1; shift
     if [ "$h" = local ]; then "$@"; else ssh "${ssh_options[@]}" "$h" "$(remote_line "$@")"; fi
 }
 
-# ssh joins its arguments with spaces into one line for the remote login shell,
-# which drops an empty one and splits one with a space, so each is quoted for
-# that shell, which may be bash or zsh. `%q` quotes for bash; zsh also reads a
-# word that starts with `=` as the path of a command (`=ls` is `/usr/bin/ls`),
-# so that `=` is escaped too.
+# Quotes each argument for the remote login shell, which ssh hands one joined line. `%q` quotes for
+# bash; a leading `=` is escaped too, since zsh reads `=ls` as the path of ls.
 remote_line() { # <command...>
     local arg quoted line=
     for arg; do
@@ -232,12 +197,9 @@ remote_line() { # <command...>
     printf '%s' "${line# }"
 }
 
-# Through a side directory and a rename, never written in place: a worker
-# already running reads its runner by name, and a copy over those bytes makes
-# the shell resume at its old offset in the new file. The side directory carries
-# this dispatch's pid, because two sessions staging one host share the scratch
-# dir (see scratch_dir) and a shared one would let each publish the other's
-# bytes under its own stamp.
+# Copies through a side directory and a rename, never in place: bash reads a running runner by
+# offset, so new bytes under it would run from the middle. The side directory carries this pid, so
+# two dispatchers staging one scratch dir never publish each other's files.
 copy_to() { # <host> <dir> <file...>
     h=$1 dir=$2; shift 2
     staging=$dir/.staging.$$
@@ -249,18 +211,15 @@ copy_to() { # <host> <dir> <file...>
     on_host "$h" rmdir "$staging"
 }
 
-# The run record: which host a ticket went to, written by the spawn that sent
-# it there before the spawn runs, so one that dies halfway still says where to
-# look. Newest line for a name wins; the name is the ticket's slug. Locked
-# like the manifest on the host: the file is the repo's, so a dispatcher on
-# another branch writes to it too.
+# Records the host a ticket's run went to, base TAB slug TAB host; the newest line wins. Written
+# before the spawn runs, so a failed one still says where to look; locked, as every branch's
+# dispatcher writes this file.
 record_run() { # <name> <host>
     mkdir -p "$state"
     ( flock 9; printf '%s\t%s\t%s\n' "$base" "$1" "$2" >> "$runs" ) 9>>"$runs.lock"
 }
 
-# A cleaned-up run has nothing left on its host, so what stays on file is the
-# runs still there, which is what the commands that fan out over hosts follow.
+# Drops <name>'s lines for this branch, once its run is cleaned up.
 forget_run() { # <name>
     [ -f "$runs" ] || return 0
     ( flock 9
@@ -284,35 +243,29 @@ hosts_used() { # every host this branch has a run on
     awk -F'\t' -v f="$base" '$1 == f && !seen[$3]++ { print $3 }' "$runs"
 }
 
-# Every command that follows a ticket lands where its run is.
+# Sets `host` and `scratch` from <slug>'s run.
 ticket_host() { # <slug>
     host=$(host_of "$1")
     [ -n "$host" ] || die "no run of $1 recorded here; spawn it: dispatch ctl --host <user@host|local> spawn $1 <model>"
     scratch=$(scratch_dir "$host")
 }
 
-# What a host runs a worker from, and `stamp`, the digest of the copy it holds:
-# a host staged by another plugin version is staged again rather than left to
-# start a worker on a contract this branch has moved past. Staging is the git
-# remotes here, then this plugin's dispatch-ctl, runner, worker prompt, run-log
-# and the tracker's commit hook copied into this branch's scratch dir there, and
-# `dispatch-ctl init`.
+# Stages <host>: the git remotes here, then these files copied to its scratch dir and
+# `dispatch-ctl init`, skipped where its `stamp`, their digest, already matches.
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
     files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$run_log" "$skill/../tracker/pre-commit")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
-    # The setup command travels as a file named `setup`, which stays on the host
-    # for every later spawn until another --setup-cmd replaces it.
+    # Staged as `setup`, which every later spawn there runs until another --setup-cmd.
     if [ -n "$cmd" ]; then
         staged=$(mktemp -d)
-        # EXIT as well as RETURN: `die` exits the shell, and the paths that die
-        # here (a host that is down) are the ones an orchestrator retries.
+        # EXIT too, since `die` exits the shell.
         trap 'rm -rf "$staged"' RETURN EXIT
         printf '%s\n' "$cmd" > "$staged/setup"
         files+=("$staged/setup")
     fi
-    # Checked on every spawn, staged host or not: a remote is this machine's, and the stamp is the host's.
+    # Before the stamp check: the remotes are this machine's, the stamp the host's.
     if [ "$h" != local ]; then
         remote=$(remote_of code "$h")
         host_remote "$repo_root" "$remote" "$h:repos/dispatch/$repo.git" &&
@@ -320,8 +273,7 @@ stage() { # <host> [setup-command]
             die "staging $h stopped at its git remotes; the line above says why"
     fi
     if [ "$(on_host "$h" cat "$scratch/stamp" 2>/dev/null)" = "$stamp" ]; then
-        # A new --setup-cmd is the one thing a staged host still takes, so a
-        # failure here is the spawn building worktrees with the old one.
+        # A new --setup-cmd is all a staged host still takes.
         [ -z "$cmd" ] || copy_to "$h" "$scratch" "$staged/setup" || die "staging the setup command on $h failed"
         return 0
     fi
@@ -332,19 +284,15 @@ stage() { # <host> [setup-command]
     else
         run on_host "$h" mkdir -p "$scratch" || die "cannot reach $h"
         copy_to "$h" "$scratch" "${files[@]}" || die "copy to $h:$scratch failed"
-        # init creates the two bare repos a push lands in; until it has run, the
-        # host has nothing to cut a ticket branch from.
-        # the empty three are the host's own defaults for its two bare repos and its worktree dir
+        # The empty three take the host's defaults for its bare repos and worktree dir.
         run on_host "$h" bash "$scratch/dispatch-ctl" init "$repo" "$base" "" "" "" "$agent_base" || die "init on $h failed"
     fi
-    # Last, so a staging that broke halfway is done again instead of trusted.
+    # Last, so a staging that broke halfway is redone.
     printf '%s\n' "$stamp" | on_host "$h" tee "$scratch/stamp" > /dev/null
 }
 
-# The remote <top> reaches a host's bare repo at <url> through, added where missing. One at another
-# of the host's dispatch repos is a staging's from before the project's repo name changed, and is
-# repointed, so the push lands where the host's worktrees cut from; one anywhere else is somebody
-# else's, and stays as it is.
+# Adds <remote> for <url> in <top> where missing. One at another of the host's dispatch repos
+# (the project was renamed) is repointed; one anywhere else is somebody else's, and fails.
 host_remote() { # <top> <remote> <url>
     local at
     at=$(git -C "$1" remote get-url "$2" 2> /dev/null) || { run git -C "$1" remote add "$2" "$3"; return; }
@@ -365,25 +313,22 @@ push_to() { # <host>
     return $rc
 }
 
-# The base of every listed repo `ticket_listed` read, to the bare repo of its own the host holds,
-# under the name of the branch it is there: origin's trunk arrives as the trunk.
+# Pushes each `ticket_repos` base to its bare repo on <host>, origin/<trunk> arriving as <trunk>.
 push_listed() { # <host>
     [ "$1" = local ] && return 0
     local name top remote url rc=0
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} remote=$(remote_of "$name" "$1") url=$1:repos/dispatch/$repo-$name.git
-        # The push below is forced, so it goes to no remote of that name the repo had for another use.
         host_remote "$top" "$remote" "$url" || { rc=1; continue; }
-        # Forced: the host's copy is dispatch's own, and which of local and origin's branch is the
-        # base may change between two pushes, where the two have parted.
+        # Forced: the host's copy is dispatch's own, and the base may switch between local and origin's.
         run git -C "$top" push -q "$remote" "+${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
             { echo "dispatch: pushing ${cut_from[$name]} of $name to $1 failed" >&2; rc=1; }
     done
     return $rc
 }
 
-# A listed repo's path inside the project, which is also its path in a worker's worktree; nothing
-# for a repo outside the project, which a worker finds at `sibling_of`, beside its worktree.
+# A listed repo's path inside the project, and so in a worker's worktree; nothing for one outside
+# it, which sits beside the worktree at `sibling_of`.
 place_of() { # <name>
     local project
     project=$(realpath "$(dirname "$agent_top")")
@@ -391,12 +336,8 @@ place_of() { # <name>
 }
 sibling_of() { echo "../$1-$2"; } # <name> <slug>
 
-# The listed repos <slug> names, their bases pushed to a remote host's bare repos (`dispatch-ctl
-# bare`); a local host cuts from the repos' own checkouts. No other repo on the list reaches the
-# host (P5), and one an earlier spawn of the ticket was given and this one is not loses its
-# worktree and branch there (`dispatch-ctl spawn`'s --repo). Each repo travels to the spawn as a
-# --repo group in `listed_args`. A ticket that names none sends none, and the spawn call empties the
-# host's record of them; no other call is made. The prompt's lines for them go in `listed_prompt`.
+# Sets `listed_args`, a spawn's --repo group per listed repo <slug> names, and `listed_prompt`, the
+# worker's lines for them, and pushes their bases to a remote host's bare repos (`dispatch-ctl bare`).
 stage_listed() { # <host> <slug>
     local name top place from
     listed_prompt= listed_args=()
@@ -405,8 +346,7 @@ stage_listed() { # <host> <slug>
     listed_prompt="The listed repos your ticket names are each on \`ticket/$2\`, cut from the branch named here, at the path given; that branch is yours as the other two are, and your work in that repo is committed on it:"
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
-        # The base by the name it has where the worker is: origin's branch arrives on a remote host
-        # under the trunk's own name.
+        # The base by its name on the host, where origin/<trunk> is <trunk>.
         if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
         else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
@@ -422,23 +362,19 @@ stage_listed() { # <host> <slug>
 
 claim() {
     locate --read "$1"
-    # A claim that changes nothing is no claim: `tracker set` takes a write to
-    # the status a ticket already has, so the ticket in hand is refused here.
+    # Refused here, since `tracker set` accepts the status a ticket already has.
     [ "$(field "$1" status)" != claimed ] || die "$1 is already claimed; a claim is taken from the frontier"
     run "$tracker" set "$1" status=claimed --message "claim $1" || exit 1
 }
 
-# A worker resumed on a build the user sent back holds its ticket again. The ticket is the one
-# `read_tracker` read.
+# Claims <slug> again where `tracked` has it in `review`.
 reclaim() { # <slug>
     [ "$(field "$1" status)" = review ] || return 0
     run "$tracker" set "$1" status=claimed --message "claim $1" || exit 1
 }
 
-# This branch of both repos, and the base of each listed repo a run's ticket names, to every host
-# holding a run of it, so a worker resumed to rebase finds the tips it rebases onto. One host down
-# is one host's failure: the others still get the tip, and the exit status says some did not,
-# since this is what a worker waiting to rebase is blocked on.
+# Pushes this branch of both repos, and each run's listed bases, to every host with a run of it;
+# a host that fails stops none of the others.
 push() {
     locate
     hosts=$(hosts_used)
@@ -446,8 +382,7 @@ push() {
     rc=0
     for h in $hosts; do
         push_to "$h" || rc=1
-        # A subshell each, so a ticket whose listed repos cannot be read stops no other push. A run
-        # whose ticket has left the tracker, retired with its tree, has none to push.
+        # A subshell each, so one unreadable ticket stops no other; a retired ticket is skipped.
         for slug in $(runs_on "$h"); do
             [ -f "$tickets/$slug.md" ] || continue
             ( read_tracker "$slug" && ticket_listed "$slug" && push_listed "$h" ) || rc=1
@@ -456,16 +391,9 @@ push() {
     return $rc
 }
 
-# What a round is given, composed here under the names the host stages it by. Its context file is
-# the ticket's context as the tracker here holds it now, by the one command that assembles it, then
-# the round's message: the worker reads its ticket there every round (`$DISPATCH_CONTEXT`), and its
-# review takes the file as its spec, so an amendment or a ruling made between rounds reaches both.
-# The listed repos' paths go under the message every round: a spawn works them out (stage_listed)
-# and keeps them as listed-<slug>, and a resume reuses them, as dispatch-ctl keeps their worktrees.
-# A spawn sends that file whole. A resume sends the message alone, which `continue` often is, under
-# a line sending the worker back to the file when the context is not the one its last round was
-# staged with; that one is kept as ticket-<slug>.md, and replaced by ticket-<slug>.next once the
-# round has started (`ctl`).
+# Writes context-<slug>.md, `tracker context` with the message and listed repos' lines under it,
+# and prompt-<slug>.md: that whole for a spawn, else the message, flagged where the context differs
+# from the last round's (ticket-<slug>.md; `ctl` replaces it with .next once the round starts).
 compose_round() { # <subcommand> <slug> <message>; the two files to copy in `carry`
     local dir=$state/prompts/$base/round listed said
     mkdir -p "$dir" || return 1
@@ -479,7 +407,7 @@ compose_round() { # <subcommand> <slug> <message>; the two files to copy in `car
     elif cmp -s "$dir/ticket-$2.md" "$dir/ticket-$2.next"; then
         cp "$3" "$dir/prompt-$2.md"
     else
-        # No record: the run was staged by a dispatch that kept none, or this state was lost.
+        # No record of the last round's context: say it may have changed.
         said=changed; [ -f "$dir/ticket-$2.md" ] || said="may have changed"
         { echo "Your ticket's context $said since your last round: read \`\$DISPATCH_CONTEXT\` again, whole, before you act on the message under this line."
           echo; cat "$3"; } > "$dir/prompt-$2.md"
@@ -487,8 +415,7 @@ compose_round() { # <subcommand> <slug> <message>; the two files to copy in `car
     carry=("$dir/prompt-$2.md" "$dir/context-$2.md")
 }
 
-# Here, not on a host: the host is named at the spawn, and a message written
-# before it would have nowhere to go.
+# Kept here until a spawn or resume carries it to the host.
 prompt() {
     locate
     dir=$state/prompts/$base
@@ -498,11 +425,9 @@ prompt() {
 
 message_of() { echo "$state/prompts/$base/prompt-$1.md"; } # <name>
 
-# Every host this branch has a run on: a wave spreads over as many as it was
-# spawned on, so each worker's line goes behind the host it is on, and a host
-# that cannot answer says so where its workers would have been.
+# The probe of every host this branch has a run on, each line prefixed with its host; a host
+# that does not answer is said on stderr. The sweep's lines go to stderr too.
 probe_all() {
-    # Its own lines are the orchestrator's to read beside the probe's, never in them.
     sweep >&2
     hosts=$(hosts_used)
     [ -n "$hosts" ] || die "no run recorded for $base; nothing has been spawned from here"
@@ -519,10 +444,8 @@ probe_all() {
 }
 
 ctl() {
-    # The reference needs no repo and no host: every host is staged from this copy.
     case ${1:-} in -h|--help|"") exec bash "$skill/dispatch-ctl" --help ;; esac
-    # Made absolute before locate moves to the worktree root, so a relative path
-    # means what it meant where it was typed.
+    # Absolute before locate moves to the worktree root.
     [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
     host= setup_cmd=
     while :; do
@@ -532,10 +455,8 @@ ctl() {
             *) break ;;
         esac
     done
-    # What dispatch does for a subcommand before forwarding it, read off the
-    # subcommand once: the run it names, whether the host is staged first,
-    # whether the ticket message travels with it, whether the run record
-    # outlives it.
+    # What each subcommand needs before it is forwarded: staging, a push, the round's files, and
+    # whether its run is forgotten after.
     sub=${1:-} name= stages= pushes= carries= forgets=
     case $sub in
         spawn|wait|stop|resume|log|cleanup)
@@ -543,15 +464,12 @@ ctl() {
             name=$2
             case $sub in
                 spawn)   stages=1 pushes=1 carries=1 ;;
-                # Staged too: a host staged by another plugin version would start the round on
-                # the contract and the dispatch-ctl that version had.
+                # Staged too, so the round runs this version's scripts.
                 resume)  stages=1 carries=1 ;;
                 cleanup) forgets=1 ;;
             esac ;;
     esac
-    # The one ticket a worker never gets, read in the tracker: the host reads no
-    # ticket at all, so this is where a ticket the user is in the loop for stops,
-    # for a resume as much as for a spawn.
+    # A `needs-user` ticket is refused here, as the host reads no ticket.
     if [ "$sub" = spawn ] || [ "$sub" = resume ]; then
         locate --read "$2"
         [ "$(field "$2" needs-user)" != true ] ||
@@ -572,19 +490,16 @@ ctl() {
     fi
     scratch=$(scratch_dir "$host")
     [ -z "$stages" ] || stage "$host" "$setup_cmd"
-    # The round a resume ends is fetched and its report imported before the worker can write over
-    # it, so the context staged below carries it and the round's report reaches its ticket whether
-    # or not that round was ever reviewed.
+    # The last round's report is imported before the worker can replace it, so the context
+    # staged below carries it.
     if [ "$sub" = resume ]; then
         fetch_round "$name" || die "fetching $name's round from $host failed, so it was not resumed"
         run "$tracker" import "$name" || die "the tracker refused $name's report, so it was not resumed; the lines above say why"
-        # Claimed again at once, so a resume that fails below leaves a ticket in somebody's hands
-        # rather than one reading as a build waiting for the user.
+        # Before anything below can fail, so the ticket never reads as waiting in `review`.
         read_tracker "$name" || exit 1
         reclaim "$name"
     fi
-    # Every spawn pushes this branch of both repos to a remote host, so a ticket branch cuts from
-    # its current tip; a local host cuts from these checkouts.
+    # A spawn cuts from this branch's current tip, pushed to a remote host.
     if [ -n "$pushes" ]; then
         push_to "$host" || die "$host has no $base for $name to cut from"
         stage_listed "$host" "$name" || die "$host has no base for $name to cut from in a listed repo"
@@ -596,15 +511,12 @@ ctl() {
         compose_round "$sub" "$2" "$message" || die "could not assemble $2's prompt; \`tracker context $2\` says why"
         copy_to "$host" "$scratch" "${carry[@]}" || die "copying $2's prompt and context to $host failed"
     fi
-    # The permission mode and the effort travel only when set here; unset, the host's default holds.
+    # Only what is set here travels; unset, the host's default holds.
     env=()
     [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
     [ -n "${DISPATCH_EFFORT:-}" ] && env+=("DISPATCH_EFFORT=$DISPATCH_EFFORT")
-    # A replacement runner travels with the command that starts a worker on it, as the message does.
-    # It is renamed after the ticket: under its own name it could replace a file the scratch dir
-    # holds, the manifest say, which scp does silently, and one shared name would let two tickets'
-    # runners replace each other. The name, not a path, goes to dispatch-ctl, which looks it up
-    # beside itself: a remote scratch dir is relative to a home this side cannot see.
+    # Copied as runner-<slug>, so it can replace no scratch-dir file (the manifest, say) and no
+    # other ticket's runner; dispatch-ctl gets the name and finds it beside itself.
     if [ -n "$carries" ] && [ -n "${DISPATCH_RUNNER:-}" ]; then
         runner_dir=$(mktemp -d)
         trap 'rm -rf "$runner_dir"' EXIT
@@ -612,8 +524,6 @@ ctl() {
         copy_to "$host" "$scratch" "$runner_dir/runner-$2" || die "copying the runner to $host failed"
         env+=("DISPATCH_RUNNER=runner-$2")
     fi
-    # Echoed like every other primitive, so the transcript says which host this
-    # ticket's command went to.
     [ "$sub" != spawn ] || set -- "$@" "${listed_args[@]}"
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -z "$carries" ] || mv "$state/prompts/$base/round/ticket-$2.next" "$state/prompts/$base/round/ticket-$2.md"
@@ -626,9 +536,7 @@ wait_() {
     for attempt in $(seq 8); do
         on_host "$host" bash "$scratch/dispatch-ctl" wait "$@"
         rc=$?
-        # 255 is ssh's own: the connection, not the command. A dropped one
-        # is back within a retry or two; one that stays down is a different
-        # failure (auth, host key, DNS) and gets reported, not waited out.
+        # 255 is ssh's own exit, a lost connection, retried for two minutes.
         [ "$rc" -eq 255 ] || return "$rc"
         echo "dispatch: no connection to $host (attempt $attempt of 8); retrying in 15s" >&2
         sleep 15
@@ -636,14 +544,13 @@ wait_() {
     die "$host unreachable for two minutes; probe it when it is back and arm a new wait"
 }
 
-# Each fetch replaces the one before it, since a resumed worker rebases its ticket branches. The
-# worker's report is a file on the agent branch and arrives with it.
 fetch() {
     locate --read "$1"; ticket_host "$1"
     fetch_round "$1"
 }
 
-# Every ticket/<slug> branch of the run on `host`, brought here. The ticket is the one `read_tracker` read.
+# Force-fetches every ticket/<slug> branch of the run on `host`, since a resumed worker may rebase
+# them; reads <slug> from `tracked`.
 fetch_round() { # <slug>
     local branch=ticket/$1 names at name
     ticket_listed "$1"
@@ -654,8 +561,8 @@ fetch_round() { # <slug>
         done
         echo "local host: $branch is already here, in every repo"
     else
-        # A listed repo the host still holds for the ticket, which its repos: no longer names, too:
-        # the host's cleanup deletes that branch with the run, and its work may be nowhere else.
+        # Also each listed repo the host still holds for the ticket that its repos: no longer
+        # names, whose branch the host's cleanup would delete.
         for name in $(on_host "$host" cat "$(scratch_dir "$host")/repos-$1" 2> /dev/null | cut -f1); do
             [[ " ${names[*]} " != *" $name "* ]] || continue
             [ ${#listed_top[@]} -gt 0 ] || listed "$(field "$1" parent)"
@@ -671,8 +578,7 @@ fetch_round() { # <slug>
     pull_runs "$host"
 }
 
-# A local host writes the log this machine reads; a remote one's lines are read
-# over ssh and appended here once each.
+# Appends a remote host's new run-log lines here; a local host already writes this machine's.
 pull_runs() { # <host>
     [ "$1" = local ] && return 0
     run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
@@ -689,29 +595,16 @@ merged_into() {
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
-# Whether <tip> in <repo> has merged where its ticket lands: into the branch the run was spawned
-# from (`is_merged`), or, in the code and agent repos, into the branch this checkout has out, which
-# is where a parent's accept has merged the parent's branch by the time it retires the runs under it.
+# Whether <tip> in <repo> has merged into its base (`is_merged`) or, in the code and agent repos,
+# into HEAD, where a parent's accept has merged the parent's branch.
 landed() { # <repo> <tip>
     is_merged "$1" "$2" 2> /dev/null && return 0
     case $1 in code | agent) git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" HEAD ;; *) return 1 ;; esac
 }
 
-# The notes file is a pure projection of the ticket, rewritten whole on every
-# render: the assumptions the tracker read become the page's notes, and the
-# comment ids the ticket's `Addressed:` lines name become its resolved list.
-# The ticket is the one `read_tracker` read, through `tracker data`, so a bullet
-# no reader can read was refused with its file and line rather than dropped from
-# the page, and however the writer wrapped one it is read whole. The user's own
-# comments live in diffview's state file beside the page, which a render never
-# touches.
-# A worker anchors from its worktree root, where the agent repo sits at `agent/`, a nested listed
-# repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
-# under the path its repo's section shows, the anchor with that prefix cut, and names that repo as
-# its source, so it lands in one of that repo's sections (a repo has one per round) whichever other
-# repo's section shows the same path. An
-# assumption anchored in a repo with no section on the page, the agent repo's always, has no file
-# there and stays on the ticket.
+# The diffview notes for <slug> from `tracked`: its assumptions, each anchor cut to its path in the
+# repo it falls in (longest listed-repo prefix, else code) and tagged with that repo; one in the
+# agent repo or a repo off the page is left out. `Addressed:` ids become `resolved`.
 notes_of() { # <slug>
     local name place anchors='{}' sources='{}' at
     for name in "${!listed_top[@]}"; do
@@ -733,14 +626,9 @@ notes_of() { # <slug>
             resolved }' <<< "$tracked"
 }
 
-# Whether every source the diffview page at <page> shows is one of <specs>, or one a
-# spec extends: the same repo, a start that begins the spec's start SHA, and an end
-# that begins the spec's end SHA or is an ancestor of it. The extended range is an
-# unmerged round grown since its last render by new commits on top of its tip, an
-# amend's or a resumed round's; one whose tip was rewritten extends nothing.
-# diffview's --sources-of reads a page's sources as `<repo root>@<a>..<b>`, its ends
-# pinned to short SHAs, where a spec here carries full ones. A page it reads no
-# source off is no diffview page, and none of these.
+# Whether every source of the diffview page at <page> is one of <specs> or one a spec extends: the
+# same repo and start, and an end that is the spec's or an ancestor of it (new commits on the tip).
+# A page's sources carry short SHAs, specs full ones; a page with no sources is no diffview page.
 covers() { # <page> <spec...>
     local page=$1 shown source range a b spec found
     shift
@@ -761,20 +649,15 @@ covers() { # <page> <spec...>
     done <<< "$shown"
 }
 
-# What <slug>'s round gives its ticket, decided, written and committed by the tracker's `land` or
-# `accept` (`tracker land --help`); with --dry-run, what it would write, and nothing written.
-# `tracked` is the ticket as the landing leaves it, and `written` the round's ranges,
-# `<repo>@<range>` per branch of it that committed something, merged or not.
+# Runs `tracker land` or `accept` on <slug>'s round, setting `tracked` to the ticket it leaves and
+# `written` to the round's `<repo>@<range>`s, one per branch that committed something.
 round_read() { # <land|accept> <slug> [--merge] [--dry-run]
     tracked=$(run "$tracker" "$@") || exit 1
     mapfile -t written < <(jq -r '.round[].range // empty' <<< "$tracked")
 }
 
-# The review page's sources, in `specs`, one section per round of code in each repo it landed in:
-# the rounds <slug> carries, then the round `land` read while it is unmerged (a proposal waiting
-# for its ruling, or a resumed worker's next round fetched before its merge). The agent ranges stay
-# off the page: what an agent branch carries, the report and the artefacts, reaches the user as
-# itself, through the board. `spec_repos` names the repo of each, as its range does.
+# Sets `specs`, the review page's sources: each range <slug> records, then each of `written` it does
+# not yet (an unmerged round), agent ranges left out; `spec_repos` names each one's repo.
 page_specs() { # <slug>
     local rounds r top
     rounds=$(rounds_of "$1")
@@ -785,17 +668,15 @@ page_specs() { # <slug>
             *@*) top=$(repo_at "${r%%@*}")
                  [ -n "$top" ] || die "$1's range $r names no repo \`tracker repos\` lists"
                  specs+=("$top@${r#*@}") spec_repos+=("${r%%@*}") ;;
-            # A range that names no repo is a round from before this ticket's
-            # tracker had two repos, and belongs to the code one.
+            # A range naming no repo predates the agent repo, and is the code repo's.
             *) specs+=("$repo_root@$r") spec_repos+=(code) ;;
         esac
     done
 }
 
-# agent/diffviews/<slug>.html over `specs`, served. A page at that path is this command's to replace
-# when this render loses nothing it shows: every source in it is one these specs, or the <spec>s
-# given, show or extend (`covers`). Any other page is somebody else's (a session's, rendered by hand
-# at the path the board links) and stays as it is, whatever the ticket carries; `kept` says so.
+# Renders and serves agent/diffviews/<slug>.html over `specs`. A page already there is replaced only
+# where `covers` says these specs, or the <spec>s given, show all it shows; otherwise it stays and
+# `kept` is set.
 render_page() { # <slug> [<spec the page may show>...]
     local out=$diffviews/$1
     kept=
@@ -806,8 +687,6 @@ render_page() { # <slug> [<spec the page may show>...]
         kept=1
     else
         mkdir -p "$(dirname "$out")"
-        # The tracker's own copy, which a review's import has brought the worker's
-        # closing comment and its assumptions into.
         notes_of "$1" > "$out.notes.json" || exit 1
         run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
         run diffview --serve "$diffviews"
@@ -823,17 +702,15 @@ review() { # <slug> [--merge]
     landed_round "$1" land "$1" ${2:+"$2"}
 }
 
-# A review's work, landing <slug>'s round with the tracker command given: `land` for a review, or
-# `accept` for a ticket ruled alone, which lands as `land --merge` does and refuses what leaves it
-# short of done.
+# Lands <slug>'s round with the tracker command given (`land`, or `accept` for a childless ticket),
+# then renders its page, updates the board, and retires the run on a `done`.
 landed_round() { # <slug> <land|accept> <its arguments...>
     id=$1
     landing=("${@:2}")
     branch=ticket/$id
     rounds=$(rounds_of "$id")
     named=$(field "$id" repos)
-    # The list is read only for a ticket that has a listed repo to read, so one repo on it that
-    # this machine lacks stops no other ticket's review.
+    # The list is read only where a listed repo is named, so one missing here stops no other review.
     if [ -n "$named" ] || printf '%s\n' "$rounds" | grep -qvE '^((code|agent)@|[0-9a-f]+\.\.|$)'; then
         listed "$(field "$id" parent)"
     fi
@@ -841,28 +718,22 @@ landed_round() { # <slug> <land|accept> <its arguments...>
         [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
     done
 
-    # A listed repo's branch unmerged here may have landed through a pull request on GitHub, by a
-    # squash or a rebase that leaves it unmerged for good: what landed is recorded in its place, and
-    # the landing below reads the round again, since origin's base has been fetched and a deleted
-    # branch is in no round. The page a review rendered over the round before that may be replaced
-    # by the one over what landed.
+    # An unmerged listed branch may have landed as a squashed or rebased PR (`land_on_github`).
+    # `shown` keeps the specs before that, which the page may be replaced over.
     unmerged=() shown=() asked=0
     for name in $named; do
         tip=$(git -C "${listed_top[$name]}" rev-parse --verify -q "refs/heads/$branch") || continue
         is_merged "$name" "$tip" || unmerged+=("$name")
     done
     if [ ${#unmerged[@]} -gt 0 ]; then
-        # Without --merge, which a listed branch only GitHub can say has landed would refuse.
+        # No --merge, which an unmerged branch would refuse.
         round_read land "$id" --dry-run
         page_specs "$id"
         shown=("${specs[@]}")
         land_on_github "$id" "${unmerged[@]}" || asked=1
     fi
 
-    # The worker's words, the agent merge, the status and the ranges follow the branches, decided
-    # and committed by the tracker. A round whose branches carry no commit at all built nothing:
-    # there is no range, nothing to render and nothing to rule on, which is a worker that stopped
-    # before its first commit.
+    # A round with no commit on any branch has nothing to render.
     round_read "${landing[@]}"
     [ ${#written[@]} -gt 0 ] || return 0
     up=$(field "$id" parent)
@@ -872,8 +743,7 @@ landed_round() { # <slug> <land|accept> <its arguments...>
     page_specs "$id"
     render_page "$id" "${shown[@]}"
     [ -z "$retiring" ] || retire_trees
-    # The board shows the status just written, and links the page. It is found on PATH, as diffview
-    # is: the plugin that puts `dispatch` there puts `board` beside it.
+    # On PATH beside `dispatch`, as diffview is.
     run board "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
     # shellcheck disable=SC2086
@@ -881,20 +751,15 @@ landed_round() { # <slug> <land|accept> <its arguments...>
     [ -z "$kept" ] && [ "$asked" -eq 0 ]
 }
 
-# What a done ticket's run left, on its host and here, since a done ticket has nothing left to
-# resume: `ctl cleanup` on its host, then both ticket/<slug> branches here, and each listed repo's
-# once it has merged there. The run stays on its host while a listed repo the host holds for the
-# ticket, which its repos: no longer names, has a branch missing here or not merged; on a local
-# host only one not merged keeps it. A retirement that fails says so with the command that tries
-# again, and the `done` stands. The run is found under $base, the branch it was spawned from,
-# which `accept` sets to the parent's for each child.
+# Removes a done ticket's run: `ctl cleanup` on its host, then each ticket/<slug> branch here that
+# has merged. Stops, saying how to retry, at a branch missing here or not merged. Finds the run
+# under $base, which `accept` sets to the parent's for each child.
 retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: names>...]
     local h top name tip
     h=$(host_of "$1")
     if [ -n "$h" ]; then
-        # The host's cleanup deletes the branch of each listed repo it holds for the ticket. One its
-        # repos: names was fetched, and merged or landed, before this `done`; one it no longer names
-        # was in no round, so its branch has to be here, and merged, first.
+        # The host's cleanup deletes every listed branch it holds; one repos: no longer names was
+        # in no round, so it must be here and merged first.
         for name in $(on_host "$h" cat "$(scratch_dir "$h")/repos-$1" 2> /dev/null | cut -f1); do
             [[ " ${*:3} " != *" $name "* ]] || continue
             [ ${#listed_top[@]} -gt 0 ] || listed "$2"
@@ -912,16 +777,15 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
         pull_runs "$h"
         forget_run "$1"
     fi
-    # A local host's cleanup has deleted these already: they were the branches its worktrees held.
+    # A local host's cleanup has deleted these already.
     for at in code agent; do
         tip=$(git -C "$(repo_at "$at")" rev-parse -q --verify "refs/heads/ticket/$1") || continue
         landed "$at" "$tip" ||
             { echo "dispatch: ticket/$1 in the $at repo is merged into neither $(base_at "$at") nor the branch out here, so it stays" >&2; return 1; }
         run git -C "$(repo_at "$at")" branch -q -D "ticket/$1" || return 1
     done
-    # In every listed repo the caller has read the list of (`listed`): the ticket file that names its
-    # repos may be retired by now. A listed repo's checkout here has whatever branch out, so `-d`
-    # would read the merge off that; the merge is read off the branch it lands in instead.
+    # Every listed repo the caller read (`listed`), as the ticket file may be retired by now. -D after
+    # `is_merged`, since `-d` would check the merge against whatever branch is out.
     local rc=0
     for name in "${!listed_top[@]}"; do
         tip=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/ticket/$1") || continue
@@ -935,15 +799,11 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
     return $rc
 }
 
-# The run of every ticket that is `done` or has left the tracker, retired (`retire`) whoever wrote
-# the `done` and whichever branch the run was spawned from: one written by `tracker` itself, or a
-# tree `tracker retire` took out, leaves a run nothing else would ever come back to. A run whose
-# worker is running stays, and so does one holding work not merged into a branch here (`retirable`);
-# each says why on every sweep until that changes.
+# Retires the run of every ticket `done` or gone from the tracker, from any branch, where
+# `retirable` allows; each run that stays says why.
 sweep() {
     local spawned slug h
-    # Each scratch dir probed once, and a host that does not answer asked nothing more, so a host
-    # that is off costs a sweep one connect timeout however many runs it holds.
+    # One probe per scratch dir; a host that does not answer is asked nothing more.
     local -A probed=() down=()
     [ -f "$runs" ] || return 0
     read_tracker || { echo "dispatch: the tracker did not read, so no run of a done ticket was retired" >&2; return 0; }
@@ -954,8 +814,7 @@ sweep() {
             probed["$spawned $h"]=$(base=$spawned; on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" probe 2> /dev/null)
             [ $? -ne 255 ] || { down[$h]=1; echo "dispatch: $h did not answer, so its runs of tickets done or out of the tracker stay" >&2; continue; }
         fi
-        # A subshell each: the run is found under the branch it was spawned from, and one that
-        # stays stops no other.
+        # A subshell each, with $base the run's own, so one that stays stops no other.
         ( base=$spawned; retire_swept "$slug" "$h" "${probed["$spawned $h"]}" )
     done < <(awk -F'\t' '{ at[$1 FS $2] = $3 } END { for (k in at) print k FS at[k] }' "$runs")
 }
@@ -972,9 +831,8 @@ retire_swept() { # <slug> <host> <the probe of its scratch dir there>
     retire "$1" "$up" $(field "$1" repos)
 }
 
-# Whether <slug>'s run on <host> may go; where it may not, exit 1 and why: its worker is running,
-# or a branch the host holds for the ticket, in the code repo, the agent repo or a listed repo, has
-# a tip this machine lacks or one that has not `landed`. A read that fails keeps the run as well.
+# Whether <slug>'s run on <host> may go; exit 1 and why where its worker runs, or a branch the host
+# holds for it has a tip this machine lacks or that has not `landed`, or a read fails.
 retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its scratch dir there>
     local state at top tip onto
     state=$(awk -v n="dispatch-$repo-$1" '$1 == n { print $2 }' <<< "$4")
@@ -998,15 +856,11 @@ retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its 
     done
 }
 
-# The user's accept of a parent ticket ruled whole, written and committed by the tracker (`tracker
-# accept --help`), which refuses the whole while one ticket of it may not be done. A squashed or
-# rebased pull request of the parent's own branch in a listed repo leaves that branch unmerged for
-# good, as a ticket branch is in `review`: what landed is recorded first, on it and on the tickets
-# under it, and the branches it carried deleted, so the accept finds them landed.
+# `tracker accept` on <slug>, then retires its trees and each child's run. A childless ticket goes
+# through `landed_round`; a parent's squashed or rebased PRs are recorded first (`land_on_github`).
 accept() { # <slug>
     locate --read
     id=$1
-    # A ticket ruled alone lands as a review does, through its accept.
     if [ -z "$(jq -r --arg p "$id" '.tickets[] | select(.parent == $p) | .slug' <<< "$tracked")" ]; then
         landed_round "$id" accept "$id"
         return
@@ -1019,14 +873,13 @@ accept() { # <slug>
             is_merged "$name" "$own" || unmerged+=("$name")
         done
         [ ${#unmerged[@]} -eq 0 ] || land_on_github "$id" "${unmerged[@]}"
-        # Each child merged its listed repos into this ticket's branch there, which is where retire
-        # reads the merge.
+        # Each child's listed branches merged into this ticket's branch, where retire checks them.
         listed "$id"
     fi
     tracked=$(run "$tracker" accept "$id") || exit 1
     retire_trees
     run board "$tickets" --no-watch --no-open
-    # Each child ran from the parent's branch, so that is where its run is recorded.
+    # Each child's run is recorded under the parent's branch.
     rc=0
     for child in $(jq -r --arg p "$id" '.tickets[] | select(.slug != $p) | .slug' <<< "$tracked"); do
         # shellcheck disable=SC2046
@@ -1035,15 +888,9 @@ accept() { # <slug>
     return $rc
 }
 
-# What a squash or a rebase merge on GitHub landed as, recorded in place of what the ticket branch
-# carried: such a merge leaves the branch unmerged for good and its commits on no trunk,
-# so neither the range read off the branch nor the done check would ever hold. GitHub is
-# asked about <slug>'s `gh:` pull requests in <names>, the listed repos whose branch is unmerged,
-# and nothing else: a ticket whose listed branches have all merged asks it nothing. Each repo a
-# squash or a rebase rewrote has its ranges replaced by what landed (`record_landed`) and the branches
-# the pull request carried deleted (`drop_carried`). Sets `changed` where it wrote a range or deleted
-# a branch; nonzero for a pull request it could not read, and for a branch holding commits its pull
-# request did not carry. A pull request not merged yet is said and changes nothing.
+# For <slug>'s `gh:` PRs in the unmerged listed repos <name>s, merged by squash or rebase: records
+# what landed in place of the branch's range (`record_landed`) and deletes the branches the PR
+# carried (`drop_carried`). Nonzero for a PR it could not read or a branch with commits it lacked.
 land_on_github() { # <slug> <name...>
     local id=$1 refs ref url at name under own rc=0
     shift
@@ -1056,14 +903,12 @@ land_on_github() { # <slug> <name...>
     for ref in $refs; do
         at=${ref%#*}
         name=${on_github[${at,,}]-}
-        # A pull request in a listed repo whose branch merged has nothing left to say.
+        # Skips a PR in a listed repo whose branch merged.
         [ -z "$name" ] || [[ " $* " == *" $name "* ]] || continue
         pr_landed "$ref" || rc=1
     done
-    # A parent ticket's pull request carries its own branch, named by its slug alone as the done
-    # check reads it, and with it the work the tickets under it merged into that branch: theirs is
-    # recorded and deleted the same way, so the parent's accept finds them landed. Each one's ranges
-    # are read from the whole tracker, read here.
+    # A parent's PR carries its <slug> branch with its descendants' work merged in, so theirs is
+    # recorded and deleted the same way; the whole tracker is read for their ranges.
     read_tracker || exit 1
     under=$(jq -r --arg p "$id" '[.tickets[]] as $t | def under($s): $t[] | select(.parent == $s) | (.slug, under(.slug)); under($p)' <<< "$tracked")
     record_landed "$id" append
@@ -1088,10 +933,8 @@ github_of() { # <url>
     printf '%s\n' "${u#"${u%/*/*}/"}" | tr '[:upper:]' '[:lower:]'
 }
 
-# <slug>'s `diff:` with the ranges in each repo a pull request rewrote replaced by what landed there,
-# where the first of them stood, written and committed where that changes it, which sets `changed`.
-# With `append`, a repo the ticket records no range in gets what landed too: a squashed branch never
-# merged, so no review recorded it.
+# Writes <slug>'s `diff:` with each rewritten repo's ranges replaced, in place, by what landed there;
+# sets `changed` where that changes it. `append` also adds what landed in a repo with no range yet.
 record_landed() { # <slug> [append]
     local rounds ranges=() placed=() r name joined
     mapfile -t rounds < <(rounds_of "$1")
@@ -1113,9 +956,8 @@ record_landed() { # <slug> [append]
     changed=1
 }
 
-# <branch> in the listed repo <name>, deleted where the pull request carried its tip: it landed
-# whole, as commits it no longer holds, and left here the done check would find it unmerged for good.
-# One holding commits the pull request did not carry stays, and sets `rc`; a deletion sets `changed`.
+# Deletes <branch> in listed repo <name> where its PR carried its tip, setting `changed`; one with
+# commits the PR lacked stays and sets `rc`.
 drop_carried() { # <name> <branch>
     local tip
     tip=$(git -C "${listed_top[$1]}" rev-parse -q --verify "refs/heads/$2") || return 0
@@ -1132,11 +974,9 @@ drop_carried() { # <name> <branch>
 declare -A on_github=() landed_in=() rewritten=() held=() carried=()
 order=()
 
-# What GitHub says <ref>'s pull request landed as, in the listed repo whose origin it is on: its
-# range in `landed_in`, with `rewritten` set for a squash or a rebase merge, and the commits it
-# carried in `carried`. A pull request not merged yet, or one GitHub or origin cannot vouch for, sets
-# `held`, so that repo's ranges stay as they are; only the second returns nonzero, since the first
-# is every review before the team merges. One in no listed repo is said and changes nothing.
+# Reads what <ref>'s PR landed as into its listed repo's `landed_in` range and `carried` commits,
+# setting `rewritten` for a squash or rebase merge. An unmerged PR sets `held`; one GitHub or origin
+# cannot confirm sets `held` and returns nonzero.
 pr_landed() { # <ref>
     local repo=${1%#*} number=${1##*#} name top said merge onto parents count start kind
     name=${on_github[${repo,,}]-}
@@ -1174,15 +1014,12 @@ pr_landed() { # <ref>
     rewritten[$name]=1
 }
 
-# ps, attach and peek: the hosts as a human looking in reads them. dispatch-ps
-# is the half that runs on a host.
+# ps, attach and peek; dispatch-ps is the part that runs on each host.
 
-# This machine as the register names it (`self`, set by gather) is the same home
-# as `local`, and read without ssh whichever of the two names a row carries.
+# `local` for this machine under its register name (`self`), so it is read without ssh.
 via() { if [ "$1" = "$self" ]; then echo local; else echo "$1"; fi; } # <host> → what on_host takes
 
-# A command on a host of the table, against the tmux server a worker host runs
-# its workers on: the user's default one, whichever the caller sits in.
+# A command on a host, against its default tmux server, whichever server the caller is in.
 look() { ( unset TMUX; on_host "$(via "$1")" "${@:2}" ) } # <host> <command...>
 
 # Every host the register publishes and every host this repo's runs name, once
@@ -1201,8 +1038,7 @@ fleet() { # <published>
 fleet_hosts() {
     local published= register_error=
     self=$(id -un)@$(uname -n)
-    # Asked here and not inside fleet: output captured from a function runs in a
-    # subshell, and a failure noticed there would not survive the trip back.
+    # Here, not in fleet, whose captured output runs in a subshell that would lose the failure.
     if command -v worker-hosts >/dev/null 2>&1; then
         published=$(worker-hosts --targets) ||
             register_error="worker-hosts --targets failed (exit $?): the hosts listed are only the ones this repo has run on"
@@ -1231,16 +1067,13 @@ unanswered() { # <host> <status>
     host_row "$1" unreachable "$why"
 }
 
-# Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
-# front), and `missing`, what went unread. Every scratch dir on every host is
-# read, whichever repo and branch it is for, so ps, attach and peek run from any
-# branch.
+# Sets `rows`, dispatch-ps's row per worker with its host in front, and `missing`, what went
+# unread, over every scratch dir of every repo and branch on every host.
 gather() {
     local i rc
     fleet_hosts
-    # One round trip per host, all at once: a host that is off costs its connect
-    # timeout, and costs it alone. Global, since the trap fires after this
-    # returns; removed below as well, before an attach execs the trap away.
+    # Every host at once, so one that is off costs only its own timeout. Global, for the trap;
+    # removed below too, since an attach execs the trap away.
     answers=$(mktemp -d) || die "no temp dir for the hosts' answers"
     trap 'rm -rf "${answers:-}"' EXIT
     for i in "${!hosts[@]}"; do
@@ -1250,8 +1083,7 @@ gather() {
     done
     wait
     for i in "${!hosts[@]}"; do
-        # A missing status is a job that never finished, not a host with nothing
-        # running.
+        # A missing status is a connection that never finished.
         rc=$(cat "$answers/$i.rc" 2>/dev/null)
         [[ $rc =~ ^[0-9]+$ ]] || rc=255
         if [ "$rc" -ne 0 ]; then
@@ -1261,17 +1093,14 @@ gather() {
         fi
         [ -s "$answers/$i" ] &&
             mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${hosts[$i]}" '{ print h "\t" $0 }' "$answers/$i")
-        # A scratch dir whose probe failed there is runs unread on a host that did
-        # answer.
+        # An `unreadable` scratch dir on a host that answered.
         mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${hosts[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
     done
     rm -rf "$answers"
 }
 
-# One row per worker under a header naming the columns, then a count per state, running and
-# exited always there, zero or not. A host that did not answer is an `unreachable` row, a scratch
-# dir whose probe failed an `unreadable` one, a `worker-hosts --targets` that failed an
-# `incomplete` one. In color on a terminal, or with --color; NO_COLOR turns it off.
+# A row per worker, then a count per state; what went unread is an `unreachable`, `unreadable` or
+# `incomplete` row. In color on a terminal or with --color, unless NO_COLOR.
 ps_() {
     local following=
     color=
@@ -1288,15 +1117,12 @@ ps_() {
     gather
     measure
     { [ ${#rows[@]} -eq 0 ] || printf '%s\n' "${rows[@]}"; } | table
-    # A table missing a host is no clean reading, and a caller should not have
-    # to spot the row to know it.
+    # Nonzero when anything went unread.
     [ ${#missing[@]} -eq 0 ]
 }
 
-# Sets `cols`, the width the table is cut to, so a long worklog line keeps the
-# table a table: the terminal's, or under `watch`, which runs this with no
-# terminal, COLUMNS, which a shell does not export. Piped anywhere else, 0: a
-# row goes out whole. Sets `lines` the same way, the height a follow fits into.
+# Sets `cols` and `lines`, the size the table is cut to: the terminal's, else COLUMNS and LINES
+# where set (as under `watch`), else 0, uncut.
 measure() {
     cols=0 lines=0
     if [ -t 1 ]; then
@@ -1308,11 +1134,8 @@ measure() {
     fi
 }
 
-# The table ps prints, from gather's rows on stdin: running workers first,
-# exited ones last and the rest between, each youngest first by age, then by
-# idle time. Cut to `cols` and painted when `color` is set. With `folded` set
-# and a width known, the workers that exited cleanly fold into a few lines per
-# host and base, each ticket beside its idle time.
+# Prints gather's rows from stdin as a table: running first, exited last, youngest first; cut to
+# `cols`, painted with `color`. `folded` packs the cleanly exited onto a few lines per host and base.
 table() {
     awk -F'\t' '{ print ($4 == "running" ? 0 : $4 == "exited" ? 2 : 1) "\t" $0 }' |
         sort -t$'\t' -k1,1n -k6,6n -k7,7n -k2,2 -k3,3 -k4,4 | cut -f2- |
@@ -1396,11 +1219,8 @@ table() {
         }'
 }
 
-# ps --follow: one connection per host, with dispatch-ps --follow at the other
-# end, and the table drawn again every second from each host's latest frame,
-# whose ages count on from the second it arrived. A host that has not answered
-# yet is a `connecting` row. The hosts are read again every half minute, which
-# costs no login.
+# ps --follow: a dispatch-ps --follow connection per host, the table redrawn every second from
+# each host's latest frame, its ages counted on from its arrival. The host list is reread every 30s.
 follow() {
     local h now drawing out fresh shown= asked=$SECONDS
     fleet_hosts
@@ -1412,8 +1232,7 @@ follow() {
     printf '\033[H\033[2J'
     while :; do
         if [ $((SECONDS - asked)) -ge 30 ]; then
-            # In a subshell, so a read that dies keeps the hosts already there
-            # instead of ending the follow.
+            # A subshell, so a failed read keeps the hosts there rather than ending the follow.
             if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}"); then
                 mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
                 mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
@@ -1432,8 +1251,7 @@ follow() {
                 { sub(/^[^\t]*\t/, ""); print }')
         out=$(printf '%s' "$drawing" | table)
         fit
-        # Over what was there, each line cleared to its end, so a redraw
-        # does not flicker.
+        # Drawn over the last frame, each line cleared to its end, so it does not flicker.
         [ "$out" = "$shown" ] || printf '\033[H%s\033[K\033[J' "${out//$'\n'/$'\033[K\n'}"
         shown=$out
         sleep 1 & wait $!
@@ -1460,9 +1278,7 @@ follow_fleet() {
     done
 }
 
-# Fits `out`, the table drawn from `drawing`, to `lines`, since a table taller
-# than the screen would scroll on every draw: folded first, then cut below its
-# header and above its tally where the fold is not enough.
+# Fits `out` to `lines`, so it never scrolls: folded first, then cut between header and tally.
 fit() {
     local -a drawn
     [ "$lines" -ge 5 ] || return 0
@@ -1482,8 +1298,7 @@ follow_host() { # <host>
     local conn pid= opened rc delay=2 pipe=$frames/$1.pipe
     trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null; exit 0' TERM
     unset TMUX
-    # A plain command, so the pid is the connection's own and the trap's kill
-    # reaches it.
+    # A plain command, so its pid is the connection's and the trap's kill reaches it.
     if [ "$(via "$1")" = local ]; then
         conn=(bash -s "$state_root" --follow)
     else
@@ -1541,8 +1356,7 @@ resolve() { # <worker>
     [ $# -ge 1 ] || die "$cmd takes a worker: a ticket's slug, as \`dispatch ps\` lists them"
     gather
     local -a hits
-    # Forced to strings: awk compares two strnums as numbers, and `1` is not
-    # the ticket `01`.
+    # Compared as strings, or awk would match ticket `01` to `1`.
     mapfile -t hits < <(printf '%s\n' "${rows[@]}" | awk -F'\t' -v q="$1" '
         $3 != "-" &&
         (q "" == $3 "" || q "" == $7 "" || q "" == $1 "/" $3 || q "" == $1 "/" $7)')
@@ -1551,8 +1365,7 @@ resolve() { # <worker>
         die "no worker called \`$1\`; \`dispatch ps\` lists them"
     fi
     if [ ${#hits[@]} -gt 1 ]; then
-        # Each with the form that names it alone: its host and slug, or its host
-        # and session where two repos on one host hold the slug.
+        # Each as host/slug, or host/session where one host holds the slug twice.
         echo "dispatch: \`$1\` is ${#hits[@]} workers; name the one you mean:" >&2
         printf '%s\n' "${hits[@]}" | awk -F'\t' -v cmd="$cmd" '
             { h[NR] = $1; b[NR] = $2; t[NR] = $3; s[NR] = $7; seen[$1 "/" $3]++ }
@@ -1566,9 +1379,7 @@ resolve() { # <worker>
     echo "$r_host  $r_base  $r_ticket  $r_state  $r_session" >&2
 }
 
-# The pane is opened as the user that runs it there. A Ctrl-C in it ends the run as `ctl stop`
-# does, resumable; whatever is typed into it while the runner runs, the pane's shell runs once the
-# runner exits.
+# Opens the pane. What is typed into it while the runner runs, its shell runs once the runner exits.
 attach() {
     resolve "$@"
     if [ -n "${TMUX:-}" ]; then
@@ -1587,12 +1398,8 @@ peek() {
     lines=${2:-100}
     [[ $lines =~ ^[0-9]+$ ]] || die "peek takes a number of lines, not \`$lines\`"
     resolve "$@"
-    # `=name:` is the session by its exact name, at its current window: a bare
-    # name would also take a longer one that starts the same way. The capture
-    # is the history asked for plus the whole screen, blank rows under the
-    # cursor included, so its last written <lines> are cut out of it here.
-    # Captured whole before it is cut: a session that ended since the read above,
-    # or a connection that dropped, is a failure, not an empty pane.
+    # The capture is the history plus the screen, blank rows included, so the last <lines> written
+    # are cut out below; captured first, so a failure is not an empty pane.
     pane=$(look "$r_host" tmux capture-pane -p -J -t "=$r_session:" -S "-$lines") ||
         die "could not read the pane of $r_session on $r_host"
     printf '%s\n' "$pane" | awk -v n="$lines" '
