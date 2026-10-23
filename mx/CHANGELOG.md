@@ -1,3 +1,7 @@
+## 1.0.79
+
+- feat(mx): /mx:pickup starts a session from a handoff's path
+
 ## 1.0.78
 
 - "Brief" means a ticket's, and what an agent is handed is its prompt
