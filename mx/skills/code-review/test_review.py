@@ -19,11 +19,11 @@ differently from one that reported, and that a flag before the fixed point is re
 import json
 import os
 import re
+import select
 import shutil
 import signal
 import subprocess
 import sys
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -35,6 +35,7 @@ FAKE_CLAUDE = r"""#!/usr/bin/env bash
 prompt=$(cat)
 report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/mx/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
 printf '%s\n' "$@" > "$FAKE_ARGV"
+[ -z "${FAKE_STARTED:-}" ] || echo > "$FAKE_STARTED"
 sleep "${FAKE_REVIEW_SECS:-0}"
 if [ -n "${FAKE_DIES:-}" ] && [[ $report == */$FAKE_DIES.md ]]; then
     echo "# Review" > "$report"
@@ -96,14 +97,16 @@ def running(repo: Path, *args: str):
     """A review whose reviewer works for 30 s, in its own process group so it can be killed whole,
     as a crash would; yielded once its reviewer has started, and killed on the way out."""
     argv_file(repo).unlink(missing_ok=True)
-    proc = subprocess.Popen(**command(repo, 30, args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            start_new_session=True)
+    # The reviewer says it started down a pipe. The check holds a write end of its own, so the pipe
+    # reads as empty until then rather than as closed, and no reviewer blocks writing to it.
+    started = repo.parent / "started"
+    started.unlink(missing_ok=True)
+    os.mkfifo(started)
+    ends = os.open(started, os.O_RDONLY | os.O_NONBLOCK), os.open(started, os.O_WRONLY)
+    proc = subprocess.Popen(**command(repo, 30, args, FAKE_STARTED=str(started)), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, start_new_session=True)
     try:
-        for _ in range(200):
-            if argv_file(repo).exists():
-                break
-            time.sleep(0.05)
-        else:
+        if not select.select(ends[:1], [], [], 60)[0]:
             raise AssertionError("the reviewer never started")
         yield proc
     finally:
@@ -112,6 +115,8 @@ def running(repo: Path, *args: str):
         except ProcessLookupError:
             pass
         proc.wait()
+        for end in ends:
+            os.close(end)
 
 
 def killed(repo: Path, *args: str) -> None:

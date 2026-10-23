@@ -18,6 +18,7 @@ import io
 import json
 import os
 import re
+import select
 import socket
 import shutil
 import subprocess
@@ -46,18 +47,32 @@ from stop_hook import decide
 
 
 @pytest.fixture(autouse=True)
-def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
     """A `claude-browser` first on PATH that appends each open it is asked for to the file handed
-    back, as the session it was told and the path, so no check starts a browser. No hub answers on
-    the port the hook asks, so no check reaches one running on the host."""
+    back, as the session it was told and the path, so no check starts a browser, then says so down
+    the pipe beside it. No hub answers on the port the hook asks, so no check reaches one running
+    on the host."""
     where = tmp_path / "browser"
     where.mkdir()
+    os.mkfifo(where / "landed")
     (where / "claude-browser").write_text(
-        f'#!/usr/bin/env bash\nprintf \'%s\\t%s\\n\' "$MX_ORIGIN_SESSION" "$*" >> "{where}/opened"\n')
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        f"with open({str(where / 'opened')!r}, 'a') as record:\n"
+        "    record.write(os.environ['MX_ORIGIN_SESSION'] + '\\t' + ' '.join(sys.argv[1:]) + '\\n')\n"
+        "try:\n"
+        f"    os.write(os.open({str(where / 'landed')!r}, os.O_WRONLY | os.O_NONBLOCK), b'.')\n"
+        "except OSError:\n"
+        "    pass  # the check that would read it is over\n")
     (where / "claude-browser").chmod(0o755)
     monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("CONTAINER_HUB_PORT", str(closed_port()))
-    return where / "opened"
+    # Held for the check's length: a read end, so the stand-in's write lands, and a write end, so
+    # the pipe reads as empty between opens rather than as closed.
+    ends = os.open(where / "landed", os.O_RDONLY | os.O_NONBLOCK), os.open(where / "landed", os.O_WRONLY)
+    yield where / "opened"
+    for end in ends:
+        os.close(end)
 
 
 def closed_port() -> int:
@@ -69,13 +84,20 @@ def closed_port() -> int:
 
 def opened(record: Path, count: int) -> list[tuple[str, str]]:
     """What the stand-in browser was asked to open, as (session, path) in the order the opens
-    landed, once `count` have landed or five seconds have passed: the hook starts each open and
-    waits on none. An open beyond the count may land later, so what proves none was asked for is
-    the log, which `main` writes before it returns."""
-    deadline = time.monotonic() + 5
-    while (len(record.read_text().splitlines()) if record.exists() else 0) < count and time.monotonic() < deadline:
-        time.sleep(0.05)
-    return [tuple(line.split("\t", 1)) for line in record.read_text().splitlines()] if record.exists() else []
+    landed, once `count` have landed: the hook starts each open and waits on none. An open beyond
+    the count may land later, so what proves none was asked for is the log, which `main` writes
+    before it returns."""
+
+    def landed() -> list[tuple[str, str]]:
+        return [tuple(line.split("\t", 1)) for line in record.read_text().splitlines()] if record.exists() else []
+
+    pipe = os.open(record.parent / "landed", os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        while len(landed()) < count and select.select([pipe], [], [], 60)[0]:
+            os.read(pipe, 4096)
+    finally:
+        os.close(pipe)
+    return landed()
 
 
 @pytest.fixture
@@ -363,7 +385,7 @@ def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not
     """stop-hook-opens-the-turns-artefacts' D4 leaves a turn's artefacts out of it: with no hub, a
     render after the first hands `claude-browser` the artefact its turn linked and not the page."""
     run(payload(worked_example, transcript))
-    first = len(opened(browser, 3))
+    first = len(opened(browser, sum(entry["opened"].startswith("started ") for entry in logged(attended, "opened"))))
     record = worked_example / "turns" / "05.md"
     record.write_text(RECORD_05 + "\n## Links\n\n- [The figure](/srv/figures/fig.svg)\n")
     with_write(unrecorded, "Write", record)

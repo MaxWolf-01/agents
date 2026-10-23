@@ -143,6 +143,9 @@ def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: 
     run = subprocess.run(
         [str(LINT), f"{page}{at}", "--json", *flags, *(["--crops", str(crops)] if crops else [])],
         capture_output=True, text=True, env=os.environ | (env or {}),
+        # past the browser's launch limit (Playwright's 180 s) and the page's patience, so a run
+        # that went on waiting fails the check rather than holding up the suite
+        timeout=300,
     )
     assert run.returncode in (0, 1, 2) and run.stdout, run.stderr
     return run.returncode, json.loads(run.stdout)
@@ -586,22 +589,21 @@ def test_a_page_measured_from_its_copies_no_longer_waits_on_the_server_they_came
     remote.hanging.set()
     code, findings = lint(tmp_path, remote.page, "--patience", "2")
     assert kinds(findings) == ["unmeasurable"] and findings[0]["text"] == "still loading after 2s"
-    code, findings = lint(tmp_path, remote.page, "--cache", str(cache), "--patience", "2")
+    code, findings = lint(tmp_path, remote.page, "--cache", str(cache))
     assert kinds(findings) == ["overlap"] and code == 1
 
 
 def test_a_script_behind_a_redirect_is_kept_with_the_redirect(tmp_path, remote):
     moved, cache = remote.page.replace("labels.js", "moved.js"), str(tmp_path / "cache")
-    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5")
+    code, findings = lint(tmp_path, moved, "--cache", cache)
     assert kinds(findings) == ["overlap"] and code == 1
-    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5", env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    code, findings = lint(tmp_path, moved, "--cache", cache, env={"MX_PAGE_CACHE_OFFLINE": "1"})
     assert kinds(findings) == ["overlap"] and code == 1, "the redirect was not kept, so the page lost its script offline"
 
 
 def test_with_the_network_cut_off_a_page_without_its_copy_is_measured_without_the_script(tmp_path, remote):
     remote.hanging.set()
-    code, findings = lint(tmp_path, remote.page, "--cache", str(tmp_path / "cache"), "--patience", "2",
-                          env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    code, findings = lint(tmp_path, remote.page, "--cache", str(tmp_path / "cache"), env={"MX_PAGE_CACHE_OFFLINE": "1"})
     assert findings == [] and code == 0
 
 
