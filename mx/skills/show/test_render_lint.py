@@ -108,7 +108,8 @@ TWO_SCREENS = """
 # the badge beside it, and the feature tag is cut off by its box. `?fixed` lays the same marks
 # out on a grid, where each gets its own track. The offsets hold for any face whose glyphs average
 # 0.40em (Times) to 0.62em (a monospace one): each long title ends past its badge's text and short
-# of the chip, and on the grid fits its track, while the longest tag overruns its box.
+# of the chip, and on the grid fits its track, while the long tag overruns its box and the short
+# ones fit theirs.
 BOARD_ROWS = """
 <style>
   .rows { width: 56rem; margin: 2rem }
@@ -127,8 +128,8 @@ BOARD_ROWS = """
   .ftag, .badge, .chip { border: 1px solid; padding: 0 0.4rem }
 </style>
 <div class="rows">
-  <div class="row"><span class="ftag">board-orients</span><span class="num">02</span><span class="title">Rows</span><span class="badge">claimed</span><span class="chip">01</span></div>
-  <div class="row"><span class="ftag">board-orients</span><span class="num">03</span><span class="title">Open questions on a ticket, and the needs-me group they put it into</span><span class="badge">open</span><span class="chip">01</span></div>
+  <div class="row"><span class="ftag">board</span><span class="num">02</span><span class="title">Rows</span><span class="badge">claimed</span><span class="chip">01</span></div>
+  <div class="row"><span class="ftag">board</span><span class="num">03</span><span class="title">Open questions on a ticket, and the needs-me group they put it into</span><span class="badge">open</span><span class="chip">01</span></div>
   <div class="row"><span class="ftag">render-lint-html-overlap</span><span class="num">—</span><span class="title">render-lint sees HTML text colliding, and says what a box cuts off</span><span class="badge">claimed</span><span class="chip">—</span></div>
 </div>
 <script>if (new URLSearchParams(location.search).has("fixed")) document.body.classList.add("fixed")</script>
@@ -158,8 +159,8 @@ def png_size(path: Path) -> tuple[int, int]:
 
 
 def test_board_row_marks_at_their_own_offsets_collide_and_the_tag_box_cuts_its_tag_off(tmp_path):
-    """The page that showed render-lint seeing HTML text collide: each long title runs under the
-    badge in its row, and the feature tag too long for its box is cut off."""
+    """Each long title runs under the badge in its row, and the feature tag too long for its box is
+    cut off by that box."""
     code, findings = lint(tmp_path, BOARD_ROWS)
     assert {(f["kind"], frozenset(f["text"].split(" | "))) for f in findings} == {
         ("clipped", frozenset({"render-lint-html-overlap"})),
