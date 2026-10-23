@@ -1,7 +1,6 @@
 ---
-status: done
+status: review
 parent: csv-import
-hinge: true
 priority: 1
 size: M
 ---
@@ -11,8 +10,8 @@ size: M
 ## Brief
 
 The first slice an account holder can drive: a CSV goes in and a report comes back, naming every line
-the mapping could not read. Nothing is stored yet, so a wrong mapping costs nothing. A hinge: the
-mapping and the commit both read the report's shape.
+the mapping could not read. Nothing is stored yet, so a wrong mapping costs nothing. The mapping
+and the commit both read the report's shape.
 
 ## Acceptance criteria
 

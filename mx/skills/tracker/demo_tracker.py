@@ -11,7 +11,7 @@ so that each of a row's marks is laid out somewhere.
 Three trees (a parent ticket with six child tickets, one with three, one at its close-out with
 two) and eleven tickets in no tree, two builds waiting on a ruling with their branches unmerged
 and their questions in the tracker's copy, where `dispatch review` imported them from the worker's
-report, one of them a hinge, a child in review merged into the branch of a parent still being
+report, a child in review merged into the branch of a parent still being
 built, a parent ticket at its close-out whose children are ruled with it, one of them asking a
 question, one build stopped on two questions of which one is ruled, one ticket whose only
 question is ruled, one ticket with no question at all, review pages beside the tickets,
@@ -157,7 +157,6 @@ A reader for the four export formats the users' banks produce, returning rows an
 status: open
 parent: csv-import
 blocked-by: [parse-rows]
-hinge: true
 priority: 1
 size: M
 gh: [ledger-org/ledger#57]
@@ -326,7 +325,7 @@ Three layouts for the list of saved views are drawn side by side; you pick one b
 """)
 
 
-# ---- the tree month-close: a parent ticket ruled whole at its close-out, a hinge ruled alone before it ----
+# ---- the tree month-close: a parent ticket ruled whole at its close-out ----
 
 
 def month_close(repo: Path) -> None:
@@ -345,7 +344,6 @@ A closed month can no longer be edited, and its closing balances open the next o
     write(repo / "agent/tickets/lock-period.md", """---
 status: open
 parent: month-close
-hinge: true
 priority: 2
 size: S
 ---
@@ -660,10 +658,8 @@ def merged_under_parent(repo: Path) -> None:
 
 
 def closed_out(repo: Path) -> None:
-    """month-close at its close-out: lock-period, the hinge, was ruled alone and is done; the rest
-    waits in review for the ruling on the whole."""
-    set_status(repo / "agent/tickets/lock-period.md", "done")
-    for waiting in ("month-close", "carry-balances"):
+    """month-close at its close-out: it and its children wait in review for the ruling on the whole."""
+    for waiting in ("month-close", "lock-period", "carry-balances"):
         set_status(repo / f"agent/tickets/{waiting}.md", "review")
     append(repo / "agent/tickets/carry-balances.md", """
 ## Questions
