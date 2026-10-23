@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -142,7 +142,7 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		writeFileSync(instructions, "the instructions as an earlier start copied them");
 		// A tmux whose server runs no session yet: it records each call, one argument a line, and refuses has-session.
 		writeFileSync(path.join(bin, "tmux"), `#!/bin/sh\nprintf '%s\\n' "$@" '--' >> "${calls}"\n[ "$1" = has-session ] && exit 1\nexit 0\n`, { mode: 0o755 });
-		const env = { PATH: `${bin}:${process.env.PATH}`, HOME: at, HV_STORE: hvStore, OPTCHAT_FORK: fork, ANTHROPIC_OAUTH_TOKEN: "token" };
+		const env = { PATH: `${bin}:${process.env.PATH}`, HOME: at, HV_STORE: hvStore, OPTCHAT_FORK: fork };
 		const ran = spawnSync(path.resolve(import.meta.dirname, "../../hv"), [], { env, encoding: "utf8" });
 		assert.equal(ran.status, 0, ran.stderr);
 		const started = readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session");
@@ -177,28 +177,57 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 	}
 });
 
-test("hv signs pi in with max's personal account's setup-token, and with none while that token is not minted", () => {
+test("hv writes max's personal account's setup-token as pi's anthropic entry, keeping the other providers, and leaves the entry alone while no token is minted", () => {
 	const at = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-token-")));
 	try {
-		const bin = path.join(at, "bin"), fork = path.join(at, "fork"), calls = path.join(at, "tmux.calls");
-		const creds = path.join(at, ".dotfiles", "secrets", "creds", "env");
-		for (const dir of [bin, path.join(fork, "src"), creds]) mkdirSync(dir, { recursive: true });
+		const bin = path.join(at, "bin"), fork = path.join(at, "fork"), calls = path.join(at, "tmux.calls"), key = path.join(at, "age-key.txt");
+		const creds = path.join(at, ".dotfiles", "secrets", "creds", "env"), piDir = path.join(at, "store", "optchat-pi"), auth = path.join(piDir, "auth.json");
+		for (const dir of [bin, path.join(fork, "src"), creds, piDir]) mkdirSync(dir, { recursive: true });
 		writeFileSync(path.join(fork, "src", "index.ts"), "");
 		writeFileSync(path.join(bin, "tmux"), `#!/bin/sh\nprintf '%s\\n' "$@" '--' >> "${calls}"\n[ "$1" = has-session ] && exit 1\nexit 0\n`, { mode: 0o755 });
-		// A sops over plain dotenv files: `decrypt --extract '["NAME"]' FILE` prints NAME's value, as the real one does.
-		writeFileSync(path.join(bin, "sops"), `#!/bin/sh\nname=$(printf '%s' "$3" | tr -d '[]"')\nsed -n "s/^$name=//p" "$4" | tr -d '\\n'\n`, { mode: 0o755 });
-		const env = { PATH: `${bin}:${process.env.PATH}`, HOME: at, HV_STORE: path.join(at, "store"), OPTCHAT_FORK: fork };
-		const tokenPassed = (personal: string) => {
-			writeFileSync(path.join(creds, "claude-personal.env"), `CLAUDE_CODE_OAUTH_TOKEN=${personal}\nCLAUDE__VALID_UNTIL=2027-10-01\n`);
-			writeFileSync(path.join(creds, "claude-helferline.env"), "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-helferline\n");
+		// A sops over plain dotenv files: `decrypt --extract '["NAME"]' FILE` prints NAME's value, and fails as the real
+		// one does on a name the file lacks, or when the age key SOPS_AGE_KEY_FILE names is not there.
+		writeFileSync(
+			path.join(bin, "sops"),
+			`#!/bin/sh\n[ -e "$SOPS_AGE_KEY_FILE" ] || { echo "sops: failed to get the data key" >&2; exit 128; }\nname=$(printf '%s' "$3" | tr -d '[]"')\nline=$(grep "^$name=" "$4") || exit 1\nprintf '%s\\n' "\${line#*=}"\n`,
+			{ mode: 0o755 },
+		);
+		writeFileSync(key, "");
+		// The other account's file beside it, which hv must never read.
+		writeFileSync(path.join(creds, "claude-helferline.env"), "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-helferline\nCLAUDE__VALID_UNTIL=2027-10-01\n");
+		const piLogin = '{"openrouter":{"type":"api_key","key":"sk-or-keep"},"anthropic":{"type":"oauth","access":"pi-login","refresh":"r","expires":1}}\n';
+		const start = (personal: string | null, { ageKey = key } = {}) => {
+			const file = path.join(creds, "claude-personal.env");
+			if (personal === null) rmSync(file, { force: true });
+			else writeFileSync(file, `CLAUDE_CODE_OAUTH_TOKEN=${personal}\nCLAUDE__VALID_UNTIL=2027-10-01\n`);
+			writeFileSync(auth, piLogin, { mode: 0o644 });
 			rmSync(calls, { force: true });
-			const ran = spawnSync(path.resolve(import.meta.dirname, "../../hv"), [], { env, encoding: "utf8" });
-			assert.equal(ran.status, 0, ran.stderr);
-			const started = readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session")!;
-			return started.filter((arg) => arg.startsWith("ANTHROPIC_OAUTH_TOKEN="));
+			const ran = spawnSync(path.resolve(import.meta.dirname, "../../hv"), [], { env: { PATH: `${bin}:${process.env.PATH}`, HOME: at, HV_STORE: path.join(at, "store"), OPTCHAT_FORK: fork, SOPS_AGE_KEY_FILE: ageKey }, encoding: "utf8" });
+			const started = existsSync(calls) ? readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session") : undefined;
+			return { ran, started, written: readFileSync(auth, "utf8") };
 		};
-		assert.deepEqual(tokenPassed("sk-ant-oat01-personal"), ["ANTHROPIC_OAUTH_TOKEN=sk-ant-oat01-personal"]);
-		assert.deepEqual(tokenPassed(""), [], "pi signs in with what /login stored, if anything");
+
+		const minted = start("sk-ant-oat01-personal");
+		assert.equal(minted.ran.status, 0, minted.ran.stderr);
+		assert.ok(minted.started, "hv opens a tmux session");
+		assert.deepEqual(JSON.parse(minted.written), {
+			openrouter: { type: "api_key", key: "sk-or-keep" },
+			anthropic: { type: "oauth", access: "sk-ant-oat01-personal", refresh: "", expires: Date.parse("2027-10-01") },
+		});
+		assert.equal(statSync(auth).mode & 0o777, 0o600);
+		assert.ok(!minted.started.some((arg) => arg.includes("sk-ant-oat01")), "the token is on no command line");
+
+		for (const [what, personal] of [["an unminted token", ""], ["no personal account file", null]] as const) {
+			const none = start(personal);
+			assert.equal(none.ran.status, 0, `${what}: ${none.ran.stderr}`);
+			assert.equal(none.written, piLogin, `${what} leaves pi on what auth.json held`);
+		}
+
+		const locked = start("sk-ant-oat01-personal", { ageKey: path.join(at, "no-such-key") });
+		assert.equal(locked.ran.status, 1);
+		assert.match(locked.ran.stderr, /^hv: could not read CLAUDE_CODE_OAUTH_TOKEN and CLAUDE__VALID_UNTIL from .*claude-personal\.env/m);
+		assert.equal(locked.started, undefined, "no session starts on a token hv could not read");
+		assert.equal(locked.written, piLogin);
 	} finally {
 		rmSync(at, { recursive: true, force: true });
 	}
