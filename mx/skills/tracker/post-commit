@@ -1,7 +1,8 @@
 #!/bin/sh
-# Installed by `tracker hook --sync`, as post-commit and post-merge both: every commit and merge in
+# Installed by `tracker hook`, as post-commit and post-merge both: every commit and merge in
 # this agent repo's main checkout goes to its upstream at once, so the project's other main checkout
 # finds it there.
+git rev-parse -q --verify '@{u}' >/dev/null 2>&1 || exit 0  # a branch with no upstream has nowhere to go
 if ! command -v tracker >/dev/null 2>&1; then
     echo "post-commit: no tracker on PATH, so this commit was not pushed; \`tracker sync\` pushes it" >&2
     exit 0

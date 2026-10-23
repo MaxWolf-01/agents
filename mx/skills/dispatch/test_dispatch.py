@@ -1300,7 +1300,7 @@ def test_a_claim_in_a_project_kept_on_two_machines_is_pushed_and_its_integration
         git(toy.parent, "init", "-q", "--bare", "-b", "main", str(origin / f"{repo}.git"))
         git(at, "remote", "add", "origin", str(origin / f"{repo}.git"))
         git(at, "push", "-q", "-u", "origin", "main")
-    hooked = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "hook", "--sync"], cwd=agent,
+    hooked = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "hook"], cwd=agent,
                             capture_output=True, text=True, env=environment(toy))
     assert hooked.returncode == 0, hooked.stderr
 
