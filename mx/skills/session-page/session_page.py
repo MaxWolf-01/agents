@@ -70,7 +70,8 @@ CLI = """Print the directory this session's records go in: `sessions/<session-id
 of the project the working directory is in, the same directory from every worktree of that
 project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
 
-A second line says where the next turn record goes, how many are written, and whether session.md is written yet.
+A second line says where the next turn record goes, how many are written, and whether session.md
+is written yet.
 
 Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
 
@@ -94,7 +95,8 @@ def main() -> None:
 def where_next(directory: Path) -> str:
     """Read from file names alone, so a record that does not parse still gets its successor's path."""
     written = numbered(directory / "turns")
-    path = directory / "turns" / f"{int(written[-1].stem) + 1 if written else 1:02d}.md"
+    number = int(written[-1].stem) + 1 if written else 1
+    path = directory / "turns" / f"{number:02d}.md"
     described = "session.md written" if (directory / "session.md").exists() else "session.md not yet written"
     return f"next record: {path} · {len(written)} written · {described}"
 
@@ -132,7 +134,8 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     a tool call there only after the call's PostToolUse hooks have run.
 
     Where there is no `session.md` yet, the title is the one Claude Code keeps for the session
-    (`claude_title`); where it names no `repo`, the resume command changes to the directory the session started in.
+    (`claude_title`); where it names no `repo`, the resume command changes to the directory the
+    session started in.
 
     Raises RecordError where a record does not parse.
     """
