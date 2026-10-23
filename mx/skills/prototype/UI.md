@@ -26,7 +26,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 1. State the question and pick N
 
-Default to **3 variants**. More than 5 stops being radically different and starts being noise; cap there.
+Offer **two or three variants**. Past three the reader stops comparing and starts skimming.
 
 Write down the plan in one line, in the prototype's location or a top-of-file comment:
 
@@ -43,6 +43,11 @@ Draft each variant. Hold each one to:
 - A clear exported component name, e.g. `VariantA`, `VariantB`, `VariantC`.
 
 Variants must be **structurally different**: different layout, different information hierarchy, different primary affordance, not just different colours. Three slightly-tweaked card grids isn't a UI prototype, it's wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
+
+Two more tests every variant passes before it is offered for a pick:
+
+- **Different at rest.** Load each variant and look at it untouched: the difference shows on what a reader sees first, before anything is opened, hovered or expanded. Variants that part ways only once a step is opened read as one design, and the pick never happens.
+- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis; a grid of combinable parts hands the user the design work, and they pick from wholes only.
 
 ### 3. Wire them together
 
@@ -84,7 +89,7 @@ Put the switcher in a single shared component so both sub-shapes can reuse it. L
 
 ### 5. Hand it over
 
-Surface the URL (and the `?variant=` keys). The user will flip through whenever they get to it. The interesting feedback is usually **"I want the header from B with the sidebar from C"**; that's the actual design they want.
+Surface the URL (and the `?variant=` keys). The user will flip through whenever they get to it. The interesting feedback is usually **"I want the header from B with the sidebar from C"**; that's the actual design they want, and the next round offers it built whole.
 
 ### 6. Capture the answer and clean up
 
