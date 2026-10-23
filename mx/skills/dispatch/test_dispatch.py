@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "pyyaml"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml"]
 # ///
 """Checks for what `dispatch` and `dispatch-ctl` read and write on a ticket. Run: pytest test_dispatch.py
 
@@ -15,8 +15,9 @@ state (a claim is taken from the frontier, and a claimed ticket is in somebody's
 ranges are read back through the tracker module, as `tracker data` prints them (`ranges_of`): the
 read is the oracle's, not the seam's, and in process it costs no tracker launch per check.
 
-`agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
-argued; this file is the cases the ticket-file move made.
+A second seam is `dispatch`'s own functions, the script sourced, for those whose input and output
+are text: the run record (`host_of`, `runs_on`, `hosts_used`, `forget_run`), `scratch_dir` and
+`remote_line`, each held to the comment above it.
 """
 
 import hashlib
@@ -31,6 +32,8 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 import tracker
 from dispatch_checks import mx, stage_runner
@@ -102,10 +105,19 @@ printf 'attempts=1 exit=0 report=yes""",
 # ssh as the real one behaves: every argument after the host joined with spaces into one line for
 # the remote shell, run in the remote user's home, without the settings dispatch forwards on that
 # line, which the caller's environment never carries across. scp copies into that home the same way.
+# A host's login shell may be zsh, which reads some words apart from bash (`remote_line`), so where
+# zsh is installed a line the two read as different words is refused, as one of the two hosts would
+# fail it; where zsh is not, `test_a_remote_line_reaches_the_command_as_the_words_sent` says so.
 FAKE_SSH = """#!/usr/bin/env bash
 while [[ ${1:-} == -* ]]; do case $1 in -o|-p|-i|-l) shift 2 ;; *) shift ;; esac; done
 shift
 unset DISPATCH_EFFORT DISPATCH_PERMISSION_MODE DISPATCH_RUNNER
+words() { "$@" "printf '%s\\0' $line" 2>&1 < /dev/null; }
+line=$*
+if command -v zsh > /dev/null && ! cmp -s <(words bash -c) <(words zsh -f -c); then
+    echo "ssh: a zsh login shell reads this line as other words than bash does: $line" >&2
+    exit 255
+fi
 cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec bash -c "$*"
 """
 FAKE_SCP = """#!/usr/bin/env bash
@@ -2889,3 +2901,132 @@ def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+@pytest.mark.full_path
+def test_push_that_a_host_refuses_for_one_repo_names_it_and_brings_the_other_there(toy: Path, staged: Path) -> None:
+    """`dispatch push`'s exit 1: a host refused (named); the rest have it. The agent repo's bare
+    repo on the host refuses every push, as a full disk or a hook there would."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    bare = remote / "repos" / "dispatch"
+    hook = bare / "lamp-agent.git" / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\necho 'refused: the disk is full' >&2\nexit 1\n")
+    hook.chmod(0o755)
+    for at in (toy, toy / "agent"):
+        (at / "moved.md").write_text("the branch moved\n")
+        git(at, "add", "moved.md")
+        git(at, "commit", "-q", "-m", "the branch moved")
+
+    pushed = subprocess.run([str(staged), "push"], cwd=toy, capture_output=True, text=True, env=env, timeout=120)
+
+    assert pushed.returncode == 1, pushed.stderr
+    assert "pushing main of the agent repo to agent@far failed" in pushed.stderr, pushed.stderr
+    assert "of the code repo" not in pushed.stderr, pushed.stderr
+    assert git(bare / "lamp.git", "rev-parse", "main") == git(toy, "rev-parse", "main")
+    assert git(bare / "lamp-agent.git", "rev-parse", "main") != git(toy / "agent", "rev-parse", "main")
+
+
+def sourced(body: str, *args: str, **env: str) -> subprocess.CompletedProcess:
+    """`body` run in bash with `dispatch` sourced, so its functions are defined and no command of it
+    runs, and `args` as `body`'s `$@`."""
+    return subprocess.run(["bash", "-c", f'source "{DISPATCH}" && {body}', "check", *args],
+                          capture_output=True, text=True, env={**os.environ, **env}, timeout=30)
+
+
+# The run record as `record_run` appends it, a branch, a ticket and a host a line: warm-preset ran
+# here first and on agent@far since, while another branch, lamp-ui, has runs of its own, one of them
+# of warm-preset too, on a host main has none on.
+RUN_RECORD = (
+    "main\twarm-preset\tlocal\n"
+    "lamp-ui\twarm-preset\tagent@near\n"
+    "main\twarm-preset\tagent@far\n"
+    "main\tdim-preset\tlocal\n"
+    "lamp-ui\tcold-preset\tagent@near\n"
+)
+
+
+def on_record(tmp_path: Path, base: str, call: str, record: str | None = RUN_RECORD) -> subprocess.CompletedProcess:
+    """`call` run on the branch `base` over a run record holding `record`, or over none at all."""
+    runs = tmp_path / "runs"
+    if record is not None:
+        runs.write_text(record)
+    return sourced(f'base={base} runs="{runs}" && {call}')
+
+
+def test_a_ticket_is_followed_to_the_host_its_branch_last_ran_it_on(tmp_path: Path) -> None:
+    """`host_of`: newest line for a name wins, among the lines of the branch asking; nothing for a
+    ticket it never ran, and nothing where no run was ever recorded."""
+    assert on_record(tmp_path, "main", "host_of warm-preset").stdout == "agent@far\n"
+    assert on_record(tmp_path, "lamp-ui", "host_of warm-preset").stdout == "agent@near\n"
+    assert on_record(tmp_path, "main", "host_of cold-preset").stdout == ""
+    never = on_record(tmp_path / "nowhere", "main", "host_of warm-preset", record=None)
+    assert (never.returncode, never.stdout) == (0, "")
+
+
+def test_a_host_holds_the_runs_of_a_branch_that_last_went_there(tmp_path: Path) -> None:
+    """`runs_on`: every ticket this branch has a run of there, so one that moved on is no longer on
+    the host it left."""
+    def on(host: str) -> set[str]:
+        return set(on_record(tmp_path, "main", f"runs_on {host}").stdout.split())
+
+    assert on("local") == {"dim-preset"}
+    assert on("agent@far") == {"warm-preset"}
+    assert on("agent@near") == set(), "lamp-ui's runs are lamp-ui's"
+
+
+def test_the_hosts_a_branch_fans_out_over_are_each_host_it_has_a_run_on_once(tmp_path: Path) -> None:
+    """`hosts_used`, which `push` and `probe` go over: every host this branch has a run on."""
+    assert sorted(on_record(tmp_path, "main", "hosts_used").stdout.split()) == ["agent@far", "local"]
+
+
+def test_a_forgotten_run_leaves_every_other_run_on_file(tmp_path: Path) -> None:
+    """`forget_run`: a cleaned-up run has nothing left on its host, so its lines go, and every line
+    of another ticket or another branch, the same ticket's on lamp-ui among them, stays as it was."""
+    forgot = on_record(tmp_path, "main", "forget_run warm-preset")
+
+    assert forgot.returncode == 0, forgot.stderr
+    assert (tmp_path / "runs").read_text() == (
+        "lamp-ui\twarm-preset\tagent@near\n"
+        "main\tdim-preset\tlocal\n"
+        "lamp-ui\tcold-preset\tagent@near\n"
+    )
+    nothing = on_record(tmp_path / "nowhere", "main", "forget_run warm-preset", record=None)
+    assert nothing.returncode == 0 and not (tmp_path / "nowhere" / "runs").exists()
+
+
+def test_a_scratch_dir_is_the_repos_and_the_branchs_under_the_home_on_either_side(tmp_path: Path) -> None:
+    """`scratch_dir`: per branch, named after the repo too, and relative to the home on a remote
+    host, where ssh and scp resolve it, and under it here."""
+    def scratch(host: str) -> str:
+        return sourced(f"repo=lamp base=lamp-ui && scratch_dir {host}", HOME=str(tmp_path)).stdout
+
+    assert scratch("agent@far") == ".local/state/dispatch/lamp-lamp-ui\n"
+    assert scratch("local") == f"{tmp_path}/.local/state/dispatch/lamp-lamp-ui\n"
+
+
+# A word as the shells read it: any text a C string holds, and the words the two read apart or treat
+# as syntax, drawn often enough that every run meets them.
+SHELL_WORD = st.one_of(
+    st.text(st.characters(exclude_characters="\0", codec="utf-8")),
+    st.sampled_from(["", "=", "=ls", "=tmux", "~", "~/x", "a b", "$HOME", "*", "!x", "^x", "#x",
+                     "{a,b}", "x\ny", "'", '"', "\\", ";", "&&", "=dispatch-lamp-warm-preset:"]),
+)
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+@given(words=st.lists(SHELL_WORD, min_size=1, max_size=6))
+@example(words=["tmux", "attach", "-t", "=dispatch-lamp-warm-preset:"])
+def test_a_remote_line_reaches_the_command_as_the_words_sent(shell: str, words: list[str]) -> None:
+    """`remote_line`: each word is quoted for the remote login shell, which may be bash or zsh, so
+    an empty one, one with a space and one zsh reads as a command's path (`=ls`) all arrive whole."""
+    login = shutil.which(shell)
+    if login is None:
+        pytest.skip(f"no {shell} here, so no remote line is read as {shell} reads it, here or in the fake ssh")
+    line = sourced('remote_line "$@"', *words)
+    assert line.returncode == 0, line.stderr
+    flags = ["-f", "-c"] if shell == "zsh" else ["-c"]
+    read = subprocess.run([login, *flags, f"printf '%s\\0' {line.stdout}"], capture_output=True, timeout=30)
+    assert read.stdout == b"".join(word.encode() + b"\0" for word in words), read.stderr.decode()
