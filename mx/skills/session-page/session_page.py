@@ -20,7 +20,7 @@ the turns, and beside them the timeline, every numbered turn newest first with t
 links; a ticket file is no artefact there. Each turn's record, and the whole session's, copies as
 the markdown it was written in.
 
-Run as a command, it prints where a session's directory is.
+Run as a command, it prints where a session's directory is, and where its next record goes.
 """
 
 import html
@@ -70,6 +70,9 @@ CLI = """Print the directory this session's records go in: `sessions/<session-id
 of the project the working directory is in, the same directory from every worktree of that
 project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
 
+A second line says where the next turn record goes, how many are written, and whether session.md
+is written yet.
+
 Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
 
 Examples:
@@ -86,7 +89,16 @@ def main() -> None:
         sys.exit("no session id: run it inside a Claude Code session")
     if (directory := session_directory(Path.cwd(), session)) is None:
         sys.exit(f"{Path.cwd()} is in no project with an agent repo")
-    print(directory)
+    print(f"{directory}\n{where_next(directory)}")
+
+
+def where_next(directory: Path) -> str:
+    """Read from file names alone, so a record that does not parse still gets its successor's path."""
+    written = numbered(directory / "turns")
+    number = int(written[-1].stem) + 1 if written else 1
+    path = directory / "turns" / f"{number:02d}.md"
+    described = "session.md written" if (directory / "session.md").exists() else "session.md not yet written"
+    return f"next record: {path} · {len(written)} written · {described}"
 
 
 def session_directory(cwd: Path, session: str) -> Path | None:
@@ -122,13 +134,14 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     a tool call there only after the call's PostToolUse hooks have run.
 
     Where there is no `session.md` yet, the title is the one Claude Code keeps for the session
-    (`claude_title`), and the resume command changes to the directory the session started in.
+    (`claude_title`); where it names no `repo`, the resume command changes to the directory the
+    session started in.
 
     Raises RecordError where a record does not parse.
     """
-    # an older session.md may carry a `## Brief`, which parses and stays off the page
+    # an older session.md may carry frontmatter and a `## Brief`, which parse, and the brief stays off the page
     front, title, _ = read_record(
-        directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"},
+        directory / "session.md", allowed={"session", "repo"}, sections={"Brief"},
     ) if (directory / "session.md").exists() else ({}, "", {})
     root = directory.parents[len(SESSIONS.parts)]
     turns = read_turns(directory / "turns")
@@ -415,8 +428,11 @@ TAG = re.compile(r"Q\d+")
 
 
 def read_turns(turns: Path) -> list[Turn]:
-    records = sorted((p for p in turns.glob("*.md") if re.fullmatch(r"\d+\.md", p.name)), key=lambda p: int(p.stem))
-    return [read_turn(path) for path in records]
+    return [read_turn(path) for path in numbered(turns)]
+
+
+def numbered(turns: Path) -> list[Path]:
+    return sorted((p for p in turns.glob("*.md") if re.fullmatch(r"\d+\.md", p.name)), key=lambda p: int(p.stem))
 
 
 def read_turn(path: Path) -> Turn:
@@ -533,11 +549,10 @@ def check_ticket_questions(root: Path, turn: "Turn") -> None:
         raise RecordError(turn.path, n, f"{c.handle} was ruled {c.named.ruled} ({c.named.answer}), so it waits on nobody")
 
 
-def read_record(
-    path: Path, required: set[str], allowed: set[str], sections: set[str]
-) -> tuple[dict, str, dict[str, tuple[int, str]]]:
+def read_record(path: Path, allowed: set[str], sections: set[str]) -> tuple[dict, str, dict[str, tuple[int, str]]]:
     """A record's frontmatter as data, its H1, and each of its `##` sections as (first line, text)."""
-    front, body, offset = read_frontmatter(path, required, allowed)
+    text = path.read_text()
+    front, body, offset = read_frontmatter(path, set(), allowed) if text.startswith("---\n") else ({}, text, 1)
     h1, parts = split_sections(path, body, offset, sections)
     return front, h1, parts
 

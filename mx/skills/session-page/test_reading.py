@@ -15,16 +15,19 @@ record, the messages that turn answered.
 import html
 import json
 import re
+import shutil
+import sys
 import time
 from datetime import UTC, datetime
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-from session_page import Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
-from session_checks import messages_of, rows_of, sections_of, text_of, view_of
+import session_page
+from session_page import SESSIONS, Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
+from session_checks import SESSION, messages_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -462,6 +465,43 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
     assert "Leading words for showing" in page.session.title
     assert page.rows == ()
     assert " 0 turns · rendered " in text_of(render_session(worked_example, transcript, now=NOW))
+
+
+def test_a_session_record_of_its_h1_alone_reads_as_one_with_frontmatter(worked_example: Path, transcript: Path) -> None:
+    """session-page-says-where-the-next-record-goes#P2: the worked example's frontmatter names what
+    the reader works out without it."""
+    described = worked_example / "session.md"
+    before = view_of(worked_example, transcript)
+    described.write_text(described.read_text().split("---\n", 2)[2])
+    after = view_of(worked_example, transcript)
+    assert (after.session.title, after.session.id, after.session.repo, after.resume) == (
+        before.session.title, before.session.id, before.session.repo, before.resume)
+
+
+AT = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
+# How each row changes the worked example's four records and session.md, and the line it then
+# prints under the directory.
+NEXT = {
+    "no records yet": (shutil.rmtree, "01.md · 0 written · session.md not yet written"),
+    "a gap and a chat turn": (lambda d: ((d / "turns/04.md").rename(d / "turns/06.md"),
+                                         chat_path(d / "turns", AT).write_text(chat_record("On it.", AT))),
+                              "07.md · 4 written · session.md written"),
+    "a record that does not parse": (lambda d: (d / "turns/04.md").write_text("no frontmatter\n"),
+                                     "05.md · 4 written · session.md written"),
+}
+
+
+@pytest.mark.parametrize("made, said", NEXT.values(), ids=NEXT)
+def test_session_page_prints_where_the_next_record_goes(
+    made: Callable[[Path], object], said: str, worked_example: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """session-page-says-where-the-next-record-goes#P1 and #P3; `main` returning is the exit status 0."""
+    made(worked_example)
+    monkeypatch.chdir(worked_example.parents[len(SESSIONS.parts)])
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    monkeypatch.setattr(sys, "argv", ["session-page"])
+    session_page.main()
+    assert capsys.readouterr().out == f"{worked_example}\nnext record: {worked_example / 'turns'}/{said}\n"
 
 
 def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:
