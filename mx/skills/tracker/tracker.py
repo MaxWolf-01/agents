@@ -20,7 +20,7 @@ Examples:
     tracker repos                        # the repos its tickets land in beside the code repo
     tracker get map-columns status
     tracker data | jq -r '.tickets[] | select(.status == "open") | .slug'
-    tracker context map-columns          # the ticket's body, then every ancestor's
+    tracker context map-columns          # the context it is built and reviewed in
     tracker frontier
     tracker new map-columns --parent csv-import --priority 2 --size M
     tracker new map-columns --priority 2 --size M --title "Map the CSV's columns" --brief - < brief.md
@@ -57,7 +57,7 @@ from tyro.extras import SubcommandApp
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
-Field = Literal["status", "parent", "blocked-by", "needs-user", "priority", "size", "repos", "diff", "gh"]
+Field = Literal["status", "parent", "blocked-by", "needs-user", "close-out", "priority", "size", "repos", "diff", "gh"]
 STATUSES, SIZES, PRIORITIES = get_args(Status), get_args(Size), get_args(Priority)
 FIELDS = get_args(Field)
 LIST_FIELDS = ("blocked-by", "repos", "diff", "gh")
@@ -179,8 +179,8 @@ def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") ->
     JSON schema:
 
         {"root": "str", "tickets": [{"slug": "str", "path": "str", "status": "str",
-          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "priority": int,
-          "size": "str", "repos": ["str"], "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
+          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "close-out": bool,
+          "priority": int, "size": "str", "repos": ["str"], "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
           "sections": [{"heading": "str", "line": int, "text": "str"}],
           "questions": [{"tag": "str", "headline": "str", "detail": "str", "ruled": "str|null",
                          "answer": "str", "line": int}],
@@ -218,7 +218,7 @@ def as_data(ticket: Ticket, tracker: Tracker) -> dict:
     return {
         "slug": ticket.slug, "path": str(ticket.path), "status": ticket.status,
         "parent": ticket.parent, "blocked-by": ticket.blocked_by, "needs-user": ticket.needs_user,
-        "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
+        "close-out": ticket.close_out, "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
         "repos": ticket.repos,
         "diff": [str(one) for one in ticket.meta.get("diff") or []],
         "gh": [str(one) for one in ticket.meta.get("gh") or []],
@@ -237,25 +237,37 @@ def as_data(ticket: Ticket, tracker: Tracker) -> dict:
 @app.command(name="context")
 def context(slug: Annotated[str, tyro.conf.Positional]) -> int:
     """The context a ticket is built and reviewed in: its own body, then every ancestor's body,
-    nearest first. A ticket whose parent names no ticket is refused, as any dangling reference is.
+    nearest first, and for a close-out review every other child's of its parent, the tree it reviews.
+    A ticket whose parent names no ticket is refused, as any dangling reference is.
 
     Args:
         slug: the ticket.
     """
     tracker = here()
-    ticket = tracker.ticket(slug)
-    refuse([refusal for one in (ticket, *tracker.ancestors(slug)) for refusal in refusals_of(one, tracker)])
-    print(assembled(ticket, tracker))
+    held = in_context(tracker.ticket(slug), tracker)
+    refuse([refusal for _, one in held for refusal in refusals_of(one, tracker)])
+    print(assembled(held))
     return 0
 
 
-def assembled(ticket: Ticket, tracker: Tracker) -> str:
+def in_context(ticket: Ticket, tracker: Tracker) -> list[tuple[str, Ticket]]:
+    """Every ticket a ticket's context holds, under the heading that says whose body follows, which
+    is what tells a worker its own from its context. The ticket comes first, since it is what is
+    being built; its ancestors follow in the order the work widens. A close-out review's ends on
+    the tree it reviews: every other child of its parent, less an earlier close-out review, whose
+    range is no longer the one being reviewed."""
+    held = [(ticket.slug, ticket)]
+    held += [(f"parent ticket: {one.slug}", one) for one in tracker.ancestors(ticket.slug)]
+    if ticket.close_out and ticket.parent:
+        held += [(f"child ticket of {one.parent}: {one.slug}", one) for one in tracker.children(ticket.parent)
+                 if one.slug != ticket.slug and not one.close_out]
+    return held
+
+
+def assembled(held: list[tuple[str, Ticket]]) -> str:
     """The one assembly every reader of a ticket's context gets: the worker's prompt, the reviewer's
-    spec. The ticket comes first, since it is what is being built; its ancestors follow in the order
-    the work widens."""
-    written = [f"## {ticket.slug}\n{ticket.body.strip()}"]
-    written += [f"## parent ticket: {one.slug}\n{one.body.strip()}" for one in tracker.ancestors(ticket.slug)]
-    return "\n\n".join(written) + "\n"
+    spec."""
+    return "\n\n".join(f"## {heading}\n{one.body.strip()}" for heading, one in held) + "\n"
 
 
 @app.command(name="frontier")
@@ -340,6 +352,7 @@ def new(
     repos: tuple[str, ...] = (),
     status: Literal["proposed", "open"] = "proposed",
     needs_user: bool = False,
+    close_out: bool = False,
     title: str = "",
     brief: str = "",
 ) -> int:
@@ -355,6 +368,8 @@ def new(
         repos: the listed repos the work lands in, by the names `tracker repos` prints.
         status: the status to file it at.
         needs_user: mark the ticket as one the user is in the loop for.
+        close_out: mark the ticket as its parent's close-out review, whose context carries every
+            other child of that parent.
         title: the ticket's name; the slug's words when not given.
         brief: a file holding the ticket's brief, or `-` for one on stdin; the brief is left to the
             filing agent when not given.
@@ -368,7 +383,7 @@ def new(
     if brief not in ("", "-") and not Path(brief).is_file():
         raise Refused([f"{brief} is no file to read a brief from"])
     meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by), "repos": list(repos),
-            "needs-user": needs_user, "priority": priority, "size": size}
+            "needs-user": needs_user, "close-out": close_out, "priority": priority, "size": size}
     written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
     told = (sys.stdin.read() if brief == "-" else Path(brief).read_text()).strip() if brief else ""
     written += f"\n# {title or slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n"
@@ -1366,6 +1381,10 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
 
     if "needs-user" in meta and not isinstance(meta["needs-user"], bool):
         refuse("needs-user", "`needs-user` is true or false: whether the ticket is worked with the user rather than by a worker")
+    if "close-out" in meta and not isinstance(meta["close-out"], bool):
+        refuse("close-out", "`close-out` is true or false: whether the ticket is its parent's close-out review")
+    elif meta.get("close-out") and not meta.get("parent"):
+        refuse("close-out", "`close-out` marks the review of a parent ticket's tree, so it goes on a child of that parent")
 
     # a list field is checked for being a list first: a bare scalar is a string, and walking it
     # would refuse the line once per character
@@ -1574,6 +1593,10 @@ class Ticket:
     @property
     def needs_user(self) -> bool:
         return bool(self.meta.get("needs-user"))
+
+    @property
+    def close_out(self) -> bool:
+        return bool(self.meta.get("close-out"))
 
 
 @dataclass(frozen=True)

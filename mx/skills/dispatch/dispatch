@@ -8,9 +8,9 @@
 # claim <slug>    before the spawn. Writes `claimed`, committed in the agent repo.
 #                 Exit 1: already claimed, or the tracker refused (rule printed).
 # prompt <slug> < <file>
-#                 before a spawn or a resume: stdin is the worker's message. A
-#                 spawn sends the ticket's context and its listed repos' paths
-#                 under it; a resume sends it alone.
+#                 before a spawn or a resume: stdin is the worker's message,
+#                 staged under the ticket's context as it stands; a resume
+#                 sends it alone, flagged when that context changed.
 # ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
 #                 spawn names the host, user@host or `local`; later commands
@@ -464,17 +464,35 @@ push() {
     return $rc
 }
 
-# What a spawn sends: the orchestrator's message, then the ticket's context,
-# which is its own body and every ancestor's, assembled by the one command that
-# assembles it for a review's --spec too. A resume sends the message alone: the
-# context is already in the conversation it resumes. The composed file keeps
-# the message's name, since that is what the host stages it under.
-prompted() { # <subcommand> <slug> <message> → the file to copy
-    if [ "$1" != spawn ]; then echo "$3"; return 0; fi
-    composed=$state/prompts/$base/spawn/${3##*/}
-    mkdir -p "$(dirname "$composed")" || return 1
-    { cat "$3"; [ -z "${listed_prompt:-}" ] || printf '\n%s\n' "$listed_prompt"; echo; "$tracker" context "$2"; } > "$composed" || return 1
-    echo "$composed"
+# What a round is given, composed here under the names the host stages it by. Its context file is
+# the ticket's context as the tracker here holds it now, by the one command that assembles it, then
+# the round's message: the worker reads its ticket there every round (`$DISPATCH_CONTEXT`), and its
+# review takes the file as its spec, so an amendment or a ruling made between rounds reaches both.
+# The listed repos' paths go under the message every round: a spawn works them out (stage_listed)
+# and keeps them as listed-<slug>, and a resume reuses them, as dispatch-ctl keeps their worktrees.
+# A spawn sends that file whole. A resume sends the message alone, which `continue` often is, under
+# a line sending the worker back to the file when the context is not the one its last round was
+# staged with; that one is kept as ticket-<slug>.md, and replaced by ticket-<slug>.next once the
+# round has started (`ctl`).
+compose_round() { # <subcommand> <slug> <message>; the two files to copy in `carry`
+    local dir=$state/prompts/$base/round listed said
+    mkdir -p "$dir" || return 1
+    [ "$1" != spawn ] || printf '%s' "${listed_prompt:-}" > "$dir/listed-$2" || return 1
+    listed=$(cat "$dir/listed-$2" 2> /dev/null)
+    "$tracker" context "$2" > "$dir/ticket-$2.next" || return 1
+    { cat "$dir/ticket-$2.next"; printf "\n## this round's message\n\n"; cat "$3"
+      [ -z "$listed" ] || printf '\n%s\n' "$listed"; } > "$dir/context-$2.md" || return 1
+    if [ "$1" = spawn ]; then
+        cp "$dir/context-$2.md" "$dir/prompt-$2.md"
+    elif cmp -s "$dir/ticket-$2.md" "$dir/ticket-$2.next"; then
+        cp "$3" "$dir/prompt-$2.md"
+    else
+        # No record: the run was staged by a dispatch that kept none, or this state was lost.
+        said=changed; [ -f "$dir/ticket-$2.md" ] || said="may have changed"
+        { echo "Your ticket's context $said since your last round: read \`\$DISPATCH_CONTEXT\` again, whole, before you act on the message under this line."
+          echo; cat "$3"; } > "$dir/prompt-$2.md"
+    fi || return 1
+    carry=("$dir/prompt-$2.md" "$dir/context-$2.md")
 }
 
 # Here, not on a host: the host is named at the spawn, and a message written
@@ -526,14 +544,16 @@ ctl() {
     # subcommand once: the run it names, whether the host is staged first,
     # whether the ticket message travels with it, whether the run record
     # outlives it.
-    sub=${1:-} name= stages= carries= forgets=
+    sub=${1:-} name= stages= pushes= carries= forgets=
     case $sub in
         spawn|wait|stop|resume|log|cleanup)
             [ -n "${2:-}" ] || die "$sub takes a ticket's slug"
             name=$2
             case $sub in
-                spawn)   stages=1 carries=1 ;;
-                resume)  carries=1 ;;
+                spawn)   stages=1 pushes=1 carries=1 ;;
+                # Staged too: a host staged by another plugin version would start the round on
+                # the contract and the dispatch-ctl that version had.
+                resume)  stages=1 carries=1 ;;
                 cleanup) forgets=1 ;;
             esac ;;
     esac
@@ -559,10 +579,10 @@ ctl() {
         esac
     fi
     scratch=$(scratch_dir "$host")
+    [ -z "$stages" ] || stage "$host" "$setup_cmd"
     # Every spawn pushes this branch of both repos to a remote host, so a ticket branch cuts from
     # its current tip; a local host cuts from these checkouts.
-    if [ -n "$stages" ]; then
-        stage "$host" "$setup_cmd"
+    if [ -n "$pushes" ]; then
         push_to "$host" || die "$host has no $base for $name to cut from"
         stage_listed "$host" "$name" || die "$host has no base for $name to cut from in a listed repo"
         record_run "$name" "$host"
@@ -570,8 +590,8 @@ ctl() {
     if [ -n "$carries" ]; then
         message=$(message_of "$name")
         [ -f "$message" ] || die "no message for $2 here; write one: dispatch prompt $2 < <file>"
-        carry=$(prompted "$sub" "$2" "$message") || die "could not assemble $2's prompt; \`tracker context $2\` says why"
-        copy_to "$host" "$scratch" "$carry"
+        compose_round "$sub" "$2" "$message" || die "could not assemble $2's prompt; \`tracker context $2\` says why"
+        copy_to "$host" "$scratch" "${carry[@]}" || die "copying $2's prompt and context to $host failed"
     fi
     # The permission mode and the effort travel only when set here; unset, the host's default holds.
     env=()
@@ -593,6 +613,7 @@ ctl() {
     # ticket's command went to.
     [ "$sub" != spawn ] || set -- "$@" "${listed_args[@]}"
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
+    [ -z "$carries" ] || mv "$state/prompts/$base/round/ticket-$2.next" "$state/prompts/$base/round/ticket-$2.md"
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
     [ "$sub" = resume ] && reclaim "$2"
     return 0
