@@ -48,7 +48,7 @@ One `- [Dn] **headline** detail` item each, the tag continued from the highest t
   - Ruled 2026-09-21: keep it in the fast suite.
 ```
 
-A question is open, and shows in the board's needs-me group, until a `Ruled <date>:` line sits under it. A question a worker raised reaches the ticket with its report, which is what puts it in front of the user, and `tracker rule` writes the answer under it, before the build's merge as after it. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none.
+A question is open, and shows in the board's needs-me group, until a `Ruled <date>:` line sits under it. A question a worker raised reaches the ticket with its report, which is what puts it in front of the user, and `tracker rule` writes the answer under it, before the build's merge as after it. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, and ruled as filed there, so a done ticket carries none.
 
 ## The tree
 

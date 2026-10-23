@@ -693,12 +693,25 @@ def test_a_ruling_goes_under_the_question_it_answers(tickets: Path, repo: Path) 
 # ---- the report ------------------------------------------------------------
 # `ticket-file-contract#P7`: a worker writes a report, and the import is the one write that brings
 # what it says into the ticket. The shapes are the ticket file's own, so the report is held to them.
+# The report reaches the tracker as a commit on the agent repo's `ticket/<slug>` branch, which is
+# where a worker commits one; in the one-repo layout of `repo`, that branch is the code repo's own.
 
-def reported(tmp_path: Path, text: str = "") -> Path:
-    """A report file, as a worker leaves one in its show directory."""
-    path = tmp_path / "report.md"
-    path.write_text(text or REPORT)
-    return path
+def reported(top: Path, slug: str, text: str = "") -> str:
+    """`text` committed as `show/<slug>/report.md` on `ticket/<slug>` in the agent repo `top`, as a
+    worker's next commit there, the branch cut from the one `top` has out where it is new, and
+    nothing checked out: the commit's SHA."""
+    prefix = "" if (top / "tickets").is_dir() else "agent/"
+    branch = f"refs/heads/ticket/{slug}"
+    on = subprocess.run(["git", "-C", str(top), "rev-parse", "-q", "--verify", branch], capture_output=True, text=True).stdout.strip()
+    index = {**os.environ, "GIT_INDEX_FILE": str(top / ".git" / f"index-{slug}")}
+    plumb = lambda *args, given="": subprocess.run(  # noqa: E731
+        ["git", "-C", str(top), *args], input=given, capture_output=True, text=True, env=index, check=True).stdout.strip()
+    plumb("read-tree", on or "HEAD")
+    blob = plumb("hash-object", "-w", "--stdin", given=text or REPORT)
+    plumb("update-index", "--add", "--cacheinfo", f"100644,{blob},{prefix}show/{slug}/report.md")
+    commit = plumb("commit-tree", plumb("write-tree"), "-p", on or "HEAD", "-m", "the report")
+    plumb("update-ref", branch, commit)
+    return commit
 
 
 REPORT = """## Comments
@@ -714,16 +727,23 @@ One preset lands, warm, on `ticket/warm-preset`, unmerged.
 """
 
 
+def read_back(at: Path, slug: str) -> dict:
+    return json.loads(run(at, "data", slug).out)["tickets"][0]
+
+
 def test_a_report_reaches_the_ticket_as_its_comment_its_questions_and_the_review_status(
-    tickets: Path, repo: Path, tmp_path: Path
+    tickets: Path, repo: Path
 ) -> None:
     """The one write a worker's words make. Everything the report says lands where a reader of the
-    ticket looks for it, and the build waits in `review` from there."""
+    ticket looks for it, the build waits in `review` from there, and the write is committed with the
+    commit the report came from beside it."""
     path = ticket(tickets, "warm-preset", "## Questions\n\n- [D1] **Which socket?** Bayonet or screw.\n\n## Comments\n\nFiled off the kitchen rewire.\n", status="claimed")
-    assert run(repo, "import", "warm-preset", str(reported(tmp_path))).code == 0
+    came = reported(repo, "warm-preset")
+    said = run(repo, "import", "warm-preset")
+    assert said.code == 0, said.said
 
-    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
-    assert read["status"] == "review"
+    read = read_back(repo, "warm-preset")
+    assert read["status"] == "review" and read["reports"] == [came]
     assert [(q["tag"], q["headline"]) for q in read["questions"]] == [
         ("D1", "Which socket?"), ("D3", "Warm at what temperature?")]
     assert [(a["id"], a["path"], a["line"]) for a in read["assumptions"]] == [(1, "lamp.py", 41)]
@@ -731,52 +751,107 @@ def test_a_report_reaches_the_ticket_as_its_comment_its_questions_and_the_review
     assert "Filed off the kitchen rewire." in written, "the ticket's own comments stay"
     assert written.index("## Questions") < written.index("## Comments"), "the sections keep their order"
     assert written.index("2700K, since the bulb box says so") > written.index("## Comments")
+    assert not git(repo, "status", "--porcelain", "--", "agent/tickets"), "committed"
+    assert git(repo, "log", "-1", "--format=%s") == "warm-preset for review\n"
 
 
-def test_a_ticket_with_no_questions_section_gains_one_above_its_comments(tickets: Path, repo: Path, tmp_path: Path) -> None:
+def test_a_ticket_with_no_questions_section_gains_one_above_its_comments(tickets: Path, repo: Path) -> None:
     ticket(tickets, "warm-preset", status="claimed")
-    assert run(repo, "import", "warm-preset", str(reported(tmp_path))).code == 0
-    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
-    assert [q["tag"] for q in read["questions"]] == ["D3"]
+    reported(repo, "warm-preset")
+    assert run(repo, "import", "warm-preset").code == 0
+    read = read_back(repo, "warm-preset")
+    assert [q["tag"] for q in read["questions"]] == ["D2"], "its D2 and D3 are the ticket's first two tags"
     assert [s["heading"] for s in read["sections"]] == ["Brief", "Questions", "Comments"]
 
 
-def test_a_report_that_raises_no_question_opens_no_section_for_one(
-    tickets: Path, repo: Path, tmp_path: Path
-) -> None:
+def test_a_report_that_raises_no_question_opens_no_section_for_one(tickets: Path, repo: Path) -> None:
     """The ordinary landing: nothing for the user to rule on, and a heading with nothing under it
     would show on the board as a question the ticket asks."""
     path = ticket(tickets, "warm-preset", "## Comments\n\nFiled off the kitchen rewire.\n", status="claimed")
-    said = run(repo, "import", "warm-preset", str(reported(tmp_path, "## Comments\n\nIt lands, with nothing to rule on.\n")))
+    reported(repo, "warm-preset", "## Comments\n\nIt lands, with nothing to rule on.\n")
+    said = run(repo, "import", "warm-preset")
     assert said.code == 0 and "0 questions" in said.out, said.said
-    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    read = read_back(repo, "warm-preset")
     assert [s["heading"] for s in read["sections"]] == ["Brief", "Comments"]
     assert read["status"] == "review" and read["questions"] == []
     assert "Filed off the kitchen rewire." in path.read_text()
 
 
-def test_a_report_read_from_stdin_is_named_by_what_it_came_from(tickets: Path, repo: Path) -> None:
-    """How dispatch hands one over: the report is a file on a branch, so it arrives on stdin and a
-    refusal names the object rather than the pipe."""
-    ticket(tickets, "warm-preset", status="claimed")
-    said = run(repo, "import", "warm-preset", "-", "--called", "ticket/warm-preset:show/warm-preset/report.md",
-               given=REPORT)
+def test_each_rounds_report_reaches_the_ticket_once(tickets: Path, repo: Path) -> None:
+    """`land-takes-a-round-whole`'s first criterion. A round sent back before its review is
+    imported at the resume, so the next round's report lands beside it; a resume whose round wrote
+    no report of its own, and a report committed again with the same words (a rebased branch),
+    bring nothing in twice. A round's report is read at its boundary, its tip, so one it committed
+    twice before then is imported once, as it stands last."""
+    path = ticket(tickets, "warm-preset", status="claimed")
+    first = reported(repo, "warm-preset")
+    assert run(repo, "import", "warm-preset").code == 0
+    again = run(repo, "import", "warm-preset")
+    assert again.code == 0 and "left none of its own to import" in again.err, again.said
+    reported(repo, "warm-preset")  # the same words, in a commit of their own
+    assert run(repo, "import", "warm-preset").code == 0
+    assert path.read_text().count("One preset lands, warm") == 1
+
+    second = reported(repo, "warm-preset", "## Comments\n\nThe preset dims, too.\n\n## Questions\n\n- [D1] **Dim to what?** Ten or twenty percent.\n")
+    said = run(repo, "import", "warm-preset")
     assert said.code == 0, said.said
-    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
-    assert [q["tag"] for q in read["questions"]] == ["D3"] and read["status"] == "review"
-
-    ticket(tickets, "cool-preset", status="claimed")
-    broken = run(repo, "import", "cool-preset", "-", "--called", "ticket/cool-preset:show/cool-preset/report.md",
-                 given="## Comments\n\n- A1 no anchor in backticks here.\n")
-    assert broken.code == 1
-    assert "ticket/cool-preset:show/cool-preset/report.md:3:" in broken.err, broken.said
+    read = read_back(repo, "warm-preset")
+    assert read["reports"] == [first, second] and read["status"] == "review"
+    # the first round's D2 and D3 are the ticket's first two tags, and the second's D1 follows them
+    assert [q["tag"] for q in read["questions"]] == ["D2", "D3"]
+    assert path.read_text().count("One preset lands, warm") == 1 and path.read_text().count("The preset dims") == 1
 
 
-def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: Path, tmp_path: Path) -> None:
-    ticket(tickets, "warm-preset", status="claimed")
-    run(repo, "import", "warm-preset", str(reported(tmp_path)))
-    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
-    assert said.code == 1 and "already in review" in said.err, said.said
+def test_a_report_imported_before_reports_were_recorded_is_not_imported_again(tickets: Path, repo: Path) -> None:
+    """A ticket whose report reached it before `reports:` was kept: its closing comment stands in
+    the ticket word for word, and that is the import."""
+    comment = REPORT.split("## Questions")[0].removeprefix("## Comments\n\n").strip()
+    path = ticket(tickets, "warm-preset", f"## Comments\n\n{comment}\n", status="review")
+    reported(repo, "warm-preset")
+    before = path.read_text()
+    said = run(repo, "import", "warm-preset")
+    assert said.code == 0 and "already carries" in said.err, said.said
+    assert path.read_text() == before
+
+
+def test_the_ids_a_report_defines_are_numbered_past_the_tickets_and_its_mentions_move_with_them(
+    tickets: Path, repo: Path
+) -> None:
+    """`land-takes-a-round-whole`'s second criterion: whatever the worker numbered, every id in the
+    ticket is its own. An id the report only mentions is the ticket's, and keeps its number."""
+    ticket(tickets, "warm-preset", """
+## Questions
+
+- [D3] **Which socket?** Bayonet or screw.
+
+## Comments
+
+- [D4] **Assumptions**
+  - A1 `lamp.py:3`: one socket.
+""", status="claimed")
+    ticket(tickets, "lamp-ui")
+    reported(repo, "warm-preset", """## Comments
+
+Warm lands; D3 is still the user's, and D1 below asks the rest, as lamp-ui D1 did; `docs/D1.md` has it.
+
+- [D2] **Assumptions**
+  - A1 `lamp.py:41`: 2700K, as D1 assumes until ruled; A2 holds it.
+  - A2 `lamp.py:42`: the fade, which A1 needs.
+
+## Questions
+
+- [D1] **Warm at what temperature?** 2700K reads amber.
+""")
+    assert run(repo, "import", "warm-preset").code == 0
+    read = read_back(repo, "warm-preset")
+    assert [q["tag"] for q in read["questions"]] == ["D3", "D5"]
+    assert [a["id"] for a in read["assumptions"]] == [1, 2, 3]
+    written = (tickets / "warm-preset.md").read_text()
+    assert "Warm lands; D3 is still the user's, and D5 below asks the rest, as lamp-ui D1 did; `docs/D1.md` has it." in written
+    assert "- [D6] **Assumptions**" in written
+    assert "A2 `lamp.py:41`: 2700K, as D5 assumes until ruled; A3 holds it." in written
+    assert "A3 `lamp.py:42`: the fade, which A2 needs." in written
+    assert run(repo, "check", "agent/tickets/warm-preset.md") == Run(0, "", "")
 
 
 # (the report, what is wrong with it, what the refusal says), one per rule a report is held to
@@ -794,36 +869,42 @@ BROKEN_REPORTS = [
 
 
 @pytest.mark.parametrize("broken, said, refused", BROKEN_REPORTS)
-def test_a_report_saying_what_no_reader_can_read_is_refused_with_its_own_file_and_line(
-    tickets: Path, repo: Path, tmp_path: Path, broken: str, said: str, refused: str
+def test_a_report_saying_what_no_reader_can_read_is_refused_at_its_own_line_on_its_branch(
+    tickets: Path, repo: Path, broken: str, said: str, refused: str
 ) -> None:
     path = ticket(tickets, "warm-preset", status="claimed")
     before = path.read_text()
-    written = tmp_path / "report.md"
-    written.write_text(broken)
-    answer = run(repo, "import", "warm-preset", str(written))
+    reported(repo, "warm-preset", broken)
+    answer = run(repo, "import", "warm-preset")
     assert answer.code == 1, said
     assert refused in answer.said, answer.said
-    assert f"{written}:" in answer.said, said
+    assert "ticket/warm-preset:agent/show/warm-preset/report.md:" in answer.said, said
     assert path.read_text() == before, "a refused report writes nothing"
 
 
-def test_a_report_whose_tags_the_ticket_already_holds_is_refused_at_the_lines_they_land_on(
-    tickets: Path, repo: Path, tmp_path: Path
-) -> None:
-    """The tags run as one sequence across the ticket, so a second round that started them again
-    would name two things by one id."""
-    ticket(tickets, "warm-preset", "## Questions\n\n- [D3] **Which socket?** Bayonet or screw.\n", status="claimed")
-    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
-    assert said.code == 1
-    assert "tag D3 is already taken" in said.err, said.said
+def test_a_report_lands_only_on_a_build_that_is_claimed_or_in_review(tickets: Path, repo: Path) -> None:
+    """A ticket ruled back to open, or done already, has no build waiting for a report."""
+    path = ticket(tickets, "warm-preset", status="open")
+    reported(repo, "warm-preset")
+    before = path.read_text()
+    said = run(repo, "import", "warm-preset")
+    assert said.code == 0 and "warm-preset is open, so the report" in said.err, said.said
+    assert path.read_text() == before
 
 
-def test_importing_a_report_follows_the_trackers_transitions(tickets: Path, repo: Path, tmp_path: Path) -> None:
-    ticket(tickets, "warm-preset", status="open")
-    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
-    assert said.code == 1
-    assert "open \u2192 review" in said.err and "a build starts from a claim" in said.err, said.said
+def test_a_round_whose_agent_branch_writes_a_ticket_file_is_taken_in_nowhere(split: Path) -> None:
+    """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
+    ticket file wrote a second copy of one, and nothing of its round reaches the tracker."""
+    agent = worker_on(split, "warm-preset")
+    staged_report(agent, "warm-preset", REPORT)
+    (agent / "tickets" / "warm-preset.md").write_text((agent / "tickets" / "warm-preset.md").read_text() + "\nWritten where no worker writes.\n")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "--no-verify", "-m", "the report, and a ticket file")
+    before = (split / "agent" / "tickets" / "warm-preset.md").read_text()
+    for write in ("import", "land"):
+        said = run(split, write, "warm-preset")
+        assert said.code == 1 and "writes a ticket file" in said.err and "tickets/warm-preset.md" in said.err, said.said
+    assert (split / "agent" / "tickets" / "warm-preset.md").read_text() == before
 
 
 # ---- the report, at the worker's commit ------------------------------------
@@ -862,23 +943,25 @@ def test_a_report_the_import_refuses_is_refused_at_the_commit_at_the_same_line(
     split: Path, broken: str, said: str, refused: str
 ) -> None:
     agent = worker_on(split, "warm-preset")
-    report = staged_report(agent, "warm-preset", broken)
+    staged_report(agent, "warm-preset", broken)
     checked = run(agent, "check")
-    imported = run(split, "import", "warm-preset", str(report))
+    git(agent, "commit", "-q", "--no-verify", "-m", "the report")
+    imported = run(split, "import", "warm-preset")
     assert checked.code == 1 and imported.code == 1, said
     assert refused in checked.out, checked.said
-    assert refused_at(checked.out, str(report)) == refused_at(imported.err, str(report)), said
+    assert refused_at(checked.out, "show/warm-preset/report.md") == refused_at(imported.err, "show/warm-preset/report.md"), said
 
 
-def test_a_report_whose_tags_its_ticket_already_holds_is_refused_at_the_commit_at_the_lines_they_land_on(split: Path) -> None:
-    """The import's second reading: the report is fine alone and breaks the ticket it lands in."""
+def test_a_report_whose_tags_its_ticket_already_holds_is_taken_at_the_commit(split: Path) -> None:
+    """The ticket the worker's index holds carries the report's D3 already: the import numbers it
+    past, so the commit is refused nothing for it."""
     agent = worker_on(split, "warm-preset", "## Questions\n\n- [D3] **Which socket?** Bayonet or screw.\n")
-    report = staged_report(agent, "warm-preset", REPORT)
+    staged_report(agent, "warm-preset", REPORT)
     checked = run(agent, "check")
-    imported = run(split, "import", "warm-preset", str(report))
-    assert checked.code == 1 and "tag D3 is already taken" in checked.out, checked.said
-    assert f"{report}: this report would leave the ticket" in checked.out
-    assert refused_at(checked.out, "tickets/warm-preset.md") == refused_at(imported.err, "tickets/warm-preset.md")
+    assert checked == Run(0, "", ""), checked.said
+    git(agent, "commit", "-q", "-m", "the report")
+    assert run(split, "import", "warm-preset").code == 0
+    assert [q["tag"] for q in read_back(split, "warm-preset")["questions"]] == ["D3", "D5"]
 
 
 def test_the_commit_hook_refuses_a_workers_report_the_import_would_and_commits_one_it_takes(split: Path) -> None:
@@ -904,12 +987,13 @@ def test_the_commit_hook_refuses_a_workers_report_the_import_would_and_commits_o
 def test_a_report_its_ticket_already_carries_is_not_read_into_it_again(tickets: Path, repo: Path) -> None:
     """A merge of the worker's branch that stopped on a conflict is concluded by a commit, which
     runs the hook with the report staged; by then the import has put the report in its ticket, and
-    reading it in a second time would refuse every tag it carries."""
+    reading it in a second time would say it all twice."""
     ticket(tickets, "warm-preset", status="claimed")
+    reported(repo, "warm-preset")
+    assert run(repo, "import", "warm-preset").code == 0
     report = repo / "agent" / "show" / "warm-preset" / "report.md"
     report.parent.mkdir(parents=True)
     report.write_text(REPORT)
-    assert run(repo, "import", "warm-preset", str(report)).code == 0
     git(repo, "add", "-A")
     assert run(repo, "check") == Run(0, "", "")
 
@@ -1457,7 +1541,6 @@ def test_a_finished_tree_a_live_ticket_cites_stays_until_the_citing_one_finishes
     assert (tickets / "one-flow.md").exists()
 
     assert run(repo, "set", "map-columns", "status=done").code == 0
-    git(repo, "commit", "-q", "-am", "map-columns done")
     assert run(repo, "retire").code == 0
     assert not list(tickets.glob("*.md")), "the citing tree and the one it cites leave together"
 
@@ -1488,19 +1571,21 @@ def test_dropping_takes_a_ticket_nothing_shipped_out_and_leaves_no_edge_onto_it(
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "the tickets")
 
-    said = run(repo, "drop", "pick-a-date-library")
+    said = run(repo, "drop", "pick-a-date-library", "--message", "drop pick-a-date-library: the stdlib covers it")
     assert said.code == 0, said.said
     assert said.out.splitlines() == [
         "+ git rm -q agent/tickets/pick-a-date-library.md",
         "+ drop pick-a-date-library from map-columns's blocked-by",
         "+ git add agent/tickets/map-columns.md",
-        "dropped pick-a-date-library; staged, not committed",
+        "dropped pick-a-date-library",
     ], said.out
     assert not (tickets / "pick-a-date-library.md").exists()
-    assert git(repo, "show", "HEAD:agent/tickets/pick-a-date-library.md"), "git history keeps the file"
-    assert "D  agent/tickets/pick-a-date-library.md" in git(repo, "status", "--short"), "and the removal is staged"
+    assert git(repo, "show", "HEAD~1:agent/tickets/pick-a-date-library.md"), "git history keeps the file"
+    assert git(repo, "log", "-1", "--format=%s") == "drop pick-a-date-library: the stdlib covers it\n", "and the reason"
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        "agent/tickets/map-columns.md", "agent/tickets/pick-a-date-library.md"], "the drop and the edge, in one commit"
+    assert not git(repo, "status", "--porcelain"), "and nothing left uncommitted"
     assert run(repo, "get", "map-columns", "blocked-by").out == "one-flow\n", "the edge onto it goes, the others stay"
-    assert "M  agent/tickets/map-columns.md" in git(repo, "status", "--short")
     assert run(repo, "check", str(staying)).code == 0, "nothing is left naming no ticket"
 
 
@@ -1713,7 +1798,9 @@ def test_a_worker_is_refused_a_write_from_the_worktree_it_holds(split: Path) -> 
         ("set", "one-flow", "status=claimed"),
         ("new", "another-flow", "--priority", "2", "--size", "M"),
         ("rule", "one-flow", "D1", "keep it"),
-        ("import", "one-flow", str(report)),
+        ("import", "one-flow"),
+        ("land", "one-flow"),
+        ("accept", "one-flow"),
         ("drop", "one-flow"),
         ("retire",),
     ]
@@ -2068,10 +2155,10 @@ def test_a_range_that_is_no_range_says_a_listed_name_may_carry_it(split: Path) -
     assert said.code == 1 and "in a repo repos.toml lists by that name" in said.out and "never as a branch name" in said.out, said.said
 
 
-def in_review(listed: Path, slug: str, status: str = "review", **meta: object) -> Path:
+def in_review(listed: Path, slug: str, status: str = "review", body: str = "", **meta: object) -> Path:
     """A ticket waiting in review, committed in the agent repo, as an accept finds it; or at
     `status`, as a merge finds a ticket whose worker's report was never imported."""
-    path = ticket(listed / "agent" / "tickets", slug, status=status, **meta)
+    path = ticket(listed / "agent" / "tickets", slug, body, status=status, **meta)
     git(listed / "agent", "add", "-A")
     git(listed / "agent", "commit", "-q", "-m", slug)
     return path
@@ -2276,19 +2363,19 @@ def test_a_round_waits_in_review_until_every_branch_has_merged_and_then_lands_wi
     assert subjects(agent)[0] == "one-flow for review"
 
     merged(split, "ticket/one-flow")
-    said, read = printed(split, "land", "one-flow")
-    assert read["tickets"][0]["status"] == "review" and read["merged"] is False, "the agent branch is half of the round"
-    assert subjects(agent)[0] == "one-flow for review", "and nothing changed, so nothing is committed"
-
-    merged(agent, "ticket/one-flow")
-    before = path.read_text()
+    before, agent_tip = path.read_text(), tip(agent)
     said, read = printed(split, "land", "one-flow", "--dry-run")
-    assert read["tickets"][0]["status"] == "done" and path.read_text() == before, "a dry run writes nothing"
+    assert read["merging"] is True and read["merged"] is False, "the code side merged, so the agent branch would follow"
+    assert path.read_text() == before and tip(agent) == agent_tip, "a dry run merges nothing and writes nothing"
+
     said, read = printed(split, "land", "one-flow")
     assert said.code == 0, said.said
+    assert read["merging"] is True and read["merged"] is True
     assert read["tickets"][0]["diff"] == [f"code@{code}", f"agent@{notes}"], "the same ranges after the merge as before it"
     assert run(split, "get", "one-flow", "status").out == "done\n"
-    assert subjects(agent)[0] == "one-flow landed" and not git(agent, "status", "--porcelain", "--", "tickets")
+    assert subjects(agent)[:2] == ["one-flow landed", "Merge branch 'ticket/one-flow'"], "the agent branch merged --no-ff, then the landing"
+    assert git(agent, "rev-parse", "HEAD~1^2").strip() == tip(agent, "ticket/one-flow")
+    assert not git(agent, "status", "--porcelain")
     printed(split, "land", "one-flow")
     assert subjects(agent)[0] == "one-flow landed" and path.read_text().count("code@") == 1, "landing again writes nothing"
 
@@ -2424,11 +2511,6 @@ def test_a_parents_accept_writes_done_on_it_and_its_children_in_review_in_one_co
 
     refused("one-flow is not merged into main")
     merged(split, "one-flow")
-    (agent / "tickets" / "one-flow.md").write_text(tree["one-flow.md"] + "\nA note not committed yet.\n")
-    said = run(split, "accept", "one-flow")
-    assert said.code == 1 and "uncommitted changes" in said.err, said.said
-    assert (agent / "tickets" / "one-flow.md").read_text().endswith("A note not committed yet.\n"), "the edit is kept"
-    (agent / "tickets" / "one-flow.md").write_text(tree["one-flow.md"])
     # checked after map-columns, which the rules take, so a write before the last check is seen
     in_review(split, "warm-preset", parent="one-flow")
     built(split, "ticket/warm-preset", "one-flow", "warm, never merged")
@@ -2490,6 +2572,144 @@ def test_a_parents_accept_records_its_branch_in_a_listed_repo_a_child_of_it_name
     assert said.code == 0, said.said
     assert read["tickets"][0]["diff"] == [f"code@{tip(listed, 'main~1')}..{tip(listed, 'nps')}", f"Backend@{fork}..{tip(backend, 'nps')}"]
     assert read["tickets"][1]["status"] == "done"
+
+
+def test_a_landing_takes_the_rounds_report_in_with_its_status_in_one_commit(split: Path) -> None:
+    """The round whole: the report its worker committed reaches the ticket in the write that puts it
+    in `review`, and the merge after it lands the ticket without bringing the report in again."""
+    agent = split / "agent"
+    path = in_review(split, "one-flow", status="claimed")
+    built(split, "ticket/one-flow", "main", "the build")
+    came = reported(agent, "one-flow")
+    said, read = printed(split, "land", "one-flow")
+    assert said.code == 0, said.said
+    assert (read["tickets"][0]["status"], read["tickets"][0]["reports"]) == ("review", [came])
+    assert "One preset lands, warm" in path.read_text()
+    assert subjects(agent)[0] == "one-flow for review" and not git(agent, "status", "--porcelain")
+
+    merged(split, "ticket/one-flow")
+    rule = run(split, "rule", "one-flow", "D2", "2700K")
+    assert rule.code == 0, rule.said
+    said, read = printed(split, "land", "one-flow")
+    assert said.code == 0 and read["tickets"][0]["status"] == "done", said.said
+    assert path.read_text().count("One preset lands, warm") == 1
+
+
+def test_an_open_question_holds_done_and_the_agent_branchs_merge_with_it(split: Path) -> None:
+    """`land-takes-a-round-whole`'s last criterion, through every write that reaches done: the
+    question is named, and nothing merges or is written until it is ruled."""
+    agent = split / "agent"
+    path = in_review(split, "one-flow", body="## Questions\n\n- [D1] **Warm at what temperature?** 2700K or 3000K.\n")
+    built(split, "ticket/one-flow", "main", "the build")
+    built(agent, "ticket/one-flow", "main", "the report")
+    merged(split, "ticket/one-flow")
+    before, agent_tip = path.read_text(), tip(agent)
+    for write in (("land", "one-flow"), ("accept", "one-flow"), ("set", "one-flow", "status=done")):
+        said = run(split, *write)
+        assert said.code == 1 and "D1 is open, and a done ticket carries no open question" in said.err, (write, said.said)
+        assert path.read_text() == before and tip(agent) == agent_tip, write
+    assert run(split, "rule", "one-flow", "D1", "2700K").code == 0
+    said, read = printed(split, "land", "one-flow")
+    assert said.code == 0 and read["tickets"][0]["status"] == "done", said.said
+
+
+def test_a_round_with_no_code_merges_its_agent_branch_only_when_told(split: Path) -> None:
+    """Its code branch committed nothing, so no code merge says the build was read: the agent branch
+    waits for --merge, which is refused while a branch that did commit has not merged."""
+    agent = split / "agent"
+    in_review(split, "pick-a-format")
+    git(split, "branch", "ticket/pick-a-format")
+    notes = built(agent, "ticket/pick-a-format", "main", "the research")
+    said, read = printed(split, "land", "pick-a-format")
+    assert said.code == 0 and read["merging"] is False and read["tickets"][0]["status"] == "review", said.said
+
+    said, read = printed(split, "land", "pick-a-format", "--merge")
+    assert said.code == 0 and read["merging"] is True, said.said
+    assert (read["tickets"][0]["status"], read["tickets"][0]["diff"]) == ("done", [f"agent@{notes}"])
+
+    in_review(split, "map-columns")
+    built(split, "ticket/map-columns", "main", "columns")
+    built(agent, "ticket/map-columns", "main", "report")
+    said = run(split, "land", "map-columns", "--merge")
+    assert said.code == 1 and "not merged in the code repo" in said.err, said.said
+
+
+def test_a_ticket_ruled_alone_is_accepted_in_one_command_as_a_parent_is(split: Path) -> None:
+    """`land-takes-a-round-whole`'s fourth criterion: once its code has merged on the user's accept,
+    `accept` merges the agent branch and writes done, and it refuses what would leave it short."""
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    code = built(split, "ticket/one-flow", "main", "the flow")
+    notes = built(agent, "ticket/one-flow", "main", "the report")
+    said = run(split, "accept", "one-flow")
+    assert said.code == 1 and "not merged in the code repo" in said.err, said.said
+    merged(split, "ticket/one-flow")
+    said, read = printed(split, "accept", "one-flow")
+    assert said.code == 0, said.said
+    assert (read["tickets"][0]["status"], read["tickets"][0]["diff"]) == ("done", [f"code@{code}", f"agent@{notes}"])
+    assert subjects(agent)[:2] == ["one-flow landed", "Merge branch 'ticket/one-flow'"]
+
+    in_review(split, "lamp-ui")
+    in_review(split, "map-columns", parent="lamp-ui")
+    git(split, "checkout", "-q", "-b", "lamp-ui")
+    built(split, "ticket/map-columns", "lamp-ui", "columns")
+    built(agent, "ticket/map-columns", "main", "report")
+    merged(split, "ticket/map-columns")
+    said = run(split, "accept", "map-columns")
+    assert said.code == 1 and "ruled with its parent ticket lamp-ui" in said.err, said.said
+
+
+def test_a_round_whose_branches_were_deleted_after_their_merge_lands_from_the_merges(split: Path) -> None:
+    """`land-takes-a-round-whole`'s fifth criterion, read where the round is: the tip each branch
+    had is the second parent of the merge whose subject names it."""
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    code, notes = built(split, "ticket/one-flow", "main", "the flow"), built(agent, "ticket/one-flow", "main", "the report")
+    for top in (split, agent):
+        merged(top, "ticket/one-flow")
+        git(top, "branch", "-q", "-D", "ticket/one-flow")
+    built(split, "ticket/one-flow-two", "main", "another flow, whose slug the first's begins")
+    merged(split, "ticket/one-flow-two")
+    said, read = printed(split, "land", "one-flow")
+    assert said.code == 0, said.said
+    assert [(one["repo"], one["merged"]) for one in read["round"]] == [("code", True), ("agent", True)]
+    assert (read["tickets"][0]["status"], read["tickets"][0]["diff"]) == ("done", [f"code@{code}", f"agent@{notes}"])
+
+    in_review(split, "map-columns")
+    said = run(split, "land", "map-columns")
+    assert said.code == 1 and "fetch it from the worker host first" in said.err, "a round never fetched is said so"
+
+
+def test_every_write_leaves_the_ticket_it_wrote_committed(split: Path) -> None:
+    """`land-takes-a-round-whole`'s third criterion: once a write exits 0, its ticket file has no
+    change no commit holds, a hand edit it found there included."""
+    agent = split / "agent"
+
+    def clean(slug: str, *write: str) -> None:
+        said = run(split, *write)
+        assert said.code == 0, (write, said.said)
+        assert not git(agent, "status", "--porcelain", "--", f"tickets/{slug}.md"), write
+
+    clean("one-flow", "new", "one-flow", "--priority", "2", "--size", "M", "--status", "open")
+    path = agent / "tickets" / "one-flow.md"
+    path.write_text(path.read_text() + "\n## Questions\n\n- [D1] **Warm?** Or cool.\n")
+    (agent / "notes.txt").write_text("somebody else's, staged\n")
+    git(agent, "add", "notes.txt")
+    clean("one-flow", "set", "one-flow", "status=claimed", "--message", "claim one-flow")
+    assert subjects(agent)[0] == "claim one-flow" and "[D1]" in git(agent, "show", "HEAD:tickets/one-flow.md")
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == ["tickets/one-flow.md"]
+    assert git(agent, "status", "--porcelain", "--", "notes.txt") == "A  notes.txt\n", "what else was staged stays staged"
+    git(agent, "rm", "-q", "--cached", "notes.txt")  # a merge, which `accept` makes below, takes a clean index
+    clean("one-flow", "rule", "one-flow", "D1", "warm")
+    built(split, "ticket/one-flow", "main", "the flow")
+    reported(agent, "one-flow")
+    clean("one-flow", "import", "one-flow")
+    clean("one-flow", "land", "one-flow")
+    merged(split, "ticket/one-flow")
+    clean("one-flow", "rule", "one-flow", "D3", "2700K")
+    clean("one-flow", "accept", "one-flow")
+    clean("map-columns", "new", "map-columns", "--priority", "2", "--size", "S")
+    clean("map-columns", "drop", "map-columns")
 
 
 if __name__ == "__main__":

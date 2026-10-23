@@ -287,6 +287,16 @@ def ranges_of(toy: Path, slug: str) -> list[str]:
     return tracker.as_data(read.ticket(slug), read)["diff"]
 
 
+def rule_open(toy: Path, slug: str, env: dict[str, str] | None = None) -> None:
+    """Every question the ticket holds open, ruled as the user's accept answers it: a `done` waits
+    for that, and the checks that reach one are about something else."""
+    tracker_py = str(SKILL.parent / "tracker" / "tracker.py")
+    read = tracker.tracker_of(tracker.tracker_root(toy))
+    for asked in (one for one in read.ticket(slug).questions if not one.ruled):
+        subprocess.run([tracker_py, "rule", slug, asked.tag, "accepted"], cwd=toy, check=True, capture_output=True,
+                       env=env or environment(toy))
+
+
 def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(toy: Path) -> None:
     first = run(toy, "claim", "warm-preset")
     assert first.returncode == 0, first.stderr
@@ -655,9 +665,9 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, env=environment(toy))
     assert ruled.returncode == 0, ruled.stderr
-    git(agent, "commit", "-q", "-am", "warm-preset: D2 ruled")
+    assert not git(agent, "status", "--porcelain", "--", "tickets"), "the ruling is committed"
 
     # the stub makes one commit in each repo, so its parent is what that branch was cut from; read
     # from git rather than from the ranges under test
@@ -665,10 +675,12 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     for at, top in (("code", toy), ("agent", agent)):
         cut[at] = git(top, "rev-parse", "ticket/warm-preset~1").strip()
         tip[at] = git(top, "rev-parse", "ticket/warm-preset").strip()
-        git(top, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
-    landed = run(toy, "review", "warm-preset")
+    # the user's accept: the code merged by hand, and the rest in one command
+    git(toy, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
+    landed = run(toy, "accept", "warm-preset")
     assert landed.returncode == 0, landed.stderr
     assert status_of(toy, "warm-preset") == "done"
+    assert git(agent, "log", "-1", "--format=%P", "HEAD~1").split()[1] == tip["agent"], "the agent branch merged by the accept"
     got = subprocess.run([str(tracker), "get", "warm-preset", "diff"], cwd=toy, capture_output=True, text=True)
     assert got.stdout.split() == [f"code@{cut['code']}..{tip['code']}", f"agent@{cut['agent']}..{tip['agent']}"], got.stdout
 
@@ -732,10 +744,11 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
         assert status_of(toy, slug) == "review"
 
     def merged(slug: str) -> None:
+        """The orchestrator's read passed it: its code merged by hand, and the review merges its agent branch."""
         git(worktree, "merge", "-q", "--no-ff", "-m", f"{slug}: merged", f"ticket/{slug}")
-        git(agent, "merge", "-q", "--no-ff", "-m", f"{slug}: merged", f"ticket/{slug}")
         said = run(worktree, "review", slug)
         assert said.returncode == 0, said.stderr
+        assert git(agent, "merge-base", "--is-ancestor", f"ticket/{slug}", "main") == ""
 
     assert "warm-preset" not in frontier()
     built("preset-format")
@@ -759,20 +772,13 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
     assert status_of(toy, "cool-preset") == "review"
     assert git(toy, "rev-parse", "main").strip() == main, "nothing reached the branch above the parent"
 
+    for slug in ("preset-format", "warm-preset", "cool-preset"):
+        rule_open(toy, slug, env)
     early = run(toy, "accept", "lamp-ui")
     assert early.returncode != 0 and "not merged into main" in early.stderr, early.stderr
     subprocess.run([str(staged.parent.parent / "tracker" / "tracker.py"), "set", "lamp-ui", "status=review"],
                    cwd=toy, check=True, capture_output=True, env=env)  # its close-out: the whole tree waits for the ruling
-    git(agent, "commit", "-q", "-am", "lamp-ui for review")
     git(toy, "merge", "-q", "--no-ff", "-m", "lamp-ui: accepted whole", "lamp-ui")
-
-    # a ticket file of the tree edited and not committed: refused, and the edit kept
-    parent = tickets / "lamp-ui.md"
-    parent.write_text(parent.read_text() + "\nA note not committed yet.\n")
-    dirty = run(toy, "accept", "lamp-ui")
-    assert dirty.returncode != 0 and "uncommitted changes" in dirty.stderr, dirty.stderr
-    assert parent.read_text().endswith("A note not committed yet.\n")
-    git(agent, "checkout", "-q", "--", "tickets/lamp-ui.md")
     # a child in review the orchestrator never merged: the tracker refuses it, and none is written
     ticket(tickets, "dim-preset", status="review", parent="lamp-ui")
     git(agent, "add", "tickets/dim-preset.md")
@@ -862,6 +868,72 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     assert said.returncode == 0, said.stderr
     assert "left none of its own to import" in said.stderr, said.stderr
     assert (tracked(toy) / "warm-preset.md").read_text() == once, "nothing of the first round said twice"
+
+
+# The building stub's next round, resumed: more code, and a report of its own that numbers its
+# tags from D1 again, as a worker reading a stale ticket would.
+SECOND_ROUND = BUILDING.replace("the lamp, warm\\n", "the lamp, warm and dim\\n").replace(
+    "The warm preset lands, unmerged, with one question under it.", "The preset dims too, on the same branch.").replace(
+    "**Warm at what temperature?**", "**Dim to what?**")
+
+
+@pytest.mark.full_path
+def test_a_round_sent_back_before_its_review_keeps_its_report_beside_the_next(toy: Path, staged: Path) -> None:
+    """`land-takes-a-round-whole`'s first two criteria through dispatch: the orchestrator's read sends
+    round one back unreviewed, the resume brings its report in before the worker can write over it,
+    and round two's lands beside it, its tags numbered past round one's."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
+    assert "report=yes" in waited(toy).read_text()
+
+    (staged.parent / "run-worker.sh").write_text(SECOND_ROUND)
+    resumed = resume(toy, staged, "warm-preset", "A test belongs under tests/properties/ no more: move it.\n")
+    assert status_of(toy, "warm-preset") == "claimed", "the resumed build holds its ticket again"
+    sent = resumed.with_suffix(".context").read_text()
+    assert "The warm preset lands, unmerged" in sent, "round one reached the ticket the resumed round reads"
+    for _ in range(60):
+        if resumed.with_suffix(".status").exists():
+            break
+        time.sleep(0.5)
+    else:
+        pytest.fail("round two left no status line 30s after its resume")
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    written = (tracked(toy) / "warm-preset.md").read_text()
+    assert written.count("The warm preset lands, unmerged") == 1 and written.count("The preset dims too") == 1
+    read = tracker.tracker_of(tracker.tracker_root(toy)).ticket("warm-preset")
+    assert [(one.tag, one.headline) for one in read.questions] == [("D2", "Warm at what temperature?"), ("D4", "Dim to what?")]
+    assert [one.id for one in read.assumptions] == [1, 2, 3, 4]
+    assert len(read.meta["reports"]) == 2 and status_of(toy, "warm-preset") == "review"
+
+
+@pytest.mark.full_path
+def test_a_review_after_the_ticket_branches_were_deleted_lands_from_their_merges(toy: Path, staged: Path) -> None:
+    """`land-takes-a-round-whole`'s fifth criterion: merged by hand, the run cleaned up and its
+    branches gone with it, `dispatch review` reads each repo's tip off the merge that names it."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING)
+    agent = toy / "agent"
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
+    waited(toy)
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    assert run(toy, "review", "warm-preset").returncode == 0
+    rule_open(toy, "warm-preset")
+    tips = {}
+    for at, top in (("code", toy), ("agent", agent)):
+        tips[at] = (git(top, "rev-parse", "ticket/warm-preset~1").strip(), git(top, "rev-parse", "ticket/warm-preset").strip())
+        git(top, "merge", "-q", "--no-ff", "--no-edit", "ticket/warm-preset")
+    assert run(toy, "ctl", "cleanup", "warm-preset").returncode == 0
+    for top in (toy, agent):
+        git(top, "branch", "-q", "-D", "ticket/warm-preset") if git(top, "branch", "--list", "ticket/warm-preset") else None
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert ranges_of(toy, "warm-preset") == [f"{at}@{cut}..{tip}" for at, (cut, tip) in tips.items()]
 
 
 @pytest.mark.full_path
@@ -1273,6 +1345,7 @@ def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fai
         return subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, env=env, timeout=180).returncode == 0
     assert review(env).returncode == 0
+    rule_open(toy, "warm-preset", env)
     for top in (toy, toy / "agent"):
         git(top, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
 
@@ -1308,10 +1381,10 @@ def built_on_host(toy: Path, staged: Path, host: str) -> tuple[dict[str, str], P
 
 
 def tracker_writes(toy: Path, env: dict[str, str], *args: str) -> None:
-    """A session running `tracker` itself, outside dispatch, and committing what it wrote."""
+    """A session running `tracker` itself, outside dispatch, which commits what it wrote."""
     wrote = subprocess.run(["tracker", *args], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert wrote.returncode == 0, wrote.stdout + wrote.stderr
-    git(toy / "agent", "commit", "-q", "-am", f"tracker {' '.join(args)}")
+    assert not git(toy / "agent", "status", "--porcelain", "--", "tickets"), args
 
 
 @pytest.mark.full_path
@@ -1451,6 +1524,29 @@ def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> No
     assert status_of(toy, "warm-preset") == "review"
     assert by_hand.read_text() == "the code in a repo dispatch does not read\n"
     assert not (toy.parent / "bin" / "diffview.args").exists()
+
+
+def test_a_round_with_no_code_lands_on_a_review_told_to_merge_it(toy: Path) -> None:
+    """A research ticket's round, its code branch empty: no code merge says its build was read, so a
+    review leaves its agent branch unmerged, and `review --merge` merges it and writes `done`."""
+    agent = toy / "agent"
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("status: open", "status: review"))
+    git(agent, "commit", "-q", "-am", "warm-preset for review")
+    git(toy, "branch", "ticket/warm-preset")
+    built_on(agent, "ticket/warm-preset", "main", "notes.md")
+    tip = git(agent, "rev-parse", "ticket/warm-preset").strip()
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    merged = subprocess.run(["git", "-C", str(agent), "merge-base", "--is-ancestor", tip, "main"])
+    assert merged.returncode == 1, "the agent branch waits for the word that its build was read"
+
+    said = run(toy, "review", "warm-preset", "--merge")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert git(agent, "rev-parse", "main~1^2").strip() == tip, "merged --no-ff, then landed"
 
 
 # `tickets-land-in-listed-repos`: a ticket's round lands in the listed repos its `repos:` names
@@ -1851,6 +1947,7 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
         assert not git(hosted / bare, "branch", "--list", "ticket/warm-preset"), bare
 
     # the landing: its `done` deletes the fetched branches here, each once it has merged
+    rule_open(toy, "warm-preset", env)
     for top, onto in ((toy, "main"), (toy / "agent", "main"), (repos["Backend"], "development"), (repos["jarvis"], "main")):
         merged_in(top, onto, "ticket/warm-preset")
     landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
@@ -2058,6 +2155,7 @@ def test_a_listed_repo_dropped_from_repos_after_the_spawn_is_fetched_and_its_run
 
     reviewed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert reviewed.returncode == 0, reviewed.stderr
+    rule_open(toy, "warm-preset", env)
     for top, onto in ((toy, "main"), (toy / "agent", "main"), (repos["Backend"], "development")):
         merged_in(top, onto, "ticket/warm-preset")
     landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
@@ -2310,12 +2408,13 @@ def round_ranges(toy: Path) -> list[str]:
             for name, top in (("code", toy), ("agent", toy / "agent"))]
 
 
-def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path) -> None:
+@pytest.mark.parametrize("landing", ["review", "accept"])
+def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path, landing: str) -> None:
     """The squash is one commit on `development`, and the ticket's two commits on no branch there:
-    the review after it records `Backend@<merge>^..<merge>`, which no branch could give it, deletes
-    the ticket branch the pull request carried, records the code and agent repos' ranges, writes
-    `done`, which the tracker's done check allows, and renders the page over what landed in place of
-    the one it rendered before. Origin's refs are as GitHub left them."""
+    the review or the accept after it records `Backend@<merge>^..<merge>`, which no branch could
+    give it, deletes the ticket branch the pull request carried, records the code and agent repos'
+    ranges, writes `done`, which the tracker's done check allows, and renders the page over what
+    landed in place of the one it rendered before. Origin's refs are as GitHub left them."""
     backend = on_github(toy)
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
@@ -2327,7 +2426,7 @@ def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_tick
 
     theirs, merge = merged_on_github(backend, "squash")
     origin = git(toy.parent / "Backend.git", "for-each-ref")
-    done = run(toy, "review", "warm-preset")
+    done = run(toy, landing, "warm-preset")
     assert done.returncode == 0, done.stderr
     only_read(toy)
     assert git(toy.parent / "Backend.git", "for-each-ref") == origin
@@ -2532,8 +2631,8 @@ def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_r
     git(backend, "branch", "-q", "-D", "ticket/warm-preset")
     squash = git(backend, "rev-parse", "HEAD").strip()
     subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "set", "warm-preset", f"diff+=Backend@{fork}..{squash}"],
-                   cwd=toy, check=True, capture_output=True)
-    git(toy / "agent", "commit", "-q", "-am", "warm-preset: the range that landed in Backend")
+                   cwd=toy, check=True, capture_output=True, env=env)
+    rule_open(toy, "warm-preset", env)
     (toy / "agent" / "diffviews" / "warm-preset.html").unlink()  # the page over what landed is a new one
 
     landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
