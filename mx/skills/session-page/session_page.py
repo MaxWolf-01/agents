@@ -627,8 +627,8 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
     """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
     and at most one `Why: text`, as sub-items; a line indented deeper than an item's `-` continues it.
     A blind question carries one `Blind: path` sub-item, its test page, and nothing else. A line back
-    at the question's indent once its sub-items began is refused: a markdown reader would hang it
-    under the question, and read into the last sub-item it would show inside that option. A ticket's
+    at the question's indent once its sub-items began is refused: markdown would show it under the
+    question, but continuing the last sub-item would put it inside that option. A ticket's
     question is `- [<ticket> D3]` alone, since its words live in its ticket; what the ticket holds
     under it is read by `read_session`."""
     items: list[dict | TicketQuestion] = []
@@ -674,9 +674,9 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
                 raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Why: text` or `Blind: path`")
         elif line.startswith(" ") and part is not None and indent > dash:
             part["text"] = f"{part['text']} {line.strip()}".strip()
-        elif line.startswith(" "):
+        elif line.startswith(" ") and indent <= dash:
             raise RecordError(path, n, f"text under {items[-1]['tag']} after its sub-items, which would show inside the last one; "
-                                       f"what a question leans on beyond its detail line goes in ## Details, which the question links as [text](#t{path.stem})")
+                                       f"what a question leans on beyond its detail line goes in ## Details, which the question links as [text](#t{int(path.stem):02d})")
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
     questions: list[Question | TicketQuestion] = []
