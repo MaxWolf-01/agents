@@ -47,12 +47,14 @@ HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSY
 UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
 
 # A worker as dispatch-ctl leaves the seam for one: argv and the log-then-status contract are the
-# real runner's, and it keeps the prompt it was sent so the check can read what a spawn carried.
+# real runner's, and it keeps the prompt it was sent and the context file its worker would read, so
+# the check can read what a round carried.
 RUNNER = """#!/usr/bin/env bash
 set -eu
 message=$1 slug=$2 run_id=$4
 state=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cp "$message" "$state/$run_id.prompt"
+cp "$DISPATCH_CONTEXT" "$state/$run_id.context"
 printf 'stub: built %s\\n' "$slug" >> "$state/$run_id.log"
 printf 'attempts=1 exit=0 report=no session=stub\\n' > "$state/$run_id.status"
 """
@@ -393,19 +395,88 @@ def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
     return remote, env
 
 
+def context_of(toy: Path, slug: str) -> str:
+    """`tracker context <slug>` as the orchestrator's tracker prints it now: what
+    `rounds-read-a-staged-context` holds a round's worker and reviewer to, byte for byte."""
+    said = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "context", slug], cwd=toy,
+                          capture_output=True, text=True, env=environment(toy), check=True)
+    return said.stdout
+
+
+def resume(toy: Path, staged: Path, slug: str, message: str) -> Path:
+    """`message` written as the guidance and the run resumed on this machine: the new run's id, once
+    its status line is there."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    before = set(state.glob("*.status"))
+    # A run id is the second it started in, so a resume within the second of the run before it
+    # would write over that run's files.
+    time.sleep(max(0.0, max(int(one.stem.rsplit("-", 1)[1]) for one in before) + 1 - time.time()))
+    subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=environment(toy))
+    resumed = subprocess.run([str(staged), "ctl", "resume", slug, "sonnet"],
+                             cwd=toy, capture_output=True, text=True, timeout=180, env=environment(toy))
+    assert resumed.returncode == 0, resumed.stderr
+    for _ in range(60):
+        if new := set(state.glob("*.status")) - before:
+            return state / next(iter(new)).stem
+        time.sleep(0.5)
+    raise AssertionError("no status line 30s after the resume")
+
+
 @pytest.mark.full_path
-def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
-    """`ticket-file-contract#P4`'s worker half: the prompt is the ticket's body and every ancestor's,
-    which is what `tracker context` assembles for the review's `--spec` too."""
+def test_a_spawn_starts_the_worker_on_its_tickets_context_with_the_orchestrators_message_under_it(
+    toy: Path, staged: Path
+) -> None:
+    """`ticket-file-contract#P4`'s worker half: what the worker reads is the ticket's body and every
+    ancestor's, as `tracker context` assembles them, then the round's message, and the first round
+    opens on that file."""
     run(toy, "claim", "warm-preset")
     said = spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n")
     assert said.returncode == 0, said.stderr
-    (prompt,) = (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.prompt")
-    written = prompt.read_text()
-    assert written.startswith("Work the ticket warm-preset.\n")
-    assert "## warm-preset" in written and "One preset, warm." in written
-    assert "## parent ticket: lamp-ui" in written and "The whole of giving the lamp presets." in written
-    assert written.index("## warm-preset") < written.index("## parent ticket: lamp-ui")
+    run_id = waited(toy).with_suffix("")
+    read = run_id.with_suffix(".context").read_text()
+    assert read == context_of(toy, "warm-preset") + "\n## this round's message\n\nWork the ticket warm-preset.\n"
+    assert read.index("One preset, warm.") < read.index("The whole of giving the lamp presets.") < read.index("Work the ticket")
+    assert run_id.with_suffix(".prompt").read_text() == read
+
+
+@pytest.mark.full_path
+def test_a_resumed_worker_reads_its_ticket_as_amended_since_its_last_round(toy: Path, staged: Path) -> None:
+    """`rounds-read-a-staged-context`: a ticket amended between rounds reaches the resumed worker
+    with no push and no pasted text. Its message says so at the top while the context is new to
+    it, and is the guidance alone once it is not."""
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
+    waited(toy)
+    amended = tracked(toy) / "warm-preset.md"
+    amended.write_text(amended.read_text().replace("One preset, warm.", "One preset, warm, at 2700K."))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset: the temperature, ruled")
+
+    changed = resume(toy, staged, "warm-preset", "continue\n")
+
+    read = changed.with_suffix(".context").read_text()
+    assert read == context_of(toy, "warm-preset") + "\n## this round's message\n\ncontinue\n"
+    assert "at 2700K" in read
+    sent = changed.with_suffix(".prompt").read_text()
+    assert sent.startswith("Your ticket's context changed since your last round") and sent.endswith("\n\ncontinue\n")
+
+    unchanged = resume(toy, staged, "warm-preset", "continue\n")
+    assert unchanged.with_suffix(".prompt").read_text() == "continue\n"
+    assert unchanged.with_suffix(".context").read_text() == read
+
+
+@pytest.mark.full_path
+def test_a_resume_stages_a_host_another_plugin_version_staged(toy: Path, staged: Path) -> None:
+    """A resumed round runs on the contract and the dispatch-ctl of the orchestrator resuming it, as
+    a spawned one does: an older contract would point the worker at no context file."""
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    stamp = waited(toy).parent / "stamp"
+    current = stamp.read_text()
+    stamp.write_text("an older version's\n")
+
+    resume(toy, staged, "warm-preset", "continue\n")
+
+    assert stamp.read_text() == current
 
 
 @pytest.mark.full_path

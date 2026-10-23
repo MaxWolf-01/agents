@@ -15,6 +15,8 @@
 #   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
 #   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
 #                             `dispatch-ctl` resolves it on the host
+#   DISPATCH_CONTEXT          the file the worker reads its ticket's context and this round's
+#                             message from, which `dispatch-ctl` names; the worker inherits it
 #   RUN_LOG                   where each attempt's line goes (run-log, staged beside
 #                             this script); its own default unless set
 # A replacement runner (DISPATCH_RUNNER, staged as runner-<slug>) owes dispatch-ctl the same: these

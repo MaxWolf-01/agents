@@ -103,7 +103,10 @@ names() {
     # worktree. Each spawn rewrites it (relist); a resume keeps it.
     repos_record=$here/repos-$slug
     set_up_record=$here/set-up-$slug
+    # What `dispatch` stages for every round: the message the round is started on, and the
+    # ticket's context with that message under it, which the worker reads as $DISPATCH_CONTEXT.
     prompt=$here/prompt-$slug.md
+    context=$here/context-$slug.md
 }
 
 # The newest manifest line for a name sets `run_id` and `run_runner`, the
@@ -341,6 +344,7 @@ spawn() {
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
+    [ -f "$context" ] || die "no context at $context; \`dispatch ctl\` stages one with every spawn and resume"
     # Typed into a pane, a missing runner fails where nobody reads it, and the
     # wait for its worklog below would only say that nothing started.
     [ -f "$runner" ] || die "no runner at $runner; \`dispatch ctl\` copies DISPATCH_RUNNER here on a spawn or resume"
@@ -372,7 +376,7 @@ spawn() {
     # whichever session matched, one another worker holds included. The
     # trailing `:` ends the session name, which tmux otherwise splits at a `.`
     # (a repo named `.dotfiles`) as the window separator.
-    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort DISPATCH_PLUGIN_DIR=$plugin_dir bash $runner $prompt $slug $model $run_id $session_id"
+    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort DISPATCH_PLUGIN_DIR=$plugin_dir DISPATCH_CONTEXT=$context bash $runner $prompt $slug $model $run_id $session_id"
     run tmux send-keys -t "=$name:" Enter
 
     # The runner creates the log within its first seconds; its absence means the
