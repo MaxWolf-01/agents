@@ -686,6 +686,27 @@ def test_a_question_asked_before_the_users_last_message_is_not_new(
     assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}"]
 
 
+# A question whose headline links another, as session 168b5d8b's turn 3 asked one with `[Q6](#q6)`
+# in it, and carries emphasis and code besides.
+ASKS_WITH_MARKDOWN = (
+    "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Questions\n\n"
+    "- [Q8] **Fold [Q7](#q7) into the _light_ review in `turn_review.py`?** What it would replace.\n"
+    "  - (a) Fold it. *my pick*\n  - (b) Keep both.\n"
+)
+
+
+def test_a_headline_reaches_the_line_as_plain_text(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """The terminal renders no markdown, so a link in a headline reaches the line as its text, and
+    emphasis and code without their marks."""
+    fifth = worked_example / "turns" / "05.md"
+    fifth.write_text(ASKS_WITH_MARKDOWN)
+    with_write(unrecorded, "Write", fifth)
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}", "Q8 new · Fold Q7 into the light review in turn_review.py?"]
+
+
 # What starts a drawn turn: the user's own prompt; a finished task, with the user saying nothing;
 # or a finished task, with the user queuing a message once the turn has written its record.
 STARTS = ("typed", "task", "queued")

@@ -48,8 +48,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, chat_path, chat_record, left_alone, open_questions, page, read_session,
-    resolved, session_directory, written_this_turn,
+    PAGE, RecordError, Session, Turn, chat_path, chat_record, inline, left_alone, open_questions, page, read_session,
+    resolved, session_directory, strip_tags, written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -146,8 +146,10 @@ def shown(asked: tuple[str, ...]) -> str:
 
 def waiting(session: Session) -> tuple[str, ...]:
     """A line for each open question, oldest first: its tag, `new` where a turn since the user's
-    last message asked it, and its headline."""
-    return tuple(f"{q.tag}{' new' if asked_since_spoke(session, t) else ''} · {q.headline}" for t, q in open_questions(session))
+    last message asked it, and its headline as the page's reader reads it, since the terminal
+    renders no markdown: a link as its text, emphasis and code without their marks."""
+    return tuple(f"{q.tag}{' new' if asked_since_spoke(session, t) else ''} · {strip_tags(inline(q.headline, paths=False))}"
+                 for t, q in open_questions(session))
 
 
 def asked_since_spoke(session: Session, turn: Turn) -> bool:
