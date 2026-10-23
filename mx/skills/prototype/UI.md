@@ -26,7 +26,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 1. State the question and pick N
 
-N is the number of rival whole designs the question holds, with no fixed count; a question with seven competing designs gets seven, and ten or more is fine, since the reader cycles through them on the switcher.
+N is the number of rival whole designs the question holds, with no fixed count: two where it holds two, ten or more where it holds that many, since the reader cycles through them on the switcher.
 
 Write down the plan in one line, in the prototype's location or a top-of-file comment:
 
