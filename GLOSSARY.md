@@ -46,13 +46,8 @@ The ticket another ticket is part of. It holds the design its children are slice
 _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
-A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket unless it is a hinge.
-_Avoid_: subtask, sub-ticket, step
-
-**Hinge**:
-A child ticket its dependents would have to be rewritten, not amended, were it wrong, so it is ruled alone.
-_In code_: `hinge: true`
-_Avoid_: checkpoint (a context checkpoint is a session's), gate (orient's gate routes an intent), milestone
+A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket.
+_Avoid_: subtask, sub-ticket, step, hinge (retired: no child ticket is ruled alone)
 
 **Ticket context**:
 A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.

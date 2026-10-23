@@ -118,8 +118,6 @@ ASKS = {  # what a row asks of the user: the word in its column, and what that w
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
     "whole": ("with parent", "Built and merged into its parent ticket's branch. You rule on it with the parent, whole, at the parent's close-out."),
 }
-HINGE_TIP = ("A hinge: what builds on it would have to be rewritten, not amended, were it wrong. "
-             "You rule on it alone, before anything builds on it.")
 # what a parent ticket's row says of the child tickets folded under it (board.folded)
 KIN_TIP = {
     "closed-out": "Its child tickets, folded under it: you rule on the parent whole with them. Open the row to read each, and amend, redo or reject any one from there.",
@@ -612,8 +610,8 @@ def briefing_state(root: Path, repo: Path) -> str:
 STATE = """The tracker of {project} as the board reads it.
 
 One ticket per line, under the parent ticket its tree runs to: slug, status, what it asks of you,
-priority, your time on it, its name, its file, then whether it is a hinge, ruled alone, and the
-parent ticket whose row it folds under, ruled whole with it. Under it, where the ticket has them:
+priority, your time on it, its name, its file, then the parent ticket whose row it folds under,
+ruled whole with it. Under it, where the ticket has them:
 the brief, what it waits on, its open questions.
 """
 
@@ -636,7 +634,7 @@ def state_line(r: "Row") -> str:
     t = r.ticket
     marks = [
         t.slug, t.status, mark(r, "asks").shows, mark(r, "pri").shows, mark(r, "time").shows, t.title, str(t.path),
-    ] + (["a hinge"] if wears(r, "hinge") else []) + ([f"folded under {t.under}"] if t.under else [])
+    ] + ([f"folded under {t.under}"] if t.under else [])
     said = " · ".join(marks) + "\n"
     if t.brief:
         said += f"  brief: {plain(t.brief)}\n"
@@ -818,7 +816,6 @@ class Ticket:
     brief: str = ""  # the ## Brief section, as inline HTML
     questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
     freed: list[str] = field(default_factory=list)  # blockers not done that hold it back no longer (tracker.frees)
-    hinge: bool = False  # a child ticket the user rules on alone, before anything builds on it
     under: str | None = None  # the parent ticket whose row this one folds under (board.folded)
 
 
@@ -849,17 +846,14 @@ def parsed(root: Path) -> "tracker.Tracker":
 def folded(read: "tracker.Tracker") -> dict[str, str]:
     """The rows that fold under their parent ticket's row, each to that parent's slug. Every child
     of a parent at its close-out does, since the user rules on the parent whole with them. Under a
-    parent still being built, each child in review that is no hinge and is merged into the
-    parent's branch does, since it waits for that close-out, not on the user. Whether it merged is
-    read in the code repo the tracker plans, wherever the board runs from."""
+    parent still being built, each child in review that is merged into the parent's branch does,
+    since it waits for that close-out, not on the user. Whether it merged is read in the code repo
+    the tracker plans, wherever the board runs from."""
     code = project(read.root)
-
-    def merged(one: "tracker.Ticket") -> bool:
-        return not one.hinge and tracker.merged_under_parent(one, read, code)
-
     return {
         one.slug: one.parent for one in read.tickets.values()
-        if one.parent in read.tickets and (read.tickets[one.parent].status == "review" or merged(one))
+        if one.parent in read.tickets
+        and (read.tickets[one.parent].status == "review" or tracker.merged_under_parent(one, read, code))
     }
 
 
@@ -911,7 +905,6 @@ def shown(
         size=read.meta.get("size"),
         brief=inline_md(read.brief),
         questions=read.questions,
-        hinge=read.hinge,
         under=under,
     )
 
@@ -1550,7 +1543,7 @@ def board_graph(tickets: list[Ticket]) -> dict | None:
 # so a fact a row shows is worked out once.
 
 
-MarkKind = Literal["tree", "slug", "asks", "hinge", "kin", "rp", "gh", "time", "pri", "chip"]  # in the order a row shows them
+MarkKind = Literal["tree", "slug", "asks", "kin", "rp", "gh", "time", "pri", "chip"]  # in the order a row shows them
 
 
 @dataclass(frozen=True)
@@ -1673,7 +1666,7 @@ UNKNOWN_REF = "A pull request or issue this ticket names, on GitHub."
 
 def marks_of(t: Ticket, kin: int, gh: dict[str, str]) -> tuple[Mark, ...]:
     """Every mark on a row, in the order the row shows them: the tree the ticket is part of, its
-    slug (a click copies the file's path), what the row asks of the user, its hinge mark, the
+    slug (a click copies the file's path), what the row asks of the user, the
     count of the `kin` child tickets folded under it, its review page and GitHub references, the
     user's time, the priority, the blockers.
 
@@ -1686,7 +1679,6 @@ def marks_of(t: Ticket, kin: int, gh: dict[str, str]) -> tuple[Mark, ...]:
         Mark("tree", t.tree, TREE_TIP),
         Mark("slug", t.slug, f"Click to copy the path of the file this row was read from (y):\n{t.path}"),
         Mark("asks", word, meaning, look=kind),
-        *([Mark("hinge", "hinge", HINGE_TIP)] if t.hinge else []),
         *([Mark("kin", f"{kin} child ticket{'s' if kin != 1 else ''}",
                 KIN_TIP["closed-out" if t.status == "review" else "merged"])] if kin else []),
         *([Mark("rp", "review page", REVIEW_TIP, href=t.diffview)] if t.diffview else []),
@@ -2027,7 +2019,7 @@ def row_html(r: Row) -> str:
     return (
         row_open(t, r.search) + some("tree", "slug", "asks")
         + f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
-        f'{some("hinge", "kin", "rp", "gh")}</span>{brief}{asks_html(r)}</span>'
+        f'{some("kin", "rp", "gh")}</span>{brief}{asks_html(r)}</span>'
         f'<span class="meta">{some("time", "pri")}<span class="chips">{some("chip")}</span></span>'
         f'</summary>{inner}<div class="body">{"".join(map(block_html, t.blocks))}</div></details>'
     )
@@ -2048,7 +2040,6 @@ MARK_HTML = {
     "tree": '<span class="tree" data-tip="{says}">{clipped}</span>',
     "slug": '<span class="slug" data-tip="{says}">{clipped}</span>',
     "asks": '<span class="asks a-{look}" data-tip="{says}">{shows}</span>',
-    "hinge": '<span class="hinge" data-tip="{says}">{shows}</span>',
     "kin": '<span class="kin" data-tip="{says}">{shows}</span>',
     "rp": '<a class="rp" href="{href}" target="_blank" onclick="event.stopPropagation()" data-tip="{says}">{shows}</a>',
     "gh": '<a class="gh {look}" href="{href}" target="_blank" onclick="event.stopPropagation()" data-tip="{says}">{shows}</a>',
@@ -2488,7 +2479,7 @@ ${columns}
     border: 1px solid var(--edge); border-radius: 4px; padding: 0 .35rem; cursor: copy; overflow: visible; }
   .copier:hover { color: var(--accent); border-color: var(--accent); }
   .meta { display: contents; }
-  .asks, .pri, .time, .rp, .gh, .hinge, .kin { font-size: .78rem; white-space: nowrap; }
+  .asks, .pri, .time, .rp, .gh, .kin { font-size: .78rem; white-space: nowrap; }
   .chip { font-size: .78rem; }
   .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%;
     background: color-mix(in srgb, var(--c) 12%, transparent);
@@ -2498,8 +2489,6 @@ ${columns}
   .a-session { --c: var(--c-purple); }
   .a-build { background: none; border-color: transparent; padding-left: 0; }
   .a-whole { --c: var(--muted); }
-  /* a hinge is ruled alone, so its mark wears the gold a build to rule on does */
-  .hinge { color: var(--c-gold); }
   .kin { color: var(--muted); }
   /* the rows folded under a parent ticket's row, set in by the rule the opened body carries: a
      row's fixed columns leave the name no width to give up to a deeper indent on a narrow window */

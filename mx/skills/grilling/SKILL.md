@@ -45,7 +45,7 @@ The brief fixes the scope: work past it is out of scope, not fog; a part found t
 
 ## The frontier empties
 
-The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the ticket current; one that several sessions wrote is read whole once first, because each session saw only its part and the parts can disagree. Then cut it into child tickets (`/mx:tracker`, SLICING.md), or build it as it stands when it is one slice. A question the design does not hinge on, one that is naturally its own work, leaves as a child ticket so the rest can be cut; one the design hinges on holds the cut.
+The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the ticket current; one that several sessions wrote is read whole once first, because each session saw only its part and the parts can disagree. Then cut it into child tickets (`/mx:tracker`, SLICING.md), or build it as it stands when it is one slice. A question the design does not rest on, one that is naturally its own work, leaves as a child ticket so the rest can be cut; one the design rests on holds the cut, and so does an interface or data shape the slices would consume (SLICING.md).
 
 A mark is stripped when the user rules on it, in whichever session holds the ticket; the ruling on what that ticket built shows them the unruled ones that change what they asked for (`/mx:dispatch`).
 

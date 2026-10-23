@@ -324,7 +324,7 @@ print(json.dumps(out))
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
-MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
+MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
          "#t-month-close .kin",
          f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",

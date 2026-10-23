@@ -31,7 +31,7 @@ step: 6
 Work bigger than one worker is cut into child tickets, each a vertical slice through every layer it touches, and they go through the same dispatch, workers and landing into the parent's branch. Matt Pocock's walkthrough says why vertical: an agent left to itself builds layer by layer, and gets no feedback on the whole until the last layer is done.
 
 step: 7
-A slice the later slices build on, such as an interface or a data shape, is a hinge. It is ruled on alone, so a wrong one is caught before anything depends on it.
+An interface or a data shape the slices build on is settled before the cut, in the grilling or a prototype. A shape question a slice raises anyway becomes a question on its ticket, and the slices that would build on it wait for your answer.
 
 step: 8
 Once the last slice has landed, the close-out runs the full suite and a code review of the whole branch, where an incoherence between slices shows, and writes a debrief.
@@ -160,7 +160,7 @@ step: 15
 Each worker runs in a worktree of its own, on the branch `ticket/<slug>`. It builds, reviews its code and finishes by committing its report; it writes no ticket file.
 
 step: 16
-`dispatch review` imports the report into the ticket, renders the review page and writes review. A child ticket that is no hinge merges into its parent's branch as soon as the orchestrator has read it.
+`dispatch review` imports the report into the ticket, renders the review page and writes review. A child ticket merges into its parent's branch as soon as the orchestrator has read it.
 
 step: 17
 Your ruling is accept, amend, redo or reject, on the calls the landing shows you. A build with none of your calls merges on your standing yes.
@@ -243,7 +243,7 @@ Each chip at the top shows or hides one tree of tickets. Here only the saved-vie
 
 step: 2
 region: .01 .08 .71 .095
-The opened row is a hinge, a child ticket ruled on alone because the tickets after it would have to be rewritten if it were wrong.
+The opened row is a prototype, a child ticket you work through together, in front of three takes on the list.
 
 step: 3
 region: .02 .175 .52 .08
@@ -304,7 +304,7 @@ step: 12
 It sorts the build's calls into three kinds: calls you already made, the agent's own calls about how it is built, and calls that change what you asked for.
 
 step: 13
-A build with nothing yours to make merges once it has the yes its merge needs: your standing yes for a hinge, your word for work going into the integration branch, the one the whole project merges into. You get one line about it, with the show and the review page.
+A build with nothing yours to make merges once it has the yes its merge needs: your word for work going into the integration branch, the one the whole project merges into. You get one line about it, with the show and the review page.
 
 step: 14
 Each call that is yours becomes a question on its ticket and arrives on your session page with the smallest artefact that makes it visible. A forked agent builds one show, an artefact explaining what was built, around them all.
