@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from session_checks import DRAWN, SESSION, TURN_ANCHOR, elements, record, sessions, rows_of, sections_of, text_of, turns_on, view_of
+from session_checks import DRAWN, SESSION, TURN_ANCHOR, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare

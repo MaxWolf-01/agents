@@ -130,17 +130,18 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("render", "chat reply recorded", chat=(chat_path(directory / "turns", now), chat_record(hook["last_assistant_message"], now)))
     if turn is None:
         return Decision("render", "no record written this turn")
-    rendered = {"shown": shown(session), "waiting": waiting(session), "artefacts": linked(session, turn)}
+    asked = waiting(session)
+    rendered = {"shown": shown(asked), "waiting": asked, "artefacts": linked(session, turn)}
     if not turn_review.reviewed_since(session.id, session.began):
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", **rendered)
 
 
-def shown(session: Session) -> str:
+def shown(asked: tuple[str, ...]) -> str:
     """The line under a turn whose answer is on the page, up to its link: whether a question waits on
-    the user there."""
-    return f"session page · {'waiting on you' if open_questions(session) else 'nothing waiting on you'}"
+    the user there, given the lines `waiting` names them in."""
+    return f"session page · {'waiting on you' if asked else 'nothing waiting on you'}"
 
 
 def waiting(session: Session) -> tuple[str, ...]:

@@ -36,8 +36,8 @@ import session_page
 import stop_hook
 import turn_review
 from session_checks import (
-    BEFORE_IT, DRAWN, TASK_DONE, TURN_ENDED, sessions, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_ANCHOR, TURN_STARTS, UNPARSEABLE, appended, elements, logged,
-    messages_of, payload, turns_on, unreachable, view_of, with_write,
+    BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
+    UNPARSEABLE, appended, elements, logged, messages_of, payload, sessions, turns_on, unreachable, view_of, with_write,
 )
 from session_checks import record as drawn_record
 from session_page import PAGE, PREVIOUS, SESSIONS
@@ -1090,22 +1090,12 @@ def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
     run: Callable[[dict], None], request: pytest.FixtureRequest,
 ) -> None:
     """turns-end-on-their-recap#P3 and P4: the records the write hook never saw are still checked
-    at the turn's end, and the send-back asks the turn to end on its recap."""
+    at the turn's end, and the send-back asks the turn to end on its recap, which
+    (turn-end-line-names-the-open-questions#P3) lists no question: the hook's message names them."""
     run(arrange(worked_example, transcript, request))
     said = said_back(capsys)
     assert stop_hook.RECAP in said and "without a reply" not in said
-
-
-# A clause asking the recap to name or list questions, as the recap rule once did: "each open
-# question named by what it decides".
-LISTS_A_QUESTION = re.compile(r"\b(?:each|every|name|names|named|list|lists)\b[^;]*\bquestions?\b")
-
-
-def test_no_send_back_asks_the_recap_to_list_a_question() -> None:
-    """turn-end-line-names-the-open-questions#P3: the Stop hook's message names the open
-    questions, so the recap every send-back asks for, the write hook's too, lists none."""
-    for asked in (stop_hook.RECAP, stop_hook.UNPARSED, stop_hook.OUTSIDE_WRITE):
-        assert not LISTS_A_QUESTION.search(asked), asked
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1])
 
 
 def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(

@@ -29,7 +29,7 @@ import write_hook
 from session_page import PAGE, SESSIONS
 from stop_hook import RECAP
 from session_checks import (
-    CATALOGUE_FIXTURE, LEFT_ALONE, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
+    CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
     unreachable, with_write,
 )
 from session_checks import payload as stopped
@@ -109,6 +109,7 @@ def test_a_record_with_findings_goes_back_on_its_write_with_at_most_three(
     assert [quote for quote in IN_RECORD if f'"{quote}"' in said] == IN_RECORD[:3]
     assert "**AI vocabulary.**" in said, "a cited rule comes with its text"
     assert RECAP in said
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
     assert (worked_example / PAGE).read_text() == stale_page
 
     monkeypatch.setattr(turn_review, "review", unreachable)
@@ -302,6 +303,7 @@ def test_a_write_that_leaves_the_records_unparseable_is_answered_with_the_reader
     said = run(wrote(record, writing, tool))
     assert said.startswith(f"{record}:{line}: " if line else f"{record}: ")
     assert "carry on" in said and RECAP in said, "the turn goes on, and still ends on its recap"
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
 
 def test_a_session_record_that_does_not_parse_is_answered_on_its_edit(
@@ -341,6 +343,7 @@ def test_a_turn_record_pointing_at_another_part_of_the_page_in_words_goes_back_u
     said = run(wrote(record, writing))
     assert said.startswith(f"{record}:{text.count(chr(10)) + 3}: 'under Details' ")
     assert "(#t07)" in said and RECAP in said
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
     monkeypatch.setattr(turn_review, "review", reviewer())
     record.write_text(text + "\n\nThe four ways out are in [turn 03](#t03); `see below` is code.\n")

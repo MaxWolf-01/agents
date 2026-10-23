@@ -96,7 +96,6 @@ def record(number: int, turn: dict, headline: str = "", details: str = "") -> st
     return "---\n" + "\n".join(front) + "\n---\n\n" + "\n".join(body) + "\n"
 
 
-
 # ---- the page, read back ----------------------------------------------------
 
 
@@ -181,6 +180,12 @@ def payload(directory: Path, transcript: Path, reply: str = "", **rest: object) 
         "last_assistant_message": reply,
         **rest,
     }
+
+
+# A clause asking the recap to name or list questions, as the recap rule once did: "each open
+# question named by what it decides". A send-back's own wording is its last line, under the
+# reader's error or the review's findings it carries.
+LISTS_A_QUESTION = re.compile(r"\b(?:each|every|name|names|named|list|lists)\b[^;]*\bquestions?\b")
 
 
 def logged(log: Path, key: str) -> list[dict]:
