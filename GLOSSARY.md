@@ -47,7 +47,7 @@ _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
 A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket.
-_Avoid_: subtask, sub-ticket, step
+_Avoid_: subtask, sub-ticket, step, hinge
 
 **Ticket context**:
 A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
@@ -125,7 +125,7 @@ _Avoid_: subagent, implementer
 
 **Worker report**:
 What a worker hands back for its ticket: its closing comment and the questions its build raised.
-_Avoid_: closing comment (one part of a report), handoff, debrief (a close-out's findings are proposed tickets and ticket questions)
+_Avoid_: closing comment (one part of a report), handoff, debrief
 
 **Tick**:
 One pass of the orchestrator's loop.
