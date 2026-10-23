@@ -37,7 +37,8 @@ import stop_hook
 import turn_review
 from session_checks import (
     BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
-    UNPARSEABLE, appended, elements, logged, messages_of, payload, sessions, turns_on, unreachable, view_of, with_write,
+    UNPARSEABLE, appended, asked_in_order, elements, logged, messages_of, payload, sessions, turns_on, unreachable, view_of,
+    with_write, write_tickets,
 )
 from session_checks import record as drawn_record
 from session_page import PAGE, PREVIOUS, SESSIONS
@@ -747,22 +748,25 @@ def test_the_line_names_each_open_question_once_oldest_first_and_marks_the_new_o
     """turn-end-line-names-the-open-questions#P1 and P2, over sessions whose questions meet every
     fate and whose turns the user, a task or both started: the lines under the link are the open
     questions the draw left, each once, oldest first, each by its headline; one is new exactly where
-    the turn that asked it is the one holding the user's last message, or a later one."""
+    the turn that asked it is the one holding the user's last message, or a later one. A ticket's
+    question is named qualified by its ticket, while its ticket holds it open."""
     turns, open_tags, starts = drawn
-    directory = tmp_path_factory.mktemp("project") / SESSIONS / DRAWN
+    project = tmp_path_factory.mktemp("project")
+    directory = project / SESSIONS / DRAWN
     (directory / "turns").mkdir(parents=True)
+    write_tickets(project, turns)
     for number, turn in enumerate(turns, start=1):
         (directory / "turns" / f"{number:02d}.md").write_text(drawn_record(number, turn))
     transcript = started_transcript(directory.parent / "transcript.jsonl", directory, starts)
-    asked_in = {tag: number for number, turn in enumerate(turns, start=1) for tag in turn["asks"]}
+    asked_in = {handle: number for number, turn in enumerate(turns, start=1) for handle in asked_in_order([turn])}
     spoke = max((number for number, start in enumerate(starts, start=1) if start != "task"), default=0)
     decision = decide(payload(directory, transcript), directory)
     lines = [line.split(" · ") for line in decision.waiting]
-    tags = [head.split()[0] for head, _ in lines]
-    assert tags == sorted(open_tags, key=lambda tag: int(tag[1:]))
-    for (head, headline), tag in zip(lines, tags):
-        assert headline == f"What about {tag}?"
-        assert head == (f"{tag} new" if asked_in[tag] >= spoke else tag)
+    handles = [head.removesuffix(" new") for head, _ in lines]
+    assert handles == [handle for handle in asked_in_order(turns) if handle in open_tags]
+    for (head, headline), handle in zip(lines, handles):
+        assert headline == f"What about {handle}?"
+        assert head == (f"{handle} new" if asked_in[handle] >= spoke else handle)
     assert decision.shown == f"session page · {'waiting on you' if open_tags else 'nothing waiting on you'}"
 
 
