@@ -82,8 +82,12 @@ def render() -> None:
     subprocess.run([str(HERE / "compress.py"), *written], check=True)
 
 
-if __name__ == "__main__":
-    if not tyro.cli(Args, description=__doc__).check:
+def main(args: Args) -> None:
+    if not args.check:
         render()
     elif problems := check():
         sys.exit("\n".join(problems))
+
+
+if __name__ == "__main__":
+    main(tyro.cli(Args, description=__doc__))
