@@ -31,7 +31,8 @@ still, with none of its requests in flight, before it reads the height, resizes 
 it, waits again, then scrolls to the top, so what an address' fragment slides under sticky or
 fixed chrome is no finding.
 
-Skipped on purpose: overflow under 2px; the touching line boxes of a multi-line label; text a
+Skipped on purpose: overflow under 2px, and a cut under 2px by each box (a clipped finding's
+size is the most any one box cut); the touching line boxes of a multi-line label; text a
 clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs cross by
 less than half the shorter one's height. Text in a scrolling ancestor never counts as escaping
 or being cut off, and still counts as overlapping.

@@ -181,8 +181,8 @@ def test_a_clipped_title_is_reported_and_the_run_still_passes(tmp_path):
 def test_a_clipped_text_names_every_box_that_cuts_it(tmp_path):
     """A text set to truncate in a box of its own can still be cut by a box around it, which is a
     different finding: the cutters tell the two apart, the box that cuts less included. A box
-    around it counts only for what it cuts off of what the inner box left showing, a scroller's
-    included."""
+    around it counts only for what it cuts off of what the inner box left showing, so a text in a
+    scroller a wider card leaves wholly showing is no finding at all."""
     _, findings = lint(
         tmp_path,
         """
