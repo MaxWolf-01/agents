@@ -28,16 +28,17 @@
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the status line (attempts, exit code, report=,
 #                 session id, models), or `gone`: the runner died with no
-#                 status line (a killed pane, a rebooted host). report=yes
-#                 is a report this round committed, one differing from the
-#                 report the round started with.
+#                 status line (a killed pane, a rebooted host). report=yes:
+#                 this round committed a new report.
 # log <slug> [lines]
 #                 the status line and the worklog's last lines, 20 by default.
-# cleanup <slug>  kills the pane and the `job`s the worker started, removes
-#                 the ticket's worktrees and branches, forgets the run.
-# init, bare      staging, which `dispatch` runs itself.
-# A host needs git, tmux and jq; init also needs curl and claude, and spawn
-# needs that claude logged in.
+# cleanup <slug> [--force]
+#                 kills the pane and the worker's `job`s, removes the ticket's
+#                 worktrees and branches, forgets the run. Exit 1, nothing
+#                 touched: the worktree holds a repo no spawn cut or an
+#                 uncommitted change; --force deletes them.
+# init, bare      staging, which `dispatch` runs.
+# A host needs git, tmux and jq; init also curl and claude, logged in for spawn.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto)
@@ -55,7 +56,7 @@ set -u
 # version of these scripts staged here, written by the orchestrator, `repos-<slug>` (`names`),
 # `runner-<slug>`, the orchestrator's DISPATCH_RUNNER for that ticket, `manifest`, one line per
 # run (name TAB run TAB worktree TAB runner), `<run>.status` and `<run>.log`, the runner's,
-# and `<name>.install.log` (set_up).
+# `<name>.install.log` (set_up), and `set-up-<slug>`, what the setup left in the worktree (`foreign`).
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
@@ -102,6 +103,7 @@ names() {
     # The listed repos the ticket's worktree holds, one line each: name TAB git dir TAB base TAB
     # worktree. Each spawn rewrites it (relist); a resume keeps it.
     repos_record=$here/repos-$slug
+    set_up_record=$here/set-up-$slug
     prompt=$here/prompt-$slug.md
 }
 
@@ -220,6 +222,7 @@ checkout() {
         remove_worktrees
         die "setup command failed in $worktree; the log above is its tail"
     fi
+    deletable > "$set_up_record"
 }
 
 # Whether every listed repo still to be cut is free of <branch>: one there
@@ -518,6 +521,12 @@ log() {
 
 cleanup() {
     load; names "$1"
+    if [ "${2:-}" != --force ]; then
+        held=$(foreign)
+        [ -z "$held" ] || die "$slug's worktree holds work no spawn put there, which its cleanup would delete and which may exist nowhere else:
+$held
+move each out of the worktree, or commit it and \`dispatch fetch $slug\`, then clean up again; \`dispatch ctl cleanup $slug --force\` deletes them all"
+    fi
     if tmux has-session -t "=$name:" 2>/dev/null; then
         run tmux kill-session -t "=$name:"
     else
@@ -540,6 +549,51 @@ cleanup() {
     ( remove_jobs )
     remove_worktrees
     echo "cleaned $name"
+}
+
+# What a cleanup would delete that no spawn put there, one line each: what `deletable` finds less
+# what it found once the setup had run (`set_up_record`), so what the setup leaves (a dependency
+# checked out under .venv, a build output the project does not ignore) stops no cleanup. A
+# worktree cut before that record existed has everything counted.
+foreign() {
+    deletable | sort | comm -13 <(sort "$set_up_record" 2> /dev/null) -
+}
+
+# What `git worktree remove --force` would take from the ticket's worktree without a word: a repo
+# below its top that is neither one a spawn cut nor a submodule (a worktree of another repo on this
+# host, a clone), and each change not committed in a worktree a spawn cut.
+deletable() {
+    local cut at
+    cut=$(cut_here | cut -f2 | xargs -r -d '\n' realpath -m)
+    find "$worktree" -mindepth 2 -name .git -prune -print 2> /dev/null | while read -r at; do
+        at=$(dirname "$at")
+        grep -qxF -- "$(realpath -m "$at")" <<< "$cut" ||
+            [ -n "$(git -C "$at" rev-parse --show-superproject-working-tree 2> /dev/null)" ] ||
+            echo "  a repo at $at, a checkout of $(git -C "$at" rev-parse --path-format=absolute --git-common-dir 2> /dev/null || echo '?')"
+    done
+    uncommitted | sed 's/^/  not committed in /'
+}
+
+# Each change not committed in the worktrees a spawn cut, as `<worktree>: <git status line>`, an
+# untracked file on a line of its own, since a directory's one line would read the same once the
+# worker wrote into it. The code worktree's leaves out the worktrees nested in it, which are read
+# on their own.
+uncommitted() {
+    local dir at nested=()
+    while IFS=$'\t' read -r dir at; do
+        [ "$at" = "$worktree" ] || [[ $at != "$worktree"/* ]] || nested+=(":(exclude)${at#"$worktree"/}")
+    done < <(cut_here)
+    while IFS=$'\t' read -r dir at; do
+        cut_at "$dir" "$at" || continue
+        if [ "$at" = "$worktree" ]; then git -C "$at" status --porcelain -uall -- . "${nested[@]}"; else git -C "$at" status --porcelain -uall; fi |
+            awk -v at="$at" '{ print at ": " $0 }'
+    done < <(cut_here)
+}
+
+# The worktrees a spawn cuts for the ticket, as `<git dir> TAB <worktree>`, the code worktree first.
+cut_here() {
+    printf '%s\t%s\n' "$git_dir" "$worktree" "$agent_dir" "$agent_worktree"
+    [ ! -f "$repos_record" ] || awk -F'\t' '{ print $2 "\t" $4 }' "$repos_record"
 }
 
 # The `job`s a worker started for its builds and test runs, which it rarely
@@ -577,6 +631,7 @@ remove_worktrees() {
         while IFS=$'\t' read -r -u 3 _ dir _ at; do drop_listed "$dir" "$at"; done 3< "$repos_record"
         run rm "$repos_record"
     fi
+    rm -f "$set_up_record"
     [ -d "$agent_worktree" ] && run git -C "$agent_dir" worktree remove --force "$agent_worktree"
     git -C "$agent_dir" show-ref --verify -q "refs/heads/$branch" && run git -C "$agent_dir" branch -D "$branch"
     [ -d "$worktree" ] && run git -C "$git_dir" worktree remove --force "$worktree"
