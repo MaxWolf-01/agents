@@ -1071,6 +1071,11 @@ def test_p1_every_copy_button_a_row_carries_shows_what_it_copies(transcribed: De
     seen = view_of(transcribed.root, transcribed.repo)
     found = copies(seen)
     assert {c.kind for c in found} == {"qcopy", "qall", "qgroup", "runcopy", "resume"}
+    # the copy-alls run past the cap on any host; this keeps a single question's button cut by
+    # what it asks, not by how long this host's scratch path is
+    assert any(c.kind == "qcopy" and len(c.text.split("\n", 1)[1]) > board.COPY_CAP for c in found), (
+        "no question in the demo tracker runs past the cap, so no button here is cut by what it asks"
+    )
     for c in found:
         assert len(c.does.split()) >= 4 and "copy" in c.does, f"the {c.kind} button says {c.does!r} of the click"
         assert c.shows, f"the {c.kind} button shows nothing of what it copies"
