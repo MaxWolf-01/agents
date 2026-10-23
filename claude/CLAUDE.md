@@ -136,7 +136,7 @@ NEVER use subagents to read source code files, documentation, or knowledge files
 You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself unless forced by the scale, complexity or uncertainty of the task.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 When a subagent's output matters, tell it where to write its report and read that file; the return channel is not reliable, and `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage. A subagent that goes idle without handing back a report has NOT stalled: read its report file, or failing that its transcript under `~/.claude/projects/<project>/<session-id>/subagents/` (hundreds of KB; extract the last assistant text block, never read it whole), before redoing any of the work yourself.
-Subagents default to opus, whatever the session model is, and run at the session's effort, which an Agent call cannot change.
+Subagents default to opus, whatever the session model is, and run at the session's effort unless the spawn names one, which it does where a skill or this file asks for it; a fork always runs at the session's.
 An in-harness subagent is for read-only work that ends in a file you read: research, a drill-down, a lookup across many files. Work that edits a repo goes through `/mx:dispatch`, where model, effort and isolation are explicit and the run is logged.
 
 Models in use (Anthropic's effort and prompting docs, 2026-09):
