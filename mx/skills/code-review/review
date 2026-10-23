@@ -29,15 +29,14 @@
 #   --model  every reviewer's model, `opus` by default.
 #   --minutes every reviewer's time budget, which its prompt states and it
 #            paces its work to, 10 by default; a budget, not a timeout.
-# Reports land in <state>/mx/reviews/<repo>/<range>/<axis>.md, the prompt each
-# reviewer read under prompts/ beside them and its output in <axis>.log, and
-# the reports' paths are this script's own output: the reports of the axes
-# whose reviewer finished. <state> is $XDG_STATE_HOME, ~/.local/state by
-# default; <repo> is the reviewed repo's git common dir. Exit 1 names each axis
-# that died or left no report, with the last line its reviewer printed, which
-# is where a usage limit or a crash says itself, and the command that re-runs
-# them. One review of a range runs at a time: a second is refused while the
-# first, or anything it started, is alive.
+# Reports land in ${XDG_STATE_HOME:-~/.local/state}/mx/reviews/<repo>/<range>/,
+# one <axis>.md per axis, the prompt each reviewer read under prompts/ beside
+# them and its output in <axis>.log, and the reports' paths are this script's
+# own output: the reports of the axes whose reviewer finished. Exit 1 names
+# each axis that died or left no report, with the last line its reviewer
+# printed, which is where a usage limit or a crash says itself, and the command
+# that re-runs them. One review of a range runs at a time: a second is refused
+# while the first, or anything it started, is alive.
 #
 # A reviewer starts from none of the caller's setup: no settings files, MCP
 # servers, skills or memory, so what it works from is its prompt, the same on
