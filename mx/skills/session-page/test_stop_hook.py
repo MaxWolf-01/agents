@@ -698,8 +698,8 @@ ASKS_WITH_MARKDOWN = (
 def test_a_headline_reaches_the_line_as_plain_text(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
-    """The terminal renders no markdown, so a link in a headline reaches the line as its text, and
-    emphasis and code without their marks."""
+    """turn-end-line-names-the-open-questions, story 1: the terminal renders no markdown, so a link
+    in a headline reaches the line as its text, and emphasis and code without their marks."""
     fifth = worked_example / "turns" / "05.md"
     fifth.write_text(ASKS_WITH_MARKDOWN)
     with_write(unrecorded, "Write", fifth)
