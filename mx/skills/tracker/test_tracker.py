@@ -337,6 +337,39 @@ def test_the_old_property_stamp_is_refused_with_the_citation_that_replaced_it(ti
     assert "a property is stated once and cited `<slug>#P<n>`" in said.out
 
 
+def test_a_session_turn_cited_with_its_quote_before_it_and_none_after_is_refused(tickets: Path, repo: Path) -> None:
+    """The ticket's incident: the bullet quoted max's words from the session, then pointed at the
+    turn that held the question set without quoting it, and the worker host had no copy of the turn."""
+    path = ticket(tickets, "one-flow", (
+        "## Decisions\n\n"
+        '- **A leading-words worker** (you: "these lists should be leading words"): it carries the\n'
+        "  question set as max kept it (session 5309b83a, `turns/02.md`, the `(you, r2)` items).\n"
+    ))
+    said = run(repo, "check", str(path))
+    assert said.code == 1
+    assert f"{path}:{line_of(path, 'session 5309b83a')}: session 5309b83a's `turns/02.md` is cited with no quote after it" in said.out, said.out
+
+
+@pytest.mark.parametrize("written", [
+    'The set is max\'s (session 5309b83a, `turns/02.md`): "which gates never change anything?"',
+    "The set is max's, `agent/sessions/5309b83a-1c2d-4e5f-8a9b-0c1d2e3f4a5b/turns/02.md`:\n\n> Which gates never change anything?",
+    "- The set is max's (`sessions/5309b83a/turns/02.md`):\n  - “Which gates never change anything?”",
+    "The set, from session 5309b83a's `turns/02.md`:\n\n```\n3. Which gates never change anything?\n```",
+])
+def test_a_session_turn_cited_with_the_quote_beside_it_is_refused_nothing(tickets: Path, repo: Path, written: str) -> None:
+    ticket(tickets, "one-flow", f"## Decisions\n\n{written}\n")
+    assert run(repo, "check", str(tickets / "one-flow.md")) == Run(0, "", "")
+
+
+@pytest.mark.parametrize("written", [
+    "The next record's path, e.g. `next record: <directory>/turns/11.md`.",
+    "```\nsessions/5309b83a/turns/02.md\n```",
+])
+def test_a_turn_path_that_names_no_session_or_sits_in_a_fence_is_no_citation(tickets: Path, repo: Path, written: str) -> None:
+    ticket(tickets, "one-flow", f"## Decisions\n\n{written}\n")
+    assert run(repo, "check", str(tickets / "one-flow.md")) == Run(0, "", "")
+
+
 def test_files_from_two_trackers_in_one_run_are_refused(tickets: Path, repo: Path, tmp_path: Path) -> None:
     other = tmp_path / "elsewhere"
     other.mkdir()

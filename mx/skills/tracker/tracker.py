@@ -1605,6 +1605,10 @@ PROPERTY = re.compile(r"P(\d+)\s+(\S.*)", re.DOTALL)
 CRITERION = re.compile(r"\[([ xX])\]\s*(.*)", re.DOTALL)
 CITED = re.compile(r"(?<![\w-])([a-z0-9][a-z0-9-]*)?#P(\d+)\b")
 OLD_CLAIM = re.compile(r"^(?:\[[ xX]\]\s*)?\*{0,2}Property\b[ ]*(?:P\d+|,)")
+# a session named by its id, as a path (`sessions/5309b83a-…/turns/02.md`) or in words (`session
+# 5309b83a, turns/02.md`), and one of its turn records later in the same bullet or paragraph
+TURN_CITED = re.compile(r"\bsessions?(?:/|\s+)([0-9a-f]{8})[0-9a-f-]*\b.*?\bturns/(\d+)\.md", re.DOTALL)
+QUOTED = re.compile(r'"[^"]+"|“[^”]+”|^\s*>|^\s*(```|~~~)', re.MULTILINE)
 
 
 def unfenced(text: str) -> str:
@@ -1668,6 +1672,7 @@ def read(path: Path, text: str) -> Ticket:
     properties = read_properties(path, written, refusals)
     criteria = read_criteria(path, written, refusals)
     cites = read_citations(path, lines, refusals)
+    read_session_quotes(path, lines, raw, refusals)
     duplicates(path, [(q.tag, q.line) for q in questions] + detail_tags(written), "tag", refusals)
     duplicates(path, [(f"A{a.id}", a.at) for a in assumptions], "assumption", refusals)
     duplicates(path, [(p.id, p.line) for p in properties], "property", refusals)
@@ -1920,6 +1925,37 @@ def read_citations(path: Path, lines: Sequence[tuple[int, str]], refusals: list[
                 refusals.append(Refusal(path, number, f"`{ref}` names no ticket; a property is cited `<slug>{ref}`"))
                 continue
             found.append((ref, number))
+    return found
+
+
+def read_session_quotes(path: Path, lines: Sequence[tuple[int, str]], raw: dict[int, str], refusals: list[Refusal]) -> None:
+    """Refuse every session turn the body cites with no quote after it, in the bullet or paragraph
+    that cites it, the lines nested under it, or a quote block or fence right below. A session's
+    records stay out of git until it ends, so a worker host can hold no copy of the turn a ticket
+    points at: what the ticket takes from it has to be in the ticket."""
+    for first, cites_to, last in units(lines):
+        text = "\n".join(dict(lines)[number] for number in range(first, cites_to + 1))
+        own = "\n".join(raw[number] for number in range(first, cites_to + 1))
+        after = "\n".join(raw.get(number, "") for number in range(cites_to + 1, last + 1))
+        below = next((raw[number] for number in range(last + 1, max(raw) + 1) if raw[number].strip()), "")
+        for turn in TURN_CITED.finditer(text):
+            if not QUOTED.search("\n".join((own[turn.end():], after, below))):
+                refusals.append(Refusal(path, first + text.count("\n", 0, turn.start()), f"session {turn.group(1)}'s `turns/{turn.group(2)}.md` is cited with no quote after it; a session's records stay out of git until it ends, so no worker host has the turn, and a ticket quotes what it takes from one (in quote marks, a `>` block or a fence) with the path beside the quote"))
+
+
+def units(lines: Sequence[tuple[int, str]]) -> list[tuple[int, int, int]]:
+    """The body's bullets and paragraphs as `(first line, last line of its own words, last line)`:
+    a bullet's own words stop where the first bullet nested under it starts, and its last line is
+    that of the last bullet nested under it."""
+    found = [(bullet.line, bullet.under[0].line - 1 if bullet.under else bullet.last, bullet.last) for bullet in flat(bullets(lines))]
+    inside = {number for bullet in flat(bullets(lines)) for number in range(bullet.line, bullet.last + 1)}
+    run: list[int] = []
+    for number, line in [*lines, (None, "")]:
+        if number is not None and number not in inside and line.strip() and not HEADING.match(line):
+            run.append(number)
+        elif run:
+            found.append((run[0], run[-1], run[-1]))
+            run = []
     return found
 
 
