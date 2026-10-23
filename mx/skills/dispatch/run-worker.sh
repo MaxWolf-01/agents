@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
+# Run one dispatch worker in this pane, resuming it after a crash or an early stop, then leave a
+# status line.
 # Usage: run-worker.sh <message-file> <slug> <model> <run> [session-id]
 #   message-file  the ticket message, or resume guidance; sent on the first attempt only
 #   slug          the ticket this worker holds: its report is agent/show/<slug>/report.md,
@@ -111,9 +112,12 @@ printf '%s runner: started %s on %s at %s effort with claude %s and mx %s (%s)\n
     "$model" "$effort" "${claude_version:-?}" "$(basename "$plugin")" "$run_id" >> "$DISPATCH_WORKLOG"
 # Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
 # would end in `report=no` with nothing saying why.
-git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
+has_agent_repo=1
+git -C agent rev-parse --git-dir > /dev/null 2>&1 || {
+    has_agent_repo=
     printf '%s runner: no agent repo at %s/agent, so no report of this run can be committed\n' \
         "$(date -u +%FT%TZ)" "$PWD" >> "$DISPATCH_WORKLOG"
+}
 
 # What the worker inherits from this host: the project's own settings and AGENTS.md or CLAUDE.md,
 # and the mx plugin its contract names skills from, which brings the plugin's hooks along. Not the
@@ -158,12 +162,21 @@ trap 'stopped=1' TERM INT
 
 # claude -p already retries a transient API error internally (~13 requests over ~13 min) before
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
+# They are also for an early stop: a clean exit before this round's report, which is a worker that
+# ended its turn to wait on something it started, since in print mode the turn's end is the run's.
+# The ticket's own status cannot say this: it stays `claimed` until the orchestrator imports the
+# report. A worker stopped on a blocker exits the same way, which the runner cannot tell from the
+# outside, so it resumes one clean exit and takes a second as the worker's own stop. A worktree with
+# no agent repo can never report, so there a clean exit ends the run.
 max_attempts=3
+early_stop="Your session ended before this round's report was committed, so the run stopped before it finished. If you ended your turn to wait on something you started, the opening of your instructions says how to wait on it within the turn: do that and carry on to the report. If you stopped on a blocker the worklog records, stop again."
+resume=continue
+early_stopped=
 for attempt in $(seq 1 $max_attempts); do
     unit=$run_id-a$attempt-$$
     logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
     if [ "$attempt" -gt 1 ]; then
-        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" continue
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" "$resume"
     elif [ -n "$resume_session" ]; then
         scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" "$(cat "$message")"
     else
@@ -172,13 +185,24 @@ for attempt in $(seq 1 $max_attempts); do
     rc=$?
     unscope "$unit"
     [ -n "$stopped" ] && break
-    [ "$rc" -eq 0 ] && break
     # The report is the worker's finished signal, so a crash after it is a crash with the work done.
     reported && break
-    [ "$attempt" -eq "$max_attempts" ] && break
+    [ "$rc" -eq 0 ] && [ -z "$has_agent_repo" ] && break
+    if [ "$rc" -eq 0 ] && [ -n "$early_stopped" ]; then
+        printf '%s runner: attempt %s exited 0 with no report again, taken as the worker'"'"'s own stop\n' \
+            "$(date -u +%FT%TZ)" "$attempt" >> "$DISPATCH_WORKLOG"
+        break
+    fi
+    if [ "$rc" -eq 0 ]; then kind="an early stop" resume=$early_stop backoff=0 early_stopped=1
+    else kind="a crash" resume=continue backoff=$((attempt * 30)); fi
+    if [ "$attempt" -eq "$max_attempts" ]; then
+        printf '%s runner: attempt %s exited %s with no report, %s, and was the last\n' \
+            "$(date -u +%FT%TZ)" "$attempt" "$rc" "$kind" >> "$DISPATCH_WORKLOG"
+        break
+    fi
 
-    backoff=$((attempt * 30))
-    echo "run-worker: attempt $attempt exited $rc (no report yet); retrying in ${backoff}s"
+    printf '%s runner: attempt %s exited %s with no report, %s; resuming in %ss\n' \
+        "$(date -u +%FT%TZ)" "$attempt" "$rc" "$kind" "$backoff" | tee -a "$DISPATCH_WORKLOG"
     sleep "$backoff"
     # A TERM that lands here ends the sleep, and must end the run too.
     [ -n "$stopped" ] && break
