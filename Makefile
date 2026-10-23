@@ -18,9 +18,10 @@ check:
 	@uvx --quiet ruff@0.17.0 check --quiet --select F811 mx/
 	@[ ! -f $(CHANGELOG) ] || [ "$$(sed -n 's/^## //p' $(CHANGELOG) | head -1)" = "$$(jq -r .version $(PLUGIN))" ] || \
 	  { echo "$(CHANGELOG): its top section is not $(PLUGIN)'s version, which the release that wrote both left equal"; exit 1; }
-	@PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pyyaml pytest -q -p no:cacheprovider --tb=short mx/test_launches.py mx/test_skill_injections.py mx/test_module_names.py
+	@PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pyyaml pytest -q -p no:cacheprovider --tb=short mx/test_launches.py mx/test_skill_injections.py mx/test_module_names.py tools/test_show_conventions.py
 	@PYTHONDONTWRITEBYTECODE=1 uv run --quiet --script docs/figures/render.py --check
-	@echo "manifests parse, hooks point at executables, bin/ answers --help, every claude launch names what it inherits, every skill approves its own ! lines and no model-invoked one but dispatch carries allowed-tools, no two scripts under mx share a name and no check imports another, no file under mx defines one name twice, every README image was rendered from its sources as they are now"
+	@uv run --quiet tools/show_conventions.py
+	@echo "manifests parse, hooks point at executables, bin/ answers --help, every claude launch names what it inherits, every skill approves its own ! lines and no model-invoked one but dispatch carries allowed-tools, no two scripts under mx share a name and no check imports another, no file under mx defines one name twice, every README image was rendered from its sources as they are now, every show directory belongs to live work, no render is tracked beside its source"
 
 # One test process per core; JOBS=1 runs them one after another.
 JOBS ?= auto
