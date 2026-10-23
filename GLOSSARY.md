@@ -140,7 +140,7 @@ A ticket's work is on the branch the user's accept merges it into, and verified 
 _Avoid_: merged, finished, complete
 
 **Trunk**:
-The branch work merges into: the default branch, or `dev` where that layer exists.
+The branch work merges into: the default branch, or dev where that layer exists.
 _Avoid_: integration branch, mainline
 
 ### Testing

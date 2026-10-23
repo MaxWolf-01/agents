@@ -1880,7 +1880,7 @@ def listed(split: Path) -> Path:
     return split
 
 
-def test_the_repo_list_is_printed_one_repo_a_line_with_its_path_and_integration_branch(listed: Path) -> None:
+def test_the_repo_list_is_printed_one_repo_a_line_with_its_path_and_trunk(listed: Path) -> None:
     said = run(listed, "repos")
     assert said.code == 0, said.said
     assert said.out.splitlines() == [
@@ -1995,7 +1995,7 @@ def in_review(listed: Path, slug: str, status: str = "review", **meta: object) -
     return path
 
 
-def test_p6_done_waits_for_a_ranges_last_commit_to_reach_its_repos_integration_branch(listed: Path) -> None:
+def test_p6_done_waits_for_a_ranges_last_commit_to_reach_its_repos_trunk(listed: Path) -> None:
     """The dotfiles case: the work was built in quartz on a branch since deleted, and the range is
     recorded by hand. Done is refused until the range's last commit is in quartz's trunk,
     and a merge there counts locally or at origin."""
@@ -2012,7 +2012,7 @@ def test_p6_done_waits_for_a_ranges_last_commit_to_reach_its_repos_integration_b
     assert run(listed, "set", "quartz-ignores-media", "status=done").code == 0, "a PR merged at origin counts"
 
 
-def test_p6_a_local_merge_into_the_integration_branch_lands_the_range(listed: Path) -> None:
+def test_p6_a_local_merge_into_the_trunk_lands_the_range(listed: Path) -> None:
     backend = listed / "Backend"
     first = tip(backend)
     git(backend, "checkout", "-q", "-b", "nps-tests")
@@ -2053,7 +2053,7 @@ def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path,
     assert run(listed, "set", "nps-tests", "status=done").code == 0
 
 
-def test_p6_a_child_in_a_listed_repo_waits_for_its_parents_accept_to_reach_the_integration_branch(listed: Path) -> None:
+def test_p6_a_child_in_a_listed_repo_waits_for_its_parents_accept_to_reach_the_trunk(listed: Path) -> None:
     """A listed repo is measured as the code repo is: a child of a top-level ticket merged into its
     parent ticket's branch there waits for the parent's accept to bring it to the trunk.
     The range is what refuses here; the ticket branch alone is the check after this one."""
@@ -2301,7 +2301,7 @@ def test_a_round_that_built_nothing_writes_nothing(split: Path) -> None:
     assert read["tickets"][0]["status"] == "claimed" and subjects(agent)[0] == "one-flow"
 
 
-def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_only_its_own_commits(listed: Path) -> None:
+def test_a_ticket_merged_into_a_local_trunk_behind_origin_records_only_its_own_commits(listed: Path) -> None:
     """quartz's ticket branch is cut from origin's main, ahead of the local one, and merged into the
     local main. The range starts at the ticket's own fork point, not at the merge's first parent,
     so it holds the ticket's commit alone, before the merge and after it."""
