@@ -177,6 +177,33 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 	}
 });
 
+test("hv signs pi in with max's personal account's setup-token, and with none while that token is not minted", () => {
+	const at = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-token-")));
+	try {
+		const bin = path.join(at, "bin"), fork = path.join(at, "fork"), calls = path.join(at, "tmux.calls");
+		const creds = path.join(at, ".dotfiles", "secrets", "creds", "env");
+		for (const dir of [bin, path.join(fork, "src"), creds]) mkdirSync(dir, { recursive: true });
+		writeFileSync(path.join(fork, "src", "index.ts"), "");
+		writeFileSync(path.join(bin, "tmux"), `#!/bin/sh\nprintf '%s\\n' "$@" '--' >> "${calls}"\n[ "$1" = has-session ] && exit 1\nexit 0\n`, { mode: 0o755 });
+		// A sops over plain dotenv files: `decrypt --extract '["NAME"]' FILE` prints NAME's value, as the real one does.
+		writeFileSync(path.join(bin, "sops"), `#!/bin/sh\nname=$(printf '%s' "$3" | tr -d '[]"')\nsed -n "s/^$name=//p" "$4" | tr -d '\\n'\n`, { mode: 0o755 });
+		const env = { PATH: `${bin}:${process.env.PATH}`, HOME: at, HV_STORE: path.join(at, "store"), OPTCHAT_FORK: fork };
+		const tokenPassed = (personal: string) => {
+			writeFileSync(path.join(creds, "claude-personal.env"), `CLAUDE_CODE_OAUTH_TOKEN=${personal}\nCLAUDE__VALID_UNTIL=2027-10-01\n`);
+			writeFileSync(path.join(creds, "claude-helferline.env"), "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-helferline\n");
+			rmSync(calls, { force: true });
+			const ran = spawnSync(path.resolve(import.meta.dirname, "../../hv"), [], { env, encoding: "utf8" });
+			assert.equal(ran.status, 0, ran.stderr);
+			const started = readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session")!;
+			return started.filter((arg) => arg.startsWith("ANTHROPIC_OAUTH_TOKEN="));
+		};
+		assert.deepEqual(tokenPassed("sk-ant-oat01-personal"), ["ANTHROPIC_OAUTH_TOKEN=sk-ant-oat01-personal"]);
+		assert.deepEqual(tokenPassed(""), [], "pi signs in with what /login stored, if anything");
+	} finally {
+		rmSync(at, { recursive: true, force: true });
+	}
+});
+
 test("each message max types is saved as the next numbered file, and reaches the hypervisor with that file's path under it", async () => {
 	const at = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-inputs-")));
 	try {

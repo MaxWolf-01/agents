@@ -5,7 +5,9 @@
 #
 # Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
 # sessions in optchat-pi/, and the extension's files, which extension/src/live.ts lists. The fork is the checkout
-# $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else the token in max's secrets, else what /login stored.
+# $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else max's personal account's setup-token, the
+# CLAUDE_CODE_OAUTH_TOKEN of secrets/creds/env/claude-personal.env; but a login pi stored in optchat-pi/auth.json wins
+# over both, since pi reads the environment only for a provider it holds no credential for.
 #
 # A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/instructions.md.
 # `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
@@ -20,7 +22,7 @@ store=${HV_STORE:-$HOME/.local/share/hypervisor}
 profile=${HV_PROFILE:-hv}
 fork=${OPTCHAT_FORK:-$HOME/repos/github/MaxWolf-01/pi-optchat-fork-summaries}
 profiles=$store/optchat/profiles
-token_file=$HOME/.dotfiles/secrets/creds/raw/hypervisor-oauth-token
+token_file=$HOME/.dotfiles/secrets/creds/env/claude-personal.env
 
 if [[ ${1:-} == tell ]]; then
 	shift
@@ -47,7 +49,10 @@ fi
 
 [[ -d $extension/node_modules ]] || npm ci --prefix "$extension" --no-audit --no-fund
 [[ -f $fork/src/index.ts ]] || { echo "hv: no pi-optchat checkout at $fork; set OPTCHAT_FORK" >&2; exit 1; }
-if [[ -z ${ANTHROPIC_OAUTH_TOKEN:-} && -f $token_file ]]; then ANTHROPIC_OAUTH_TOKEN=$(sops decrypt "$token_file"); fi
+if [[ -z ${ANTHROPIC_OAUTH_TOKEN:-} && -f $token_file ]]; then
+	ANTHROPIC_OAUTH_TOKEN=$(sops decrypt --extract '["CLAUDE_CODE_OAUTH_TOKEN"]' "$token_file") ||
+		{ echo "hv: could not decrypt $token_file, so pi has no token (is the age key SOPS_AGE_KEY_FILE names, '${SOPS_AGE_KEY_FILE:-}', there?)" >&2; exit 1; }
+fi
 export HV_STORE=$store OPTCHAT_HOME=$store/optchat PI_CODING_AGENT_DIR=$store/optchat-pi OPTCHAT_FORK=$fork HV_PROFILE=$profile
 [[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && export ANTHROPIC_OAUTH_TOKEN
 mkdir -p "$PI_CODING_AGENT_DIR"
