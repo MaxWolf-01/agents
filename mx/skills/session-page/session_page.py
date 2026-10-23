@@ -70,7 +70,7 @@ CLI = """Print the directory this session's records go in: `sessions/<session-id
 of the project the working directory is in, the same directory from every worktree of that
 project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
 
-A second line says where the next turn record goes, how many are written, and whether session.md is.
+A second line says where the next turn record goes, how many are written, and whether session.md is written yet.
 
 Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
 
@@ -132,7 +132,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     a tool call there only after the call's PostToolUse hooks have run.
 
     Where there is no `session.md` yet, the title is the one Claude Code keeps for the session
-    (`claude_title`), and the resume command changes to the directory the session started in.
+    (`claude_title`); where it names no `repo`, the resume command changes to the directory the session started in.
 
     Raises RecordError where a record does not parse.
     """

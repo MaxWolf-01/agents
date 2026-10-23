@@ -19,7 +19,7 @@ import shutil
 import sys
 import time
 from datetime import UTC, datetime
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -493,7 +493,7 @@ NEXT = {
 
 @pytest.mark.parametrize("made, said", NEXT.values(), ids=NEXT)
 def test_session_page_prints_where_the_next_record_goes(
-    made, said: str, worked_example: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+    made: Callable[[Path], object], said: str, worked_example: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:
     """session-page-says-where-the-next-record-goes#P1 and #P3; `main` returning is the exit status 0."""
     made(worked_example)
