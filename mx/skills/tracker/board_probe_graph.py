@@ -11,7 +11,7 @@ full size view, the board re-rendering under the window, and the board going awa
 
 import json, os, shutil, sys
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError, sync_playwright
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "show"))  # page_cache, beside render_lint
 from board_probe_engine import cdn
 from page_cache import default_root, serve
@@ -188,6 +188,8 @@ with sync_playwright() as pw:
 
     # the re-render every tracker change triggers, under a window that has to find the board again
     page.reload()
+    # the board is the only page that writes to the window, so a message from here on is the reloaded board's
+    win.evaluate("() => { window.heardSinceReload = 0; addEventListener('message', () => heardSinceReload++) }")
     page.evaluate("document.fonts.ready")
     page.keyboard.press("Escape")
     page.wait_for_selector(f"#{ROW} > summary")
@@ -199,6 +201,13 @@ with sync_playwright() as pw:
     else:
         win.click("[data-gmode=all]")
         named(page, "#gname", "whole tracker")
+    # The window marks itself orphaned after three seconds of silence and looks again each second,
+    # and a loaded host can take that long to draw the reloaded board: what it says once it has
+    # heard from that board is the answer. One that never hears from it is orphaned by the end.
+    try:
+        win.wait_for_function("heardSinceReload > 0 && document.documentElement.dataset.orphan === ''", timeout=30_000)
+    except TimeoutError:
+        pass
     out["after_reload"] = {"orphan": win.evaluate("document.documentElement.dataset.orphan"),
                            "cursor": page.evaluate("document.querySelector('.ticket.kcur')?.id"),
                            "board_name": page.inner_text("#gname")}

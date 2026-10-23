@@ -1002,8 +1002,14 @@ ${viewjs}
   }
   setupMermaid();
 
-  let seq = 0;
+  let seq = 0, drawing = 0;
+  // data-drawing on the root counts the calls under way, so "0" is the page's word that the graph
+  // on show has settled, drawn or not; something that has to see the drawing waits on it.
   async function renderGraphs() {
+    document.documentElement.dataset.drawing = ++drawing;
+    try { await drawGraphs(); } finally { document.documentElement.dataset.drawing = --drawing; }
+  }
+  async function drawGraphs() {
     // mermaid.render (string -> svg), never mermaid.run: run's in-DOM processing
     // contaminates across the page's many diagrams, render is hermetic per call.
     // Only the graph on show renders; the others wait for their turn.
@@ -1333,8 +1339,10 @@ ${viewjs}
 
   const toast = document.getElementById("toast");
   let toastTimer = null;
+  // data-said counts the toasts shown, so a toast can be told from the one before it with the same words
   function say(words) {
     toast.textContent = words;
+    toast.dataset.said = +(toast.dataset.said ?? 0) + 1;
     toast.classList.add("on");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);

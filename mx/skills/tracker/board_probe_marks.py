@@ -66,6 +66,17 @@ with sync_playwright() as pw:
     except TimeoutError:
         pass  # counted as no graph below
     out["cdn"] = cdn(failed)
+
+    def toasts() -> int:
+        return page.evaluate("+(document.getElementById('toast').dataset.said ?? 0)")
+
+    def after(settled: str) -> None:
+        """Wait until the page says what a click started is done: a toast shown, a drawing settled.
+        One that never comes is what the checks below are there to catch, so the wait ends quietly."""
+        try:
+            page.wait_for_function(settled, timeout=30_000)
+        except TimeoutError:
+            pass
     out["names"] = page.evaluate("""
       () => [...document.querySelectorAll("details.ticket")].map((row) => {
         const clip = row.querySelector(":scope > summary .title .clip"), name = clip.getBoundingClientRect()
@@ -113,8 +124,9 @@ with sync_playwright() as pw:
         return {opened_list: listed(opened), folded_list: listed(folded), asked}
       }
     """, [ROW, FOLDED])
+    said = toasts()
     page.click(f"#{FOLDED} .qall")
-    page.wait_for_timeout(500)
+    after(f"+(document.getElementById('toast').dataset.said ?? 0) > {said}")
     out["copied"] = {
         "clipboard": page.evaluate("navigator.clipboard.readText()"),
         "asked": page.evaluate(f"document.querySelector('#{FOLDED} .qall').dataset.copy"),
@@ -132,13 +144,14 @@ with sync_playwright() as pw:
     """
     before = page.evaluate(GROUP)
     page.click('.treechip[data-tree="saved-views"]')
+    said = toasts()
     page.click("#grp-needs .qgroup")
-    page.wait_for_timeout(500)
+    after(f"+(document.getElementById('toast').dataset.said ?? 0) > {said}")
     out["group"] = {"before": before, "after": page.evaluate(GROUP), "clipboard": page.evaluate("navigator.clipboard.readText()")}
     page.click('.treechip[data-tree="saved-views"]')
     out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
     page.click("#scheme")
-    page.wait_for_timeout(2500)
+    after("document.documentElement.dataset.drawing === '0'")
     out["graphs_after_switch"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["unloaded_after_switch"] = page.is_visible("#gunloaded")
     out["scheme_after_switch"] = page.evaluate("document.documentElement.dataset.theme")
