@@ -87,7 +87,7 @@ A **phase** is a chunk of work inside a session (the grilling, the implementatio
 ## Standalone
 
 - **`/mx:grilling`**: off the main flow too, for a plan, a design or a decision with no repo under it, or no build to follow.
-- **`/mx:triage`**: when the user starts a **triage** of the proposed tickets, which wait off the frontier until one: the pile grouped by shared cause, and each ticket dropped, merged or promoted to open, every call the user's.
+- **`/mx:triage`**: when the user starts a **triage** of the proposed tickets, which wait off the frontier until one: the pile grouped by shared cause, the bookkeeping (drops, merges, promotions, priorities) the agent's call, and only design calls put to the user.
 - **`/mx:research`**: investigate a question against **primary sources**; the findings land in the ticket that asked, detail too long for it in `agent/research/`. Research feeds the thinking, it doesn't replace it.
 - **`/mx:to-questionnaire`**: when what's blocking you isn't in your head or the codebase but in **someone else's**, write them a questionnaire to fill in. The inverse of grilling: it interviews you about the **send** (who it's going to, what you need back) and aims the questions at the gap. What comes back is material for `/mx:grilling`.
 - **`/mx:wizard`**: for the steps only a **human** can take: provisioning infrastructure, credentials and CI secrets, an unfamiliar third-party dashboard, a one-off migration. Generates an interactive bash script that opens each URL, captures each value, and writes it where it belongs. Model-invoked: the agent reaches for it when it hits a wall only you can pass; anything the agent can do itself, it should.

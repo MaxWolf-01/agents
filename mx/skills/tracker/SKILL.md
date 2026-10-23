@@ -62,7 +62,7 @@ Every ticket file is written and committed in the agent repo's main checkout, on
 
 Which status may follow which is `tracker`'s, refused by the rule it names. What they mean:
 
-- **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and the user has not ruled. It waits off the frontier for a **triage** (`/mx:triage`), which drops it, merges it into another ticket, or promotes it to open; the user's own "build this" makes it open at once. Its brief says what it was cut from. These don't need to offer a solution but can also simply record a problem, bug, inefficiency, or research question.
+- **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and nobody has promoted it yet. It waits off the frontier for a **triage** (`/mx:triage`), which drops it, merges it into another ticket, or promotes it to open; the user's own "build this" makes it open at once. Its brief says what it was cut from. These don't need to offer a solution but can also simply record a problem, bug, inefficiency, or research question.
 - **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already, and so is a slice of a ticket being cut (SLICING.md); silence is not a ruling.
 - **claimed**: a session holds it, a worker resumed to revise included. Where several run at once, one agent is the sole claim-writer.
 - **review**: the work is finished and waits for the user's **ruling**, made on the calls the landing shows them, or as a line in chat. Which tickets in review unblock their dependents is `tracker frontier --help`'s.

@@ -54,11 +54,11 @@ A ticket's own body with every ancestor's: the whole of what a worker or a revie
 _Avoid_: brief (the brief is one section of it), spec, background
 
 **Proposed**:
-The status of a ticket an agent filed that the user has not yet ruled on: off the frontier until a triage promotes it to open.
+The status of a ticket an agent filed that nobody has promoted yet: off the frontier until a triage or the user's word makes it open.
 _Avoid_: backlog, suggested, draft ticket, idea
 
 **Triage**:
-A pass the user starts over the proposed tickets: they are grouped by shared cause, and each is dropped, merged into another, or promoted to open.
+A pass the user starts over the proposed tickets: they are grouped by shared cause, and each is dropped, merged into another, or promoted to open. The agent makes the bookkeeping calls; a call that changes what the product does or how it is built is the user's.
 _Avoid_: grooming, backlog review
 
 **Review**:
