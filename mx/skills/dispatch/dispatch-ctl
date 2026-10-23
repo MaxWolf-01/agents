@@ -21,10 +21,9 @@
 #                 worker runs on.
 # stop <slug>     ends the run, resumably: worktrees and branches stay.
 # resume <slug> <model> [--effort <level>]
-#                 the run's conversation again, on its message file, which
-#                 `dispatch prompt` has rewritten as the guidance; --effort as
-#                 at a spawn. Exit 1: still running, or gone
-#                 with no session id (spawn afresh).
+#                 the run's conversation again, on the guidance `dispatch
+#                 prompt` wrote; --effort as at a spawn. Exit 1: still
+#                 running, or gone with no session id (spawn afresh).
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the status line (attempts, exit code, report=,
 #                 session id, models), or `gone`: the runner died with no
