@@ -65,17 +65,19 @@ def test_a_pickup_prints_the_handoff_and_commits_its_removal_alone(tmp_path: Pat
     assert git(agent, "show", "--name-status", "--format=%s", "HEAD").split() == ["pick", "up", "handoff", "2026-10-06-ledger",
                                                                                  "D", "handoffs/2026-10-06-ledger.md"]
     assert git(agent, "status", "--porcelain", "--untracked-files=no").splitlines() == ["M  tickets/ledger.md"], "what was staged stays staged"
-    assert (agent / "sessions" / "new-1" / "previous").read_text() == "old-1\n"
+    assert (tmp_path / "claude-config" / "session-pages" / "new-1" / "previous").read_text() == "old-1\n"
 
 
-def test_a_pickup_from_a_linked_worktree_writes_previous_in_the_main_checkouts_agent_repo(tmp_path: Path) -> None:
-    """The session's directory is the one `session-page` prints, which every worktree shares."""
+def test_a_pickup_from_a_linked_worktree_writes_previous_in_the_sessions_one_directory(tmp_path: Path) -> None:
+    """The session's directory is the one `session-page` prints, which every worktree shares, tied
+    to the main checkout's agent repo."""
     repo = project(tmp_path)
     worktree = tmp_path / "lamp-ledger"
     git(repo, "worktree", "add", "-q", str(worktree), "-b", "ticket/ledger")
     done = pickup(worktree, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path)
     assert done.returncode == 0, done.stderr
-    assert (repo / "agent" / "sessions" / "new-1" / "previous").read_text() == "old-1\n"
+    assert (tmp_path / "claude-config" / "session-pages" / "new-1" / "previous").read_text() == "old-1\n"
+    assert (tmp_path / "claude-config" / "session-pages" / "new-1" / "agent-repo").read_text() == f"{repo / 'agent'}\n"
     assert not (worktree / "agent").exists()
 
 
@@ -86,7 +88,7 @@ def test_a_worker_or_a_print_mode_session_picks_up_and_links_nothing(tmp_path: P
     done = pickup(repo, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path, **{marker: value})
     assert done.returncode == 0, done.stderr
     assert done.stdout == HANDOFF
-    assert not (repo / "agent" / "sessions").exists()
+    assert not (tmp_path / "claude-config" / "session-pages").exists()
 
 
 def test_a_file_outside_a_handoffs_directory_is_refused_untouched(tmp_path: Path) -> None:
@@ -120,7 +122,7 @@ def test_a_handoff_git_would_refuse_to_remove_is_refused_before_anything_is_done
     done = pickup(repo, handoff, tmp_path)
     assert done.returncode == 1 and "nothing done" in done.stderr and "commit" in done.stderr
     assert done.stdout == "" and handoff.exists()
-    assert not (repo / "agent" / "sessions").exists()
+    assert not (tmp_path / "claude-config" / "session-pages").exists()
     assert git(repo / "agent", "log", "--format=%s").splitlines() == ["hand off"]
 
 
@@ -141,7 +143,7 @@ def test_a_commit_git_refuses_anyway_fails_after_the_handoff_is_printed_and_link
     done = pickup(repo, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path)
     assert done.returncode == 1 and "git commit" in done.stderr and "no commits today" in done.stderr
     assert done.stdout == HANDOFF
-    assert (repo / "agent" / "sessions" / "new-1" / "previous").read_text() == "old-1\n"
+    assert (tmp_path / "claude-config" / "session-pages" / "new-1" / "previous").read_text() == "old-1\n"
 
 
 if __name__ == "__main__":

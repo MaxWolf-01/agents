@@ -33,7 +33,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from session_checks import SESSION, TURN_ANCHOR, elements, rows_of, sections_of, text_of, turns_on, view_of
-from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
+from session_page import AGENT_REPO, ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
@@ -209,7 +209,7 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     transcript.write_text("")
     assert waiting(view_of(directory, transcript)) == ["Q1"]
     top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
-    assert 'href="../../../agent/show/refusals/blind-q1.html"' in top
+    assert f'href="{(tmp_path / "agent/show/refusals/blind-q1.html").as_uri()}"' in top
     assert "my pick" not in text_of(top)
 
 
@@ -276,21 +276,21 @@ def test_a_turns_record_is_the_only_source_of_its_section(
 def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     worked_example: Path, transcript: Path, stale_page: str, tmp_path: Path
 ) -> None:
-    """session-page#P2: the records and the transcript, carried on their own to a directory of the
-    same name and depth, give back the page the session's own directory did, whatever else was
-    lying beside them there. The path an artefact link carries for the hub names the repo root the
-    page was rendered under, so the two pages compare with that attribute's new root read as the old."""
+    """session-page#P2: the records, the agent repo they name and the transcript, carried on their
+    own to a directory of the same name anywhere else, give back the page the session's own
+    directory did, whatever else was lying beside them there: a record's paths are read from the
+    agent repo the directory names, not from where it sits."""
     (worked_example / PAGE).write_text(stale_page)
     (worked_example / "turns" / "notes.txt").write_text("a scratch file, which is not a record")
     page = render_session(worked_example, transcript, now=NOW)
 
-    elsewhere = tmp_path / "elsewhere" / worked_example.relative_to(tmp_path)
+    elsewhere = tmp_path / "elsewhere" / "deeper" / worked_example.name
     (elsewhere / "turns").mkdir(parents=True)
-    shutil.copy(worked_example / "session.md", elsewhere)
+    for name in ("session.md", AGENT_REPO):
+        shutil.copy(worked_example / name, elsewhere)
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
     again = render_session(elsewhere, Path(shutil.copy(transcript, tmp_path)), now=NOW)
-    again = again.replace(f'{ARTEFACT}="{tmp_path / "elsewhere"}/', f'{ARTEFACT}="{tmp_path}/')
     assert again == page
 
 
@@ -337,7 +337,7 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
     section = sections_of(render_session(directory, transcript, now=NOW))["01"]
     linked = re.findall(r'<a class="path" href="([^"]+)"[^>]*><code>([^<]*)</code></a>', section)
     assert linked == [
-        ("../../../mx/tool.py", "mx/tool.py:12"),
+        ((root / "mx" / "tool.py").as_uri(), "mx/tool.py:12"),
         (elsewhere.as_uri(), str(elsewhere)),
         ((home / "notes.md").as_uri(), "~/notes.md"),
     ]
@@ -471,14 +471,14 @@ TICKET_LINKS = [
 
 
 def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_and_no_ticket(
-    worked_example: Path, transcript: Path
+    worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
     """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
     whose record links it, newest turn first, a turn with none listed bare, each carrying the path it
     resolves to on this machine; and a ticket file the newest turn links is not listed, carries
     no attribute the hub marks by, and takes no key, so the keys beside the turn's links are the
     column's."""
-    root = worked_example.parents[2]
+    root = tmp_path  # the worked example's project, which its `agent-repo` names
     listed = [(key, [(text, str(root / path)) for text, path in items]) for key, items in LISTED]
     assert column_of(view_of(worked_example, transcript)) == listed
     newest = worked_example / "turns" / "04.md"
@@ -554,11 +554,12 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
     that turn's number, newest turn first, and nothing else; a turn that links none has its row."""
     home = tmp_path_factory.mktemp("home")
     turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
-    directory, transcript = write_session(scratch() / DRAWN, turns)
+    root = scratch()  # the project, whose agent repo the session's directory under its account names
+    directory, transcript = write_session(root / "claude-config" / "session-pages" / DRAWN, turns)
+    (directory / AGENT_REPO).write_text(f"{root / 'agent'}\n")
     for number, paths in enumerate(linked, start=1):
         record_path = directory / "turns" / f"{number:02d}.md"
         record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))
-    root = directory.parents[2]
     expected = []
     for number, paths in reversed(list(enumerate(linked, start=1))):
         listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]

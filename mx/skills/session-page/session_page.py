@@ -5,10 +5,15 @@
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
-The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
+The directory is `session-pages/<session-id>/` under the directory of the Claude Code account the
+session runs under (`account`), outside every checkout: a copy of it pulled from another host never
+stands in the way of a `git pull` there. It holds `session.md`, one `turns/NN.md` per turn the agent
 recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
-shape RULES.md gives them, and `previous`, which the handoff skill's `pickup.py` writes where the
-session picked up another's continuation handoff. Any of them may be missing: a session's first
+shape RULES.md gives them; `previous`, which the handoff skill's `pickup.py` writes where the
+session picked up another's continuation handoff; and `agent-repo`, the agent repo whose `sessions/`
+the SessionEnd hook commits the records into, from which a record's paths are read. A directory
+inside an agent repo's `sessions/`, as that commit leaves it, reads the same without one. Any of
+the records may be missing: a session's first
 turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
 title, links to the pages of the sessions before and after it across a handoff, the resume
 command, the questions no later turn answered or superseded, then the turns newest first,
@@ -28,7 +33,9 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
+import urllib.parse
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -50,7 +57,11 @@ PAGE = "index.html"  # the rendered page, in the session's own directory
 # handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
 # it, not written.
 PREVIOUS = "previous"
-SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
+# In a session's directory, the agent repo its records are committed into, as a path, written once
+# as the directory is made. Its parent is the repo root a record's paths are from.
+AGENT_REPO = "agent-repo"
+PAGES = "session-pages"  # where a session's directory sits, under the account's directory
+SESSIONS = Path("agent/sessions")  # where the SessionEnd hook commits its records, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
 # The timeline beside the turns, which lists every artefact of the session under its turn, and the
@@ -63,11 +74,14 @@ HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
 
 
-CLI = """Print the directory this session's records go in: `sessions/<session-id>` in the agent repo
-of the project the working directory is in, the same directory from every worktree of that
-project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
+CLI = """Make the directory this session's records go in, where it is not there yet, and print it:
+`session-pages/<session-id>` under the Claude Code account's directory ($CLAUDE_CONFIG_DIR, or
+~/.claude), the same from every directory the session works in, the id being
+$CLAUDE_CODE_SESSION_ID. A new one is tied to the agent repo of the project the working directory
+is in, where the records are committed as the session ends.
 
-Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
+Exits 1, saying why, outside a Claude Code session, or where the session has no directory yet and
+the working directory is in no project with an agent repo.
 
 Examples:
 
@@ -81,26 +95,71 @@ def main() -> None:
     tyro.cli(lambda: None, description=CLI)
     if not (session := os.environ.get("CLAUDE_CODE_SESSION_ID", "")):
         sys.exit("no session id: run it inside a Claude Code session")
-    if (directory := session_directory(Path.cwd(), session)) is None:
+    if (directory := make_session_directory(Path.cwd(), session)) is None:
         sys.exit(f"{Path.cwd()} is in no project with an agent repo")
     print(directory)
 
 
+def account() -> Path:
+    """The directory of the Claude Code account this process runs under."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+
+
 def session_directory(cwd: Path, session: str) -> Path | None:
-    """Where the session's records and page live, whether or not they exist yet. None outside a
-    project with an agent repo."""
-    sessions = sessions_directory(cwd)
-    return sessions / session if sessions else None
+    """Where the session's records and page live, whether or not they exist yet, the same wherever
+    the session works once they do. None where they do not and `cwd` is in no project with an agent
+    repo."""
+    directory = pages_directory(account(), session)
+    return directory if directory.is_dir() or agent_repo_at(cwd) else None
 
 
-def sessions_directory(cwd: Path) -> Path | None:
-    """`sessions/` in the agent repo of the project `cwd` is in, found the way `tracker root` finds
-    the tracker, so every worktree of the project names the same one. None outside a project with an
-    agent repo."""
+def pages_directory(account: Path, session: str) -> Path:
+    """Where a session run under `account` keeps its records and page."""
+    return account / PAGES / session
+
+
+def make_session_directory(cwd: Path, session: str) -> Path | None:
+    """The session's directory, made where it is not there yet and tied to the agent repo of the
+    project `cwd` is in where it is not tied to one yet. None where it was not there and `cwd` is in
+    no project with an agent repo."""
+    carry_earlier_records(cwd, session)
+    directory = pages_directory(account(), session)
+    if (directory / AGENT_REPO).is_file():
+        return directory
+    if (agent := agent_repo_at(cwd)) is None:
+        return directory if directory.is_dir() else None
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / AGENT_REPO).write_text(f"{agent}\n")
+    return directory
+
+
+def carry_earlier_records(cwd: Path, session: str) -> None:
+    """Start the session's directory from its records in the agent repo's `sessions/<id>/`, where a
+    session running since before mx kept them outside the checkout has them, if it has no directory
+    yet. Its page there stays behind, since the next render writes the page anew."""
+    directory = pages_directory(account(), session)
+    if directory.exists() or (agent := agent_repo_at(cwd)) is None or not (earlier := agent / SESSIONS.name / session).is_dir():
+        return
+    shutil.copytree(earlier, directory, ignore=shutil.ignore_patterns(PAGE))
+    (directory / AGENT_REPO).write_text(f"{agent}\n")
+
+
+def agent_repo_at(cwd: Path) -> Path | None:
+    """The agent repo of the project `cwd` is in, found the way `tracker root` finds the tracker, so
+    every worktree of the project names the same one. None outside a project with an agent repo."""
     try:
-        return tracker.tracker_root(cwd).parent / SESSIONS.name
+        return tracker.tracker_root(cwd).parent
     except tracker.Refused:
         return None
+
+
+def agent_repo_of(directory: Path) -> Path | None:
+    """The agent repo a session's directory commits into: the one its `agent-repo` names, or the one
+    it sits in, under `sessions/`. None for a directory with neither."""
+    try:
+        return Path((directory / AGENT_REPO).read_text().strip())
+    except FileNotFoundError:
+        return directory.parent.parent if directory.parent.name == SESSIONS.name else None
 
 
 def render_session(directory: Path, transcript: Path, now: datetime | None = None) -> str:
@@ -140,8 +199,12 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
               for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front.get("session", directory.name))
-    root = directory.parents[len(SESSIONS.parts)]
+    agent = agent_repo_of(directory)
+    # A directory tied to no agent repo is one made by hand: its paths are read from where the session
+    # started, else from the directory itself, so its page renders with links that may lead nowhere.
+    root = agent.parent if agent else started_in(entries) or directory
     previous = predecessor(directory)
+    others = successors(directory) | ({previous: d} if previous and (d := located(directory, previous)) else {})
     return Session(
         id=session,
         name=registered_name(session),
@@ -154,9 +217,10 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
         root=root,
         directory=directory,
-        previous=previous if previous and (directory.parent / previous / PAGE).exists() else "",
-        following=successors(directory),
-        titles={other: title_of(directory.parent / other) for other in (previous, *successors(directory)) if other},
+        previous=previous if previous in others else "",
+        following=tuple(sorted(s for s in others if s != previous)),
+        titles={other: title_of(d) for other, d in others.items()},
+        others=others,
     )
 
 
@@ -177,12 +241,32 @@ def predecessor(directory: Path) -> str:
         return ""
 
 
-def successors(directory: Path) -> tuple[str, ...]:
-    """The sessions beside `directory` whose `previous` names it, by id: one handoff split into
-    several has several."""
-    return tuple(sorted(
-        d.name for d in directory.parent.iterdir() if d != directory and d.is_dir() and predecessor(d) == directory.name
-    )) if directory.parent.is_dir() else ()
+def successors(directory: Path) -> dict[str, Path]:
+    """The directories of the sessions whose `previous` names `directory`'s, by id, wherever they are
+    (`neighbourhoods`), whether or not they hold a page yet: one handoff split into several has
+    several."""
+    found = {}
+    for place in reversed(neighbourhoods(directory)):  # the nearest place wins for a session found twice
+        if place.is_dir():
+            found |= {d.name: d for d in place.iterdir() if d.name != directory.name and d.is_dir() and predecessor(d) == directory.name}
+    return found
+
+
+def located(directory: Path, session: str) -> Path | None:
+    """The directory of another session, one `directory`'s session continued or was continued in,
+    that holds its page (`neighbourhoods`, nearest first). None where none does."""
+    return next((d for place in neighbourhoods(directory) if ((d := place / session) / PAGE).is_file()), None)
+
+
+def neighbourhoods(directory: Path) -> list[Path]:
+    """Where another session's directory may sit, seen from `directory`'s: beside it; under this
+    account or any beside it (`~/.claude*`), since a handoff picked up under another account
+    continues there; and in the agent repo it commits into, where a session that ended before mx
+    kept the records outside the checkout left its page."""
+    agent = agent_repo_of(directory)
+    accounts = [account(), *sorted(a for a in account().parent.glob(".claude*") if a.is_dir())]
+    places = [directory.parent, *(a / PAGES for a in accounts), *([agent / SESSIONS.name] if agent else [])]
+    return list({place.resolve(): place for place in places}.values())
 
 
 def registered_name(session: str) -> str:
@@ -354,6 +438,7 @@ class Session:
     previous: str = ""  # the session whose continuation handoff this one picked up, where that one has a page
     following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
     titles: dict[str, str] = field(default_factory=dict)  # those sessions' titles, by id, where their session.md has one
+    others: dict[str, Path] = field(default_factory=dict)  # those sessions' directories, by id, which hold their pages
 
 
 # ---- reading the records ----------------------------------------------------
@@ -837,7 +922,6 @@ def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -
 
 # ---- the page ---------------------------------------------------------------
 
-UP = "../" * (len(SESSIONS.parts) + 1)  # from the page to the repo root
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 
 KEYS = [
@@ -948,7 +1032,7 @@ def shown_links(turn: Turn, root: Path) -> tuple[Shown, ...]:
     shown, keys = [], itertools.count(1)
     for link in turn.links:
         key = None if link.ticket else next(keys)
-        shown.append(Shown(link, href(link.path), "" if link.ticket else resolved(link.path, root),
+        shown.append(Shown(link, href(link.path, root), "" if link.ticket else resolved(link.path, root),
                            key if key is not None and key <= 9 else None))
     return tuple(shown)
 
@@ -1035,13 +1119,12 @@ def sources(v: View) -> str:
 
 def handoffs(session: Session) -> str:
     """The links to the page of the session this one continued from and to each that continued
-    from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
-    sessions directory: a line each under the title, by the session's title where it has one.
-    Nothing where neither is there."""
+    from it, as their file URLs, which the hub routes to their units: a line each under the title, by
+    the session's title where it has one. Nothing where neither is there."""
     def line(label: str, other: str) -> str:
         text = inline(session.titles[other], paths=False) if session.titles.get(other) else esc(other[:8])
         return (f'<span class="handoff"><span class="v-meta">{label}</span> '
-                f'<a href="../{esc(other)}/{PAGE}" title="{esc(strip_tags(text))} · {esc(other)}">{text}</a></span>')
+                f'<a href="{esc((session.others[other] / PAGE).as_uri())}" title="{esc(strip_tags(text))} · {esc(other)}">{text}</a></span>')
     lines = ([line("previous", session.previous)] if session.previous else []) + [line("next", s) for s in session.following]
     return f'\n      <p class="handoffs" id="handoffs">{"".join(lines)}</p>' if lines else ""
 
@@ -1069,7 +1152,7 @@ CHEVRONS = {"next": "M3 8.5 7 4.5l4 4", "previous": "M3 5.5l4 4 4-4"}
 def timeline_end(session: Session, label: str, other: str) -> str:
     """A link at an end of the timeline to the page of a session this one continued or was continued in."""
     title = session.titles.get(other) or other[:8]
-    return (f'\n    <a class="tl-end {label}" href="../{esc(other)}/{PAGE}" title="{esc(strip_tags(inline(title)))} · {esc(other)}">'
+    return (f'\n    <a class="tl-end {label}" href="{esc((session.others[other] / PAGE).as_uri())}" title="{esc(strip_tags(inline(title)))} · {esc(other)}">'
             f'<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
             f'stroke-linejoin="round" aria-hidden="true"><path d="{CHEVRONS[label]}"/></svg>'
             f'<span class="v-meta">{label}</span> <span class="title">{esc(strip_tags(inline(title)))}</span></a>')
@@ -1128,7 +1211,7 @@ def open_question(turn: Turn, q: Question, folded: bool) -> str:
     pickline = f'<p class="pickline"><span class="v-num">{pick.letter}</span> · {esc(strip_tags(inline(pick.text)))}</p>' if pick else ""
     if q.blind:
         # The pick line's place on a folded question, so the test is one click from the band.
-        test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get() or Path.cwd()), None)
+        test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get()), None)
         pickline = f'<p class="pickline blind">blind · {artefact(test, "link")}</p>'
     return f"""
 <article class="q{' folded' if folded else ''}" id="{q.tag.lower()}" tabindex="-1">
@@ -1315,7 +1398,8 @@ def link_open(self, tokens, idx, options, env) -> str:
     token = tokens[idx]
     target = token.attrGet("href") or ""
     if not target.startswith("#"):
-        token.attrSet("href", href(target))
+        # markdown-it hands a path over percent-encoded, and its file URL encodes it again
+        token.attrSet("href", href(target if URL.match(target) else urllib.parse.unquote(target)))
         token.attrSet("target", "_blank")
         token.attrSet("rel", "noopener")
     return self.renderToken(tokens, idx, options, env)
@@ -1378,13 +1462,14 @@ for rule in ("fence", "code_block"):
 URL = re.compile(r"[a-z][a-z0-9+.-]*:", re.I)
 
 
-def href(path: str) -> str:
-    """A link from the page: a path from the repo root climbs to it, an absolute or `~` path is
-    its file URL, and a URL stays as it is."""
+def href(path: str, root: Path | None = None) -> str:
+    """A link from the page: a path, from the repo root (`root`, else the page's), absolute or under
+    `~`, is its file URL with its fragment or query kept, since the page sits outside the repo; a URL
+    stays as it is."""
     if URL.match(path):
         return path
-    local = expanded(path)
-    return local.as_uri() if local.is_absolute() else UP + path
+    file = file_part(path)
+    return Path(resolved(file, root or ROOT.get())).as_uri() + path[len(file):]
 
 
 def resolved(path: str, root: Path) -> str:
