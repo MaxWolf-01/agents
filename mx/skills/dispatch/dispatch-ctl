@@ -55,7 +55,7 @@ set -u
 # version of these scripts staged here, written by the orchestrator, `repos-<slug>` (`names`),
 # `runner-<slug>`, the orchestrator's DISPATCH_RUNNER for that ticket, `manifest`, one line per
 # run (name TAB run TAB worktree TAB runner), `<run>.status` and `<run>.log`, the runner's,
-# `<name>.install.log` (set_up), and `set-up-<slug>`, what the setup left uncommitted (`foreign`).
+# `<name>.install.log` (set_up), and `set-up-<slug>`, what the setup left in the worktree (`foreign`).
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
@@ -221,7 +221,7 @@ checkout() {
         remove_worktrees
         die "setup command failed in $worktree; the log above is its tail"
     fi
-    uncommitted > "$set_up_record"
+    deletable > "$set_up_record"
 }
 
 # Whether every listed repo still to be cut is free of <branch>: one there
@@ -547,12 +547,18 @@ move each out of the worktree, or commit it and \`dispatch fetch $slug\`, then c
     echo "cleaned $name"
 }
 
-# What a cleanup would delete that no spawn put there, one line each, which `git worktree remove
-# --force` takes without a word: a repo below the top of the ticket's worktree that is neither one
-# a spawn cut nor a submodule (a worktree of another repo on this host, a clone), and a change not
-# committed in a worktree a spawn cut, less those the setup left (`set_up_record`). A worktree cut
-# before that record existed has every uncommitted change counted.
+# What a cleanup would delete that no spawn put there, one line each: what `deletable` finds less
+# what it found once the setup had run (`set_up_record`), so what the setup leaves (a dependency
+# checked out under .venv, a build output the project does not ignore) stops no cleanup. A
+# worktree cut before that record existed has everything counted.
 foreign() {
+    deletable | sort | comm -13 <(sort "$set_up_record" 2> /dev/null) -
+}
+
+# What `git worktree remove --force` would take from the ticket's worktree without a word: a repo
+# below its top that is neither one a spawn cut nor a submodule (a worktree of another repo on this
+# host, a clone), and each change not committed in a worktree a spawn cut.
+deletable() {
     local cut at
     cut=$(cut_here | cut -f2 | xargs -r -d '\n' realpath -m)
     find "$worktree" -mindepth 2 -name .git -prune -print 2> /dev/null | while read -r at; do
@@ -561,11 +567,13 @@ foreign() {
             [ -n "$(git -C "$at" rev-parse --show-superproject-working-tree 2> /dev/null)" ] ||
             echo "  a repo at $at, a checkout of $(git -C "$at" rev-parse --path-format=absolute --git-common-dir 2> /dev/null || echo '?')"
     done
-    uncommitted | sort | comm -13 <(sort "$set_up_record" 2> /dev/null) - | sed 's/^/  not committed in /'
+    uncommitted | sed 's/^/  not committed in /'
 }
 
-# Each change not committed in the worktrees a spawn cut, as `<worktree>: <git status line>`. The
-# code worktree's leaves out the worktrees nested in it, which are read on their own.
+# Each change not committed in the worktrees a spawn cut, as `<worktree>: <git status line>`, an
+# untracked file on a line of its own, since a directory's one line would read the same once the
+# worker wrote into it. The code worktree's leaves out the worktrees nested in it, which are read
+# on their own.
 uncommitted() {
     local dir at nested=()
     while IFS=$'\t' read -r dir at; do
@@ -573,7 +581,7 @@ uncommitted() {
     done < <(cut_here)
     while IFS=$'\t' read -r dir at; do
         cut_at "$dir" "$at" || continue
-        if [ "$at" = "$worktree" ]; then git -C "$at" status --porcelain -- . "${nested[@]}"; else git -C "$at" status --porcelain; fi |
+        if [ "$at" = "$worktree" ]; then git -C "$at" status --porcelain -uall -- . "${nested[@]}"; else git -C "$at" status --porcelain -uall; fi |
             awk -v at="$at" '{ print at ": " $0 }'
     done < <(cut_here)
 }

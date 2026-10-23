@@ -1083,12 +1083,13 @@ def test_a_cleanup_removes_the_jobs_its_worker_left_in_its_worktree_and_no_other
 def test_a_cleanup_refuses_over_work_no_spawn_put_in_the_worktree_and_force_deletes_it(toy: Path, staged: Path) -> None:
     """A worker once made worktrees of a mirror on the host inside its ticket worktree, and the
     cleanup deleted them with everything in them. Such a worktree, and a change not committed, stop
-    the cleanup before it touches anything, each named; what the setup left does not; --force
-    deletes the lot, and the mirror's branch survives it."""
+    the cleanup before it touches anything, each named; what the setup left does not, a repo it
+    checked out included, though a file written into a directory it left does; --force deletes the
+    lot, and the mirror's branch survives it."""
     env = environment(toy)
     run(toy, "claim", "warm-preset")
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
-    spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "echo built > built.txt",
+    spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "echo built > built.txt; mkdir out; touch out/a; git init -q deps/dep",
                               "spawn", "warm-preset", "sonnet"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert spawned.returncode == 0, spawned.stderr
     waited(toy)
@@ -1097,13 +1098,15 @@ def test_a_cleanup_refuses_over_work_no_spawn_put_in_the_worktree_and_force_dele
     git(toy.parent, "clone", "-q", "--bare", str(toy), str(mirror))
     git(mirror, "worktree", "add", "-q", str(worktree / ".worktrees" / "pr-1"), "-b", "pr-1")
     (worktree / "notes.md").write_text("what the review found\n")
+    (worktree / "out" / "notes.md").write_text("and what it found next\n")
 
     refused = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy,
                              capture_output=True, text=True, env=env, timeout=180)
     assert refused.returncode == 1, refused.stderr
     assert f"a repo at {worktree / '.worktrees' / 'pr-1'}, a checkout of {mirror}" in refused.stderr, refused.stderr
     assert f"not committed in {worktree}: ?? notes.md" in refused.stderr, refused.stderr
-    assert "built.txt" not in refused.stderr, refused.stderr
+    assert f"not committed in {worktree}: ?? out/notes.md" in refused.stderr, refused.stderr
+    assert not [left for left in ("built.txt", "out/a", "deps/dep") if left in refused.stderr], refused.stderr
     assert (worktree / ".worktrees" / "pr-1" / "lamp.txt").exists()
     assert git(toy, "branch", "--list", "ticket/warm-preset")
     assert "warm-preset exited" in run(toy, "ctl", "probe").stdout
