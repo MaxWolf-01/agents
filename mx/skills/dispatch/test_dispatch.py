@@ -885,9 +885,9 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
 
 def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path, runner: Path) -> None:
     """`unattended-launch`, as ruled on 2026-09-26: a worker keeps the project's settings and
-    AGENTS.md or CLAUDE.md and the mx plugin the host's claude has installed, and none of the
-    user's settings, CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The
-    worklog's first line names the mx install it runs."""
+    CLAUDE.md and the mx plugin the host's claude has installed, and none of the user's settings,
+    CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The worklog's first line
+    names the mx install it runs."""
     plugin = mx(tmp_path)
 
     run_worker(runner)

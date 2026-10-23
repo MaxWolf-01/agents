@@ -38,7 +38,7 @@ A candidate is weighed the same way; its **Weighing**, or an architecture candid
 
 ### What is already written
 
-Before a finding or candidate enters the report, look for the guidance that already covers its case: a skill, an `AGENTS.md` or `CLAUDE.md`, a doc or a rule the agent reads, in the repos and skills the run can read. What is there decides:
+Before a finding or candidate enters the report, look for the guidance that already covers its case: a skill, a `CLAUDE.md`, a doc or a rule the agent reads, in the repos and skills the run can read. What is there decides:
 
 - **Guidance that covers the case clearly, where the agent reads it as it acts**, makes it an execution problem. Seen once, it proposes nothing, and goes under Watched as one line. Once it recurs (a Watched line seen again, or the same miss in two sessions), or once it costs max significant time, attention or tokens, it is a finding, and its proposal moves the guidance up a rung of the agents repo's `PRINCIPLES.md` #1, as high as will hold: the code shaped so the mistake cannot be written; then a lint, type, test or script that goes red on it; then a line of a reviewer's checklist. The written line is retired once the mechanism covers it.
 - **Guidance that covers it where the agent does not read it as it acts** (buried in a long file, under a heading about something else, behind a pointer that does not fire) gets a placement fix: the proposal moves the guidance to where the agent acts, and writes no second copy of it.

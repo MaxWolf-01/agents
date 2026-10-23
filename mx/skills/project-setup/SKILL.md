@@ -16,7 +16,6 @@ Target preferences for a project's foundations. On a fresh project, build all of
 - **The tracker's commit check**: `tracker hook`, run in the agent repo (`tracker check --help` says what the hook refuses).
 - **MIT license** unless the user says otherwise.
 - **README stub**: what it is, install, usage. No aspirational sections.
-- **AGENTS.md** at the root holds the project's instructions, so Claude Code and Codex both load the one file. Claude Code skips it wherever a `CLAUDE.md` or `CLAUDE.local.md` sits at or above the working directory, so an existing repo's `CLAUDE.md` is renamed to it (`git mv`), not kept beside it.
 - **Flake rule**: a dependency the language package manager can't deliver (compiler, native lib, Postgres, ffmpeg, CUDA) goes in a devShell flake, so every machine, including NixOS hosts, gets it from one pinned declaration. `nix develop -c <cmd>` runs a command inside it. Projects whose needs the language toolchain fully covers get no flake (uv delivers Python itself; npm delivers neither node nor pnpm, so node projects always get one).
 
   ```nix

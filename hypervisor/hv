@@ -7,7 +7,7 @@
 # sessions in optchat-pi/, and the extension's files, which extension/src/live.ts lists. The fork is the checkout
 # $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else the token in max's secrets, else what /login stored.
 #
-# A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/instructions.md.
+# A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/'s.
 # `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
 # `hv tell [--ping] <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
 # `hv fetch` brings Jarvis's messages to the hypervisor into its inbox; a timer runs it (`hv fetch --help`).
@@ -57,10 +57,8 @@ if [[ ! -d $profiles/$profile ]]; then
 	cp "$here/live/config.json" "$profiles/$profile/"
 	echo "hv: no profile $profile in $profiles yet; it starts empty, with live/'s config" >&2
 fi
-# pi reads the profile's instructions on every request, so a link makes an edit to live/ apply on the next turn. In
-# the repo they are not named AGENTS.md: Claude Code would load one as the instructions of any session in this repo
-# that opens a file under live/.
-ln -sfn "$here/live/instructions.md" "$profiles/$profile/AGENTS.md"
+# pi reads the profile's instructions on every request, so a link makes an edit to live/ apply on the next turn.
+ln -sfn "$here/live/AGENTS.md" "$profiles/$profile/AGENTS.md"
 
 pi=(node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
 	--model anthropic/claude-opus-5-5 --thinking medium

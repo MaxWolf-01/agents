@@ -153,7 +153,7 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		assert.deepEqual(after("--optchat-profile"), ["hv"]);
 		assert.deepEqual(after("--model"), ["anthropic/claude-opus-5-5"]);
 		for (const off of ["--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files"]) assert.ok(started.includes(off), off);
-		assert.equal(readlinkSync(instructions), path.resolve(import.meta.dirname, "../../live/instructions.md"), "the profile's instructions link to live/'s, over the copy an earlier start left");
+		assert.equal(readlinkSync(instructions), path.resolve(import.meta.dirname, "../../live/AGENTS.md"), "the profile's instructions link to live/'s, over the copy an earlier start left");
 
 		// hv explore, with no TUI running and no profile yet, starts the same TUI on a new profile, the run as its first message.
 		rmSync(path.join(hvStore, "optchat", "profiles", "hv"), { recursive: true });

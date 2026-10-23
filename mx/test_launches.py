@@ -22,7 +22,7 @@ MX = Path(__file__).resolve().parent
 
 RULE = """\
 Every `claude` mx starts unattended names what it inherits from the machine it runs on with
-`--setting-sources`: "" for nothing, `project` for the project's own settings and AGENTS.md or CLAUDE.md.
+`--setting-sources`: "" for nothing, `project` for the project's own settings and CLAUDE.md.
 `--strict-mcp-config` keeps every MCP server out beside it, and the code-review reviewers' launch
 (mx/skills/code-review/review) is the whole pattern. These state nothing:"""
 
