@@ -34,8 +34,9 @@
 # the reports' paths are this script's own output: the reports of the axes
 # whose reviewer finished. Exit 1 names each axis that died or left no report,
 # with the last line its reviewer printed, which is where a usage limit or a
-# crash says itself, and the command that re-runs them. One review of a range runs at a
-# time: a second is refused while the first, or anything it started, is alive.
+# crash says itself, and the command that re-runs them. One review of a range
+# runs at a time: a second is refused while the first, or anything it started,
+# is alive.
 #
 # A reviewer starts from none of the caller's setup: no settings files, MCP
 # servers, skills or memory, so what it works from is its prompt, the same on
@@ -356,20 +357,20 @@ for axis in $axis_list; do reviewer "$axis" & pid[$axis]=$!; done
 
 # A reviewer that died has usually written its report's opening already, since
 # its prompt has it create the file first, so the file being there says nothing
-# of whether the axis finished: its reviewer's exit status does. A died or absent
-# report is an axis to re-run, never a clean axis, which is what this exit
-# status is for.
+# of whether the axis finished: its reviewer's exit status does. A died or
+# absent report is an axis to re-run, never a clean axis, which is what this
+# exit status is for.
 missing=()
 for axis in $axis_list; do
     wait "${pid[$axis]}"
     rc=$?
     if [ "$rc" -eq 0 ] && [ -s "$dir/$axis.md" ]; then echo "$dir/$axis.md"; continue; fi
     missing+=("$axis")
+    last=$(grep -v '^[[:space:]]*$' "$dir/$axis.log" 2>/dev/null | tail -n 1 | cut -c 1-300)
     if [ "$rc" -eq 0 ]; then
-        echo "review: the $axis axis left no report at $dir/$axis.md; its output is $dir/$axis.log" >&2
+        echo "review: the $axis axis left no report at $dir/$axis.md${last:+ (\"$last\")}; its output is $dir/$axis.log" >&2
         continue
     fi
-    last=$(grep -v '^[[:space:]]*$' "$dir/$axis.log" 2>/dev/null | tail -n 1 | cut -c 1-300)
     [ -s "$dir/$axis.md" ] && wrote="what it wrote before that is at $dir/$axis.md" || wrote="it left no report"
     echo "review: the $axis axis died: its reviewer exited $rc${last:+ (\"$last\")}; $wrote; its output is $dir/$axis.log" >&2
 done
