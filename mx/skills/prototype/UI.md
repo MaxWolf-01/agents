@@ -1,6 +1,6 @@
 # UI Prototype
 
-Generate **two or three radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one or asks for parts of several built whole in the next round, then throws the rest away.
+Generate **radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one or asks for parts of several built whole in the next round, then throws the rest away.
 
 ## Two sub-shapes: strongly prefer sub-shape A
 
@@ -26,7 +26,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 1. State the question and pick N
 
-Offer **two or three variants**; past three a reader skims instead of comparing.
+N is the number of rival whole designs the question holds, with no fixed count: a question with seven competing designs gets seven. Ten or more is fine where the space holds them: the reader cycles through them on the switcher, and stopping at three would leave rivals unseen.
 
 Write down the plan in one line, in the prototype's location or a top-of-file comment:
 
@@ -47,7 +47,7 @@ Variants must be **structurally different**: different layout, different informa
 Two more tests every variant passes before it is offered for a pick:
 
 - **Different at rest.** Load each variant and look at it untouched: the difference shows on what a reader sees first, before anything is opened, hovered or expanded. Variants that part ways only once something is opened read as one design, and the pick never happens.
-- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis; a grid of combinable parts hands the user the design work, so offer only wholes.
+- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis, so the user never has to assemble a design to pick one. Where it helps the user see more variations or try a combination of their own, the axes can also be exposed beside the wholes, as one control per axis on the switcher bar, starting from the current variant; the wholes stay what the pick is offered from.
 
 ### 3. Wire them together
 
