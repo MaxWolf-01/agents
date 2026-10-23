@@ -1572,7 +1572,8 @@ class Mark:
 class Row:
     """One ticket as the board shows it. `group` is the group it sits in, FOLDED for a row folded
     under its parent ticket's, and `kids` are the rows folded under it. `questions` are the open
-    questions it lists while folded, with `copy_all` copying them once there are two; `search` is
+    questions it lists while folded, `copied` those questions as a copy button puts them on the
+    clipboard ("" where it asks none), with `copy_all` copying them once there are two; `search` is
     the words a filter finds it by, its folded rows' included. What it reads as opened is its
     ticket's `blocks`."""
 
@@ -1580,6 +1581,7 @@ class Row:
     group: str
     marks: tuple[Mark, ...]
     questions: tuple[Asked, ...]
+    copied: str
     copy_all: Copy | None
     search: str
     kids: tuple["Row", ...]
@@ -1639,9 +1641,7 @@ def view(tickets: list[Ticket], gh: github.Answer = github.NOTHING) -> View:
     for state, label in GROUPS:
         held = sorted((rows[t.slug] for t in tickets if rows[t.slug].group == state), key=lambda r: sort_key(r.ticket))
         if held:
-            # the needs-me group's button copies what each of its rows asks (ruled_with)
-            asking = [one for r in held for one in (ruled_with(r.ticket, kids) if state == "needs" else [r.ticket])]
-            groups.append(Group(state, label, tuple(held), group_copy(asking), state == "done"))
+            groups.append(Group(state, label, tuple(held), group_copy(held), state == "done"))
     return View(rows, tuple(groups), tuple(pill(tree, tickets) for tree in trees_of(tickets)))
 
 
@@ -1653,14 +1653,16 @@ def shown_row(t: Ticket, under: tuple[Row, ...], kids: dict[str, list[Ticket]], 
     asked = [(one, shown_questions(one.status, one.questions)) for one in ruled_with(t, kids)]
     asked = [(one, questions) for one, questions in asked if questions]
     count = sum(len(questions) for _, questions in asked)
+    copied = "\n\n".join(copy_text(one.path, questions) for one, questions in asked)
     copy_all = None if count < 2 else Copy(  # one question's own button already copies the ticket's whole list
         "qall", f"copy all {count}", "Click to copy every open question on this row, each under the path of the file it is on.",
-        "\n\n".join(copy_text(one.path, questions) for one, questions in asked),
+        copied,
         f"{count} questions of {asked[0][0].path.name}" if len(asked) == 1 else f"{count} questions of {t.slug}'s tree",
     )
     return Row(
         ticket=t, group=group_of(t), marks=marks_of(t, len(under), gh),
         questions=tuple(asked_of(q, one.path, True, "" if one is t else one.slug) for one, questions in asked for q in questions),
+        copied=copied,
         copy_all=copy_all,
         search=search_words(*(part for one in with_folded(t, kids) for part in ticket_words(one))),
         kids=under,
@@ -1794,19 +1796,19 @@ def shown_questions(status: str, asked: Sequence[Question]) -> list[Question]:
     return [] if status == "done" else open_questions(asked)
 
 
-def group_copy(rows: Sequence[Ticket]) -> Copy | None:
-    """The needs-me group's own copy button: every open question on the board at once, for pasting
-    into an editor. None for a group whose rows ask nothing, which is every other group."""
-    asked = [(t.path, shown_questions(t.status, t.questions)) for t in rows]
-    asked = [(path, questions) for path, questions in asked if questions]
-    if not asked:
+def group_copy(rows: Sequence[Row]) -> Copy | None:
+    """The needs-me group's own copy button: every open question its rows ask at once, for pasting
+    into an editor. None for a group whose rows ask nothing, which is every other group. The page's
+    script words it again for the rows a filter leaves on show (`recount`), so the count and the
+    copy are those of the questions the user sees."""
+    asking = [r for r in rows if r.copied]
+    if not asking:
         return None
-    count = sum(len(questions) for _, questions in asked)
+    count = sum(len(r.questions) for r in asking)
     return Copy(
         "qgroup", f"copy all {count} question{'s' if count != 1 else ''}",
-        "Click to copy every open question on the board, each under the path of the ticket it is on.",
-        "\n\n".join(copy_text(path, questions) for path, questions in asked),
-        f"{count} question{'s' if count != 1 else ''}",
+        "Click to copy every open question of the rows on show, each under the path of the ticket it is on.",
+        "\n\n".join(r.copied for r in asking), f"{count} question{'s' if count != 1 else ''}",
     )
 
 
@@ -1998,7 +2000,7 @@ def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
     footmeta = f"{len(reading.tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     notes = absences(reading) + [Absence("board-server", UNSERVED, hidden=True), Absence("board-stale", "", hidden=True)]
     return PAGE.substitute(
-        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK),
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK), copycap=COPY_CAP,
         project=html.escape(reading.project), chips="".join(map(pill_html, board.pills)),
         groups="".join(map(group_html, board.groups)), graphs=graphs, log=log_html,
         columns="".join(column_tokens(selector, widths) for selector, widths in columns(board).items()),
@@ -2029,7 +2031,7 @@ def row_html(r: Row) -> str:
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
     inner = f'<div class="kids">{"".join(map(row_html, r.kids))}</div>' if r.kids else ""
     return (
-        row_open(t, r.search) + some("tree", "slug", "asks")
+        row_open(r) + some("tree", "slug", "asks")
         + f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
         f'{some("kin", "rp", "gh")}</span>{brief}{asks_html(r)}</span>'
         f'<span class="meta">{some("time", "pri")}<span class="chips">{some("chip")}</span></span>'
@@ -2037,12 +2039,15 @@ def row_html(r: Row) -> str:
     )
 
 
-def row_open(t: Ticket, search: str) -> str:
-    """The element every row is: what the page's script matches a row on, and the file a click on
-    its slug copies."""
+def row_open(r: Row) -> str:
+    """The element every row is: what the page's script matches a row on, the file a click on its
+    slug copies, and the questions it asks, which the needs-me group's button copies while the row
+    is on show."""
+    t = r.ticket
+    asked = f' data-asks="{len(r.questions)}" data-asked="{html.escape(r.copied)}"' if r.copied else ""
     return (
         f'<details class="ticket row-{t.status}" id="t-{t.slug}" data-tree="{html.escape(t.tree or ALONE)}" '
-        f'data-slug="{html.escape(t.slug)}" data-search="{html.escape(search)}" data-path="{html.escape(str(t.path))}"><summary>'
+        f'data-slug="{html.escape(t.slug)}" data-search="{html.escape(r.search)}" data-path="{html.escape(str(t.path))}"{asked}><summary>'
     )
 
 
@@ -2883,10 +2888,23 @@ ${viewjs}
       g.querySelector(".n").textContent = n;
       g.classList.toggle("empty", n === 0);
     }
+    for (const c of rowsEl.querySelectorAll(".qgroup")) recount(c);
     for (const b of document.querySelectorAll(".treechip")) b.classList.toggle("off", off.has(b.dataset.tree));
     localStorage.setItem("board-off:" + document.title, JSON.stringify([...off]));
     if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);  // a hidden tree takes its row, and its graph, with it
     showGraph();
+  }
+
+  // The needs-me group's copy button, worded as group_copy words it for the rows a filter leaves on
+  // show, and gone while none of them asks a question.
+  function recount(c) {
+    const asking = [...c.closest("details.grp").querySelectorAll(":scope > .tickets > .ticket[data-asked]:not(.off):not(.miss)")];
+    const n = asking.reduce((sum, t) => sum + Number(t.dataset.asks), 0), text = asking.map((t) => t.dataset.asked).join("\n\n");
+    const counted = n + " question" + (n === 1 ? "" : "s");
+    const shows = text.length <= ${copycap} ? text : text.slice(0, ${copycap}).trimEnd() + "…";
+    Object.assign(c.dataset, { copy: text, copied: counted, tip: c.dataset.tip.split("\n\n")[0] + "\n\n" + shows });
+    c.textContent = "copy all " + counted;
+    c.hidden = !n;
   }
 
   // The whole tracker's graph is composed here from its parts, so a hidden tree drops out of it

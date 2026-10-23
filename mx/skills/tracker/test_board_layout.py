@@ -311,6 +311,20 @@ with sync_playwright() as pw:
         "shown": page.evaluate("document.getElementById('toast').classList.contains('on')"),
         "still_folded": page.evaluate(f"!document.getElementById('{FOLDED}').open"),
     }
+    # the needs-me group's button with a tree's rows hidden by its pill, then shown again
+    GROUP = """
+      () => {
+        const g = document.getElementById("grp-needs"), c = g.querySelector(".qgroup")
+        return {word: c.textContent, copy: c.dataset.copy,
+                hidden: [...g.querySelectorAll(":scope > .tickets > .ticket.off")].map((t) => t.dataset.path)}
+      }
+    """
+    before = page.evaluate(GROUP)
+    page.click('.treechip[data-tree="saved-views"]')
+    page.click("#grp-needs .qgroup")
+    page.wait_for_timeout(500)
+    out["group"] = {"before": before, "after": page.evaluate(GROUP), "clipboard": page.evaluate("navigator.clipboard.readText()")}
+    page.click('.treechip[data-tree="saved-views"]')
     out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
     page.click("#scheme")
     page.wait_for_timeout(2500)
@@ -410,6 +424,17 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     assert copied["clipboard"].count("- [D") == 2, "the folded row's two questions, under its path"
     assert copied["shown"] and "retire-legacy-exporter.md" in copied["note"], f"the note reads {copied['note']!r}"
     assert copied["still_folded"], "the click opened the row instead of copying"
+    # what the needs-me group's button counts and copies is the questions of the rows on show
+    group = seen["group"]
+    asked = lambda said: int(re.search(r"\d+", said["word"]).group())
+    assert group["after"]["hidden"], "the saved-views pill hid no needs-me row"
+    assert group["clipboard"] == group["after"]["copy"], "the click put something else on the clipboard"
+    assert group["clipboard"].count("\n- [") == asked(group["after"]) < asked(group["before"]), (
+        f"with saved-views hidden the button reads {group['after']['word']!r} over {group['clipboard']!r}"
+    )
+    assert not [path for path in group["after"]["hidden"] if path in group["clipboard"]], (
+        f"the button copies the questions of a row the pill hid: {group['clipboard']!r}"
+    )
     # the name is what a row is read by, so it is never the thing that gives up its width
     for name in seen["names"]:
         assert not (name["cut"] and name["beside"]), (
