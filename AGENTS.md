@@ -6,7 +6,7 @@ Audiences: `mx/README.md` is for humans learning the workflow and may restate wh
 
 Dispatched workers never load `claude/CLAUDE.md`; `mx/skills/dispatch/worker-prompt.md` stands in for it and copies its workflow, style, tools and taste blocks, adapted to a worker. An edit to one of those blocks is checked against the copy.
 
-@PRINCIPLES.md
+Read the workflow principles before changing the workflow or its harness: @PRINCIPLES.md
 
 # Releasing mx
 
