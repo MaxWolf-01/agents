@@ -477,7 +477,7 @@ move each out of the worktree, or commit it and \`dispatch fetch $slug\`, then c
 }
 
 # What `deletable` finds less what it found right after the setup (`set_up_record`), so what the
-# setup leaves stops no cleanup.
+# setup leaves stops no cleanup; with no record, everything counts.
 foreign() {
     deletable | sort | comm -13 <(sort "$set_up_record" 2> /dev/null) -
 }

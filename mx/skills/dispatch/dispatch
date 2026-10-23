@@ -751,9 +751,9 @@ landed_round() { # <slug> <land|accept> <its arguments...>
     [ -z "$kept" ] && [ "$asked" -eq 0 ]
 }
 
-# Removes a done ticket's run: `ctl cleanup` on its host, then each ticket/<slug> branch here that
-# has merged. Stops, saying how to retry, at a branch missing here or not merged. Finds the run
-# under $base, which `accept` sets to the parent's for each child.
+# Removes a done ticket's run under $base: `ctl cleanup` on its host, held back by a listed branch
+# there that repos: no longer names and is missing or unmerged here; then each merged ticket/<slug>
+# branch here, stopping at an unmerged code or agent one, keeping and naming an unmerged listed one.
 retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: names>...]
     local h top name tip
     h=$(host_of "$1")
