@@ -1680,24 +1680,27 @@ def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_secti
     that repo's section where another repo's section also shows that path (the same file changed
     in two repos, or an untouched file another section holds too); nothing about that reaches
     stderr. A note in a listed repo with no section on the page stays on the ticket, as an agent
-    one does."""
+    one does. A file of `Vendor`, nested in Backend, is Vendor's. The comment ids the round's
+    `Addressed:` line names are the page's resolved list."""
     agent = toy / "agent"
     (toy / ".gitignore").write_text("/agent/\n/Backend/\n/Helix/\n")
     git(toy, "commit", "-q", "-am", "Backend and Helix are repos of their own")
     backend = listed_repo(toy / "Backend", "development").resolve()
     listed_repo(toy / "Helix", "main")
     jarvis = listed_repo(toy.parent / "jarvis", "main").resolve()
+    vendor = listed_repo(backend / "vendor", "main")
     listing(toy, "warm-preset", f'[Backend]\npath = "Backend"\nintegration = "development"\n\n'
-            f'[Helix]\npath = "Helix"\nintegration = "main"\n\n[jarvis]\npath = "{jarvis}"\nintegration = "main"\n',
-            "Backend, jarvis")
+            f'[Helix]\npath = "Helix"\nintegration = "main"\n\n[jarvis]\npath = "{jarvis}"\nintegration = "main"\n\n'
+            f'[Vendor]\npath = "Backend/vendor"\nintegration = "main"\n',
+            "Backend, jarvis, Vendor")
     for top, start, name in ((toy, "main", "warm.txt"), (toy, "main", "shared.txt"),
                              (backend, "development", "warm.py"), (backend, "development", "shared.txt"),
-                             (jarvis, "main", "warm.rs")):
+                             (jarvis, "main", "warm.rs"), (vendor, "main", "warm.c")):
         built_on(top, "ticket/warm-preset", start, name)
     git(agent, "switch", "-q", "-c", "ticket/warm-preset")
     (agent / "show" / "warm-preset").mkdir(parents=True)
     (agent / "show" / "warm-preset" / "report.md").write_text(
-        "## Comments\n\nThe warm preset lands in three repos, unmerged.\n\n- [D1] **Assumptions**\n"
+        "## Comments\n\nAddressed: C1, C4\n\nThe warm preset lands in four repos, unmerged.\n\n- [D1] **Assumptions**\n"
         "  - A1 `warm.txt:1`: in the code repo.\n"
         "  - A2 `Backend/warm.py:1`: in the nested repo.\n"
         "  - A3 `../jarvis-warm-preset/warm.rs:1`: in the sibling repo.\n"
@@ -1705,17 +1708,19 @@ def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_secti
         "  - A5 `agent/show/warm-preset/report.md:1`: in the agent repo.\n"
         "  - A6 `Backend/README:1`: untouched, and Backend's is the first section holding a README.\n"
         "  - A7 `../jarvis-warm-preset/README:1`: untouched, and Backend's section holds one first.\n"
-        "  - A8 `Helix/README:1`: in a listed repo this ticket's page has no section for.\n")
+        "  - A8 `Helix/README:1`: in a listed repo this ticket's page has no section for.\n"
+        "  - A9 `Backend/vendor/warm.c:1`: in the repo nested in the nested one.\n")
     git(agent, "add", "show")
     git(agent, "commit", "-q", "-m", "warm-preset: the report")
     git(agent, "switch", "-q", "main")
 
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
-    notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())["notes"]
-    assert [(one["id"], one["path"], one["line"], Path(one["source"]).resolve()) for one in notes] == [
+    page = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
+    assert [(one["id"], one["path"], one["line"], Path(one["source"]).resolve()) for one in page["notes"]] == [
         (1, "warm.txt", 1, toy.resolve()), (2, "warm.py", 1, backend), (3, "warm.rs", 1, jarvis),
-        (4, "shared.txt", 1, backend), (6, "README", 1, backend), (7, "README", 1, jarvis)]
+        (4, "shared.txt", 1, backend), (6, "README", 1, backend), (7, "README", 1, jarvis), (9, "warm.c", 1, vendor)]
+    assert page["resolved"] == ["C1", "C4"]
     assert "A4" not in said.stderr and "A7" not in said.stderr, said.stderr
 
 
@@ -2928,6 +2933,20 @@ def test_push_that_a_host_refuses_for_one_repo_names_it_and_brings_the_other_the
     assert git(bare / "lamp.git", "rev-parse", "main") == git(toy, "rev-parse", "main")
     assert git(bare / "lamp-agent.git", "rev-parse", "main") != git(toy / "agent", "rev-parse", "main")
 
+
+@pytest.mark.full_path
+def test_a_fetch_whose_branch_one_of_the_hosts_repos_lacks_names_that_repo(toy: Path, staged: Path) -> None:
+    """`dispatch fetch`'s exit 1: a branch did not come (named). The agent repo's ticket branch is
+    gone from the host, as a cleanup run there by hand would leave it."""
+    env, worktree = built_on_host(toy, staged, "agent@far")
+    git(worktree.parent / "lamp-agent.git", "worktree", "remove", "--force", str(worktree / "agent"))
+    git(worktree.parent / "lamp-agent.git", "branch", "-D", "ticket/warm-preset")
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True,
+                             env=env, timeout=180)
+
+    assert fetched.returncode == 1, fetched.stderr
+    assert f"fetching ticket/warm-preset from agent@far into {toy / 'agent'} failed" in fetched.stderr, fetched.stderr
 
 def sourced(body: str, *args: str, **env: str) -> subprocess.CompletedProcess:
     """`body` run in bash with `dispatch` sourced, so its functions are defined and no command of it
