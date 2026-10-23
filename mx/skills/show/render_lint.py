@@ -18,8 +18,8 @@ Kinds, by severity:
 - tight: an SVG text sits closer to its rect's edge than --pad, in a rect that is a
   box rather than a mask sized to the label (reported, never fatal).
 - clipped: a box with overflow hidden cuts an HTML text off, by an ellipsis or plainly
-  (reported, never fatal: a truncated title is sometimes the design). The JSON names every
-  box that cuts it, so a reader can tell the box meant to truncate from one that was not.
+  (reported, never fatal: a truncated title is sometimes the design). Its --json cutters
+  tell the box meant to truncate from one that was not.
 - unmeasurable: the page never finished loading or never stopped moving, so nothing on it was
   measured.
 
@@ -141,7 +141,8 @@ MEASURE = r"""
   // that cannot stops at its own frame.
   const far = (overflow, frame, whole) => (['hidden', 'clip'].includes(overflow) ? frame : Math.max(frame, whole))
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
-  // it cannot scroll say how much they cut off, and which of them cut it at all.
+  // it cannot scroll say how much they cut off, and which of them cut off what the boxes inside
+  // them left showing.
   const clip = (el, r) => {
     let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
     const by = []
@@ -160,9 +161,8 @@ MEASURE = r"""
         ? { left: 0, top: 0, right: far(cs.overflowX, innerWidth, document.documentElement.scrollWidth), bottom: far(cs.overflowY, innerHeight, document.documentElement.scrollHeight) }
         : { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
       if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY)) {
-        const here = Math.max(c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
-        cut = Math.max(cut, here)
-        if (here > 2) by.push(a)
+        cut = Math.max(cut, c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
+        if (Math.max(c.left - seen.left, seen.right - c.right, c.top - seen.top, seen.bottom - c.bottom) > 2) by.push(a)
       }
       seen = { left: Math.max(seen.left, c.left), top: Math.max(seen.top, c.top), right: Math.min(seen.right, c.right), bottom: Math.min(seen.bottom, c.bottom) }
     }
@@ -293,7 +293,7 @@ class Args:
     (page_cache.py says how). A copy is never refreshed, so a page linking an address whose content
     moves is measured against the day it was first fetched."""
     json: bool = False
-    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts it."""
+    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts off what the boxes inside it left showing."""
 
 
 def main(args: Args) -> None:
