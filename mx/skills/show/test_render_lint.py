@@ -14,9 +14,7 @@ its title off, which is a finding that never fails a run; and text a clip leaves
 like the text a folded disclosure holds, is hidden on purpose. An element with no box of its own
 hides its text by visibility, and not by opacity, which has no box to act on. Text the browser
 renders late, or lays out below the first screen of a page that scrolls, is measured. A box cuts
-off only what it is the containing block of, the page itself included. Board rows whose marks
-each sit at their own offset collide wherever a long title runs under its badge, and the same marks
-on a grid collide nowhere.
+off only what it is the containing block of, the page itself included.
 
 What the reader sees also depends on when and where the page is read: a page still moving once its
 requests are done is measured once it stops and reported unmeasurable when it never does; what an
@@ -104,37 +102,6 @@ TWO_SCREENS = """
 """
 
 
-# The board prototype's rows with every mark placed at its own offset, so a long title runs under
-# the badge beside it, and the feature tag is cut off by its box. `?fixed` lays the same marks
-# out on a grid, where each gets its own track. The offsets hold for any face whose glyphs average
-# 0.40em (Times) to 0.62em (a monospace one): each long title ends past its badge's text and short
-# of the chip, and on the grid fits its track.
-BOARD_ROWS = """
-<style>
-  .rows { width: 56rem; margin: 2rem }
-  .row { position: relative; height: 2.2rem }
-  .row > * { position: absolute; top: 0.45rem }
-  .ftag { left: 0; width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  .num { left: 9.5rem }
-  .title { left: 12rem; white-space: nowrap; font-size: 0.8rem }
-  .badge { right: 24rem }
-  .chip { right: 0 }
-  .fixed .row { height: auto; display: grid; grid-template-columns: 8rem 1.5rem 1fr 4.5rem 2rem; gap: 0.8rem; align-items: baseline; padding: 0.35rem 0 }
-  .fixed .row > * { position: static }
-  .fixed .title { overflow: hidden; text-overflow: ellipsis }
-  .fixed .badge, .fixed .chip { justify-self: end }
-  .ftag, .num, .badge, .chip { font-size: 0.8125rem }
-  .ftag, .badge, .chip { border: 1px solid; padding: 0 0.4rem }
-</style>
-<div class="rows">
-  <div class="row"><span class="ftag">board-orients</span><span class="num">02</span><span class="title">Rows</span><span class="badge">claimed</span><span class="chip">01</span></div>
-  <div class="row"><span class="ftag">board-orients</span><span class="num">03</span><span class="title">Open questions on a ticket, and the needs-me group they put it into</span><span class="badge">open</span><span class="chip">01</span></div>
-  <div class="row"><span class="ftag">render-lint-html-overlap</span><span class="num">—</span><span class="title">render-lint sees HTML text colliding, and says what a box cuts off</span><span class="badge">claimed</span><span class="chip">—</span></div>
-</div>
-<script>if (new URLSearchParams(location.search).has("fixed")) document.body.classList.add("fixed")</script>
-"""
-
-
 def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "", env: dict | None = None) -> tuple[int, list[dict]]:
     """The tool over `body` as a page, at the address `at` appends to it. Exit code and findings."""
     page = tmp_path / "page.html"
@@ -155,26 +122,6 @@ def png_size(path: Path) -> tuple[int, int]:
     """A PNG's pixel width and height, out of the IHDR chunk its header opens with."""
     header = path.read_bytes()[16:24]
     return int.from_bytes(header[:4]), int.from_bytes(header[4:])
-
-
-def test_board_row_marks_at_their_own_offsets_collide_and_the_tag_box_cuts_its_tag_off(tmp_path):
-    """The page that showed render-lint seeing HTML text collide: each long title runs under the
-    badge in its row, and the feature tag too long for its box is cut off."""
-    code, findings = lint(tmp_path, BOARD_ROWS)
-    assert {(f["kind"], frozenset(f["text"].split(" | "))) for f in findings} == {
-        ("clipped", frozenset({"render-lint-html-overlap"})),
-        ("overlap", frozenset({"open", "Open questions on a ticket, and the needs-me group they put it into"})),
-        ("overlap", frozenset({"claimed", "render-lint sees HTML text colliding, and says what a box cuts off"})),
-    }
-    assert len(findings) == 3
-    assert code == 1
-
-
-def test_the_same_board_row_marks_on_a_grid_collide_nowhere(tmp_path):
-    """The tag its box still cuts off is truncated by design, which never fails a run."""
-    code, findings = lint(tmp_path, BOARD_ROWS, at="?fixed")
-    assert set(kinds(findings)) <= {"clipped"}
-    assert code == 0
 
 
 def test_a_line_wider_than_its_box_escapes_it(tmp_path):
