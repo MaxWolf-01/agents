@@ -34,7 +34,7 @@ Examples:
     tracker retire --dry-run             # what that would take out, changing nothing
     tracker hook                         # install the pre-commit hook that runs `check`
     tracker hook --sync                  # and the hook keeping two main checkouts in step
-    tracker sync                         # this project's main checkouts in step with their upstreams now
+    tracker sync                         # the agent repo pushed now, merging what the other machine pushed first
 """
 
 from __future__ import annotations
@@ -1348,8 +1348,11 @@ def sync_checkouts(here: bool = False) -> int:
     agent repo is synced: an integration branch is pushed by whoever merges into it, and a ticket
     branch never is. A remote that does not answer leaves the commits waiting for the next sync. A
     conflict, the two machines having changed the same lines, leaves the merge stopped for whoever
-    resolves it; committing the resolution pushes it. Exit 1: a conflict, a merge or rebase
-    underway, or a remote that refused the push; the line says which file or why.
+    resolves it; committing the resolution pushes it. The tracker refuses no write meanwhile, but
+    git takes no commit of single files during a merge, so a ticket commit, the tracker's or
+    dispatch's, fails until the resolution is committed, and what it wrote goes in with that.
+    Exit 1: a conflict, a merge or rebase underway, or a remote that refused the push; the line says
+    which file or why.
 
     Args:
         here: only the checkout the working directory is in, and only where it is a main checkout

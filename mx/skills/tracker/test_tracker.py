@@ -2548,14 +2548,16 @@ def test_a_ticket_changed_on_both_machines_stops_the_merge_naming_it_and_pushes_
     again = run(pc.code, "sync")
     assert again.code == 1 and "a merge is underway" in again.err, again.said
     ticket(pc.tickets, "while-merging")
-    assert (pc.tickets / "while-merging.md").exists() and run(pc.code, "set", "while-merging", "priority=2").code == 0, \
-        "a ticket write is not refused meanwhile"
+    assert run(pc.code, "set", "while-merging", "priority=2").code == 0, "the tracker refuses no write meanwhile"
+    waits = commit_with_hooks(pc.agent, "file while-merging", "tickets/while-merging.md")
+    assert waits.returncode != 0 and "partial commit during a merge" in waits.stderr, "a ticket commit waits for the resolution"
 
     ticket(pc.tickets, "shared", status="claimed", priority=3)  # the resolution, committed as a merge is
     git(pc.agent, "add", "tickets/shared.md")
     resolved = subprocess.run(["git", "-C", str(pc.agent), "commit", "-q", "--no-edit"], capture_output=True, text=True, env=with_tracker())
     assert resolved.returncode == 0, resolved.stderr
     assert upstream(origin, "agent") == tip(pc.agent, "main"), "committing the resolution pushes it"
+    assert "while-merging.md" in git(pc.agent, "show", "--name-only", "--format=", "main"), "the write that waited goes in with it"
 
 
 def test_uncommitted_changes_a_merge_would_overwrite_stop_it_before_it_starts(machines: tuple[Machine, Machine, Path]) -> None:
