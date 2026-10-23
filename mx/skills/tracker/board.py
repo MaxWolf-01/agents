@@ -2032,7 +2032,7 @@ def row_html(r: Row) -> str:
     def some(*kinds: MarkKind) -> str:
         return "".join(mark_html(m) for m in r.marks if m.kind in kinds)
 
-    brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
+    brief = f'<span class="brief">{clipped_html(t.brief)}</span>' if t.brief else ""
     inner = f'<div class="kids">{"".join(map(row_html, r.kids))}</div>' if r.kids else ""
     return (
         row_open(r) + some("tree", "slug", "asks")
@@ -2492,8 +2492,9 @@ ${columns}
   .title { color: var(--strong); min-width: 0; }
   .row-done > summary .title, .row-blocked > summary .title, .row-proposed > summary .title { color: var(--muted); }
   .titleline > a { flex: none; }
-  .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ticket[open] > summary .brief { white-space: normal; }
+  .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; min-width: 0; }
+  /* an opened row reads its brief whole, so nothing there cuts it */
+  .ticket[open] > summary .brief .clip { white-space: normal; overflow: visible; }
   /* a needs-me row's open questions, under the name they belong to; an opened row reads them in
      its questions block instead */
   .qs { display: grid; gap: .15rem; justify-items: start; padding: .2rem 0 .1rem; min-width: 0; }

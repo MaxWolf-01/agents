@@ -33,11 +33,12 @@ for the suite's processes to share out.
 Beside the width matrix, the same widths over a board with a defect put back into it: a clean run
 means nothing until the same widths have been shown reporting a defect.
 
-What render-lint measures is text against its own box, and text drawn over other text, HTML over
-HTML included; what it does not reach is text a box clips rather than spills, which every mark
-that truncates does by design, and an overlap the browser paints an opaque box over, which is
-what a card drawn over the page is. The Property is executable as far as that reaches; the rest
-was read by eye at these widths, in both schemes (02-rows' closing comment).
+What render-lint measures is text against its own box, text a box cuts off, and text drawn over
+other text, HTML over HTML included. Text its own `.clip` cuts off is not a finding here: that is
+every mark, name and brief that truncates by design. What render-lint does not reach is an overlap
+the browser paints an opaque box over, which is what a card drawn over the page is. The Property
+is executable as far as that reaches; the rest was read by eye at these widths, in both schemes
+(02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
@@ -112,7 +113,13 @@ def lint(pages: list[str], width: int) -> list[dict]:
         f"render-lint at {width}px exited {done.returncode} with no findings to read: "
         f"{done.stderr.strip()[-2000:]}"
     )
-    return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
+    return [f for f in json.loads(done.stdout) if not (f["kind"] == "tight" or truncates(f))]
+
+
+def truncates(finding: dict) -> bool:
+    """Whether a finding is text cut off only where the board means to cut it: by its own `.clip`
+    (board.clipped_html), and by no box around one."""
+    return finding["kind"] == "clipped" and all(c.split()[-1] == "span.clip" for c in finding["cutters"])
 
 
 def band_edges(page: str) -> list[int]:
@@ -164,16 +171,22 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     assert not (found := lint(pages, width)), named({width: found})
 
 
-# A defect put back into the board: the brief of every folded row, in a box too narrow for the one
-# unbreakable line it is set as, with nothing left to hide the rest.
-DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
+# Defects put back into the board, each by the kind it is reported as and the tail of the address
+# of the element it is measured on: the brief of every folded row, in a box too narrow for the one
+# unbreakable line it is set as, with nothing left to hide the rest; every row's time, cut off by a
+# box that has no truncation of its own; and every row's name, whose `.clip` a box around it cuts.
+DEFECTS = {
+    ("escapes", "span.brief span.clip"): ".brief { display: block !important; width: 60px !important } .brief .clip { overflow: visible !important }",
+    ("clipped", "span.time"): ".time { display: block !important; width: 4px !important; overflow: hidden !important }",
+    ("clipped", "span.title span.clip"): ".titleline { height: .5rem !important; overflow: hidden !important }",
+}
 
 
 @pytest.mark.full_path
 @pytest.mark.parametrize("width", WIDTHS)
-def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
-    """A width where the defect goes unreported is a width the Property is not checked at, whatever
-    the clean run above says. The oracle is the defect itself, named by the element it was measured
+def test_defects_put_back_into_the_board_are_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
+    """A width where a defect goes unreported is a width the Property is not checked at, whatever
+    the clean run above says. The oracle is each defect itself, named by the element it was measured
     on: any other finding, an unmeasurable page among them, leaves the width unchecked."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
@@ -182,11 +195,10 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
     render(transcribed.root, transcribed.repo, out)
     assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
     broken = tmp_path / "broken.html"
-    broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
+    broken.write_text(out.read_text().replace("</head>", f"<style>{' '.join(DEFECTS.values())}</style></head>", 1))
     found = lint([f"{broken}?theme=day"], width)
-    assert any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in found), (
-        f"the defect went unseen at {width}px: {named({width: found})}"
-    )
+    unseen = [(kind, el) for kind, el in DEFECTS if not any(f["kind"] == kind and f["el"].endswith(el) for f in found)]
+    assert not unseen, f"{unseen} went unseen at {width}px: {named({width: found})}"
 
 
 # Whether the graph engine arrived, read off the requests that failed rather than off the page: one

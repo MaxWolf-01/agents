@@ -18,7 +18,8 @@ Kinds, by severity:
 - tight: an SVG text sits closer to its rect's edge than --pad, in a rect that is a
   box rather than a mask sized to the label (reported, never fatal).
 - clipped: a box with overflow hidden cuts an HTML text off, by an ellipsis or plainly
-  (reported, never fatal: a truncated title is sometimes the design).
+  (reported, never fatal: a truncated title is sometimes the design). Its --json cutters
+  tell the box meant to truncate from one that was not.
 - unmeasurable: the page never finished loading or never stopped moving, so nothing on it was
   measured.
 
@@ -30,10 +31,12 @@ still, with none of its requests in flight, before it reads the height, resizes 
 it, waits again, then scrolls to the top, so what an address' fragment slides under sticky or
 fixed chrome is no finding.
 
-Skipped on purpose: overflow under 2px; the touching line boxes of a multi-line label; text a
+Skipped on purpose: overflow under 2px, and a cut under 2px by each box (a clipped finding's
+size is the most any one box cut); the touching line boxes of a multi-line label; text a
 clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs cross by
-less than half the shorter one's height. Text in a scrolling ancestor never counts as escaping
-or being cut off, and still counts as overlapping.
+less than half the shorter one's height. Text inside an ancestor that scrolls sideways never
+counts as escaping, and still counts as overlapping. A box that scrolls on either axis never counts
+as cutting, even on an axis whose overflow it hides; a box around it still cuts what it shows.
 
 How far the paint-over rule reaches: a surface counts as covering a text when its background
 resolves to an opaque colour, so a card drawn as an image or a gradient does not, and neither
@@ -140,9 +143,11 @@ MEASURE = r"""
   // that cannot stops at its own frame.
   const far = (overflow, frame, whole) => (['hidden', 'clip'].includes(overflow) ? frame : Math.max(frame, whole))
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
-  // it cannot scroll say how much they cut off.
+  // it cannot scroll cut off what the boxes inside them left showing, which says how much was
+  // cut and by which of them.
   const clip = (el, r) => {
     let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
+    const by = []
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a)
       // Overflow on the root elements is the viewport's, which cuts every box on the page rather
@@ -157,11 +162,14 @@ MEASURE = r"""
       const c = root
         ? { left: 0, top: 0, right: far(cs.overflowX, innerWidth, document.documentElement.scrollWidth), bottom: far(cs.overflowY, innerHeight, document.documentElement.scrollHeight) }
         : { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
-      if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY))
-        cut = Math.max(cut, c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
+      if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY)) {
+        const here = Math.max(c.left - seen.left, seen.right - c.right, c.top - seen.top, seen.bottom - c.bottom)
+        cut = Math.max(cut, here)
+        if (here > 2) by.push(a)
+      }
       seen = { left: Math.max(seen.left, c.left), top: Math.max(seen.top, c.top), right: Math.min(seen.right, c.right), bottom: Math.min(seen.bottom, c.bottom) }
     }
-    return { seen, cut }
+    return { seen, cut, by }
   }
   // display: contents leaves an element with no box, and checkVisibility calls a box-less element
   // hidden; its text is laid out and painted by the formatting context above it.
@@ -176,14 +184,16 @@ MEASURE = r"""
     range.selectNodeContents(n)
     const seen = []
     let cut = 0
+    const by = new Set()
     for (const r of [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0)) {
       const c = clip(el, r)
       cut = Math.max(cut, c.cut)
+      c.by.forEach((a) => by.add(a))
       if (c.seen.right - c.seen.left >= 4 && c.seen.bottom - c.seen.top >= 4) seen.push(c.seen)
     }
     if (!seen.length) continue
     const text = snip(n.nodeValue)
-    if (cut > 2) out.push({ kind: 'clipped', where: 'html', el: at(el), text, by: round(cut), box: box(span(seen)) })
+    if (cut > 2) out.push({ kind: 'clipped', where: 'html', el: at(el), text, by: round(cut), box: box(span(seen)), cutters: [...by].map(at) })
     runs.push({ el, text, rects: seen })
   }
   // An overlap is a collision only where the browser paints both texts. At the point the two
@@ -286,7 +296,7 @@ class Args:
     (page_cache.py says how). A copy is never refreshed, so a page linking an address whose content
     moves is measured against the day it was first fetched."""
     json: bool = False
-    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}]"""
+    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts off what the boxes inside it left showing."""
 
 
 def main(args: Args) -> None:
