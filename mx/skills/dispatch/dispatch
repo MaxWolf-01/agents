@@ -321,7 +321,7 @@ stage() { # <host> [setup-command]
         remote=$(remote_of code "$h")
         host_remote "$repo_root" "$remote" "$h:repos/dispatch/$repo.git" &&
             host_remote "$agent_top" "$remote" "$h:repos/dispatch/$repo-agent.git" ||
-            die "staging $h stopped at a remote that names another repo"
+            die "staging $h stopped at its git remotes; the line above says why"
     fi
     if [ "$(on_host "$h" cat "$scratch/stamp" 2>/dev/null)" = "$stamp" ]; then
         # A new --setup-cmd is the one thing a staged host still takes, so a
