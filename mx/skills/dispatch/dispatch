@@ -1512,8 +1512,8 @@ case $cmd in
     ctl)     shift; ctl "$@" ;;
     wait)    shift; wait_ "$@" ;;
     fetch)   shift; fetch "$@" ;;
-    review)  shift; review "$@" ;;
-    accept)  shift; accept "$@" ;;
+    review)  shift; review "$@"; rc=$?; run "$tracker" sync || rc=1; exit $rc ;;
+    accept)  shift; accept "$@"; rc=$?; run "$tracker" sync || rc=1; exit $rc ;;
     ps)      shift; ps_ "$@" ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;

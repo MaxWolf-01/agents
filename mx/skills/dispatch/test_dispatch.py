@@ -361,7 +361,7 @@ def skill_copy(toy: Path) -> Path:
     (skill / "tracker").mkdir()
     for name in ("dispatch", "dispatch-ctl", "worker-prompt.md"):
         shutil.copy(SKILL / name, skill / "dispatch" / name)
-    for name in ("tracker.py", "pre-commit"):
+    for name in ("tracker.py", "sync.py", "pre-commit"):
         shutil.copy(SKILL.parent / "tracker" / name, skill / "tracker" / name)
     (skill / "run-log").mkdir()
     shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")

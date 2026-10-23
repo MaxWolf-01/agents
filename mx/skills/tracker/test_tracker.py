@@ -2423,5 +2423,172 @@ def test_a_parents_accept_records_its_branch_in_a_listed_repo_a_child_of_it_name
     assert read["tickets"][1]["status"] == "done"
 
 
+# ---- two main checkouts ----------------------------------------------------
+# The oracle is `two-main-checkouts-synced-by-git` in the dotfiles tracker: two clones of one
+# project, each writing tickets and merging, end with the same tracker and the same integration
+# branch with no write lost; a conflict on one ticket stops, says which file and pushes nothing; a
+# clone with no network commits as today and pushes once the network is back. And decisions/0001:
+# a ticket's merge keeps the ticket's tip as its second parent.
+
+
+@dataclass(frozen=True)
+class Machine:
+    """One machine's main checkouts of a project: its code repo, with the agent repo inside it."""
+
+    code: Path
+
+    @property
+    def agent(self) -> Path:
+        return self.code / "agent"
+
+    @property
+    def tickets(self) -> Path:
+        return self.agent / "tickets"
+
+
+def with_tracker() -> dict[str, str]:
+    """The environment a commit runs its hooks in, with `tracker` on PATH as a session has it."""
+    return {**os.environ, "PATH": f"{Path(tr.__file__).parents[2] / 'bin'}:{os.environ['PATH']}"}
+
+
+def commit_with_hooks(at: Path, message: str) -> subprocess.CompletedProcess:
+    """Everything in `at` committed as an agent commits it, its hooks run."""
+    git(at, "add", "-A")
+    return subprocess.run(["git", "-C", str(at), "commit", "-q", "-m", message], capture_output=True, text=True, env=with_tracker())
+
+
+@pytest.fixture
+def machines(tmp_path: Path) -> tuple[Machine, Machine, Path]:
+    """The laptop's and pc's main checkouts of one project, cloned from one origin, each agent repo
+    with the sync hook installed. Answers both, and the directory holding origin's two repos."""
+    seed = tmp_path / "seed"
+    (seed / "agent" / "tickets").mkdir(parents=True)
+    for at in (seed, seed / "agent"):
+        initialised(at)
+    (seed / ".gitignore").write_text("/agent/\n")
+    (seed / "src.txt").write_text("the lamp\n")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-q", "-m", "the lamp")
+    ticket(seed / "agent" / "tickets", "shared")
+    git(seed / "agent", "add", "-A")
+    git(seed / "agent", "commit", "-q", "-m", "the agent repo")
+    origin = tmp_path / "origin"
+    for repo, at in (("code", seed), ("agent", seed / "agent")):
+        git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin / f"{repo}.git"))
+        git(at, "push", "-q", str(origin / f"{repo}.git"), "main")
+    found = []
+    for host in ("laptop", "pc"):
+        code = tmp_path / host
+        git(tmp_path, "clone", "-q", str(origin / "code.git"), str(code))
+        git(tmp_path, "clone", "-q", str(origin / "agent.git"), str(code / "agent"))
+        for at in (code, code / "agent"):
+            git(at, "config", "user.email", f"{host}@example.com")
+            git(at, "config", "user.name", host)
+            git(at, "config", "commit.gpgsign", "false")
+        assert run(code / "agent", "hook", "--sync").code == 0
+        found.append(Machine(code))
+    return found[0], found[1], origin
+
+
+def merged_ticket(code: Path, slug: str) -> str:
+    """A ticket branch built and merged `--no-ff` into the integration branch, as the Accept does;
+    answers the ticket's tip."""
+    git(code, "checkout", "-q", "-b", f"ticket/{slug}")
+    (code / f"{slug}.txt").write_text(f"what {slug} built\n")
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", slug)
+    own = tip(code, "HEAD")
+    git(code, "checkout", "-q", "main")
+    git(code, "merge", "-q", "--no-ff", "-m", f"merge {slug}", f"ticket/{slug}")
+    return own
+
+
+def test_two_main_checkouts_writing_tickets_and_merging_end_in_step_with_no_write_lost(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, pc, origin = machines
+    ticket(laptop.tickets, "from-the-laptop")
+    assert commit_with_hooks(laptop.agent, "file from-the-laptop").returncode == 0
+    ticket(pc.tickets, "from-pc")
+    assert commit_with_hooks(pc.agent, "file from-pc").returncode == 0  # refused at first, then replayed on the laptop's
+    lamp = merged_ticket(laptop.code, "lamp")
+    shade = merged_ticket(pc.code, "shade")
+    for one in (laptop, pc, laptop):  # dispatch review, once each merge is in; the laptop's last, to take pc's
+        assert run(one.code, "sync").code == 0
+
+    for repo, here, there in (("agent", laptop.agent, pc.agent), ("code", laptop.code, pc.code)):
+        assert tip(here, "main") == tip(there, "main") == git(origin / f"{repo}.git", "rev-parse", "main").strip(), repo
+    assert {path.name for path in laptop.tickets.glob("*.md")} == {"shared.md", "from-the-laptop.md", "from-pc.md"}
+    second_parents = git(pc.code, "log", "--merges", "--format=%P", "main").split("\n")
+    assert {line.split()[1] for line in second_parents if line} == {lamp, shade}, "each merge still holds its ticket's tip"
+
+
+def test_a_ticket_changed_on_both_machines_stops_at_a_conflict_naming_it_and_pushes_nothing(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, pc, origin = machines
+    ticket(laptop.tickets, "shared", status="claimed")
+    assert commit_with_hooks(laptop.agent, "claim shared").returncode == 0
+    pushed = git(origin / "agent.git", "rev-parse", "main").strip()
+    ticket(pc.tickets, "shared", priority=3)
+    said = commit_with_hooks(pc.agent, "reprioritise shared")
+
+    assert said.returncode == 0, "the commit stands; it is the push that waits"
+    assert "tickets/shared.md" in said.stderr and "nothing was pushed" in said.stderr, said.stderr
+    assert git(origin / "agent.git", "rev-parse", "main").strip() == pushed
+    assert git(pc.agent, "log", "-1", "--format=%s").strip() == "reprioritise shared"
+    assert git(pc.agent, "status", "--porcelain") == "", "the checkout is left as it was, not mid-rebase"
+    refused = run(pc.code, "set", "shared", "size=L")
+    assert refused.code == 1 and "tickets/shared.md" in refused.err, refused.said
+
+
+def test_a_write_lands_on_what_the_other_machine_pushed(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, pc, _ = machines
+    ticket(laptop.tickets, "from-the-laptop")
+    assert commit_with_hooks(laptop.agent, "file from-the-laptop").returncode == 0
+    said = run(pc.code, "set", "from-the-laptop", "priority=2")
+    assert said.code == 0, said.said
+    assert "priority: 2" in (pc.tickets / "from-the-laptop.md").read_text()
+
+
+def test_a_ticket_committed_by_path_beside_another_sessions_edit_is_pushed_and_the_edit_kept(machines: tuple[Machine, Machine, Path]) -> None:
+    """How dispatch and the tracker commit: one file named, whatever else the checkout holds."""
+    laptop, pc, origin = machines
+    ticket(laptop.tickets, "from-the-laptop")
+    assert commit_with_hooks(laptop.agent, "file from-the-laptop").returncode == 0
+    ticket(pc.tickets, "shared", body="## Comments\n\nhalf written by another session\n")
+    ticket(pc.tickets, "from-pc")
+    git(pc.agent, "add", "tickets/from-pc.md")
+    said = subprocess.run(["git", "-C", str(pc.agent), "commit", "-q", "-m", "file from-pc", "--", "tickets/from-pc.md"],
+                          capture_output=True, text=True, env=with_tracker())
+
+    assert said.returncode == 0, said.stderr
+    assert git(origin / "agent.git", "rev-parse", "main").strip() == tip(pc.agent, "main"), said.stderr
+    assert "half written by another session" in (pc.tickets / "shared.md").read_text()
+    assert git(pc.agent, "status", "--porcelain").strip() == "M tickets/shared.md"
+
+
+def test_a_checkout_with_no_network_commits_as_today_and_pushes_once_it_is_back(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, _, origin = machines
+    away = origin.with_name("unplugged")
+    origin.rename(away)
+    ticket(laptop.tickets, "on-the-train")
+    said = commit_with_hooks(laptop.agent, "file on-the-train")
+    assert said.returncode == 0 and "did not answer" in said.stderr and "1 commit(s) of main wait here" in said.stderr, said.stderr
+    assert run(laptop.code, "set", "on-the-train", "priority=2").code == 0, "a write goes ahead offline"
+
+    away.rename(origin)
+    assert run(laptop.code, "sync").code == 0
+    assert git(origin / "agent.git", "rev-parse", "main").strip() == tip(laptop.agent, "main")
+
+
+def test_a_commit_on_a_ticket_branch_in_a_linked_worktree_is_never_pushed(machines: tuple[Machine, Machine, Path], tmp_path: Path) -> None:
+    laptop, _, origin = machines
+    worktree = tmp_path / "worker-agent"
+    git(laptop.agent, "worktree", "add", "-q", "-b", "ticket/lamp", str(worktree))
+    git(worktree, "push", "-q", "-u", "origin", "ticket/lamp")  # tracking a branch, as one pushed once does
+    pushed = git(origin / "agent.git", "rev-parse", "ticket/lamp").strip()
+    (worktree / "show").mkdir()
+    (worktree / "show" / "report.md").write_text("## Comments\n\nlanded\n")
+    assert commit_with_hooks(worktree, "report").returncode == 0
+    assert git(origin / "agent.git", "rev-parse", "ticket/lamp").strip() == pushed
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
