@@ -5,10 +5,12 @@
 # ///
 """SessionEnd hook: a session's records reach the agent repo's history as the session ends.
 
-It reads the SessionEnd hook JSON on stdin and commits the session's `session.md` and `turns/`, in a
-commit holding those paths and nothing else, with a `Session:` trailer. `sessions/` stays ignored,
-so the records are force-added; once tracked, git shows their later edits regardless. The page
-(`index.html`) is derived and stays out. A session that ends again after a resume commits what
+It reads the SessionEnd hook JSON on stdin and commits the session's `session.md` and `turns/`, with
+the artefacts of its own work under `show/`, in a commit holding those paths and nothing else, with
+a `Session:` trailer. `sessions/` stays ignored, so the records are force-added; once tracked, git
+shows their later edits regardless. The page (`index.html`) is derived and stays out, and so is
+whatever under `show/` the agent repo's ignore rules for its own `show/` keep out (a runnable
+artefact's `out/`, a PNG rendered on demand), since force-adding would otherwise sweep it in. A session that ends again after a resume commits what
 changed since; one whose records are as last committed commits nothing.
 
 The commit runs in a child detached from the hook, since every SessionEnd hook shares a budget of
@@ -34,6 +36,7 @@ import turn_review  # noqa: E402
 from session_page import left_alone, session_directory  # noqa: E402
 
 RECORDS = ("session.md", "turns")  # what a session's directory holds that its history keeps
+ARTEFACTS = "show"  # where in a session's directory its own work's artefacts go (/mx:show)
 LOCK_WAIT = 5.0  # seconds the child waits out another process holding the agent repo's index lock
 
 
@@ -74,6 +77,7 @@ def commit_records(directory: Path) -> str:
     paths = [f"{session_id}/{name}" for name in RECORDS if (directory / name).exists()]
     if not paths:
         return "no records"
+    paths += [f"{session_id}/{ARTEFACTS}/{path}" for path in artefacts(directory)]
     message = f"session {session_id}: its records as it ended"
     deadline = time.monotonic() + LOCK_WAIT
     while True:
@@ -89,6 +93,21 @@ def commit_records(directory: Path) -> str:
             left = "unstaged" if unstaged.returncode == 0 else f"left staged: {unstaged.stderr.strip()}"
             return f"git {done.args[3]} failed: {done.stderr.strip()}; {left}"
         time.sleep(0.2)
+
+
+def artefacts(directory: Path) -> list[str]:
+    """The files under the session's `show/`, relative to it, less those the agent repo would ignore
+    were they under its own `show/`: one set of rules says what a show directory keeps, wherever it
+    sits. `check-ignore --no-index` reads the rules for a path that need not exist."""
+    show = directory / ARTEFACTS
+    files = sorted(str(path.relative_to(show)) for path in show.rglob("*") if path.is_file())
+    if not files:
+        return []
+    asked = subprocess.run(["git", "-C", str(directory.parent.parent), "check-ignore", "--no-index", "--stdin"],
+                           input="".join(f"{ARTEFACTS}/{directory.name}/{path}\n" for path in files),
+                           capture_output=True, text=True)
+    ignored = set(asked.stdout.splitlines())
+    return [path for path in files if f"{ARTEFACTS}/{directory.name}/{path}" not in ignored]
 
 
 def git(where: Path, *args: str) -> subprocess.CompletedProcess:

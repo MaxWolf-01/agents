@@ -7,7 +7,9 @@
 The seam is the hook at its input: the SessionEnd JSON in, run the way Claude Code runs it, over
 the worked example's session directory in a throwaway agent repo that ignores `sessions/` as the
 real one does. The oracle is agent/tickets/session-records-tracked.md, its P1 and P2 and its
-Decisions, read off git's own record of the commit and of `git status`.
+Decisions, and agent/tickets/loose-work-retired.md, whose session work's artefacts sit in the
+session's directory and are committed as it ends, read off git's own record of the commit and of
+`git status`.
 """
 
 import io
@@ -96,6 +98,22 @@ def test_a_session_that_ends_commits_its_records_and_nothing_else(
     assert committed(agent) == [f"sessions/{worked_example.name}/{path}" for path in RECORDS]
     assert git(agent, "log", "-1", "--format=%(trailers:key=Session,valueonly)").strip() == worked_example.name
     assert git(agent, "status", "--porcelain").splitlines() == ["A  tickets/other.md"]
+
+
+def test_a_session_commits_its_artefacts_with_its_records_less_what_a_show_directory_ignores(
+    agent: Path, worked_example: Path, end: Callable[[], list[dict]],
+) -> None:
+    """A session's own work's artefacts sit under `show/` in its directory and reach history with its
+    records; what the agent repo ignores under its own `show/` (a runnable artefact's `out/`, a
+    rendered PNG) stays out of the commit, though the commit force-adds."""
+    (agent / ".gitignore").write_text("sessions/\nshow/**/out/\nshow/**/*.png\n")
+    show = worked_example / "show"
+    for path, text in {"figure.html": "<svg/>", "figure.png": "png", "demo/run": "#!/bin/sh\n", "demo/out/result.txt": "1"}.items():
+        (show / path).parent.mkdir(parents=True, exist_ok=True)
+        (show / path).write_text(text)
+    end()
+    assert committed(agent) == [f"sessions/{worked_example.name}/{path}"
+                                for path in [*RECORDS[:1], "show/demo/run", "show/figure.html", *RECORDS[1:]]]
 
 
 def test_records_in_flight_stay_out_of_status_and_edits_to_committed_ones_show(
