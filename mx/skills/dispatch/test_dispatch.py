@@ -780,8 +780,8 @@ def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, st
 
 @pytest.mark.parametrize("already, wrote, exits, says", [
     (False, True, 1, "attempts=1 exit=1 report=yes"),
-    (False, False, 0, "attempts=1 exit=0 report=no"),
-    (True, False, 0, "attempts=1 exit=0 report=no"),
+    (False, False, 0, "attempts=3 exit=0 report=no"),
+    (True, False, 0, "attempts=3 exit=0 report=no"),
     (True, True, 0, "attempts=1 exit=0 report=yes"),
 ])
 def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
@@ -789,7 +789,8 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
 ) -> None:
     """The shipped runner, with `claude` stubbed rather than the runner itself: a run whose worker
     committed its report in the agent repo is finished whatever it exited with, one that committed
-    none says so on its status line, and the retry loop ends either way.
+    none says so on its status line. A clean exit with no report is an early stop and spends the
+    attempts a crash would.
 
     A resumed round starts with the round before it still committed there, so what the status line
     reads is whether this run wrote that file, never whether the file is there."""
@@ -818,6 +819,33 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     assert done.returncode == 0, done.stderr
     assert (runner / "run-1.status").read_text().startswith(says), (runner / "run-1.status").read_text()
     assert "runner: started warm-preset" in (runner / "run-1.log").read_text()
+
+
+def test_a_worker_that_stops_early_is_resumed_until_it_reports(tmp_path: Path, runner: Path) -> None:
+    """`runner-resumes-early-stops`: a worker that ended its turn to wait on its own background work
+    exits 0 with no report. The runner resumes it, telling it to wait in a blocking call, on one
+    attempt of its budget, and the worklog names the stop for what it was."""
+    worktree = tmp_path / "lamp-warm-preset"
+    (worktree / "agent").mkdir(parents=True)
+    git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
+    git(worktree / "agent", "commit", "-q", "--allow-empty", "-m", "the agent repo")
+    said = tmp_path / "said"
+    claude = (
+        '#!/bin/sh\n[ "$1" = --version ] && exit 0\n'
+        f'echo >> {said}.calls; printf "%s\\n" "$*" > {said}\n'
+        f'[ "$(wc -l < {said}.calls)" -lt 2 ] && exit 0\n'
+        'mkdir -p agent/show/warm-preset\n'
+        'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
+        'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
+        'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
+    )
+
+    done = run_worker(runner, claude=claude, model="sonnet", cwd=worktree)
+    assert done.returncode == 0, done.stderr
+    assert (runner / "run-1.status").read_text().startswith("attempts=2 exit=0 report=yes")
+    resumed_with = said.read_text()
+    assert "report was committed" in resumed_with and "job wait" in resumed_with, resumed_with
+    assert "attempt 1 exited 0 with no report, an early stop; resuming" in (runner / "run-1.log").read_text()
 
 
 @pytest.mark.parametrize("given", ["", "low"])
