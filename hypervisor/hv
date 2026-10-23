@@ -5,9 +5,9 @@
 #
 # Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
 # sessions in optchat-pi/, and the extension's files, which extension/src/live.ts lists. The fork is the checkout
-# $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else max's personal account's setup-token, the
-# CLAUDE_CODE_OAUTH_TOKEN of secrets/creds/env/claude-personal.env; but a login pi stored in optchat-pi/auth.json wins
-# over both, since pi reads the environment only for a provider it holds no credential for.
+# $OPTCHAT_FORK. pi signs in from the anthropic entry of optchat-pi/auth.json. While max's personal account has a
+# setup-token in his secrets, each start writes it there and keeps the file's other providers; while it has none, pi
+# keeps whatever the file holds.
 #
 # A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/instructions.md.
 # `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
@@ -49,13 +49,24 @@ fi
 
 [[ -d $extension/node_modules ]] || npm ci --prefix "$extension" --no-audit --no-fund
 [[ -f $fork/src/index.ts ]] || { echo "hv: no pi-optchat checkout at $fork; set OPTCHAT_FORK" >&2; exit 1; }
-if [[ -z ${ANTHROPIC_OAUTH_TOKEN:-} && -f $token_file ]]; then
-	ANTHROPIC_OAUTH_TOKEN=$(sops decrypt --extract '["CLAUDE_CODE_OAUTH_TOKEN"]' "$token_file") ||
-		{ echo "hv: could not decrypt $token_file, so pi has no token (is the age key SOPS_AGE_KEY_FILE names, '${SOPS_AGE_KEY_FILE:-}', there?)" >&2; exit 1; }
-fi
 export HV_STORE=$store OPTCHAT_HOME=$store/optchat PI_CODING_AGENT_DIR=$store/optchat-pi OPTCHAT_FORK=$fork HV_PROFILE=$profile
-[[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && export ANTHROPIC_OAUTH_TOKEN
 mkdir -p "$PI_CODING_AGENT_DIR"
+# The entry's shape is Jarvis's `make auth`'s. The token reaches node through the environment, never a command line.
+if [[ -f $token_file ]]; then
+	token=$(sops decrypt --extract '["CLAUDE_CODE_OAUTH_TOKEN"]' "$token_file") &&
+		until=$(sops decrypt --extract '["CLAUDE__VALID_UNTIL"]' "$token_file") ||
+		{ echo "hv: could not read CLAUDE_CODE_OAUTH_TOKEN and CLAUDE__VALID_UNTIL from $token_file; sops says why above" >&2; exit 1; }
+	if [[ -n $token ]]; then
+		TOK=$token UNTIL=$until AUTH=$PI_CODING_AGENT_DIR/auth.json node -e '
+			const fs = require("node:fs"), { TOK, UNTIL, AUTH } = process.env, expires = Date.parse(UNTIL);
+			if (Number.isNaN(expires)) { console.error(`hv: expected the expiry date of the token as CLAUDE__VALID_UNTIL in ${process.argv[1]}`); process.exit(1); }
+			const auth = fs.existsSync(AUTH) ? JSON.parse(fs.readFileSync(AUTH, "utf8")) : {};
+			auth.anthropic = { type: "oauth", access: TOK, refresh: "", expires };
+			fs.writeFileSync(`${AUTH}.tmp`, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+			fs.renameSync(`${AUTH}.tmp`, AUTH);
+		' "$token_file"
+	fi
+fi
 
 if [[ ! -d $profiles/$profile ]]; then
 	mkdir -p -m 700 "$profiles/$profile"
@@ -73,7 +84,6 @@ pi=(node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
 	-e "$extension/src/live.ts" -e "$fork/src/index.ts" --optchat-profile "$profile")
 
 env=(-e "HV_STORE=$HV_STORE" -e "OPTCHAT_HOME=$OPTCHAT_HOME" -e "PI_CODING_AGENT_DIR=$PI_CODING_AGENT_DIR" -e "HV_PROFILE=$HV_PROFILE" -e PI_CACHE_RETENTION=long)
-[[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && env+=(-e "ANTHROPIC_OAUTH_TOKEN=$ANTHROPIC_OAUTH_TOKEN")
 
 start=(tmux new-session -d -s hypervisor -c "$HOME" "${env[@]}" "${pi[@]}")
 
