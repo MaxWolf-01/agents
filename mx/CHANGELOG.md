@@ -1,3 +1,9 @@
+## 1.0.83
+
+- docs(dispatch): the worker contract's scratch sentence moved beside the listed-repo rule
+- feat(workflow): project instructions live in AGENTS.md, landed again on max's word
+- docs(dispatch): the worker contract calls ignored files in a worktree scratch
+
 ## 1.0.82
 
 - better safe than sorry
