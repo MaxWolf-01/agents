@@ -7,9 +7,9 @@
 The seams are `qualified.resolver` and `cites`, which every page the user reads looks a tag up by,
 and `link_html`, which the board and the retro's page link one by. The oracle is the ticket below,
 written as the tracker skill shapes one, the retro report's shape (retro/REPORT.md), and
-fewer-workflow-concepts' Decisions: a tag the user reads is `<ticket> D6`, `retro F1` or
-`review <range> S13`, linked, with what it names as a hover preview; and
-tags-linked-on-board-and-review-pages' criterion that one naming what no longer exists shows as such.
+the Decisions of agent/tickets/fewer-workflow-concepts.md: a tag the user reads is `<ticket> D6`,
+`retro F1` or `review <range> S13`, linked, with what it names as a hover preview; and criterion 2 of
+agent/tickets/tags-linked-on-board-and-review-pages.md, that one naming what no longer exists shows as such.
 """
 
 import subprocess
@@ -46,14 +46,18 @@ Both checkouts stay in step.
 ## Comments
 
 - [D3] **Friction** the suite was slow.
+  - [D5] a nested line is no entry of its own.
 - A4 `mx/sync.py:12`: one remote per checkout.
 """
 
 
 @pytest.fixture
 def resolve(tmp_path: Path):
-    (tmp_path / "sync.md").write_text(TICKET)
-    return resolver(tmp_path)
+    """A tracker in `tickets/`, with a ticket beside it too that only a slug escaping it would reach."""
+    (tmp_path / "tickets").mkdir()
+    for path in (tmp_path / "tickets" / "sync.md", tmp_path / "sync.md"):
+        path.write_text(TICKET)
+    return resolver(tmp_path / "tickets")
 
 
 def test_each_tag_a_ticket_carries_resolves_to_what_it_names(resolve) -> None:
@@ -78,7 +82,8 @@ def test_a_question_left_open_on_a_done_ticket_waits_on_nobody(tmp_path: Path) -
 
 
 def test_a_tag_names_nothing_where_its_ticket_or_the_tag_is_missing(resolve) -> None:
-    assert [resolve(slug, tag) for slug, tag in (("sync", "D9"), ("async", "D1"), ("../sync", "D1"))] == [None, None, None]
+    cases = ("sync", "D9"), ("async", "D1"), ("../sync", "D1"), ("sync", "D5")
+    assert [resolve(slug, tag) for slug, tag in cases] == [None, None, None, None]
 
 
 def test_a_qualified_tag_is_found_in_text_by_its_slug_and_tag() -> None:
@@ -216,10 +221,12 @@ def test_a_tag_naming_what_no_longer_exists_is_struck_through_saying_why_and_lin
 
 def test_text_that_is_no_prose_of_the_page_stays_as_it_is(agent) -> None:
     """A link, code inside one, a code block, a figure (one closed where it opens included), a
-    script, an attribute, prose that only looks like a tag, and a link holding an element left
-    open; the tag after all of them, in an element with hover words of its own, is linked."""
+    script, a style, a title, a text area, a button, an attribute, prose that only looks like a tag,
+    and a link holding an element left open; the tag after all of them, in an element with hover
+    words of its own, is linked."""
     page = ('<a href="x">sync D1</a><a href="x"><code>sync D1</code></a><pre>sync D1</pre>'
             '<svg><text>sync D1</text></svg><svg viewBox="0 0 1 1"/><script>let s = "<a>"; // sync D1</script>'
+            '<style>/* sync D1 */</style><title>sync D1</title><textarea>sync D1</textarea><button>sync D1</button>'
             '<p title="sync D1">and P3</p><br><a href="x"><p>open</a>')
     after = '<span data-tip="its own words">then sync D1</span>'
     linked = link(agent, page + after)

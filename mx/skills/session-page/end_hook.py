@@ -44,7 +44,11 @@ LOCK_WAIT = 5.0  # seconds the child waits out another process holding the agent
 def main() -> None:
     if sys.argv[1:2] == ["commit"]:  # the detached child, told the session's directory and the log
         directory, turn_review.LOG = Path(sys.argv[2]), Path(sys.argv[3])
-        turn_review.log(directory.name, committed=commit_records(directory))
+        try:
+            committed = commit_records(directory)
+        except Exception as error:  # the child's stderr goes nowhere, so the log is the one place a failure shows
+            committed = f"failed: {error!r}"
+        turn_review.log(directory.name, committed=committed)
         return
     hook = json.load(sys.stdin)
     session_id = hook["session_id"]
@@ -81,7 +85,7 @@ def commit_records(directory: Path) -> str:
     try:
         paths += artefacts(directory)
         without = ""
-    except RuntimeError as error:  # the records still go; the artefacts wait for the next end
+    except (RuntimeError, OSError) as error:  # the records still go; the artefacts wait for the next end
         without = f", without its artefacts: {error}"
     message = f"session {session_id}: its records as it ended"
     deadline = time.monotonic() + LOCK_WAIT
@@ -105,7 +109,8 @@ def artefacts(directory: Path) -> list[str]:
     ignore were they under its own `show/`: one set of rules says what a show directory keeps,
     wherever it sits. With them, the committed ones since deleted, so their removal is committed
     too. `check-ignore --no-index` reads the rules for a path that need not exist. Raises
-    RuntimeError, git's own words, where git cannot say which files it ignores."""
+    RuntimeError, git's own words, where git cannot say which files it ignores, and OSError where
+    `show/` cannot be walked."""
     sessions, show = directory.parent, directory / ARTEFACTS
     prefix = f"{directory.name}/{ARTEFACTS}/"
     files = sorted(str(path.relative_to(show)) for path in show.rglob("*") if path.is_file())

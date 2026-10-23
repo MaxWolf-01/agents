@@ -316,13 +316,14 @@ def test_light_mode_without_a_spec_carries_no_spec_part(repo):
 
 
 def test_each_axis_numbers_its_findings_under_a_letter_of_its_own(repo):
-    """A finding is cited `review <range> S13` outside its report (fewer-workflow-concepts), which
+    """A finding is cited `review <range> S13` outside its report (`fewer-workflow-concepts`), which
     reads as one finding only while no two axes of a review share a letter."""
     assert run(repo, "--axes", "correctness,standards,spec,tests", "--spec", spec(repo)).returncode == 0
     assert run(repo, "--light").returncode == 0
-    heading = {axis: re.search(r"`### (\w+) <the finding in a line>`", (review_dir(repo) / "prompts" / f"{axis}.md").read_text())[1]
+    heading = {axis: re.findall(r"### ([A-Z])1\b", (review_dir(repo) / "prompts" / f"{axis}.md").read_text())
                for axis in ("correctness", "standards", "spec", "tests", "light")}
-    assert len(set(heading.values())) == 5 and all(re.fullmatch(r"[A-Z]1", h) for h in heading.values()), heading
+    assert all(len(found) == 1 for found in heading.values()), f"each prompt asks for one heading form: {heading}"
+    assert len({found[0] for found in heading.values()}) == 5, heading
 
 
 def sources(prompt: Path) -> list[Path]:

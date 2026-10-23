@@ -1365,7 +1365,7 @@ def test_the_watcher_notices_an_artefact_landing_in_a_show_directory(repo: Path,
 def test_a_qualified_tag_on_the_board_links_to_what_it_names_or_is_struck_where_that_is_gone(
     repo: Path, tracker: Path, tmp_path: Path,
 ) -> None:
-    """tags-linked-on-board-and-review-pages: a tag naming another ticket's question links to that
+    """`tags-linked-on-board-and-review-pages`: a tag naming another ticket's question links to that
     ticket's row with the question as its hover words, a headline on a folded row included; a retro
     entry links to its place on the retro's page, from where the board is written; and one naming
     an entry the retro's report does not hold shows as gone, linking nowhere."""
@@ -1387,7 +1387,8 @@ def test_a_qualified_tag_on_the_board_links_to_what_it_names_or_is_struck_where_
 
     to_second = '<a class="qualified" href="#t-second" title="second D1 · Ship it now? Or wait for the suite.">second D1</a>'
     assert links("second D1") and set(links("second D1")) == {to_second}
-    assert len(links("second D1")) >= 2, "the brief, and the folded row's question headline"
+    assert f"Waits on {to_second}, as" in page, "the brief"
+    assert f"After {to_second}?" in page, "the folded row's question headline"
     (to_retro,) = set(links("retro F2"))
     assert 'href="../repo/agent/retro/report.html#f2"' in to_retro and 'title="retro F2 · Builds add machinery"' in to_retro
     (gone,) = re.findall(r"<s [^>]*>retro F9</s>", page)

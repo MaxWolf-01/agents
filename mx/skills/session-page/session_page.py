@@ -171,15 +171,15 @@ def held_in_tickets(turns: list[Turn], tickets: Path) -> list[Turn]:
     held as none. A ticket's question put to the user in several turns stays with the latest, which
     is the one the user is reading."""
     resolve = qualified.resolver(tickets)
-    latest = {q.handle: t.number for t in turns for q in t.questions if isinstance(q, Cited)}
+    latest = {q.handle: t.number for t in turns for q in t.questions if isinstance(q, TicketQuestion)}
 
-    def held(q: Question | Cited) -> Question | Cited:
-        if not isinstance(q, Cited):
+    def held(q: Question | TicketQuestion) -> Question | TicketQuestion:
+        if not isinstance(q, TicketQuestion):
             return q
         named = resolve(q.ticket, q.tag)
         return replace(q, named=named if named and named.kind == "question" else None)
 
-    return [replace(t, questions=tuple(held(q) for q in t.questions if not isinstance(q, Cited) or latest[q.handle] == t.number))
+    return [replace(t, questions=tuple(held(q) for q in t.questions if not isinstance(q, TicketQuestion) or latest[q.handle] == t.number))
             for t in turns]
 
 
@@ -282,7 +282,7 @@ class Question:
 
 
 @dataclass(frozen=True)
-class Cited:
+class TicketQuestion:
     """One `- [<ticket> Dn]` item under a turn's `## Questions`: a question of a ticket's, put to the
     user. Its words and its ruling live in the ticket, so it waits at the top while the ticket holds
     it open and clears once the ticket records the ruling."""
@@ -343,7 +343,7 @@ class Turn:
     written: datetime | None = None  # when the transcript shows the record written, where it shows it
     messages: tuple[str, ...] = ()  # what the user said that this turn answered, whole, oldest first
     sent: tuple[Sent, ...] = ()  # what other sessions sent in the same stretch, oldest first
-    questions: tuple[Question | Cited, ...] = ()  # in the order the record asks them
+    questions: tuple[Question | TicketQuestion, ...] = ()  # in the order the record asks them
     links: tuple[Link, ...] = ()
     details: str = ""  # the `## Details` section, as markdown
     # the record's frontmatter: the tag of a question this turn cleared, to the option's letter or
@@ -429,7 +429,7 @@ def read_turn(path: Path) -> Turn:
             raise RecordError(path, line_of(path, name), f"{name}: a mapping of question tags, like `Q1: a`")
         tables[name] = {str(tag): str(value) for tag, value in table.items()}
         for tag in tables[name]:
-            if CITED.fullmatch(tag):
+            if TICKET_QUESTION.fullmatch(tag):
                 raise RecordError(path, line_of(path, tag), f"{name}: {tag} is a ticket's question, which clears once its ticket "
                                                             "records the ruling (`tracker rule`), never here")
             if not TAG.fullmatch(tag):
@@ -517,12 +517,12 @@ def check_references(path: Path) -> None:
                                        "[text](#t07) opens turn 07, [text](#q3) shows question Q3")
 
 
-def check_cited(root: Path, turn: "Turn") -> None:
+def check_ticket_questions(root: Path, turn: "Turn") -> None:
     """Every ticket's question the turn's record puts to the user is one its ticket holds open.
     Checked on the record the turn writes, never on an older one or as the page renders, since a
     ticket's question is ruled, and its ticket retired, long after the record that asked it."""
     lines = turn.path.read_text().split("\n")
-    for c in (q for q in turn.questions if isinstance(q, Cited) and not q.open):
+    for c in (q for q in turn.questions if isinstance(q, TicketQuestion) and not q.open):
         n = next((n for n, line in enumerate(lines, start=1) if line.startswith(f"- [{c.handle}]")), None)
         if not (root / ticket_path(c.ticket)).is_file():
             raise RecordError(turn.path, n, f"{c.handle}: the tracker holds no ticket {c.ticket}")
@@ -614,8 +614,8 @@ def split_sections(path: Path, body: str, offset: int, allowed: set[str]) -> tup
 
 
 QUESTION_ITEM = re.compile(r"- \[(Q\d+)\] \*\*(.+?)\*\*(?:\s+(.*))?")
-CITED = re.compile(rf"({tracker.SLUG.pattern}) (D\d+)")  # a ticket's question, as a turn record names it
-CITED_ITEM = re.compile(rf"- \[{CITED.pattern}\](.*)")
+TICKET_QUESTION = re.compile(rf"({tracker.SLUG.pattern}) (D\d+)")  # a ticket's question, as a turn record names it
+TICKET_QUESTION_ITEM = re.compile(rf"- \[{TICKET_QUESTION.pattern}\](.*)")
 SUB_ITEM = re.compile(r"\s{2,}- (.*)")
 OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
 PICK = re.compile(r"\s*\*my pick\*\s*")
@@ -623,24 +623,24 @@ WHY = re.compile(r"Why:\s*(.*)")
 BLIND = re.compile(r"Blind:\s*(\S+)")
 
 
-def read_questions(path: Path, start: int, text: str) -> tuple[Question | Cited, ...]:
+def read_questions(path: Path, start: int, text: str) -> tuple[Question | TicketQuestion, ...]:
     """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
     and at most one `Why: text`, as sub-items; a line indented under an item continues it. A blind
     question carries one `Blind: path` sub-item, its test page, and nothing else. A ticket's question
     is `- [<ticket> D3]` alone, since its words live in its ticket; what the ticket holds under it is
     read by `read_session`."""
-    items: list[dict | Cited] = []
+    items: list[dict | TicketQuestion] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
             continue
-        if m := CITED_ITEM.fullmatch(line):
+        if m := TICKET_QUESTION_ITEM.fullmatch(line):
             if m.group(3).strip():
                 raise RecordError(path, n, f"{m.group(1)} {m.group(2)} is a ticket's question, whose words live in its ticket: "
                                            f"the item is `- [{m.group(1)} {m.group(2)}]` alone")
-            items.append(Cited(m.group(1), m.group(2)))
+            items.append(TicketQuestion(m.group(1), m.group(2)))
             part = None
-        elif items and isinstance(items[-1], Cited) and line.startswith(" "):
+        elif items and isinstance(items[-1], TicketQuestion) and line.startswith(" "):
             raise RecordError(path, n, f"{items[-1].handle} is a ticket's question: its options and detail live in its ticket, not here")
         elif m := QUESTION_ITEM.fullmatch(line):
             part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None,
@@ -671,9 +671,9 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Cited,
             part["text"] = f"{part['text']} {line.strip()}".strip()
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
-    questions: list[Question | Cited] = []
+    questions: list[Question | TicketQuestion] = []
     for item in items:
-        if isinstance(item, Cited):
+        if isinstance(item, TicketQuestion):
             questions.append(item)
             continue
         if item["blind"] is not None:
@@ -729,7 +729,7 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
                     raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
                 settled[tag] = Settled(how, value, turn.number)
         for question in turn.questions:
-            if isinstance(question, Cited):
+            if isinstance(question, TicketQuestion):
                 continue  # a ticket's question may be put to the user again; `held_in_tickets` keeps the latest
             if question.tag in asked:
                 raise RecordError(turn.path, None, f"{question.tag} was already asked in turn {asked[question.tag]:02d}")
@@ -966,16 +966,16 @@ KEYS = [
 ]
 
 
-def open_questions(session: Session) -> list[tuple[Turn, Question | Cited]]:
+def open_questions(session: Session) -> list[tuple[Turn, Question | TicketQuestion]]:
     """The questions waiting on the user, with the turn that asked each, oldest first: the session's
     own that no later turn answered or superseded, and each ticket's question its ticket holds open."""
     return [(t, q) for t in session.turns for q in t.questions if waits(q, session.settled)]
 
 
-def waits(q: Question | Cited, settled: dict[str, Settled]) -> bool:
+def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
     """Whether the question waits on the user: a ticket's while its ticket holds it open, the
     session's own until a later turn answers or supersedes it."""
-    return q.open if isinstance(q, Cited) else q.tag not in settled
+    return q.open if isinstance(q, TicketQuestion) else q.tag not in settled
 
 
 def page(session: Session, now: datetime) -> str:
@@ -1029,7 +1029,7 @@ class View:
 
     session: Session
     rows: tuple[Row, ...]  # newest first, each chat turn among the numbered ones by its time
-    waiting: tuple[tuple[Turn, Question | Cited], ...]  # open_questions
+    waiting: tuple[tuple[Turn, Question | TicketQuestion], ...]  # open_questions
     span: str  # the dates the turns fall on: one, or the first and the last; empty with no turn
     resume: str  # the command that resumes the session
 
@@ -1087,7 +1087,7 @@ def assemble(v: View, now: datetime) -> str:
     top = f"""
     <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
       <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(v.waiting)} question{'s' * (len(v.waiting) != 1)}</h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
-      {''.join((open_cited if isinstance(q, Cited) else open_question)(t, q, folded=i > 0) for i, (t, q) in enumerate(v.waiting))}
+      {''.join((open_ticket_question if isinstance(q, TicketQuestion) else open_question)(t, q, folded=i > 0) for i, (t, q) in enumerate(v.waiting))}
     </section>""" if v.waiting else ""
     body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
@@ -1258,12 +1258,12 @@ def open_question(turn: Turn, q: Question, folded: bool) -> str:
 </article>"""
 
 
-def open_cited(turn: Turn, c: Cited, folded: bool) -> str:
+def open_ticket_question(turn: Turn, c: TicketQuestion, folded: bool) -> str:
     """A ticket's question waiting on the user, as a row of the same accordion: its headline and
     detail as its ticket words them, and under the headline its handle, a link to the ticket."""
     detail = f'<p class="q-detail">{inline(c.named.detail)}</p>' if c.named and c.named.detail else ""
     return f"""
-<article class="q{' folded' if folded else ''}" id="{cited_anchor(c)}" tabindex="-1">
+<article class="q{' folded' if folded else ''}" id="{ticket_question_anchor(c)}" tabindex="-1">
   <span class="rail v-num">{c.tag}</span>
   <div class="q-main">
     <h3 class="v-h3">{inline(c.headline)}</h3><p class="pickline ticket">{ticket_link(c)}</p>
@@ -1275,11 +1275,11 @@ def open_cited(turn: Turn, c: Cited, folded: bool) -> str:
 </article>"""
 
 
-def cited_anchor(c: Cited) -> str:
+def ticket_question_anchor(c: TicketQuestion) -> str:
     return f"{c.ticket}-{c.tag.lower()}"
 
 
-def ticket_link(c: Cited) -> str:
+def ticket_link(c: TicketQuestion) -> str:
     """The question's handle, a link to its ticket with the question as its hover preview; the
     handle alone where the ticket holds the question no longer."""
     if c.named is None:
@@ -1294,7 +1294,7 @@ def ticket_path(slug: str) -> str:
 
 def qualified_link(text: str, path: str, preview: str) -> str:
     """A qualified tag as a link: to `path`, from the repo root, with what it names as its hover preview."""
-    return f'<a class="qualified" href="{esc(href(path))}" target="_blank" rel="noopener" title="{esc(preview)}">{text}</a>'
+    return qualified.anchor_html(text, href(path), preview, away=True)
 
 
 def options(q: Question, answer: str | None = None) -> str:
@@ -1313,7 +1313,7 @@ def options(q: Question, answer: str | None = None) -> str:
 def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     t = r.turn
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
-    asked = "".join(asked_cited(q) if isinstance(q, Cited) else asked_question(q, settled[q.tag])
+    asked = "".join(asked_ticket_question(q) if isinstance(q, TicketQuestion) else asked_question(q, settled[q.tag])
                     for q in t.questions if not waits(q, settled))
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
@@ -1429,7 +1429,7 @@ def asked_question(q: Question, how: Settled) -> str:
 </div>"""
 
 
-def asked_cited(c: Cited) -> str:
+def asked_ticket_question(c: TicketQuestion) -> str:
     """A ticket's question this turn put to the user that waits no longer: its ruling, as the ticket
     records it, or that the ticket holds it no more."""
     if c.named is None:
@@ -1440,7 +1440,7 @@ def asked_cited(c: Cited) -> str:
         said = (f'<p class="v-small free"><span class="v-meta">ruling</span> {inline(c.named.answer)}</p>'
                 f'<p class="v-meta">ruled {esc(c.named.ruled)} in {ticket_link(c)}</p>')
     return f"""
-<div class="aq answered" id="{cited_anchor(c)}">
+<div class="aq answered" id="{ticket_question_anchor(c)}">
   <span class="k v-num">{c.tag}</span>
   <div>
     <p class="aq-h">{inline(c.headline)}</p>
@@ -1585,8 +1585,8 @@ def split_tags(text: str) -> list[Token]:
 def linked(found: tuple[str | None, str], inner: list[Token]) -> list[Token]:
     path, preview = found
     if path is None:
-        return [Token("s_open", "s", 1, attrs={"title": preview, "class": "qualified gone"}), *inner, Token("s_close", "s", -1)]
-    return [Token("link_open", "a", 1, attrs={"href": path, "title": preview, "class": "qualified"}),
+        return [Token("s_open", "s", 1, attrs={"title": preview, "class": qualified.GONE}), *inner, Token("s_close", "s", -1)]
+    return [Token("link_open", "a", 1, attrs={"href": path, "title": preview, "class": qualified.LINKED}),
             *inner, Token("link_close", "a", -1)]
 
 
@@ -1598,7 +1598,11 @@ def named_by(m: re.Match | None) -> tuple[str | None, str] | None:
     if m["session"]:
         return session_question(m["session"], m["question"])
     found = NAMES.get()(m)
-    return found and (found.path and f"{AGENT / found.path}{found.anchor}", found.preview)
+    if found is None:
+        return None
+    if found.path is None:
+        return None, found.preview
+    return f"{AGENT / found.path}{found.anchor}", found.preview
 
 
 def session_question(prefix: str, tag: str) -> tuple[str, str] | None:

@@ -22,8 +22,8 @@ from typing import Literal
 import tracker
 
 TICKETS = Path(tracker.TICKETS.name)  # in an agent repo: the tracker
-RETRO = Path("retro")  # in an agent repo: where its living report is, `report.md` and the page built from it
-REVIEWS = Path("reviews")  # in an agent repo: a review's reports, one directory per range, on the machine that ran it
+RETRO = Path("retro")  # in an agent repo: where its living report is, `report.md` and the page built from it (retro/retro_run.py)
+REVIEWS = Path("reviews")  # in an agent repo: a review's reports, one directory per range, on the machine that ran it (code-review/review)
 RANGE = r"[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}"  # a review's range, as its reports' directory is named
 
 # A qualified tag in text: `retro` and an entry's id; `review`, the range and a finding's id; or a
@@ -174,7 +174,7 @@ def hrefs(agent: Path, page: Path) -> Callable[[Cited], str]:
     return href
 
 
-# A retro entry where the report states it: a finding's or candidate's heading, a Dismissed line.
+# A retro entry where the report states it (retro/REPORT.md): a finding's or candidate's heading, a Dismissed line.
 ENTRY = re.compile(r"### ([FA]\d+) (.+)")
 DISMISSED = re.compile(r"- \*\*([FA]\d+)\*\*[,:]?\s*(.+)")
 
@@ -198,7 +198,21 @@ def retro_entries(retro: Path) -> tuple[str | None, set[str] | None, dict[str, s
     return str(RETRO / "report.html"), set(re.findall(r'\bid="([fa]\d+)"', page)), said
 
 
-# A review finding's heading in its axis's report: `### S13 <the claim>`.
+LINKED, GONE = "qualified", "qualified gone"  # the classes a page styles a qualified tag by, linked and struck through
+
+
+def anchor_html(inner: str, to: str, preview: str, away: bool) -> str:
+    """A qualified tag's link to `to`, its preview the hover words; `away` opens it in a new tab."""
+    tab = ' target="_blank" rel="noopener"' if away else ""
+    return f'<a class="{LINKED}" href="{html.escape(to)}"{tab} title="{html.escape(preview)}">{inner}</a>'
+
+
+def struck_html(inner: str, preview: str) -> str:
+    """A qualified tag whose target no longer exists, saying why on hover."""
+    return f'<s class="{GONE}" title="{html.escape(preview)}">{inner}</s>'
+
+
+# A review finding's heading in its axis's report, as code-review/prompts/preamble.md asks for it: `### S13 <the claim>`.
 FINDING = re.compile(r"#{2,4} ([A-Z]\d+)\b[.:]?\s*(.*)")
 
 
@@ -246,16 +260,16 @@ def link_html(page: str, cite: Callable[[re.Match], Cited | None], href: Callabl
     the page links what `cite` found (`hrefs`); a link within the page stays in its tab."""
 
     def wrapped(found: Cited, inner: str) -> str:
-        preview = html.escape(found.preview)
         if found.path is None:
-            return f'<s class="qualified gone" title="{preview}">{inner}</s>'
+            return struck_html(inner, found.preview)
         to = href(found)
-        away = "" if to.startswith("#") else ' target="_blank" rel="noopener"'
-        return f'<a class="qualified" href="{html.escape(to)}"{away} title="{preview}">{inner}</a>'
+        return anchor_html(inner, to, found.preview, away=not to.startswith("#"))
 
     def linked(text: str) -> str:
         return QUALIFIED.sub(lambda m: wrapped(found, m.group()) if (found := cite(m)) else m.group(), text)
 
+    # A scan of its own rather than html.parser's: the page goes back out byte for byte, and the
+    # parser's callbacks report a line and column, not the offsets that would let them re-emit it.
     out: list[str] = []
     open_: list[str] = []  # each element open where the page has got to
     at = 0
@@ -275,7 +289,9 @@ def link_html(page: str, cite: Callable[[re.Match], Cited | None], href: Callabl
             out.append(piece)
             continue
         if name == "code" and not kept and (code := CODE.match(page, at)):
-            for text, end in ((code[1] + (code[2] or ""), code.end()), (code[1], code.end(1) + len("</code>"))):
+            with_tail = code[1] + (code[2] or ""), code.end()  # `<ticket>` D6: the code and the tag after it
+            code_alone = code[1], code.end(1) + len("</code>")  # `<ticket> D6`
+            for text, end in (with_tail, code_alone):
                 if (q := QUALIFIED.fullmatch(html.unescape(text))) and (found := cite(q)):
                     out.append(wrapped(found, piece + page[at:end]))
                     at = end

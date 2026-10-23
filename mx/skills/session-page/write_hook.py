@@ -54,7 +54,7 @@ class Decision:
 def decide(hook: dict, directory: Path | None) -> Decision:
     """What to tell the agent after the write the hook JSON describes, over the session directory."""
     import turn_review
-    from session_page import RecordError, check_cited, check_references, left_alone, read_session, written_this_turn
+    from session_page import RecordError, check_ticket_questions, check_references, left_alone, read_session, written_this_turn
     from stop_hook import RECAP
 
     if unread := left_alone():
@@ -79,7 +79,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("allow", "records parse")
     if turn.path.resolve() == written:
         try:
-            check_cited(session.root, turn)
+            check_ticket_questions(session.root, turn)
         except RecordError as e:
             return Decision("send back", "ticket question not open", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
     if turn_review.reviewed_since(session.id, session.began):

@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py[linkify]"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """The SessionEnd hook's properties. Run: uv run test_end_hook.py
 
