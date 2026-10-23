@@ -678,7 +678,7 @@ def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(track
 SIZE_WORDS = {"XS": ("15 min", "under 15 min"), "S": ("20 min", "about 20 min"), "M": ("1 h", "about an hour"),
               "L": ("half a day", "half a day"), "XL": ("several sessions", "several sessions")}
 PRIORITY_WORDS = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
-ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build", "whole": "with parent"}
+ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build", "triage": "to triage", "whole": "with parent"}
 # Every kind of mark a row wears. The demo tracker has a row wearing each, which is what makes the
 # check below catch a mark a later slice adds rather than skip it.
 KINDS = {"tree", "slug", "asks", "time", "pri", "chip", "rp", "gh", "kin"}
@@ -847,7 +847,8 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -
     """The spec's four words, each against the fixture ticket that earns it: a build in review asks
     for a ruling; a ticket the user is in the loop for asks for the session the user sits in,
     whether or not its question is written down; a ticket a worker takes is stopped by an open
-    question of its own and asks for the answer; one with no question asks nothing of the user."""
+    question of its own and asks for the answer; one with no question asks nothing of the user.
+    A proposed ticket asks for the triage the user starts, since no worker takes it before one."""
     rows = view_of(demo.root, demo.repo).rows
     expected = {
         "map-columns": "review",  # status: review, a build waiting on a ruling
@@ -860,6 +861,8 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -
         "pick-a-date-library": "answer",  # a worker's ticket, stopped on a question
         "view-storage": "answer",
         "parse-rows": "build",  # no question, not in review, and the user is not in the loop
+        "import-report": "triage",  # proposed, so off the frontier until a triage promotes it
+        "tidy-cli-help": "triage",
     }
     for slug, kind in expected.items():
         asks = mark(rows[slug], "asks")

@@ -117,6 +117,7 @@ ASKS = {  # what a row asks of the user: the word in its column, and what that w
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
     "session": ("with you", "A ticket you are in the loop for: it is worked with you, and dispatch keeps it from a worker."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
+    "triage": ("to triage", "Proposed by an agent, it waits off the frontier for a triage you start, which drops it, merges it into another ticket or promotes it to open."),
     "whole": ("with parent", "Built and merged into its parent ticket's branch. You rule on it with the parent, whole, at the parent's close-out."),
 }
 # what a parent ticket's row says of the child tickets folded under it (board.folded)
@@ -1737,13 +1738,16 @@ def text_of(markup: str) -> str:
 
 def asks(status: str, needs_user: bool, open_question: bool) -> str:
     """Which of ASKS a row asks of the user, from what its ticket file says: a build in review asks
-    for a ruling, a ticket stopped on a question of its own asks for the answer, and a ticket the
-    user is in the loop for asks for the session that is the work.
+    for a ruling, a proposed ticket for a triage, a ticket stopped on a question of its own for the
+    answer, and a ticket the user is in the loop for, the session that is the work.
 
     That session is asked for whether or not a question of the ticket's is written down yet, since
-    sitting down together is the work."""
+    sitting down together is the work. A proposed ticket carrying an open question asks for the
+    answer, as the needs-me group it sits in does (needs_me)."""
     if status == "review":
         return "review"
+    if status == "proposed" and not open_question:
+        return "triage"
     if needs_user:
         return "session"
     if open_question and status != "done":
