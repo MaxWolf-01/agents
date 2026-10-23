@@ -298,7 +298,7 @@ UNPARSEABLE = {
 
 # A ticket's question written the way only the session's own are, each with the line the reader
 # names and the words that tell the agent the question lives in its ticket.
-CITED_UNPARSEABLE = {
+TICKET_QUESTION_UNPARSEABLE = {
     "a ticket's question with words of its own": (
         f"{ROUND_3}## Questions\n\n- [two-main-checkouts D5] **Sync on every commit?**\n", 9, "whose words live in its ticket"),
     "a ticket's question with options": (

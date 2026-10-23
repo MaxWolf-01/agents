@@ -557,9 +557,17 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
 
 def link_tags(agent: Path) -> None:
     """Make each qualified tag on the report's page in `agent` a link to what it names, as the
-    tracker and the reviews stand now, the report's own entries included."""
+    tracker and the reviews stand now, the report's own entries included. A review finding found
+    only in another checkout stays text: the page is committed, and that worktree is removed once
+    its ticket lands."""
     page = agent / qualified.RETRO / "report.html"
-    page.write_text(qualified.link_html(page.read_text(), qualified.cites(agent), qualified.hrefs(agent, page)))
+    cite = qualified.cites(agent)
+
+    def in_agent(m: re.Match) -> qualified.Cited | None:
+        found = cite(m)
+        return None if found and found.path and Path(found.path).is_absolute() else found
+
+    page.write_text(qualified.link_html(page.read_text(), in_agent, qualified.hrefs(agent, page)))
 
 
 def restore(agent: Path, paths: list[str]) -> None:

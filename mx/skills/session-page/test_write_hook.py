@@ -29,7 +29,7 @@ import write_hook
 from session_page import PAGE, SESSIONS
 from stop_hook import RECAP
 from session_checks import (
-    CATALOGUE_FIXTURE, CITED_UNPARSEABLE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
+    CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SPOKEN_AFTER, TICKET_QUESTION_UNPARSEABLE, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
     unreachable, with_write,
 )
 from session_checks import payload as stopped
@@ -389,19 +389,21 @@ def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold
     assert run(wrote(record, writing, "Edit")) == ""
 
 
-def test_an_older_record_whose_ticket_question_was_ruled_since_still_takes_an_edit(
-    worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+def test_a_ticket_question_ruled_while_its_turn_runs_leaves_the_turns_later_writes_alone(
+    worked_example: Path, transcript: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A ticket's question is ruled long after the turn that put it to the user, so only the record
-    the turn writes is checked: fixing a typo in record 03 leaves its ruled question where it is."""
-    (worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md").write_text(TICKET_ASKING)
-    older = worked_example / "turns" / "03.md"
-    older.write_text(older.read_text().replace("## Questions\n\n", "## Questions\n\n- [two-main-checkouts D2]\n", 1).replace("# ", "# Fixed: ", 1))
+    """A ticket's question can be ruled while the turn that put it to the user still runs, so only a
+    write of the turn's own record checks it: record 04 put one the ticket has ruled since, and the
+    turn's later write of session.md goes through."""
+    ticket = worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md"
+    ticket.write_text(TICKET_ASKING.replace("Or on a timer.\n", "Or on a timer.\n  - Ruled 2026-10-21: on every commit.\n"))
+    record = worked_example / "turns" / "04.md"
+    record.write_text(record.read_text().replace("## Questions\n\n", "## Questions\n\n- [two-main-checkouts D1]\n", 1))
     monkeypatch.setattr(turn_review, "review", reviewer())
-    assert run(wrote(older, writing, "Edit")) == ""
+    assert run(wrote(worked_example / "session.md", transcript, "Edit")) == ""
 
 
-@pytest.mark.parametrize("text, line, said", CITED_UNPARSEABLE.values(), ids=CITED_UNPARSEABLE)
+@pytest.mark.parametrize("text, line, said", TICKET_QUESTION_UNPARSEABLE.values(), ids=TICKET_QUESTION_UNPARSEABLE)
 def test_a_ticket_question_written_like_the_sessions_own_goes_back_saying_it_lives_in_its_ticket(
     text: str, line: int, said: str, worked_example: Path, writing: Path, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch,

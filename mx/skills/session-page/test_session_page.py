@@ -238,20 +238,25 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
 
 
 def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
-    """fewer-workflow-concepts' tag rule: a ticket's question, detail entry, property and
+    """`fewer-workflow-concepts`' tag rule: a ticket's question, detail entry, property and
     assumption, a retro entry, and another session's question, named in prose by their qualified
     tag, the ticket's slug as code or not, each link to their home with what they name as the hover
     preview. A tag of a ticket that holds no such tag is struck through, linking nowhere
-    (tags-linked-on-board-and-review-pages). Words that only look like one, and a tag inside a link
-    of its own, stay text. Pins the format: the links are in the record's prose."""
+    (`tags-linked-on-board-and-review-pages`). Words that only look like one, a tag inside a link of
+    its own, and a question of a session whose id prefix two sessions share, stay text. Pins the
+    format: the links are in the record's prose."""
     other = tmp_path / SESSIONS / "8e0f1c22-0000-0000-0000-000000000000"
     (other / "turns").mkdir(parents=True)
     (other / PAGE).write_text("")
     (other / "turns" / "01.md").write_text(record(1, {"asks": ["Q3"], "answered": {}, "superseded": {}}))
     (other / "turns" / "02.md").write_text(record(2, {"asks": [], "answered": {"Q3": "a"}, "superseded": {}}))
+    for twin in ("5a1b2c3d-0000-0000-0000-000000000000", "5a1b2c3d-1111-1111-1111-111111111111"):
+        (tmp_path / SESSIONS / twin / "turns").mkdir(parents=True)
+        (tmp_path / SESSIONS / twin / PAGE).write_text("")
+        (tmp_path / SESSIONS / twin / "turns" / "01.md").write_text(record(1, {"asks": ["Q1"], "answered": {}, "superseded": {}}))
     directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D7]", details=(
         f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3, as retro F2 asked; "
-        f"8e0f1c22 Q3 asked the same. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
+        f"8e0f1c22 Q3 asked the same, and 5a1b2c3d Q1 could be either session's. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
     (tmp_path / "agent" / "retro").mkdir()
     (tmp_path / "agent" / "retro" / "report.md").write_text("# Workflow retro: agents\n\n## Findings\n\n### F2 Builds add machinery\n")
     (tmp_path / "agent" / "retro" / "report.html").write_text('<h3 id="f2">F2</h3>')

@@ -56,7 +56,7 @@ A ticket's **context** is its own body and every ancestor's, so a parent ticket 
 
 Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`). A worker opens no ticket file, and `tracker` refuses every write from a `ticket/<slug>` branch; what a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and `tracker check --help` says what the commit hook refuses of either.
 
-**A parent ticket is ruled whole**, with its children, at its close-out: the full suite and the review one level up, what they propose filed as proposed tickets and what is the user's as ticket questions (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out, and no child is ruled alone. From the parent's review page the user can still amend, redo or reject a single child.
+**A parent ticket is ruled whole**, with its children, at its close-out: the full suite and the review one level up, what they propose filed as proposed tickets and what is the user's as ticket questions (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. From the parent's review page the user can still amend, redo or reject a single child.
 
 ## State
 
@@ -82,7 +82,7 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 A **finished tree** leaves the live tracker through `tracker retire`, whose `--help` says what a finished tree is and what goes with it. Dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
-Session work (`/mx:orient`) has no ticket to retire: its artefacts are committed with the session's records as it ends, under `sessions/<id>/show/` (`/mx:show`), and stay there with them. A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
+Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the session's records (`/mx:show`). A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
 
 ## Board
 

@@ -193,7 +193,7 @@ def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stay
 
 def test_each_qualified_tag_on_the_committed_page_links_to_what_it_names_or_is_struck_where_that_is_gone(
         tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """tags-linked-on-board-and-review-pages, for the retro's page: a ticket's question it cites is
+    """`tags-linked-on-board-and-review-pages`, for the retro's page: a ticket's question it cites is
     a link to its ticket with the question as its hover words, and an entry the report no longer
     holds is struck through, in the page the commit holds."""
     agent = repo / "agent"
