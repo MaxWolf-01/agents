@@ -1605,10 +1605,13 @@ PROPERTY = re.compile(r"P(\d+)\s+(\S.*)", re.DOTALL)
 CRITERION = re.compile(r"\[([ xX])\]\s*(.*)", re.DOTALL)
 CITED = re.compile(r"(?<![\w-])([a-z0-9][a-z0-9-]*)?#P(\d+)\b")
 OLD_CLAIM = re.compile(r"^(?:\[[ xX]\]\s*)?\*{0,2}Property\b[ ]*(?:P\d+|,)")
-# a session named by its id, as a path (`sessions/5309b83a-…/turns/02.md`) or in words (`session
-# 5309b83a, turns/02.md`), and one of its turn records later in the same bullet or paragraph
-TURN_CITED = re.compile(r"\bsessions?(?:/|\s+)([0-9a-f]{8})[0-9a-f-]*\b.*?\bturns/(\d+)\.md", re.DOTALL)
-QUOTED = re.compile(r'"[^"]+"|“[^”]+”|^\s*>|^\s*(```|~~~)', re.MULTILINE)
+# a session named by its id, as a path (`sessions/5309b83a-…`) or in words (`session 5309b83a`)
+SESSION = re.compile(r"\bsessions?(?:/|\s+)`?([0-9a-f]{8})", re.IGNORECASE)
+TURN = re.compile(r"\bturns/(\d+)\.md")
+QUOTED = re.compile(r'"[^"\n]+"|“[^”\n]+”|^\s*>|^\s*(```|~~~)', re.MULTILINE)
+QUOTE_BLOCK = re.compile(r"^\s*(>|```|~~~)")
+CODE_SPAN = re.compile(r"`[^`\n]*`")
+ANY_HEADING = re.compile(r"^#{1,6}\s")
 
 
 def unfenced(text: str) -> str:
@@ -1915,9 +1918,8 @@ def cited(text: str) -> list[tuple[str, int]]:
 def read_citations(path: Path, lines: Sequence[tuple[int, str]], refusals: list[Refusal]) -> list[tuple[str, int]]:
     """Every property the body cites, read off the bullets and the lines outside them: a bullet is
     read whole, so the column its writer wrapped at cannot change what it cites."""
-    written = [(bullet.line, bullet.head) for bullet in flat(bullets(lines))]
-    inside = {number for bullet in flat(bullets(lines)) for number in range(bullet.line, bullet.last + 1)}
-    written += [(number, line) for number, line in lines if number not in inside]
+    tree = list(flat(bullets(lines)))
+    written = [(bullet.line, bullet.head) for bullet in tree] + outside(lines, tree)
     found = []
     for number, line in sorted(written):
         for ref, _ in cited(line):
@@ -1928,30 +1930,44 @@ def read_citations(path: Path, lines: Sequence[tuple[int, str]], refusals: list[
     return found
 
 
+def outside(lines: Sequence[tuple[int, str]], tree: Sequence[Bullet]) -> list[tuple[int, str]]:
+    """The lines no bullet of `tree` holds."""
+    inside = {number for bullet in tree for number in range(bullet.line, bullet.last + 1)}
+    return [(number, line) for number, line in lines if number not in inside]
+
+
 def read_session_quotes(path: Path, lines: Sequence[tuple[int, str]], raw: dict[int, str], refusals: list[Refusal]) -> None:
-    """Refuse every session turn the body cites with no quote after it, in the bullet or paragraph
-    that cites it, the lines nested under it, or a quote block or fence right below. A session's
+    """Refuse every session turn the body cites with no quote after it: in the bullet or paragraph
+    that cites it, the bullets nested under it, or a quote block or fence right below. A session's
     records stay out of git until it ends, so a worker host can hold no copy of the turn a ticket
-    points at: what the ticket takes from it has to be in the ticket."""
+    points at: what the ticket takes from it has to be in the ticket. A turn is cited where the
+    bullet or paragraph names its session by id before it."""
+    words, last_line = dict(lines), max(raw, default=0)
     for first, cites_to, last in units(lines):
-        text = "\n".join(dict(lines)[number] for number in range(first, cites_to + 1))
+        text = "\n".join(words[number] for number in range(first, cites_to + 1))
         own = "\n".join(raw[number] for number in range(first, cites_to + 1))
         after = "\n".join(raw.get(number, "") for number in range(cites_to + 1, last + 1))
-        below = next((raw[number] for number in range(last + 1, max(raw) + 1) if raw[number].strip()), "")
-        for turn in TURN_CITED.finditer(text):
-            if not QUOTED.search("\n".join((own[turn.end():], after, below))):
-                refusals.append(Refusal(path, first + text.count("\n", 0, turn.start()), f"session {turn.group(1)}'s `turns/{turn.group(2)}.md` is cited with no quote after it; a session's records stay out of git until it ends, so no worker host has the turn, and a ticket quotes what it takes from one (in quote marks, a `>` block or a fence) with the path beside the quote"))
+        below = next((raw[number] for number in range(last + 1, last_line + 1) if raw[number].strip()), "")
+        named = list(SESSION.finditer(text))
+        for turn in TURN.finditer(text):
+            session = next((one for one in reversed(named) if one.start() < turn.start()), None)
+            if session is None:
+                continue
+            rest = CODE_SPAN.sub(lambda span: " " * len(span.group()), own[turn.end():] + "\n" + after)
+            if not QUOTED.search(rest) and not QUOTE_BLOCK.match(below):
+                refusals.append(Refusal(path, first + text.count("\n", 0, turn.start()), f"session {session.group(1)}'s `turns/{turn.group(1)}.md` is cited with no quote after it; a session's records stay out of git until it ends, so no worker host has the turn, and a ticket quotes what it takes from one (in quote marks, a `>` block or a fence) with the path beside the quote"))
 
 
 def units(lines: Sequence[tuple[int, str]]) -> list[tuple[int, int, int]]:
     """The body's bullets and paragraphs as `(first line, last line of its own words, last line)`:
     a bullet's own words stop where the first bullet nested under it starts, and its last line is
     that of the last bullet nested under it."""
-    found = [(bullet.line, bullet.under[0].line - 1 if bullet.under else bullet.last, bullet.last) for bullet in flat(bullets(lines))]
-    inside = {number for bullet in flat(bullets(lines)) for number in range(bullet.line, bullet.last + 1)}
+    tree = list(flat(bullets(lines)))
+    found = [(bullet.line, bullet.under[0].line - 1 if bullet.under else bullet.last, bullet.last) for bullet in tree]
+    loose = dict(outside(lines, tree))
     run: list[int] = []
-    for number, line in [*lines, (None, "")]:
-        if number is not None and number not in inside and line.strip() and not HEADING.match(line):
+    for number, _ in [*lines, (None, "")]:
+        if number in loose and loose[number].strip() and not ANY_HEADING.match(loose[number]):
             run.append(number)
         elif run:
             found.append((run[0], run[-1], run[-1]))

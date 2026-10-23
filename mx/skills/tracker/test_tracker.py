@@ -350,6 +350,22 @@ def test_a_session_turn_cited_with_its_quote_before_it_and_none_after_is_refused
     assert f"{path}:{line_of(path, 'session 5309b83a')}: session 5309b83a's `turns/02.md` is cited with no quote after it" in said.out, said.out
 
 
+@pytest.mark.parametrize("written, turn", [
+    ("Session 5309b83a, `turns/02.md`, holds the set.", "turns/02.md"),
+    ("The set is in session `5309b83a`'s `turns/02.md`.", "turns/02.md"),
+    ('From session 5309b83a: `turns/02.md` says "keep both", and `turns/05.md` has the rest.', "turns/05.md"),
+    ("- The set is in session 5309b83a's `turns/02.md`.\n- The flag is `--mode=\"fast\"`.", "turns/02.md"),
+    ('- The set is in session 5309b83a\'s `turns/02.md`.\n- A note that quotes "something else".', "turns/02.md"),
+])
+def test_a_session_turn_whose_only_quote_belongs_to_something_else_is_refused(
+    tickets: Path, repo: Path, written: str, turn: str
+) -> None:
+    path = ticket(tickets, "one-flow", f"## Decisions\n\n{written}\n")
+    said = run(repo, "check", str(path))
+    assert said.code == 1
+    assert f"{path}:{line_of(path, turn)}: session 5309b83a's `{turn}` is cited with no quote after it" in said.out, said.out
+
+
 @pytest.mark.parametrize("written", [
     'The set is max\'s (session 5309b83a, `turns/02.md`): "which gates never change anything?"',
     "The set is max's, `agent/sessions/5309b83a-1c2d-4e5f-8a9b-0c1d2e3f4a5b/turns/02.md`:\n\n> Which gates never change anything?",
