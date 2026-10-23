@@ -48,7 +48,7 @@ Humans judge far better in front of a render than in the abstract; the artefact 
 
 ## 8. Fresh context per unit of work
 
-Reasoning degrades well before the advertised window is full, and an agent cannot introspect the degradation, so the limit is stated as a fraction rather than a feeling. An author is the wrong reviewer of its own diff, and a model is reluctant to change code sitting in its own context; a reviewer sharing the implementer's window reviews in the dumb zone. Repeated compaction leaves sediment; a handoff file is a deliberate reset that can be read and edited before it seeds the next session, and crosses harnesses. A different model family reviewing than the one that wrote is the strongest form. Ticket-sized fresh workers stay the unit of implementation; the coherence cost of isolation is carried by slicing (principle 9) and the review session.
+Reasoning degrades well before the advertised window is full, and an agent cannot introspect the degradation, so the limit is stated as a fraction rather than a feeling. An author is the wrong reviewer of its own diff, and a model is reluctant to change code sitting in its own context; a reviewer sharing the implementer's window reviews in the dumb zone. Repeated compaction leaves sediment; a handoff file is a deliberate reset that can be read and edited before it seeds the next session, and crosses harnesses. A different model family reviewing than the one that wrote is the strongest form. Ticket-sized fresh workers stay the unit of implementation; the coherence cost of isolation is carried by slicing (principle 9) and the review one level up at a close-out.
 
 
 ## 9. Slice along seams that already exist

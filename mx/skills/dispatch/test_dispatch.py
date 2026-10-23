@@ -1336,7 +1336,7 @@ def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_secti
 
 def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carries(toy: Path) -> None:
     """A child built on its parent ticket's branch: in `Backend` its base is the parent's branch
-    there, which is ahead of the integration branch. A round merged into it is recorded; the next
+    there, which is ahead of the trunk. A round merged into it is recorded; the next
     round, in `Backend` alone and unmerged, renders after it on the same page, and is recorded once
     it merges."""
     agent = toy / "agent"
@@ -1529,7 +1529,7 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
     """`tickets-land-in-listed-repos#P5`: the host gets a bare repo for each repo warm-preset names
     and none for `secrets`, which the project lists and the ticket does not; the host's directory
     listing is the oracle. Each is cut where the prompt says, from its base: `Backend` inside the
-    ticket worktree at the path the project keeps it at, from its integration branch, and `jarvis`
+    ticket worktree at the path the project keeps it at, from its trunk, and `jarvis`
     beside it, from origin's `main`, which is ahead of the local one. The fetch brings each branch
     back, `push` sends each base again once it moves, the cleanup takes each worktree and branch off
     the host, and the landing's `done` deletes the fetched branches here."""
@@ -1586,7 +1586,7 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
 @pytest.mark.full_path
 def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path, staged: Path) -> None:
     """A child of lamp-ui, dispatched from lamp-ui's worktree onto this machine: `Backend` is cut
-    from lamp-ui's branch there, which is ahead of its integration branch, into the ticket worktree,
+    from lamp-ui's branch there, which is ahead of its trunk, into the ticket worktree,
     and `jarvis` from origin's `main` beside it, each from the checkout the repo list names. The
     fetch finds every branch here already, and the cleanup takes the worktrees and the branches out
     of those checkouts."""
@@ -1725,7 +1725,7 @@ def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and
 
 def test_a_parents_accept_deletes_its_childs_branch_in_a_listed_repo_once_merged_there(toy: Path) -> None:
     """A child of lamp-ui whose work is in `Backend` alone, merged there into lamp-ui's branch, which
-    has merged into the integration branch: the accept that writes the child's `done` deletes its
+    has merged into the trunk: the accept that writes the child's `done` deletes its
     fetched branch in `Backend`, and leaves the parent's own branch there, whose range in `Backend`
     the parent records beside its code range."""
     tickets = tracked(toy)

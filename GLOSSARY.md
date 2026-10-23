@@ -125,7 +125,7 @@ _Avoid_: subagent, implementer
 
 **Worker report**:
 What a worker hands back for its ticket: its closing comment and the questions its build raised.
-_Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
+_Avoid_: closing comment (one part of a report), handoff, debrief (retired: a close-out files what it finds as proposed tickets and ticket questions)
 
 **Tick**:
 One pass of the orchestrator's loop.
@@ -139,9 +139,9 @@ _Avoid_: batch, round
 A ticket's work is on the branch the user's accept merges it into, and verified there.
 _Avoid_: merged, finished, complete
 
-**Debrief**:
-What the orchestrator tells the user when a ticket's tree is finished: what the workers and the review one level up found, and what it proposes to do about it.
-_Avoid_: synthesis, summary, PR description, report (a worker's is one)
+**Trunk**:
+The branch work merges into: the default branch, or dev where that layer exists.
+_Avoid_: integration branch, mainline
 
 ### Testing
 
