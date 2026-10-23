@@ -35,7 +35,9 @@ import tyro
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "session-page"))
-from session_page import PAGE, PREVIOUS, RecordError, left_alone, located, make_session_directory, page, read_session  # noqa: E402
+from session_page import (  # noqa: E402
+    PAGE, PAGES, PREVIOUS, RecordError, account, left_alone, located, make_session_directory, page, read_session,
+)
 
 
 @dataclass
@@ -100,10 +102,11 @@ def continues(text: str) -> str:
 
 def render(directory: Path | None) -> str:
     """Render the page of the session whose directory is `directory` again, from its transcript
-    under Claude Code's projects directory, and say what came of that."""
+    under Claude Code's projects directory, the one of the account the directory sits under, else
+    this session's, and say what came of that."""
     if directory is None:
         return "no session directory with a page, so no page to link forward"
-    projects = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    projects = (directory.parents[1] if directory.parent.name == PAGES else account()) / "projects"
     if (theirs := next(projects.glob(f"*/{directory.name}.jsonl"), None)) is None:
         return f"no transcript under {projects}: it links forward from its next render"
     try:

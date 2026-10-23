@@ -1142,6 +1142,10 @@ def test_a_continuation_links_to_the_page_before_wherever_that_session_keeps_it(
     shutil.move(directory.parent / BEFORE, kept)
     if where == "agent/sessions":
         (kept / AGENT_REPO).unlink()
+    else:  # that account keeps the session's transcript too
+        theirs = kept.parents[1] / transcript_of(BEFORE).relative_to(session_page.account())
+        theirs.parent.mkdir(parents=True)
+        shutil.move(transcript_of(BEFORE), theirs)
     handed_over(CONTINUATION)
     assert f'href="{(kept / PAGE).as_uri()}"' in (directory / PAGE).read_text()
     assert links_to(kept / PAGE) == [FRESH]

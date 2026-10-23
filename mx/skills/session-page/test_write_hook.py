@@ -29,8 +29,8 @@ import write_hook
 from session_page import PAGE
 from stop_hook import RECAP
 from session_checks import (
-    CATALOGUE_FIXTURE, LEFT_ALONE, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
-    project_of, unreachable, with_write,
+    CATALOGUE_FIXTURE, LEFT_ALONE, LONG, RULES_FIXTURE, SESSION, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended,
+    logged, project_of, unreachable, with_write,
 )
 from session_checks import payload as stopped
 from write_hook import decide
@@ -373,9 +373,14 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     assert [entry["why"] for entry in logged(attended, "verb")] == ["no record of this session"], "only the path in its directory is read past the path"
 
 
-@pytest.mark.parametrize("record", ["turns/05.md", "session.md"])
+# What a session writes first in each place: a turn record, and the session record.
+WRITTEN = {"turns/05.md": "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n",
+           "session.md": f"---\nsession: {SESSION}\nrepo: /srv/ledger\n---\n\n# Ledger: the second bank\n"}
+
+
+@pytest.mark.parametrize("record, content", WRITTEN.items(), ids=WRITTEN)
 def test_a_record_written_in_the_agent_repos_sessions_goes_back_naming_the_sessions_directory(
-    record: str, worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+    record: str, content: str, worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A session that read its directory from `session-page` while records still went in the agent
     repo has that directory in its context: a record written there is one the page never reads, so
@@ -383,9 +388,8 @@ def test_a_record_written_in_the_agent_repos_sessions_goes_back_naming_the_sessi
     monkeypatch.setattr(turn_review, "review", unreachable)
     old = project_of(worked_example) / "agent" / "sessions" / worked_example.name / record
     old.parent.mkdir(parents=True)
-    record = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
-    old.write_text(record)
-    said = run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(old), "content": record}})
+    old.write_text(content)
+    said = run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(old), "content": content}})
     assert str(old) in said and str(worked_example) in said
 
 

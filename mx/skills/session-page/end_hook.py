@@ -78,15 +78,16 @@ def commit_records(directory: Path) -> str:
     top = git(agent, "rev-parse", "--show-toplevel")
     if top.returncode != 0 or Path(top.stdout.strip()) != agent.resolve():
         return "the agent directory is not a repo of its own"
-    records = sorted(p.relative_to(directory).as_posix() for name in RECORDS for p in
-                     ([directory / name] if (directory / name).is_file() else sorted((directory / name).rglob("*"))) if p.is_file())
+    records = sorted(p.relative_to(directory).as_posix()
+                     for name in RECORDS for p in [directory / name, *(directory / name).rglob("*")] if p.is_file())
     if not records:
         return "no records"
     sessions = agent / SESSIONS.name
     tracked = set(git(agent, "ls-files", "--", *(f"{SESSIONS.name}/{session_id}/{name}" for name in RECORDS)).stdout.split())
     tracked = {path.removeprefix(f"{SESSIONS.name}/") for path in tracked}
     wanted = {f"{session_id}/{record}" for record in records}
-    new = [path for path in wanted if not (sessions / path).exists()]
+    # what git cannot put back: each untracked path the copy writes, as it was, None where it was not there
+    untracked = {path: (sessions / path).read_bytes() if (sessions / path).is_file() else None for path in wanted - tracked}
     for record in records:
         (sessions / session_id / record).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(directory / record, sessions / session_id / record)
@@ -106,8 +107,11 @@ def commit_records(directory: Path) -> str:
         if "index.lock" not in done.stderr or time.monotonic() > deadline:
             unstaged = git(sessions, "reset", "--quiet", "--", *paths)
             left = "unstaged" if unstaged.returncode == 0 else f"left staged: {unstaged.stderr.strip()}"
-            for path in new:
-                (sessions / path).unlink(missing_ok=True)
+            for path, was in untracked.items():
+                if was is None:
+                    (sessions / path).unlink(missing_ok=True)
+                else:
+                    (sessions / path).write_bytes(was)
             if tracked:
                 git(sessions, "checkout", "--", *sorted(tracked))
             return f"git {done.args[3]} failed: {done.stderr.strip()}; {left}"

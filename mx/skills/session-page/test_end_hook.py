@@ -81,7 +81,7 @@ def end(worked_example: Path, monkeypatch: pytest.MonkeyPatch, attended: Path) -
 
 def committed(repo: Path) -> list[str]:
     """The paths HEAD's commit changed, as git records them."""
-    return git(repo, "show", "--name-only", "--format=", "HEAD").split()
+    return git(repo, "show", "--name-only", "--no-renames", "--format=", "HEAD").split()
 
 
 def in_status(repo: Path) -> list[str]:
@@ -133,6 +133,7 @@ def test_a_resumed_session_commits_what_changed_when_it_ends_again(agent: Path, 
     (worked_example / "turns" / "03.md").rename(worked_example / "turns" / "03-renumbered.md")
     end_hook.commit_records(worked_example)
     kept = f"sessions/{worked_example.name}/turns"
+    assert committed(agent) == [f"{kept}/{name}" for name in ("03-renumbered.md", "03.md", "04.md", "05.md")]
     assert git(agent, "ls-tree", "--name-only", "HEAD", f"{kept}/").split() == [
         f"{kept}/{name}" for name in ("01.md", "02.md", "03-renumbered.md", "04.md", "05.md")], "the renumbered record is gone under its old name"
     assert git(agent, "show", f"HEAD:{kept}/04.md") == "revised\n"
@@ -172,6 +173,19 @@ def test_a_failed_commit_puts_the_records_it_held_back_as_they_were(agent: Path,
     kept = agent / "sessions" / worked_example.name / "turns"
     assert sorted(p.name for p in kept.iterdir()) == ["01.md", "02.md", "03.md", "04.md"]
     assert (kept / "04.md").read_text() != "revised\n"
+
+
+def test_a_failed_commit_puts_back_records_the_agent_repo_held_untracked(agent: Path, worked_example: Path) -> None:
+    """A session running since records went in the agent repo has them there, never committed: a
+    failed commit leaves them as they were, not as the session's directory has them now."""
+    kept = agent / "sessions" / worked_example.name / "turns" / "04.md"
+    kept.parent.mkdir(parents=True)
+    kept.write_text("as an older mx left it\n")
+    hook = agent / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    assert end_hook.commit_records(worked_example).endswith("; unstaged")
+    assert [p.name for p in kept.parent.iterdir()] == ["04.md"] and kept.read_text() == "as an older mx left it\n"
 
 
 def test_a_directory_that_names_no_agent_repo_commits_nothing(worked_example: Path) -> None:
