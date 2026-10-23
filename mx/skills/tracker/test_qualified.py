@@ -4,17 +4,20 @@
 # ///
 """What a qualified tag names. Run: uv run test_qualified.py
 
-The seam is `qualified.resolver` and `QUALIFIED`, which every page the user reads links a tag by:
-the session page now, the board and the review pages after it. The oracle is the ticket below,
-written as the tracker skill shapes one, and fewer-workflow-concepts' Decision that a tag the user
-reads is `<ticket> D6` or `<ticket> P3`, linked, with what it names as a hover preview.
+The seams are `qualified.resolver` and `cites`, which every page the user reads looks a tag up by,
+and `link_html`, which the board and the retro's page link one by. The oracle is the ticket below,
+written as the tracker skill shapes one, the retro report's shape (retro/REPORT.md), and
+fewer-workflow-concepts' Decisions: a tag the user reads is `<ticket> D6`, `retro F1` or
+`review <range> S13`, linked, with what it names as a hover preview; and
+tags-linked-on-board-and-review-pages' criterion that one naming what no longer exists shows as such.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from qualified import QUALIFIED, resolver
+from qualified import QUALIFIED, cites, hrefs, link_html, resolver
 
 TICKET = """---
 status: review
@@ -81,7 +84,147 @@ def test_a_tag_names_nothing_where_its_ticket_or_the_tag_is_missing(resolve) -> 
 def test_a_qualified_tag_is_found_in_text_by_its_slug_and_tag() -> None:
     """Either separator the tracker writes, and never a tag that only ends a longer word or path."""
     text = "sync D1 holds, as does two-main#P3; mx/sync D1, my_sync A4, sync D12x and syncD2 do not."
-    assert [m.groups() for m in QUALIFIED.finditer(text)] == [("sync", "D1"), ("two-main", "P3")]
+    assert [(m["ticket"], m["tag"]) for m in QUALIFIED.finditer(text)] == [("sync", "D1"), ("two-main", "P3")]
+
+
+def test_a_retro_entry_and_a_review_finding_are_found_in_text_by_what_qualifies_them() -> None:
+    text = "retro F1 and retro A3, review 2339177..8424220 S13; a retro F1x, review 23..84 S1 and retroF2 are none."
+    assert [m.group() for m in QUALIFIED.finditer(text)] == ["retro F1", "retro A3", "review 2339177..8424220 S13"]
+
+
+REPORT = """# Workflow retro: agents
+
+Run 2026-10-23, over 2026-10-19 to 2026-10-23. ids: F33, A35
+
+## Findings
+
+- **A20**: see F2, which it would narrow.
+
+### F2 The agent's how adds machinery
+
+- **State**: live
+
+## Candidates
+
+### A20 `diffview --notes` also reads the markdown bullet form
+
+## Dismissed
+
+- **A23**, the worker prompt's shared style. max: "DROP THIS" (4d54054e, 2026-10-23).
+"""
+
+
+def git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
+
+
+@pytest.fixture
+def agent(tmp_path: Path) -> Path:
+    """An agent repo: the tracker holding `sync`, git's history of it holding `old-sync` retired,
+    the retro's report and its page, and one review's reports on this machine."""
+    git(tmp_path, "init", "-q")
+    (tmp_path / "tickets").mkdir()
+    (tmp_path / "tickets" / "old-sync.md").write_text(TICKET)
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-qm", "file old-sync")
+    git(tmp_path, "rm", "-q", "tickets/old-sync.md")
+    git(tmp_path, "commit", "-qm", "retire old-sync")
+    (tmp_path / "tickets").mkdir(exist_ok=True)
+    (tmp_path / "tickets" / "sync.md").write_text(TICKET)
+    (tmp_path / "retro").mkdir()
+    (tmp_path / "retro" / "report.md").write_text(REPORT)
+    (tmp_path / "retro" / "report.html").write_text('<h3 id="f2">F2</h3><h3>A20</h3><li id="a23">A23</li>')
+    review = tmp_path / "reviews" / "2339177..8424220"
+    review.mkdir(parents=True)
+    (review / "standards.md").write_text("# Standards review\n\n## Findings\n\n### S1 `QUALIFIED` copies the slug pattern\n")
+    return tmp_path
+
+
+def cited(agent: Path, text: str):
+    found = cites(agent)(QUALIFIED.fullmatch(text))
+    return found and (found.path, found.anchor, found.preview)
+
+
+def test_a_ticket_tag_cites_its_ticket_file_and_one_the_tracker_no_longer_holds_is_gone(agent) -> None:
+    """A tag its ticket holds links that file; a tag the ticket dropped, or one of a retired ticket,
+    names what no longer exists; a slug that never was a ticket's is prose, and names nothing."""
+    assert cited(agent, "sync#P2") == ("tickets/sync.md", "", "sync P2 · A ticket file is written in one checkout only.")
+    assert cited(agent, "sync D9") == (None, "", "sync D9 · no longer in its ticket")
+    assert cited(agent, "old-sync D1") == (None, "", "old-sync D1 · its ticket is no longer in the tracker")
+    assert cited(agent, "and P3") is None
+
+
+def test_a_retro_entry_cites_its_place_on_the_retros_page_and_a_dropped_one_is_gone(agent) -> None:
+    """A finding at the anchor its page gives it, a candidate the page gave none at the page's top,
+    a dismissed one by its line under Dismissed, and an id the report no longer holds as gone."""
+    assert cited(agent, "retro F2") == ("retro/report.html", "#f2", "retro F2 · The agent's how adds machinery")
+    assert cited(agent, "retro A20") == ("retro/report.html", "", "retro A20 · `diffview --notes` also reads the markdown bullet form")
+    assert cited(agent, "retro A23")[:2] == ("retro/report.html", "#a23")
+    assert cited(agent, "retro A23")[2].startswith("retro A23 · dismissed: the worker prompt's shared style.")
+    assert cited(agent, "retro F1") == (None, "", "retro F1 · no longer in the retro's report")
+
+
+def test_a_review_finding_cites_its_report_where_this_machine_has_it(agent) -> None:
+    assert cited(agent, "review 2339177..8424220 S1") == (
+        "reviews/2339177..8424220/standards.md", "", "review 2339177..8424220 S1 · `QUALIFIED` copies the slug pattern")
+    assert cited(agent, "review 2339177..8424220 S2")[0] is None
+    assert cited(agent, "review 1111111..2222222 S1") == (None, "", "review 1111111..2222222 S1 · not in a report of that review on this machine")
+
+
+def test_a_review_finding_cites_its_report_in_the_worktree_the_review_ran_in(tmp_path: Path) -> None:
+    """A worker reviews in its own worktree, which holds the reports until it is removed; the board
+    reads the tracker in the main checkout."""
+    code = tmp_path / "code"
+    (code / "agent" / "tickets").mkdir(parents=True)
+    git(code, "init", "-q")
+    git(code, "commit", "-q", "--allow-empty", "-m", "start")
+    git(code, "worktree", "add", "-q", str(tmp_path / "code-ticket"))
+    report = tmp_path / "code-ticket" / "agent" / "reviews" / "2339177..8424220" / "correctness.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("# Correctness review\n\n### C1 The board strikes every review citation\n")
+    found = cites(code / "agent")(QUALIFIED.fullmatch("review 2339177..8424220 C1"))
+    assert (Path(found.path).resolve(), found.preview) == (
+        report.resolve(), "review 2339177..8424220 C1 · The board strikes every review citation")
+
+
+def link(agent: Path, page: str) -> str:
+    return link_html(page, cites(agent), lambda c: f"#t-{c.ticket}" if c.ticket else c.path + c.anchor)
+
+
+def test_a_page_links_what_lives_elsewhere_from_its_own_directory_and_a_place_on_itself_within_it(agent) -> None:
+    """The retro's page citing its own entry jumps to it, and its tickets by the path up to them."""
+    page = agent / "retro" / "report.html"
+    linked = link_html("<p>retro F2, sync D1</p>", cites(agent), hrefs(agent, page))
+    assert 'href="#f2" title=' in linked and 'href="../tickets/sync.md" target="_blank"' in linked
+
+
+def test_every_qualified_tag_in_a_pages_prose_links_to_what_it_names(agent) -> None:
+    """Written plain, as code, or with its slug alone as code: each a link with its preview as the
+    link's hover words, and a link off the page opening in its own tab."""
+    page = "<p>Builds on sync P2, <code>retro F2</code> and <code>sync</code> D1.</p>"
+    assert link(agent, page) == (
+        '<p>Builds on <a class="qualified" href="#t-sync" title="sync P2 · A ticket file is written in one checkout only.">sync P2</a>, '
+        '<a class="qualified" href="retro/report.html#f2" target="_blank" rel="noopener" title="retro F2 · The agent&#x27;s how adds machinery">'
+        '<code>retro F2</code></a> and '
+        '<a class="qualified" href="#t-sync" title="sync D1 · Sync on every commit? Or on a timer."><code>sync</code> D1</a>.</p>')
+
+
+def test_a_tag_naming_what_no_longer_exists_is_struck_through_saying_why_and_links_nowhere(agent) -> None:
+    assert link(agent, "<p>old-sync D1</p>") == (
+        '<p><s class="qualified gone" title="old-sync D1 · its ticket is no longer in the tracker">old-sync D1</s></p>')
+
+
+def test_text_that_is_no_prose_of_the_page_stays_as_it_is(agent) -> None:
+    """A link, code inside one, a code block, a figure (one closed where it opens included), a
+    script, an attribute, prose that only looks like a tag, and a link holding an element left
+    open; the tag after all of them, in an element with hover words of its own, is linked."""
+    page = ('<a href="x">sync D1</a><a href="x"><code>sync D1</code></a><pre>sync D1</pre>'
+            '<svg><text>sync D1</text></svg><svg viewBox="0 0 1 1"/><script>let s = "<a>"; // sync D1</script>'
+            '<p title="sync D1">and P3</p><br><a href="x"><p>open</a>')
+    after = '<span data-tip="its own words">then sync D1</span>'
+    linked = link(agent, page + after)
+    assert linked == page + ('<span data-tip="its own words">then <a class="qualified" href="#t-sync" '
+                             'title="sync D1 · Sync on every commit? Or on a timer.">sync D1</a></span>')
 
 
 if __name__ == "__main__":
