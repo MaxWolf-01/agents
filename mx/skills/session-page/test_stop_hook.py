@@ -136,7 +136,7 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
     for cwd in (main, worktree, main / "agent" / "tickets"):
         monkeypatch.chdir(cwd)
         session_page.main()
-        assert capsys.readouterr().out == f"{directory}\n", cwd
+        assert capsys.readouterr().out.splitlines()[0] == str(directory), cwd
         (directory / PAGE).unlink(missing_ok=True)
         run(payload(directory, transcript) | {"cwd": str(cwd)})
         assert (directory / PAGE).is_file(), cwd

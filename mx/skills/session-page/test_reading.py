@@ -15,16 +15,19 @@ record, the messages that turn answered.
 import html
 import json
 import re
+import shutil
+import sys
 import time
 from datetime import UTC, datetime
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-from session_page import Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
-from session_checks import messages_of, rows_of, sections_of, text_of, view_of
+import session_page
+from session_page import SESSIONS, Chat, RecordError, chat_path, chat_record, read_chat, read_session, read_turn, render_session
+from session_checks import SESSION, messages_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -462,6 +465,80 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
     assert "Leading words for showing" in page.session.title
     assert page.rows == ()
     assert " 0 turns · rendered " in text_of(render_session(worked_example, transcript, now=NOW))
+
+
+def test_a_session_record_of_its_h1_alone_reads_as_one_with_frontmatter(worked_example: Path, transcript: Path) -> None:
+    """session-page-says-where-the-next-record-goes#P2: the worked example's session.md carries the
+    frontmatter older sessions wrote, naming the directory's own id and the directory the transcript
+    says the session started in; with only its H1 left, the page is the same to the reader."""
+    described = worked_example / "session.md"
+    before = view_of(worked_example, transcript)
+    described.write_text(described.read_text().split("---\n", 2)[2].lstrip())
+    after = view_of(worked_example, transcript)
+    assert described.read_text().startswith("# Leading words for showing")
+    assert (after.session.title, after.session.id, after.session.repo) == (before.session.title, before.session.id, before.session.repo)
+    assert after.resume == before.resume == f"cd /home/max/repos/github/MaxWolf-01/agents && claude --resume {SESSION}"
+
+
+# ---- where the next record goes ---------------------------------------------
+
+RECORD = "---\ndate: 2026-10-23\n---\n\n# The record written where session-page said\n"
+
+
+def where_next(directory: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> list[str]:
+    """What `session-page` prints for the session `directory` is of, run from its project's root.
+    It returning rather than exiting is the exit status 0."""
+    monkeypatch.chdir(directory.parents[len(SESSIONS.parts)])
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", directory.name)
+    monkeypatch.setattr(sys, "argv", ["session-page"])
+    session_page.main()
+    return capsys.readouterr().out.splitlines()
+
+
+def with_a_chat_turn(directory: Path) -> None:
+    at = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
+    chat_path(directory / "turns", at).parent.mkdir(parents=True, exist_ok=True)
+    chat_path(directory / "turns", at).write_text(chat_record("On it.", at))
+
+
+# What each session directory holds, made from the worked example's four records and session.md,
+# and what the line under the directory says of it: the next record's number, how many are written,
+# and whether session.md is.
+DIRECTORIES = {
+    "none yet": (lambda d: shutil.rmtree(d), "01.md · 0 written · session.md not yet written"),
+    "a chat turn only": (lambda d: (shutil.rmtree(d), with_a_chat_turn(d)), "01.md · 0 written · session.md not yet written"),
+    "records 01 to 03": (lambda d: (d / "turns" / "04.md").unlink(), "04.md · 3 written · session.md written"),
+    "records 01 to 03 and 06, and a chat turn": (
+        lambda d: ((d / "turns" / "04.md").rename(d / "turns" / "06.md"), with_a_chat_turn(d)), "07.md · 4 written · session.md written"),
+    "session.md absent": (lambda d: (d / "session.md").unlink(), "05.md · 4 written · session.md not yet written"),
+}
+
+
+@pytest.mark.parametrize("made, said", DIRECTORIES.values(), ids=DIRECTORIES)
+def test_session_page_prints_where_the_next_record_goes_and_the_page_reads_it_there_as_the_newest_turn(
+    made: Callable[[Path], object], said: str, worked_example: Path, transcript: Path,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """session-page-says-where-the-next-record-goes#P1: the path on the second line is the turn the
+    page reads next, numbered on from the highest record, the chat turns not counted."""
+    made(worked_example)
+    directory, line = where_next(worked_example, monkeypatch, capsys)
+    assert directory == str(worked_example)
+    assert line == f"next record: {worked_example / 'turns'}/{said}"
+    path = Path(line.removeprefix("next record: ").split(" · ")[0])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(RECORD)
+    newest = read_session(worked_example, transcript).turns[-1]
+    assert (newest.path, newest.headline) == (path, "The record written where session-page said")
+
+
+def test_session_page_prints_where_the_next_record_goes_past_a_record_that_does_not_parse(
+    worked_example: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """session-page-says-where-the-next-record-goes#P3: a broken record is the hooks' to report, and
+    the agent about to fix it still gets its path and an exit status of 0."""
+    (worked_example / "turns" / "04.md").write_text("no frontmatter\n")
+    assert where_next(worked_example, monkeypatch, capsys)[1].startswith(f"next record: {worked_example / 'turns' / '05.md'} · 4 written")
 
 
 def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:
