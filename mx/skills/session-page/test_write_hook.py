@@ -350,6 +350,42 @@ def test_a_turn_record_pointing_at_another_part_of_the_page_in_words_goes_back_u
     assert run(wrote(record, writing, "Edit")) == ""
 
 
+TICKET_ASKING = (
+    "---\nstatus: open\n---\n\n# Two main checkouts\n\n## Brief\n\nBoth checkouts stay in step.\n\n"
+    "## Acceptance criteria\n\n- [ ] It holds.\n\n## Questions\n\n"
+    "- [D1] **Sync on every commit?** Or on a timer.\n- [D2] **Keep the old remote?** Nothing reads it.\n"
+    "  - Ruled 2026-10-20: drop it.\n\n## Comments\n\n- [D3] **Friction** the suite was slow.\n"
+)
+PUTS = {
+    "a ticket the tracker does not hold": ("one-checkout D1", "the tracker holds no ticket one-checkout"),
+    "a question its ticket does not ask": ("two-main-checkouts D4", "two-main-checkouts asks no question D4"),
+    "a detail entry of its closing comment": ("two-main-checkouts D3", "two-main-checkouts asks no question D3"),
+    "a question its ticket has ruled": ("two-main-checkouts D2", "was ruled 2026-10-20 (drop it.)"),
+}
+
+
+@pytest.mark.parametrize("handle, said", PUTS.values(), ids=PUTS)
+def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold_open_goes_back(
+    handle: str, said: str, worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ticket-questions-at-the-top-of-the-session-page: a ticket's question waits at the top only
+    while its ticket holds it open, so one that names nothing there, or nothing open, would never
+    reach the user; the send-back names the line, and one its ticket holds open passes."""
+    (worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md").write_text(TICKET_ASKING)
+    record = worked_example / "turns" / "04.md"
+    text = record.read_text().replace("## Questions\n\n", f"## Questions\n\n- [{handle}]\n", 1)
+    assert text != record.read_text(), "record 04 asks a question of its own"
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text)
+    answer = run(wrote(record, writing))
+    assert answer.startswith(f"{record}:{text.splitlines().index(f'- [{handle}]') + 1}: ") and said in answer
+    assert RECAP in answer
+
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    record.write_text(text.replace(handle, "two-main-checkouts D1"))
+    assert run(wrote(record, writing, "Edit")) == ""
+
+
 # ---- what it leaves alone ---------------------------------------------------
 
 

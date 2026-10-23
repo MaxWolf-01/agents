@@ -42,21 +42,25 @@ def unreachable(system: str, prompt: str) -> list[dict]:
 
 
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
+DRAWN_TICKET = "drawn-ticket"  # the ticket whose questions a drawn session puts to the user
 
 
 @st.composite
 def sessions(draw: st.DrawFn) -> tuple[list[dict], set[str]]:
-    """A session's turns as data, and the questions open at the end of it.
+    """A session's turns as data, and the questions open at the end of it, by the handle the page
+    shows each by: `Q3` for the session's own, `drawn-ticket D2` for a ticket's.
 
     Each turn draws a fate for every question still open before it (left alone, answered with an
     option's letter or with the user's own words, or superseded by one this turn asks) and then
-    asks questions of its own.
+    asks questions of its own, and may put one of the ticket's to the user, which its ticket has
+    ruled on by the session's end or not (`ticket`).
     """
     turns: list[dict] = []
     open_tags: list[str] = []
-    tags = itertools.count(1)
+    open_in_ticket: list[str] = []  # which clear through their ticket, never through a turn
+    tags, ticket_tags = itertools.count(1), itertools.count(1)
     for _ in range(draw(st.integers(min_value=1, max_value=5))):
-        turn: dict = {"asks": [], "answered": {}, "superseded": {}}
+        turn: dict = {"asks": [], "answered": {}, "superseded": {}, "cites": {}}
         for tag in list(open_tags):
             fate = draw(st.sampled_from(["open", "answered", "superseded"]))
             if fate == "answered":
@@ -71,8 +75,36 @@ def sessions(draw: st.DrawFn) -> tuple[list[dict], set[str]]:
             tag = f"Q{next(tags)}"
             turn["asks"].append(tag)
             open_tags.append(tag)
+        for _ in range(draw(st.integers(min_value=0, max_value=1))):
+            tag = f"D{next(ticket_tags)}"
+            turn["cites"][tag] = ruled = draw(st.booleans())
+            if not ruled:
+                open_in_ticket.append(f"{DRAWN_TICKET} {tag}")
         turns.append(turn)
-    return turns, set(open_tags)
+    return turns, {*open_tags, *open_in_ticket}
+
+
+def asked_in_order(turns: list[dict]) -> list[str]:
+    """Every question a drawn session asks, by its handle, in the order its records ask them."""
+    return [handle for turn in turns for handle in [*turn["asks"], *(f"{DRAWN_TICKET} {tag}" for tag in turn.get("cites", {}))]]
+
+
+def ticket(turns: list[dict]) -> str:
+    """The ticket file holding every question the drawn session's turns put to the user, a
+    `Ruled` line under each the draw ruled on."""
+    asked = []
+    for turn in turns:
+        for tag, ruled in turn.get("cites", {}).items():
+            asked.append(f"- [{tag}] **What about {DRAWN_TICKET} {tag}?** What hangs on it.")
+            asked += ["  - Ruled 2026-09-30: one way."] if ruled else []
+    return ("---\nstatus: open\n---\n\n# Drawn ticket\n\n## Brief\n\nWhat a drawn session puts to the user.\n\n"
+            "## Acceptance criteria\n\n- [ ] It asks.\n\n## Questions\n\n" + "\n".join(asked) + "\n")
+
+
+def write_ticket(root: Path, turns: list[dict]) -> None:
+    """The drawn session's ticket in the tracker of the project at `root`."""
+    (root / "agent" / "tickets").mkdir(parents=True, exist_ok=True)
+    (root / "agent" / "tickets" / f"{DRAWN_TICKET}.md").write_text(ticket(turns))
 
 
 def record(number: int, turn: dict, headline: str = "", details: str = "") -> str:
@@ -84,7 +116,7 @@ def record(number: int, turn: dict, headline: str = "", details: str = "") -> st
             front.append(f"{name}:")
             front += [f"  {tag}: {json.dumps(value)}" for tag, value in turn[name].items()]
     body = [f"# {headline or f'Round {number}'}"]
-    if turn["asks"]:
+    if turn["asks"] or turn.get("cites"):
         body += ["", "## Questions", ""]
         for tag in turn["asks"]:
             body += [
@@ -92,6 +124,7 @@ def record(number: int, turn: dict, headline: str = "", details: str = "") -> st
                 "  - (a) One way. *my pick*",
                 "  - (b) The other way.",
             ]
+        body += [f"- [{DRAWN_TICKET} {tag}]" for tag in turn.get("cites", {})]
     body += ["", "## Details", "", details or f"What turn {number} settled."]
     return "---\n" + "\n".join(front) + "\n---\n\n" + "\n".join(body) + "\n"
 
@@ -234,6 +267,12 @@ UNPARSEABLE = {
                  "  - (a) A light review. *my pick*\n  - (b) None.\n", 9),
     "a question an earlier turn asked": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q1] **One feature or two?**\n  - (a) Two. *my pick*\n  - (b) One.\n", None),
+    "a ticket's question with words of its own": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [two-main-checkouts D5] **Sync on every commit?**\n", 9),
+    "a ticket's question with options": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [two-main-checkouts D5]\n  - (a) On every commit. *my pick*\n", 10),
+    "a ticket's question cleared by a turn": (
+        "04.md", "---\ndate: 2026-09-23\nanswered:\n  two-main-checkouts D5: a\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 4),
     "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
     "a link item that is no link": ("04.md", f"{ROUND_3}## Links\n\n- the round's page\n", 9),
 }

@@ -145,10 +145,11 @@ def shown(asked: tuple[str, ...]) -> str:
 
 
 def waiting(session: Session) -> tuple[str, ...]:
-    """A line for each open question, oldest first: its tag, `new` where a turn since the user's
-    last message asked it, and its headline as the page's reader reads it, since the terminal
-    renders no markdown: a link as its text, emphasis and code without their marks."""
-    return tuple(f"{q.tag}{' new' if asked_since_spoke(session, t) else ''} · {strip_tags(inline(q.headline, paths=False))}"
+    """A line for each open question, oldest first: its tag, a ticket's question qualified by its
+    ticket, `new` where a turn since the user's last message asked it, and its headline as the
+    page's reader reads it, since the terminal renders no markdown: a link as its text, emphasis
+    and code without their marks."""
+    return tuple(f"{q.handle}{' new' if asked_since_spoke(session, t) else ''} · {strip_tags(inline(q.headline, paths=False))}"
                  for t, q in open_questions(session))
 
 
