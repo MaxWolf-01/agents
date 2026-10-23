@@ -2631,8 +2631,9 @@ def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_
 
 
 def test_a_parent_at_its_close_out_is_one_needs_me_row_with_its_children_folded_under_it(demo: Demo) -> None:
-    """month-close is in review with carry-balances and lock-period. The group counts the parent as one row, and the parent's row asks carry-balances'
-    question, which the button copying the group's questions copies with the rest."""
+    """month-close is in review with carry-balances and lock-period. The group counts the parent
+    as one row, and the parent's row asks carry-balances' question, which the button copying the
+    group's questions copies with the rest."""
     seen = view_of(demo.root, demo.repo)
     children = {"carry-balances", "lock-period"}
     assert "month-close" in rows_in(seen, "needs")

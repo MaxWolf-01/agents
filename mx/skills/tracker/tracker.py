@@ -144,9 +144,9 @@ def repos() -> int:
 
     A repo with no `integration` integrates on the branch its `origin/HEAD` names. A ticket's work
     in a listed repo has landed once it is in the branch the ticket's accept merges it into there:
-    the integration branch, locally or at `origin`, for a top-level ticket and any child of one. A list this cannot read whole is refused with
-    the reason: TOML that does not parse, a table with no `path`, a path that is no git repo's
-    root, an integration branch the repo does not have."""
+    the integration branch, locally or at `origin`, for a top-level ticket and any child of one. A
+    list this cannot read whole is refused with the reason: TOML that does not parse, a table with
+    no `path`, a path that is no git repo's root, an integration branch the repo does not have."""
     root = tracker_root(Path.cwd())
     for one in [resolved(root, name) for name in repo_list(root)]:  # all read before a line is printed
         print(f"{one.name}\t{one.path}\t{one.integration}")
@@ -264,8 +264,7 @@ def frontier() -> int:
     user; a proposed ticket waits for a triage to promote it to open. A blocker holds until it is
     done, or until it is a sibling in review merged into the branch of the parent ticket the two
     share: a parent ticket ruled whole lets its children build on each other unruled. Everything
-    else not done
-    follows under `waiting`, with what holds it back.
+    else not done follows under `waiting`, with what holds it back.
     """
     tracker = here()
     refuse([refusal for ticket in tracker.tickets.values() for refusal in refusals_of(ticket, tracker)])
@@ -485,9 +484,9 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     The round is the ticket's `ticket/<slug>` branch in the code repo this runs in, in the agent
     repo, and in each listed repo its `repos:` names. Once every one of them has merged into the
     branch it cut from, the ticket gets the round's ranges and is `done`, except a child ticket
-    merged into its parent's branch: that one waits in `review` for its parent's ruling.
-    A `done` here is held to the rule `set` holds every `done` to: the work has reached the branch
-    the user's accept merges it into. A merged round that rule refuses is refused with the reason,
+    merged into its parent's branch: that one waits in `review` for its parent's ruling. A `done`
+    here is held to the rule `set` holds every `done` to: the work has reached the branch the
+    user's accept merges it into. A merged round that rule refuses is refused with the reason,
     and nothing is written. Unmerged, the ticket waits in `review`. A round whose branches carry no
     commit built nothing, and nothing is written.
 
@@ -779,10 +778,10 @@ def listed_branches(ticket: Ticket, tracker: Tracker) -> list[tuple[Listed, str]
 def accepted_into(top: Path, ticket: Ticket, tracker: Tracker, base: str = "") -> str | None:
     """The branch the user's accept merges the ticket's work into, in `top`. Where its parent ticket
     has a branch there: the parent's branch for a parent ticket, ruled at its close-out; for any
-    other child, the branch above the parent's, which the parent's accept
-    brings it to: the grandparent's branch, or the base. None where that would be the parent's
-    branch itself. Where the parent has no branch, the base. The base is the branch this runs on,
-    or the integration branch of a listed repo, which nothing runs on."""
+    other child, the branch above the parent's, which the parent's accept brings it to: the
+    grandparent's branch, or the base. None where that would be the parent's branch itself. Where
+    the parent has no branch, the base. The base is the branch this runs on, or the integration
+    branch of a listed repo, which nothing runs on."""
     base = base or head(top)
     parent = ticket.parent and parent_branch(top, ticket.parent)
     if not parent:

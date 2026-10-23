@@ -36,10 +36,11 @@
 #                 or `done` once every branch is merged (a squashed or rebased
 #                 PR is read from GitHub), each repo's range in `diff:`; a
 #                 `done` retires the run. A child merged into its parent's
-#                 branch stays in `review` for the parent's ruling. Exit 1: the branch wrote a ticket file; a page it
-#                 didn't render is in the way (named); a PR it could not read,
-#                 or a branch holding commits its PR did not carry; the tracker
-#                 refused, or the run did not retire (reason printed).
+#                 branch stays in `review` for the parent's ruling. Exit 1:
+#                 the branch wrote a ticket file; a page it didn't render is
+#                 in the way (named); a PR it could not read, or a branch
+#                 holding commits its PR did not carry; the tracker refused,
+#                 or the run did not retire (reason printed).
 # accept <slug>   once a parent ticket's branch merged --no-ff into this one, on
 #                 the user's accept. Writes `done`, with its ranges, on it and
 #                 every child of it in `review`, in one commit, and retires

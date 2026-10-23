@@ -1350,7 +1350,7 @@ def test_p2_a_landing_on_the_parents_branch_leaves_every_child_in_review(
         assert status == "review", (leaf, up, nested, where, said.err)
 
 
-@given(tree=leaves(("open", "claimed", "review")))
+@given(tree=leaves(("open", "claimed", "review", "done")))
 @settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_leaf_builds_on_an_unruled_sibling_only_once_it_is_merged(
     tickets: Path, repo: Path, tree: list[Leaf]
