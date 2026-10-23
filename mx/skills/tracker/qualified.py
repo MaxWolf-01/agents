@@ -114,7 +114,7 @@ def named(ticket: tracker.Ticket, tag: str) -> Named | None:
 @dataclass(frozen=True)
 class Cited:
     """What a qualified tag in text names, as a page links it: the file it lives in, from the agent
-    repo's root (absolute where it is in another checkout), the anchor of its place on that file
+    repo's root (absolute for a review's report, which is outside it), the anchor of its place on that file
     where it has one, and its hover preview. `path` is None where it no longer exists: a ticket
     retired, a tag or an entry its file dropped, a review whose reports are not on this machine."""
 

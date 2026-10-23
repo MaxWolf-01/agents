@@ -235,9 +235,9 @@ drop_checkout() { # <checkout>
 # directory there or already gone. One of this run's own range is a killed
 # run's, since this run holds that lock. One of another range is removed only
 # while this run holds that range's lock too, on fd 8, so a review of it cannot
-# start meanwhile; the braces close fd 8 again, before any reviewer could inherit it.
-# A range with no lock file is from a review older than the lock, which this
-# run cannot tell alive from dead.
+# start meanwhile; the braces close fd 8 again, before any reviewer could
+# inherit it. A range with no lock file is from a review older than the lock,
+# which this run cannot tell alive from dead.
 checkouts() {
     git worktree list --porcelain |
         awk -v under="$reviews/" '/^worktree / { w = substr($0, 10); if (index(w, under) == 1 && w ~ /\/checkout$/) print w }'
