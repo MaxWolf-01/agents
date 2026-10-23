@@ -1997,8 +1997,8 @@ def in_review(listed: Path, slug: str, status: str = "review", **meta: object) -
 
 def test_p6_done_waits_for_a_ranges_last_commit_to_reach_its_repos_integration_branch(listed: Path) -> None:
     """The dotfiles case: the work was built in quartz on a branch since deleted, and the range is
-    recorded by hand. Done is refused until the range's last commit is in quartz's integration
-    branch, and a merge there counts locally or at origin."""
+    recorded by hand. Done is refused until the range's last commit is in quartz's trunk,
+    and a merge there counts locally or at origin."""
     quartz = listed.parent / "quartz"
     first = tip(quartz)
     git(quartz, "checkout", "-q", "-b", "media")
@@ -2007,7 +2007,7 @@ def test_p6_done_waits_for_a_ranges_last_commit_to_reach_its_repos_integration_b
     in_review(listed, "quartz-ignores-media", diff=f"[quartz@{first}..{last}]")
 
     said = run(listed, "set", "quartz-ignores-media", "status=done")
-    assert said.code == 1 and f"{last} is not in quartz's integration branch main" in said.err, said.said
+    assert said.code == 1 and f"{last} is not in quartz's trunk main" in said.err, said.said
     git(quartz, "update-ref", "refs/remotes/origin/main", last)
     assert run(listed, "set", "quartz-ignores-media", "status=done").code == 0, "a PR merged at origin counts"
 
@@ -2021,7 +2021,7 @@ def test_p6_a_local_merge_into_the_integration_branch_lands_the_range(listed: Pa
     in_review(listed, "nps-tests", diff=f"[Backend@{first}..{last}]")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps-tests into main", "nps-tests")
     said = run(listed, "set", "nps-tests", "status=done")
-    assert said.code == 1 and "integration branch development" in said.err, "main is not where Backend integrates"
+    assert said.code == 1 and "trunk development" in said.err, "main is not where Backend integrates"
     git(backend, "checkout", "-q", "development")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps-tests landed", "nps-tests")
     assert run(listed, "set", "nps-tests", "status=done").code == 0
@@ -2036,7 +2036,7 @@ def test_p6_a_range_whose_commit_the_repo_does_not_hold_is_refused_as_unfetched(
 @pytest.mark.parametrize("own", ["ticket/nps-tests", "nps-tests"])
 def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path, own: str) -> None:
     """The ticket's own branch in a repo its `repos:` names, `ticket/<slug>`, or a parent ticket's
-    branch named by its slug alone, has to be in that repo's integration branch."""
+    branch named by its slug alone, has to be in that repo's trunk."""
     backend = listed / "Backend"
     in_review(listed, "nps-tests", repos="[Backend, quartz]")
     if own == "nps-tests":
@@ -2046,7 +2046,7 @@ def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path,
     git(backend, "checkout", "-q", "main")
 
     said = run(listed, "set", "nps-tests", "status=done")
-    assert said.code == 1 and f"{own} is not merged into Backend's integration branch development" in said.err, said.said
+    assert said.code == 1 and f"{own} is not merged into Backend's trunk development" in said.err, said.said
     assert str(backend.resolve()) in said.err
     git(backend, "checkout", "-q", "development")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps-tests landed", own)
@@ -2055,8 +2055,8 @@ def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path,
 
 def test_p6_a_child_in_a_listed_repo_waits_for_its_parents_accept_to_reach_the_integration_branch(listed: Path) -> None:
     """A listed repo is measured as the code repo is: a child of a top-level ticket merged into its
-    parent ticket's branch there waits for the parent's accept to bring it to the integration
-    branch. The range is what refuses here; the ticket branch alone is the check after this one."""
+    parent ticket's branch there waits for the parent's accept to bring it to the trunk.
+    The range is what refuses here; the ticket branch alone is the check after this one."""
     backend = listed / "Backend"
     git(backend, "branch", "nps", "development")
     git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
@@ -2066,10 +2066,10 @@ def test_p6_a_child_in_a_listed_repo_waits_for_its_parents_accept_to_reach_the_i
     in_review(listed, "nps-shape", parent="nps", repos="[Backend]", diff=f"[Backend@{first}..{last}]")
 
     said = run(listed, "set", "nps-shape", "status=done")
-    assert said.code == 1 and "is not in Backend's integration branch development" in said.err, said.said
+    assert said.code == 1 and "is not in Backend's trunk development" in said.err, said.said
     git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
     said = run(listed, "set", "nps-shape", "status=done")
-    assert said.code == 1 and "is not in Backend's integration branch development" in said.err, said.said
+    assert said.code == 1 and "is not in Backend's trunk development" in said.err, said.said
     git(backend, "checkout", "-q", "development")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
     assert run(listed, "set", "nps-shape", "status=done").code == 0
@@ -2085,15 +2085,15 @@ def test_p6_a_childs_ticket_branch_alone_is_measured_against_the_branch_above_it
     in_review(listed, "nps-shape", parent="nps", repos="[Backend]")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
     said = run(listed, "set", "nps-shape", "status=done")
-    assert said.code == 1 and "ticket/nps-shape is not merged into Backend's integration branch development" in said.err, said.said
+    assert said.code == 1 and "ticket/nps-shape is not merged into Backend's trunk development" in said.err, said.said
     git(backend, "checkout", "-q", "development")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
     assert run(listed, "set", "nps-shape", "status=done").code == 0
 
 
 def test_p6_a_parent_waits_for_its_branch_in_a_repo_only_its_children_name(listed: Path) -> None:
-    """A child merged into its parent's branch in Backend leaves that work short of Backend's integration
-    branch, and the parent naming no repo of its own is what carries it there."""
+    """A child merged into its parent's branch in Backend leaves that work short of Backend's trunk,
+    and the parent naming no repo of its own is what carries it there."""
     backend = listed / "Backend"
     git(backend, "branch", "nps", "development")
     git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
@@ -2103,7 +2103,7 @@ def test_p6_a_parent_waits_for_its_branch_in_a_repo_only_its_children_name(liste
     in_review(listed, "nps")
     ticket(listed / "agent" / "tickets", "nps-shape", status="done", parent="nps", repos="[Backend]")
     said = run(listed, "set", "nps", "status=done")
-    assert said.code == 1 and "nps is not merged into Backend's integration branch development" in said.err, said.said
+    assert said.code == 1 and "nps is not merged into Backend's trunk development" in said.err, said.said
     git(backend, "checkout", "-q", "development")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
     assert run(listed, "set", "nps", "status=done").code == 0
@@ -2368,7 +2368,7 @@ def test_a_parents_accept_writes_done_on_it_and_its_children_in_review_in_one_co
 
 
 def test_a_childs_branch_in_a_listed_repo_is_read_against_its_parents_branch_there(listed: Path) -> None:
-    """Backend holds the parent's branch, ahead of its integration branch: the child's branch there
+    """Backend holds the parent's branch, ahead of its trunk: the child's branch there
     is cut from it and merges back into it, so that is what its range and its merge are read on."""
     backend = listed / "Backend"
     in_review(listed, "nps")

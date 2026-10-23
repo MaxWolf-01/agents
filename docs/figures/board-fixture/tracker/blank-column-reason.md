@@ -8,7 +8,7 @@ size: XS
 
 ## Brief
 
-Cut from csv-import's debrief: the reason a rejected line carries is what the mapping screen shows,
+Cut from csv-import's close-out: the reason a rejected line carries is what the mapping screen shows,
 and no test tells "date is blank" from "payee is blank".
 
 ## Acceptance criteria
