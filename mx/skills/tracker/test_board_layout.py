@@ -34,10 +34,11 @@ Beside the width matrix, the same widths over a board with a defect put back int
 means nothing until the same widths have been shown reporting a defect.
 
 What render-lint measures is text against its own box, text a box cuts off, and text drawn over
-other text, HTML over HTML included. Text cut off inside a `.clip` is not a finding here: that is
-every mark and brief that truncates by design. What render-lint does not reach is an overlap the
-browser paints an opaque box over, which is what a card drawn over the page is. The Property is executable as far as that reaches; the rest
-was read by eye at these widths, in both schemes (02-rows' closing comment).
+other text, HTML over HTML included. Text its own `.clip` cuts off is not a finding here: that is
+every mark, name and brief that truncates by design. What render-lint does not reach is an overlap
+the browser paints an opaque box over, which is what a card drawn over the page is. The Property
+is executable as far as that reaches; the rest was read by eye at these widths, in both schemes
+(02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
@@ -116,10 +117,9 @@ def lint(pages: list[str], width: int) -> list[dict]:
 
 
 def truncates(finding: dict) -> bool:
-    """Whether a finding is a mark's words cut off where the board means to cut them: the text sits
-    in a `.clip` (board.clipped_html), at most two elements down, which render-lint's address
-    still names."""
-    return finding["kind"] == "clipped" and "span.clip" in finding["el"].split()
+    """Whether a finding is text cut off where the board means to cut it: by its own `.clip`
+    (board.clipped_html), rather than by a box around one."""
+    return finding["kind"] == "clipped" and finding["cutter"].split()[-1] == "span.clip"
 
 
 def band_edges(page: str) -> list[int]:
@@ -171,13 +171,14 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     assert not (found := lint(pages, width)), named({width: found})
 
 
-# Defects put back into the board, each by the kind it is reported as and the element it is
-# measured on: the brief of every folded row, in a box too narrow for the one unbreakable line it is
-# set as, with nothing left to hide the rest; and every row's age, in a box that cuts it off where
-# nothing on the board means to cut it.
+# Defects put back into the board, each by the kind it is reported as and the tail of the address
+# of the element it is measured on: the brief of every folded row, in a box too narrow for the one
+# unbreakable line it is set as, with nothing left to hide the rest; every row's time, cut off by a
+# box that has no truncation of its own; and every row's name, whose `.clip` a box around it cuts.
 DEFECTS = {
-    ("escapes", "span.brief"): ".brief { display: block !important; width: 60px !important } .brief .clip { overflow: visible !important }",
+    ("escapes", "span.brief span.clip"): ".brief { display: block !important; width: 60px !important } .brief .clip { overflow: visible !important }",
     ("clipped", "span.time"): ".time { display: block !important; width: 4px !important; overflow: hidden !important }",
+    ("clipped", "span.title span.clip"): ".titleline { height: .5rem !important; overflow: hidden !important }",
 }
 
 
@@ -196,7 +197,7 @@ def test_defects_put_back_into_the_board_are_reported_at_every_band_width(transc
     broken = tmp_path / "broken.html"
     broken.write_text(out.read_text().replace("</head>", f"<style>{' '.join(DEFECTS.values())}</style></head>", 1))
     found = lint([f"{broken}?theme=day"], width)
-    unseen = [(kind, el) for kind, el in DEFECTS if not any(f["kind"] == kind and el in f["el"].split() for f in found)]
+    unseen = [(kind, el) for kind, el in DEFECTS if not any(f["kind"] == kind and f["el"].endswith(el) for f in found)]
     assert not unseen, f"{unseen} went unseen at {width}px: {named({width: found})}"
 
 
