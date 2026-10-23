@@ -35,7 +35,8 @@ Skipped on purpose: overflow under 2px, and a cut under 2px by each box (a clipp
 size is the most any one box cut); the touching line boxes of a multi-line label; text a
 clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs cross by
 less than half the shorter one's height. Text in a scrolling ancestor never counts as escaping
-or being cut off, and still counts as overlapping.
+or as cut off by the scroller, which the reader can scroll; a box around the scroller still cuts
+what it shows, and the text still counts as overlapping.
 
 How far the paint-over rule reaches: a surface counts as covering a text when its background
 resolves to an opaque colour, so a card drawn as an image or a gradient does not, and neither
