@@ -961,13 +961,17 @@ SERVER_RETRY = 60  # seconds between the watcher's tries at a server that did no
 
 def kept(agent: Path, out: Path, address: str) -> str | None:
     """The address the open page is served at, its server brought back where it has exited, or
-    None where it did not come back: the watcher's part in keeping a served tab answering."""
+    None where it did not come back: the watcher's part in keeping a served tab answering.
+
+    Whatever serves the page can stop between two passes: a hub its service manager has yet to
+    restart, or a server diffview started on a machine with no hub, which nothing restarts. Asking
+    is one local connection a pass, so the watcher asks whichever it is."""
     return address if answers(address) else served(agent, out)
 
 
 def answers(address: str) -> bool:
-    """Whether a server is listening where `address` points. A connection, not a request: a request
-    is what keeps a diffview server from idling out, and this is asked every pass of the watcher."""
+    """Whether a server is listening where `address` points. A connection, not a request, since it
+    is asked every pass of the watcher and listening is all it needs to know."""
     at = urllib.parse.urlsplit(address)
     try:
         socket.create_connection((at.hostname, at.port or 80), timeout=1).close()

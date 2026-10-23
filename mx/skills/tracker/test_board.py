@@ -141,7 +141,7 @@ def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[
         script = bin_dir / "diffview"
         script.write_text(
             '#!/bin/sh\nprintf "%s\\n" "$*" >> "$0.args"\n'
-            f'echo "diffview: serving $2 at {address}/  (exits 30 minutes after the last page closes)"\n'
+            f'echo "diffview: serving $2 at {address}/"\n'
         )
         script.chmod(0o755)
         return script
