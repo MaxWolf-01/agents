@@ -1,3 +1,7 @@
+## 1.0.80
+
+- feat(session-page): the line under a turn names each open question by its headline, and the recap stops listing them
+
 ## 1.0.79
 
 - feat(mx): /mx:pickup starts a session from a handoff's path
