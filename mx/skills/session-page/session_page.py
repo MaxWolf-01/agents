@@ -1537,7 +1537,7 @@ def links_in_line(state, silent: bool) -> bool:
 SESSION_QUESTION = re.compile(r"(?<![\w/.-])(?P<session>[0-9a-f]{8}) (?P<question>Q\d+)\b")
 TAGGED = re.compile(f"{qualified.QUALIFIED.pattern}|{SESSION_QUESTION.pattern}")
 # What follows a ticket's slug, or a session's id, written as code: `` `<ticket>` D6 ``.
-TAG_AFTER = re.compile(r"[ #][A-Z]\d+\b")
+TAG_AFTER = re.compile(qualified.TAG_AFTER)
 
 
 def qualified_tags(state) -> None:

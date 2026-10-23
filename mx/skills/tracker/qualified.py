@@ -12,7 +12,8 @@ as a hover preview, and strikes it through where that no longer exists.
 import re
 import functools
 import html
-import subprocess
+import os
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Literal
 
 import tracker
 
+TICKETS = Path(tracker.TICKETS.name)  # in an agent repo: the tracker
 RETRO = Path("retro")  # in an agent repo: where its living report is, `report.md` and the page built from it
 REVIEWS = Path("reviews")  # in an agent repo: a review's reports, one directory per range, on the machine that ran it
 RANGE = r"[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}"  # a review's range, as its reports' directory is named
@@ -113,11 +115,10 @@ def named(ticket: tracker.Ticket, tag: str) -> Named | None:
 @dataclass(frozen=True)
 class Cited:
     """What a qualified tag in text names, as a page links it: the file it lives in, from the agent
-    repo's root, the anchor of its place on that file where it has one, and its hover preview.
-    `path` is None where it no longer exists: a ticket retired, a tag or an entry its file dropped,
-    a review whose reports are not on this machine."""
+    repo's root (absolute where it is in another checkout), the anchor of its place on that file
+    where it has one, and its hover preview. `path` is None where it no longer exists: a ticket
+    retired, a tag or an entry its file dropped, a review whose reports are not on this machine."""
 
-    handle: str  # the tag qualified, as a page shows it
     preview: str
     path: str | None = None
     anchor: str = ""  # "#f1", with its `#`
@@ -129,9 +130,9 @@ def cites(agent: Path) -> Callable[[re.Match], Cited | None]:
     names, and None where it never named anything there, which is prose that only looks like a tag
     ("and P3"). A slug is a ticket's while its file is in the tracker or git's history of the
     tracker has it."""
-    resolve = resolver(agent / "tickets")
+    resolve = resolver(agent / TICKETS)
     report = functools.cache(lambda: retro_entries(agent / RETRO))
-    review = functools.cache(lambda span: findings(agent / REVIEWS / span))
+    review = functools.cache(lambda span: findings(agent, span))
     retired = functools.cache(lambda: ever_tracked(agent))
 
     def cite(m: re.Match) -> Cited | None:
@@ -139,25 +140,38 @@ def cites(agent: Path) -> Callable[[re.Match], Cited | None]:
             shown = f"retro {m['entry']}"
             page, anchors, said = report()
             if m["entry"] not in said:
-                return Cited(shown, f"{shown} · no longer in the retro's report")
+                return Cited(f"{shown} · no longer in the retro's report")
             anchor = f"#{m['entry'].lower()}" if anchors and m["entry"].lower() in anchors else ""
-            return Cited(shown, f"{shown} · {said[m['entry']]}", page, anchor)
+            return Cited(f"{shown} · {said[m['entry']]}", page, anchor)
         if m["range"]:
             shown = f"review {m['range']} {m['finding']}"
             found = review(m["range"]).get(m["finding"])
             if found is None:
-                return Cited(shown, f"{shown} · not in a report of that review on this machine")
-            return Cited(shown, f"{shown} · {found[1]}", found[0])
+                return Cited(f"{shown} · not in a report of that review on this machine")
+            return Cited(f"{shown} · {found[1]}", found[0])
         named, shown = resolve(m["ticket"], m["tag"]), handle(m["ticket"], m["tag"])
         if named is not None:
-            return Cited(shown, named.preview, str(Path("tickets") / f"{m['ticket']}.md"), ticket=m["ticket"])
-        if (agent / "tickets" / f"{m['ticket']}.md").is_file():
-            return Cited(shown, f"{shown} · no longer in its ticket", ticket=m["ticket"])
+            return Cited(named.preview, str(TICKETS / f"{m['ticket']}.md"), ticket=m["ticket"])
+        if (agent / TICKETS / f"{m['ticket']}.md").is_file():
+            return Cited(f"{shown} · no longer in its ticket", ticket=m["ticket"])
         if m["ticket"] in retired():
-            return Cited(shown, f"{shown} · its ticket is no longer in the tracker", ticket=m["ticket"])
+            return Cited(f"{shown} · its ticket is no longer in the tracker", ticket=m["ticket"])
         return None
 
     return cite
+
+
+def hrefs(agent: Path, page: Path) -> Callable[[Cited], str]:
+    """Where the page at `page` links what `cites(agent)` found: relative, so it opens wherever the
+    page is opened, and within the page where it names a place on the page itself."""
+
+    def href(c: Cited) -> str:
+        target = (agent / c.path).resolve()
+        if target == page.resolve():
+            return c.anchor or "#"
+        return urllib.parse.quote(os.path.relpath(target, page.parent.resolve())) + c.anchor
+
+    return href
 
 
 # A retro entry where the report states it: a finding's or candidate's heading, a Dismissed line.
@@ -167,8 +181,7 @@ DISMISSED = re.compile(r"- \*\*([FA]\d+)\*\*[,:]?\s*(.+)")
 
 def retro_entries(retro: Path) -> tuple[str | None, set[str] | None, dict[str, str]]:
     """The retro's page, from the agent repo's root (the report itself where no page was built), the
-    ids its elements carry (None where it is the report), and what
-    each entry says, by id."""
+    ids its elements carry (None where it is the report), and what each entry says, by id."""
     try:
         lines = (retro / "report.md").read_text().splitlines()
     except OSError:
@@ -189,21 +202,30 @@ def retro_entries(retro: Path) -> tuple[str | None, set[str] | None, dict[str, s
 FINDING = re.compile(r"#{2,4} ([A-Z]\d+)\b[.:]?\s*(.*)")
 
 
-def findings(review: Path) -> dict[str, tuple[str, str]]:
-    """Every finding in a review's reports, by id: its report, from the agent repo's root, and its
-    claim. Empty where no report of that range is on this machine."""
+def findings(agent: Path, span: str) -> dict[str, tuple[str, str]]:
+    """Every finding in the reports of the review of `span`, by id: its report, from the agent
+    repo's root, and its claim. A review writes its reports in the checkout it ran in, so they are
+    looked for in the agent repo of each checkout of the project: a worker's worktree holds them
+    until it is removed. Empty where no checkout on this machine holds a report of that range."""
     found: dict[str, tuple[str, str]] = {}
-    for report in sorted(review.glob("*.md")) if review.is_dir() else ():
-        for line in report.read_text().splitlines():
-            if m := FINDING.fullmatch(line):
-                found.setdefault(m.group(1), (str(REVIEWS / review.name / report.name), m.group(2)))
+    for checkout in [agent, *(Path(c) / agent.name for c in checkouts(agent.parent))]:
+        for report in sorted((checkout / REVIEWS / span).glob("*.md")):
+            for line in report.read_text().splitlines():
+                if m := FINDING.fullmatch(line):
+                    found.setdefault(m.group(1), (str(report.relative_to(agent) if checkout == agent else report), m.group(2)))
     return found
 
 
+def checkouts(project: Path) -> list[str]:
+    """Every work tree of the project's repo; none where `project` is in no repo."""
+    done = tracker.tried(project, "worktree", "list", "--porcelain")
+    return [line[len("worktree "):] for line in done.stdout.splitlines() if line.startswith("worktree ")] if done.returncode == 0 else []
+
+
 def ever_tracked(agent: Path) -> set[str]:
-    """Every slug git's history of the tracker ever added a file for, retired tickets among them."""
-    done = subprocess.run(["git", "-C", str(agent), "log", "--format=", "--name-only", "--diff-filter=A", "--", "tickets"],
-                          capture_output=True, text=True)
+    """Every slug git's history of the tracker ever added a file for, retired tickets among them;
+    none where the agent repo has no history, whose tracker then never retired a ticket."""
+    done = tracker.tried(agent, "log", "--format=", "--name-only", "--diff-filter=A", "--", str(TICKETS))
     return {Path(name).stem for name in done.stdout.split()} if done.returncode == 0 else set()
 
 
@@ -211,19 +233,17 @@ def ever_tracked(agent: Path) -> set[str]:
 OPAQUE = r"<!--.*?-->|<!\w[^>]*>|<(?:script|style|textarea|title)\b.*?</(?:script|style|textarea|title)\s*>"
 PIECE = re.compile(rf"{OPAQUE}|<[^>]*>", re.S | re.I)
 TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)([^>]*?)(/?)>", re.S)
-VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
-# Elements whose text stays as it is: a link already, a figure, a code block, a button. So does an
-# element with hover words of its own, which a link's inside it would cover.
+# Elements whose text stays as it is: a link already, a figure, a code block, a button.
 KEEP = {"a", "svg", "pre", "button"}
-HOVER = re.compile(r"\s(?:title|data-tip)=")
-CODE = re.compile(r"([^<]*)</code>([ #][A-Z]\d+\b)?")  # read on from a `<code>`: its text, and a tag after it
+TAG_AFTER = r"[ #][A-Z]\d+\b"  # a tag written after its slug or id where that alone is code: `` `<ticket>` D6 ``
+CODE = re.compile(rf"([^<]*)</code>({TAG_AFTER})?")  # read on from a `<code>`: its text, and a tag after it
 
 
 def link_html(page: str, cite: Callable[[re.Match], Cited | None], href: Callable[[Cited], str]) -> str:
     """`page` with every qualified tag in its prose made a link to what it names, its preview as the
     link's hover words, or struck through where that no longer exists, saying why on hover. A tag
     may be code (`` `<ticket> D6` ``), or its slug alone may (`` `<ticket>` D6 ``). `href` is where
-    the page links what `cite` found; a link within the page stays in its tab."""
+    the page links what `cite` found (`hrefs`); a link within the page stays in its tab."""
 
     def wrapped(found: Cited, inner: str) -> str:
         preview = html.escape(found.preview)
@@ -237,20 +257,20 @@ def link_html(page: str, cite: Callable[[re.Match], Cited | None], href: Callabl
         return QUALIFIED.sub(lambda m: wrapped(found, m.group()) if (found := cite(m)) else m.group(), text)
 
     out: list[str] = []
-    open_: list[tuple[str, bool]] = []  # each element open where the page has got to, and whether its text stays
+    open_: list[str] = []  # each element open where the page has got to
     at = 0
     while (m := PIECE.search(page, at)) is not None:
-        kept = any(k for _, k in open_)
+        kept = not KEEP.isdisjoint(open_)
         out.append(page[at:m.start()] if kept else linked(page[at:m.start()]))
         piece, at = m.group(), m.end()
         tag = TAG.fullmatch(piece)
-        if tag is None or tag[4] or tag[2].lower() in VOID:
+        if tag is None or tag[4]:  # a piece read whole, or an element closed where it opens
             out.append(piece)
             continue
         name = tag[2].lower()
         if tag[1]:  # an end tag closes its element and whatever was left open inside it
-            if any(n == name for n, _ in open_):
-                while open_.pop()[0] != name:
+            if name in open_:
+                while open_.pop() != name:
                     pass
             out.append(piece)
             continue
@@ -261,10 +281,10 @@ def link_html(page: str, cite: Callable[[re.Match], Cited | None], href: Callabl
                     at = end
                     break
             else:
-                open_.append((name, False))
+                open_.append(name)
                 out.append(piece)
             continue
-        open_.append((name, name in KEEP or bool(HOVER.search(tag[3]))))
+        open_.append(name)
         out.append(piece)
-    out.append(page[at:] if any(k for _, k in open_) else linked(page[at:]))
+    out.append(page[at:] if not KEEP.isdisjoint(open_) else linked(page[at:]))
     return "".join(out)

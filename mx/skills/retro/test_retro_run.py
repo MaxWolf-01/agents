@@ -27,6 +27,7 @@ refused and which weeks skipped, the oracle being git's record of the agent repo
 import fnmatch
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -199,10 +200,11 @@ def test_each_qualified_tag_on_the_committed_page_links_to_what_it_names_or_is_s
     (agent / "tickets/held.md").write_text("---\nstatus: open\n---\n\n# Held\n\n## Questions\n\n- [D1] **Ship it?** Or wait.\n")
     monkeypatch.setenv("STUB_PAGE", "<p>Taken up in held D1; retro F9 dropped.</p>")
     retro(tmp_path, repo, FIRST, SINCE)
-    assert git(agent, "show", "HEAD:retro/report.html") == (
-        '<p>Taken up in <a class="qualified" href="../tickets/held.md" target="_blank" rel="noopener" '
-        'title="held D1 · Ship it? Or wait.">held D1</a>; '
-        '<s class="qualified gone" title="retro F9 · no longer in the retro&#x27;s report">retro F9</s> dropped.</p>\n')
+    page = git(agent, "show", "HEAD:retro/report.html")
+    (link,) = re.findall(r"<a [^>]*>held D1</a>", page)
+    assert 'href="../tickets/held.md"' in link and 'title="held D1 · Ship it? Or wait."' in link
+    (gone,) = re.findall(r"<s [^>]*>retro F9</s>", page)
+    assert "href" not in gone and "no longer in the retro" in gone
 
 
 @pytest.mark.parametrize("operation", ["rebase", "merge"])

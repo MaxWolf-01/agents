@@ -1368,16 +1368,32 @@ def test_a_qualified_tag_on_the_board_links_to_what_it_names_or_is_struck_where_
     repo: Path, tracker: Path, tmp_path: Path,
 ) -> None:
     """tags-linked-on-board-and-review-pages: a tag naming another ticket's question links to that
-    ticket's row with the question as its hover words, and one naming an entry the retro's report
-    does not hold shows as gone, linking nowhere."""
-    ticket(tracker / "cites.md", "open", brief="Waits on second D1, and on retro F9.")
+    ticket's row with the question as its hover words, a headline on a folded row included; a retro
+    entry links to its place on the retro's page, from where the board is written; and one naming
+    an entry the retro's report does not hold shows as gone, linking nowhere."""
+    ticket(tracker / "cites.md", "open", brief="Waits on second D1, as retro F2 asks, and on retro F9.")
     (tracker / "second.md").write_text((tracker / "second.md").read_text()
                                        + "\n## Questions\n\n- [D1] **Ship it now?** Or wait for the suite.\n")
+    (tracker / "small-chore.md").write_text((tracker / "small-chore.md").read_text()
+                                            + "\n## Questions\n\n- [D1] **After second D1?** Its answer decides.\n")
+    retro = tracker.parent / "retro"
+    retro.mkdir()
+    (retro / "report.md").write_text("# Workflow retro: repo\n\n## Findings\n\n### F2 Builds add machinery\n")
+    (retro / "report.html").write_text('<h3 id="f2">F2</h3>')
     out = tmp_path / "out" / "board.html"
     render(tracker, repo, out)
     page = out.read_text()
-    assert '<a class="qualified" href="#t-second" title="second D1 · Ship it now? Or wait for the suite.">second D1</a>' in page
-    assert '<s class="qualified gone" title="retro F9 · no longer in the retro&#x27;s report">retro F9</s>' in page
+
+    def links(text: str) -> list[str]:
+        return re.findall(rf'<a class="qualified" [^>]*>{re.escape(text)}</a>', page)
+
+    to_second = '<a class="qualified" href="#t-second" title="second D1 · Ship it now? Or wait for the suite.">second D1</a>'
+    assert links("second D1") and set(links("second D1")) == {to_second}
+    assert len(links("second D1")) >= 2, "the brief, and the folded row's question headline"
+    (to_retro,) = set(links("retro F2"))
+    assert 'href="../repo/agent/retro/report.html#f2"' in to_retro and 'title="retro F2 · Builds add machinery"' in to_retro
+    (gone,) = re.findall(r"<s [^>]*>retro F9</s>", page)
+    assert 'class="qualified gone"' in gone and "href" not in gone and "no longer in the retro" in gone
 
 
 # ---- the sessions behind a ticket ------------------------------------------

@@ -72,7 +72,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import urllib.parse
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -559,10 +558,8 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
 def link_tags(agent: Path) -> None:
     """Make each qualified tag on the report's page in `agent` a link to what it names, as the
     tracker and the reviews stand now, the report's own entries included."""
-    retro = agent / qualified.RETRO
-    page = retro / "report.html"
-    page.write_text(qualified.link_html(page.read_text(), qualified.cites(agent),
-                                        lambda c: urllib.parse.quote(os.path.relpath(agent / c.path, retro)) + c.anchor))
+    page = agent / qualified.RETRO / "report.html"
+    page.write_text(qualified.link_html(page.read_text(), qualified.cites(agent), qualified.hrefs(agent, page)))
 
 
 def restore(agent: Path, paths: list[str]) -> None:

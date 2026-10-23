@@ -203,17 +203,17 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     already read."""
     reading = read(root, repo, out)
     stamp = content_stamp(reading)
-    out.write_text(linked_tags(render_page(reading, stamp, stamp_path(out).name), root.parent, out.parent))
+    out.write_text(linked_tags(render_page(reading, stamp, stamp_path(out).name), root.parent, out))
     write_stamp(out, stamp)
     print(out)
     return statuses(reading.tickets)
 
 
-def linked_tags(page: str, agent: Path, here: Path) -> str:
-    """The page with each qualified tag it shows a link: a ticket's to its row, anything else's to
-    the file it lives in, in the agent repo at `agent`."""
-    return qualified.link_html(page, qualified.cites(agent),
-                               lambda c: ref_anchor(c.ticket) if c.ticket else href(agent / c.path, here) + c.anchor)
+def linked_tags(page: str, agent: Path, out: Path) -> str:
+    """The page written to `out` with each qualified tag it shows a link: a ticket's to its row,
+    anything else's to the file it lives in, from the agent repo at `agent`."""
+    away = qualified.hrefs(agent, out)
+    return qualified.link_html(page, qualified.cites(agent), lambda c: ref_anchor(c.ticket) if c.ticket else away(c))
 
 
 def stamp_path(out: Path) -> Path:
