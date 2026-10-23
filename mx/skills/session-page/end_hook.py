@@ -7,7 +7,8 @@
 
 It reads the SessionEnd hook JSON on stdin, copies the session's `session.md` and `turns/` from its
 directory, which is outside every checkout, into `sessions/<id>/` of the agent repo the directory
-names, and commits them there, in a commit holding those paths and nothing else, with a `Session:`
+names, so that they stand there as they stand in the directory, a record it no longer holds
+removed, and commits them there, in a commit holding those paths and nothing else, with a `Session:`
 trailer. Where `sessions/` is ignored, the records are force-added. The page (`index.html`) is
 derived and stays where it is. A session that ends again after a resume commits what changed since;
 one whose records are as last committed commits nothing.
@@ -24,9 +25,9 @@ Every decision, and what came of the commit, is one JSON line in `turn_review.LO
 
 import json
 import os
+import shutil
 import subprocess
 import sys
-import shutil
 import time
 from pathlib import Path
 
@@ -67,26 +68,31 @@ def commit_records(directory: Path) -> str:
     Only where that agent directory is a repo of its own: where it is part of the code repo, the
     commit would land on whatever branch its main checkout holds and travel to its remote. A commit
     that fails unstages the records again, since the index is shared and the next session's commit
-    would carry them. Another process's commit landing between the add and the commit could sweep
-    them all the same; the two run back to back to keep that window short."""
+    would carry them, and puts the agent repo's copy back as it was, so nothing of the session is
+    left in the checkout that its history does not hold. Another process's commit landing between
+    the add and the commit could sweep them all the same; the two run back to back to keep that
+    window short."""
     session_id = directory.name
     if (agent := agent_repo_of(directory)) is None:
         return f"{directory} names no agent repo"
     top = git(agent, "rev-parse", "--show-toplevel")
     if top.returncode != 0 or Path(top.stdout.strip()) != agent.resolve():
         return "the agent directory is not a repo of its own"
-    names = [name for name in RECORDS if (directory / name).exists()]
-    if not names:
+    records = sorted(p.relative_to(directory).as_posix() for name in RECORDS for p in
+                     ([directory / name] if (directory / name).is_file() else sorted((directory / name).rglob("*"))) if p.is_file())
+    if not records:
         return "no records"
     sessions = agent / SESSIONS.name
-    kept = sessions / session_id
-    kept.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        if (directory / name).is_dir():
-            shutil.copytree(directory / name, kept / name, dirs_exist_ok=True)
-        else:
-            shutil.copy2(directory / name, kept / name)
-    paths = [f"{session_id}/{name}" for name in names]
+    tracked = set(git(agent, "ls-files", "--", *(f"{SESSIONS.name}/{session_id}/{name}" for name in RECORDS)).stdout.split())
+    tracked = {path.removeprefix(f"{SESSIONS.name}/") for path in tracked}
+    wanted = {f"{session_id}/{record}" for record in records}
+    new = [path for path in wanted if not (sessions / path).exists()]
+    for record in records:
+        (sessions / session_id / record).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(directory / record, sessions / session_id / record)
+    for path in tracked - wanted:
+        (sessions / path).unlink(missing_ok=True)
+    paths = sorted(wanted | tracked)
     message = f"session {session_id}: its records as it ended"
     deadline = time.monotonic() + LOCK_WAIT
     while True:
@@ -100,6 +106,10 @@ def commit_records(directory: Path) -> str:
         if "index.lock" not in done.stderr or time.monotonic() > deadline:
             unstaged = git(sessions, "reset", "--quiet", "--", *paths)
             left = "unstaged" if unstaged.returncode == 0 else f"left staged: {unstaged.stderr.strip()}"
+            for path in new:
+                (sessions / path).unlink(missing_ok=True)
+            if tracked:
+                git(sessions, "checkout", "--", *sorted(tracked))
             return f"git {done.args[3]} failed: {done.stderr.strip()}; {left}"
         time.sleep(0.2)
 

@@ -12,8 +12,8 @@ not on the fix.
 
 - A write that leaves a record of the session unparseable is sent back with the reader's error,
   every time.
-- A record written in the agent repo's `sessions/<id>/`, where the records went before they moved
-  out of the checkout, is sent back with the directory they go in now: the page never reads it there.
+- A record written in the agent repo's `sessions/<id>/`, which the page never reads, is sent back
+  with the session's directory: a session running since records went there may still name it.
 - A turn record whose prose points at another part of the page in words ("under Details") rather
   than linking it is sent back the same way, every time.
 - The first write after which the records parse, in a turn that has written its record, gets
@@ -52,9 +52,9 @@ class Decision:
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
 
 
-MOVED = ("{written} is where this session's records went before they moved out of the checkout, and the page "
-         "no longer reads them there. Write it again in {directory}, where `session-page` now says they go, and "
-         "carry on with the turn.")
+MOVED = ("{written} is in the agent repo, where session records went before mx kept them outside the checkout; "
+         "the page reads them only from {directory}, which `session-page` prints. Write it again there, and carry "
+         "on with the turn.")
 
 
 def decide(hook: dict, directory: Path | None) -> Decision:

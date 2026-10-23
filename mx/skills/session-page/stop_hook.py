@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, chat_path, chat_record, left_alone, open_questions, page, read_session,
+    PAGE, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, left_alone, open_questions, page, read_session,
     make_session_directory, resolved, session_directory, written_this_turn,
 )
 
@@ -209,8 +209,8 @@ def open_in_browser(target: str, session_id: str) -> str:
 def main() -> None:
     hook = json.load(sys.stdin)
     session_id = hook["session_id"]
-    if not left_alone():  # the records an mx from before the move left in the agent repo, where there are any
-        make_session_directory(Path(hook["cwd"]), session_id, only_earlier=True)
+    if not left_alone():
+        carry_earlier_records(Path(hook["cwd"]), session_id)
     directory = session_directory(Path(hook["cwd"]), session_id)
     decision = decide(hook, directory)
     turn_review.log(session_id, verb=decision.verb, why=decision.why, directory=directory and str(directory))

@@ -1077,10 +1077,9 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
 
 def page_of(session: str, cwds: Sequence[str], ticket: Path) -> Path | None:
     """The session's page, or None where there is none to find. The session-page Stop hook writes it
-    under the account the transcripts are read from (TRANSCRIPTS), which answers first. An mx from
-    before the records moved out of the checkout wrote it in the agent repo of the project the
-    session was in when its turn ended, so the newest of its directories that holds one answers
-    next; where each is gone, as a worktree dispatch removed is, the project the ticket is in
+    under the account the transcripts are read from (TRANSCRIPTS), which answers first. A session
+    that last rendered under an older mx has it in the agent repo of the project it was in when its
+    turn ended, so the newest of its directories that holds one answers next; where each is gone, as a worktree dispatch removed is, the project the ticket is in
     answers. A page in another project whose every directory the session ran in is gone is not
     found."""
     places = [cwd for cwd in reversed(cwds) if Path(cwd).is_dir()] + [str(ticket.parent)]

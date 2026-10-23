@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from session_checks import SESSION, TURN_ANCHOR, elements, project_of, rows_of, sections_of, text_of, turns_on, view_of
+from session_checks import SESSION, TURN_ANCHOR, elements, rows_of, sections_of, text_of, turns_on, view_of
 from session_page import AGENT_REPO, ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -471,14 +471,14 @@ TICKET_LINKS = [
 
 
 def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_and_no_ticket(
-    worked_example: Path, transcript: Path
+    worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
     """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
     whose record links it, newest turn first, a turn with none listed bare, each carrying the path it
     resolves to on this machine; and a ticket file the newest turn links is not listed, carries
     no attribute the hub marks by, and takes no key, so the keys beside the turn's links are the
     column's."""
-    root = project_of(worked_example)
+    root = tmp_path  # the worked example's project, which its `agent-repo` names
     listed = [(key, [(text, str(root / path)) for text, path in items]) for key, items in LISTED]
     assert column_of(view_of(worked_example, transcript)) == listed
     newest = worked_example / "turns" / "04.md"
@@ -554,11 +554,12 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
     that turn's number, newest turn first, and nothing else; a turn that links none has its row."""
     home = tmp_path_factory.mktemp("home")
     turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
-    directory, transcript = write_session(scratch() / "agent" / "sessions" / DRAWN, turns)
+    root = scratch()  # the project, whose agent repo the session's directory under its account names
+    directory, transcript = write_session(root / "claude-config" / "session-pages" / DRAWN, turns)
+    (directory / AGENT_REPO).write_text(f"{root / 'agent'}\n")
     for number, paths in enumerate(linked, start=1):
         record_path = directory / "turns" / f"{number:02d}.md"
         record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))
-    root = directory.parents[2]
     expected = []
     for number, paths in reversed(list(enumerate(linked, start=1))):
         listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]

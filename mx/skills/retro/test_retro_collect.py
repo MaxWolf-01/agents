@@ -237,6 +237,19 @@ def test_a_digest_carries_the_session_pages_turn_records(tmp_path: Path, project
     assert "# Round 1: TURN-RECORD-MARKER" in digest
 
 
+def test_a_digest_carries_a_running_sessions_turn_records_from_under_its_account(tmp_path: Path, projects: Path) -> None:
+    """A session that still runs keeps its records under the account whose `projects/` holds its
+    transcript, outside every checkout, and those are the ones its digest carries."""
+    t = Transcript(projects, str(tmp_path / "gone-worktree"), SINCE + timedelta(days=1)).says("grill me")
+    turns = tmp_path / ".claude" / "session-pages" / t.sid / "turns"
+    turns.mkdir(parents=True)
+    (turns / "01.md").write_text("---\ndate: 2026-10-06\n---\n\n# Round 1: RUNNING-RECORD-MARKER\n")
+
+    digest = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+
+    assert "# Round 1: RUNNING-RECORD-MARKER" in digest
+
+
 def test_the_older_sample_draws_from_two_to_eight_weeks_back_and_only_sessions_with_maxs_messages(
         tmp_path: Path, projects: Path) -> None:
     inside = {Transcript(projects, "/home/u/repos/agents", UNTIL - timedelta(weeks=w, hours=3)).says("old").sid

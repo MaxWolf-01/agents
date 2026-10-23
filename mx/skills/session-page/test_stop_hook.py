@@ -270,12 +270,12 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
 
 
 def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
-    worked_example: Path, transcript: Path, run: Callable[[dict], None]
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], tmp_path: Path
 ) -> None:
     """The page the hook writes is the renderer's, links included: an artefact carries the path the
     hub finds it by, and a path a record writes as code opens the file, both resolved from the repo
     root the records sit under."""
-    root = project_of(worked_example)
+    root = tmp_path  # the worked example's project, which its `agent-repo` names
     (root / "mx").mkdir()
     (root / "mx" / "tool.py").write_text("")
     newest = worked_example / "turns" / "04.md"
@@ -339,7 +339,7 @@ RECORD_LINKS = {
 @pytest.mark.parametrize("links, handed", RECORD_LINKS.values(), ids=RECORD_LINKS)
 def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_sessions(
     links: list[str], handed: list[str], worked_example: Path, unrecorded: Path, browser: Path,
-    capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path,
+    capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path, tmp_path: Path,
 ) -> None:
     """session-pages-feed-the-hub#P1, at the Stop hook's input: the record this turn wrote, its
     links in, and the `claude-browser` calls out, each told the session, beside the page's own on
@@ -349,7 +349,7 @@ def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_s
     with_write(unrecorded, "Write", record)
     run(payload(worked_example, unrecorded))
     assert shown(capsys)
-    root = project_of(worked_example)
+    root = tmp_path  # the worked example's project
     expected = [path.format(root=root, home=Path.home()) for path in handed]
     calls = opened(browser, len(expected) + 1)
     assert sorted(calls) == sorted([(worked_example.name, str(worked_example / PAGE))] + [(worked_example.name, path) for path in expected])
@@ -375,7 +375,7 @@ def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not
 
 def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], attended: Path,
+    run: Callable[[dict], None], attended: Path, tmp_path: Path,
 ) -> None:
     """A page on disk that this hook did not write, a render of an older version say, is rendered
     over and, with no hub, not opened again; the turn's artefacts still open, and the line still
@@ -385,7 +385,7 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     assert (worked_example / PAGE).read_text() != stale_page
     assert [entry["opened"] for entry in logged(attended, "page")] == ["not reopened: no hub answers"]
     assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
-        str(project_of(worked_example) / "agent/show/session-page/round-3" / page)
+        str(tmp_path / "agent/show/session-page/round-3" / page)
         for page in ("pages.html", "spec.html")]
     assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
@@ -507,12 +507,13 @@ def test_a_hub_socket_that_cannot_be_asked_is_no_hub(
 # ---- the records kept out of every checkout ----------------------------------
 
 
-def test_a_session_running_across_the_move_keeps_the_turns_it_recorded_in_the_agent_repo(
-    worked_example: Path, transcript: Path, run: Callable[[dict], None], capsys: pytest.CaptureFixture,
+def test_a_session_whose_records_sit_in_the_agent_repo_keeps_its_turns_on_its_next_page(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], capsys: pytest.CaptureFixture, browser: Path,
 ) -> None:
-    """A session whose records an mx from before the move left in the agent repo's `sessions/<id>/`,
-    its page beside them: its next turn's end starts its directory from them, so the page still
-    shows every turn, and leaves the agent repo's copy where it was."""
+    """A session running since before mx kept the records outside the checkout has them in the agent
+    repo's `sessions/<id>/`, its page beside them: its next turn's end starts its directory from
+    them, so the page still shows every turn, opens that page as a first render does, and leaves
+    the agent repo's copy where it was."""
     earlier = project_of(worked_example) / "agent" / "sessions" / worked_example.name
     shutil.move(worked_example, earlier)
     (earlier / AGENT_REPO).unlink()
@@ -522,6 +523,29 @@ def test_a_session_running_across_the_move_keeps_the_turns_it_recorded_in_the_ag
     assert (worked_example / AGENT_REPO).read_text() == f"{earlier.parents[1]}\n"
     assert {"t01", "t02", "t03", "t04"} <= set(rows((worked_example / PAGE).read_text()))
     assert sorted(p.name for p in (earlier / "turns").iterdir()) == ["01.md", "02.md", "03.md", "04.md"]
+    assert (worked_example.name, str(worked_example / PAGE)) in opened(browser, 3), "its first render under the account opens it"
+
+
+def test_a_session_with_a_directory_keeps_it_tied_to_its_project_wherever_it_works_next(
+    worked_example: Path, transcript: Path, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """Once a session has its directory, the directory is found from wherever it works next, a
+    second project with an agent repo of its own or a directory in no project: the command prints
+    it, the hook renders the page there, and it stays tied to the first project's agent repo."""
+    second = tmp_path_factory.mktemp("budget")
+    (second / "agent" / "tickets").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", worked_example.name)
+    monkeypatch.setattr(sys, "argv", ["session-page"])
+    for cwd in (second, tmp_path_factory.mktemp("loose")):
+        monkeypatch.chdir(cwd)
+        session_page.main()
+        assert capsys.readouterr().out == f"{worked_example}\n", cwd
+        (worked_example / PAGE).unlink(missing_ok=True)
+        run(payload(worked_example, transcript) | {"cwd": str(cwd)})
+        capsys.readouterr()
+        assert (worked_example / PAGE).is_file(), cwd
+        assert (worked_example / AGENT_REPO).read_text() == f"{tmp_path / 'agent'}\n", cwd
 
 
 
@@ -533,8 +557,8 @@ def status(where: Path) -> list[str]:
 def test_a_running_sessions_records_and_page_stay_out_of_every_checkout(
     first_turn: tuple[Path, Path], run: Callable[[dict], None],
 ) -> None:
-    """session-records-outside-the-checkout's first criterion: a session's first reply makes its
-    directory and its page, and neither the code repo's checkout nor the agent repo's, which ignores
+    """session-records-outside-the-checkout, "a running session's records sit outside every
+    checkout": a session's first reply makes its directory and its page, and neither the code repo's checkout nor the agent repo's, which ignores
     nothing, holds anything new, so a copy of the records arriving there from another host has
     nothing to collide with."""
     directory, said = first_turn
@@ -1082,7 +1106,7 @@ def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], caps
 
 def links_to(page: Path) -> list[str]:
     """The sessions a page links to, each once: the line under its title and an end of its timeline both link it."""
-    return list(dict.fromkeys(re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())))
+    return list(dict.fromkeys(re.findall(r'href="file://[^"]*/([^"/]+)/index\.html"', page.read_text())))
 
 
 def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_before_and_back(
@@ -1096,7 +1120,31 @@ def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_befor
     assert (directory / PREVIOUS).read_text().strip() == BEFORE
     assert links_to(directory / PAGE) == [BEFORE]
     assert links_to(before / PAGE) == [FRESH]
-    assert (directory / PAGE).parent.joinpath(f"../{BEFORE}/{PAGE}").resolve() == (before / PAGE).resolve()
+    assert f'href="{(before / PAGE).as_uri()}"' in (directory / PAGE).read_text()
+    assert f'href="{(directory / PAGE).as_uri()}"' in (before / PAGE).read_text()
+
+
+# Where the session before may keep its page, from the check's project: in its agent repo, as a
+# session that ended before mx kept the records outside the checkout left it, or under an account
+# beside the check's own.
+KEPT_BEFORE = {"in the agent repo": "agent/sessions", "under another account": ".claude-other/session-pages"}
+
+
+@pytest.mark.parametrize("where", KEPT_BEFORE.values(), ids=KEPT_BEFORE)
+def test_a_continuation_links_to_the_page_before_wherever_that_session_keeps_it(
+    where: str, handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+) -> None:
+    """pages-link-across-handoffs#P1 across the places a page can be: a handoff picked up from a
+    session whose page sits elsewhere than this session's still links the two pages both ways."""
+    directory, _ = first_turn
+    kept = project_of(directory) / where / BEFORE
+    kept.parent.mkdir(parents=True)
+    shutil.move(directory.parent / BEFORE, kept)
+    if where == "agent/sessions":
+        (kept / AGENT_REPO).unlink()
+    handed_over(CONTINUATION)
+    assert f'href="{(kept / PAGE).as_uri()}"' in (directory / PAGE).read_text()
+    assert links_to(kept / PAGE) == [FRESH]
 
 
 NO_LINK = {

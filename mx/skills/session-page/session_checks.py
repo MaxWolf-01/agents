@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from session_page import Row, View, agent_repo_of, read_session, view
+from session_page import Row, View, account, agent_repo_of, read_session, view
 
 SESSION = "e5ca76dc-3093-419b-aa93-b8eb8f35811f"  # the session the worked example is of
 # the sessions the hooks leave alone are marked in the environment, and the suite runs in one of
@@ -120,11 +120,11 @@ def followed(href: str) -> Path:
 
 
 def project_of(directory: Path) -> Path:
-    """The project a session's directory belongs to: the repo its agent repo sits in. One the hook
-    has not made yet belongs to the check's own project, which sits beside the check's account
-    (conftest's `registry`)."""
+    """The project a session's directory belongs to, as a hook payload's working directory: the repo
+    its agent repo sits in. One the hook has not made yet belongs to the check's own project, which
+    holds the check's account (conftest's `registry`)."""
     agent = agent_repo_of(directory)
-    return agent.parent if agent else directory.parents[2]
+    return agent.parent if agent else account().parent
 
 
 def payload(directory: Path, transcript: Path, reply: str = "", **rest: object) -> dict:

@@ -373,19 +373,20 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     assert [entry["why"] for entry in logged(attended, "verb")] == ["no record of this session"], "only the path in its directory is read past the path"
 
 
-def test_a_record_written_where_records_went_before_the_move_goes_back_naming_where_they_go_now(
-    worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("record", ["turns/05.md", "session.md"])
+def test_a_record_written_in_the_agent_repos_sessions_goes_back_naming_the_sessions_directory(
+    record: str, worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A session that read its directory from `session-page` before the records moved out of the
-    checkout still has the old one in its context: a record written there is one the page never
-    reads, so the agent hears where to write it."""
+    """A session that read its directory from `session-page` while records still went in the agent
+    repo has that directory in its context: a record written there is one the page never reads, so
+    the agent hears where to write it."""
     monkeypatch.setattr(turn_review, "review", unreachable)
-    old = project_of(worked_example) / "agent" / "sessions" / worked_example.name / "turns" / "05.md"
+    old = project_of(worked_example) / "agent" / "sessions" / worked_example.name / record
     old.parent.mkdir(parents=True)
     record = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
     old.write_text(record)
     said = run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(old), "content": record}})
-    assert str(old) in said and f"Write it again in {worked_example}" in said
+    assert str(old) in said and str(worked_example) in said
 
 
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)

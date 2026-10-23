@@ -92,8 +92,12 @@ def test_a_session_that_ends_commits_its_records_and_nothing_else(
     agent: Path, worked_example: Path, end: Callable[[], list[dict]],
 ) -> None:
     """P1, through the hook as Claude Code runs it: the commit holds the session's `session.md` and
-    `turns/`, copied into the agent repo as they were, not its derived page and not what another
-    session staged, which stays staged; it names the session in a `Session:` trailer."""
+    `turns/`, copied into the agent repo as they were, not its derived page, not a stray file
+    lying in the agent repo's copy of its turns and not what another session staged, which stays
+    staged; it names the session in a `Session:` trailer."""
+    stray = agent / "sessions" / worked_example.name / "turns" / "draft.md"
+    stray.parent.mkdir(parents=True)
+    stray.write_text("a draft written where the records went before\n")
     end()
     assert committed(agent) == [f"sessions/{worked_example.name}/{path}" for path in RECORDS]
     kept = agent / "sessions" / worked_example.name
@@ -106,8 +110,9 @@ def test_a_session_that_ends_commits_its_records_and_nothing_else(
 def test_records_in_flight_never_reach_the_checkout_and_reach_its_history_as_the_session_ends(
     agent: Path, worked_example: Path,
 ) -> None:
-    """P2, and the ticket's first criterion: a running session's records, another session's still in
-    flight included, sit outside the agent repo, so nothing of them is in its tree; once the commit
+    """P2, and session-records-outside-the-checkout, "a running session's records sit outside every
+    checkout ... and they are committed into the agent repo as the session ends": a running
+    session's records, another session's still in flight included, sit outside the agent repo, so nothing of them is in its tree; once the commit
     has landed, what it copied in is all there is, and committed."""
     later = worked_example.parent / "a-later-session"
     (later / "turns").mkdir(parents=True)
@@ -124,8 +129,13 @@ def test_a_resumed_session_commits_what_changed_when_it_ends_again(agent: Path, 
     assert end_hook.commit_records(worked_example) == "nothing changed since the last commit"
     assert git(agent, "rev-parse", "HEAD") == first
     (worked_example / "turns" / "05.md").write_text("the resumed session's turn\n")
+    (worked_example / "turns" / "04.md").write_text("revised\n")
+    (worked_example / "turns" / "03.md").rename(worked_example / "turns" / "03-renumbered.md")
     end_hook.commit_records(worked_example)
-    assert committed(agent) == [f"sessions/{worked_example.name}/turns/05.md"]
+    kept = f"sessions/{worked_example.name}/turns"
+    assert git(agent, "ls-tree", "--name-only", "HEAD", f"{kept}/").split() == [
+        f"{kept}/{name}" for name in ("01.md", "02.md", "03-renumbered.md", "04.md", "05.md")], "the renumbered record is gone under its old name"
+    assert git(agent, "show", f"HEAD:{kept}/04.md") == "revised\n"
 
 
 def test_a_commit_waits_out_another_sessions_index_lock(agent: Path, worked_example: Path) -> None:
@@ -144,6 +154,29 @@ def test_a_commit_that_fails_leaves_nothing_staged_for_another_sessions_commit(a
     hook.chmod(0o755)
     assert end_hook.commit_records(worked_example).endswith("; unstaged")
     assert git(agent, "status", "--porcelain").splitlines() == ["A  tickets/other.md"]
+    assert [p for p in (agent / "sessions").rglob("*") if p.is_file()] == [], "nothing the commit did not hold stays in the checkout"
+
+
+def test_a_failed_commit_puts_the_records_it_held_back_as_they_were(agent: Path, worked_example: Path) -> None:
+    """A session that ends again after a resume and fails to commit leaves the agent repo's copy as
+    its history last had it: the edited record as committed, the removed one back."""
+    end_hook.commit_records(worked_example)
+    hook = agent / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    (worked_example / "turns" / "04.md").write_text("revised\n")
+    (worked_example / "turns" / "03.md").unlink()
+    (worked_example / "turns" / "05.md").write_text("a new turn\n")
+    assert end_hook.commit_records(worked_example).endswith("; unstaged")
+    assert in_status(agent) == []
+    kept = agent / "sessions" / worked_example.name / "turns"
+    assert sorted(p.name for p in kept.iterdir()) == ["01.md", "02.md", "03.md", "04.md"]
+    assert (kept / "04.md").read_text() != "revised\n"
+
+
+def test_a_directory_that_names_no_agent_repo_commits_nothing(worked_example: Path) -> None:
+    (worked_example / "agent-repo").unlink()
+    assert end_hook.commit_records(worked_example) == f"{worked_example} names no agent repo"
 
 
 def test_an_agent_directory_inside_the_code_repo_gets_no_commit(worked_example: Path) -> None:

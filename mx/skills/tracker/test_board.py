@@ -1494,7 +1494,7 @@ def test_a_session_with_a_page_carries_it_and_one_without_carries_none(worked: t
 def test_a_session_carries_the_page_its_account_keeps_over_one_an_earlier_mx_left_in_the_agent_repo(
     worked: tuple[Path, Path],
 ) -> None:
-    """session-records-outside-the-checkout: the Stop hook writes the page under the account whose
+    """session-records-outside-the-checkout, "the page renders from them": the Stop hook writes the page under the account whose
     transcripts the board reads, outside every checkout, so that one is linked; a session's page an
     earlier mx left in the agent repo is linked only where the account has none."""
     root, repo = worked
