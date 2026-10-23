@@ -7,7 +7,9 @@
 The seam is the hook at its input: the SessionEnd JSON in, run the way Claude Code runs it, over
 the worked example's session directory in a throwaway agent repo that ignores `sessions/` as the
 real one does. The oracle is agent/tickets/session-records-tracked.md, its P1 and P2 and its
-Decisions, read off git's own record of the commit and of `git status`.
+Decisions, and agent/tickets/loose-work-retired.md, whose session work's artefacts sit in the
+session's directory and are committed as it ends, read off git's own record of the commit and of
+`git status`.
 """
 
 import io
@@ -96,6 +98,37 @@ def test_a_session_that_ends_commits_its_records_and_nothing_else(
     assert committed(agent) == [f"sessions/{worked_example.name}/{path}" for path in RECORDS]
     assert git(agent, "log", "-1", "--format=%(trailers:key=Session,valueonly)").strip() == worked_example.name
     assert git(agent, "status", "--porcelain").splitlines() == ["A  tickets/other.md"]
+
+
+def test_a_session_commits_its_artefacts_with_its_records_less_what_a_show_directory_ignores(
+    agent: Path, worked_example: Path, end: Callable[[], list[dict]],
+) -> None:
+    """A session's own work's artefacts sit under `show/` in its directory and reach history with its
+    records; what the agent repo ignores under its own `show/` (a runnable artefact's `out/`, a
+    rendered PNG, whatever its name is spelt in) stays out of the commit, though the commit
+    force-adds."""
+    (agent / ".gitignore").write_text("sessions/\nshow/**/out/\nshow/**/*.png\n")
+    show = worked_example / "show"
+    for path, text in {"figure.html": "<svg/>", "abläufe.png": "png", "demo/run": "#!/bin/sh\n",
+                       "demo/out/result.txt": "1"}.items():
+        (show / path).parent.mkdir(parents=True, exist_ok=True)
+        (show / path).write_text(text)
+    end()
+    assert sorted(committed(agent)) == sorted(f"sessions/{worked_example.name}/{path}"
+                                              for path in [*RECORDS, "show/demo/run", "show/figure.html"])
+
+
+def test_an_artefact_the_resumed_session_deleted_leaves_history_when_it_ends_again(
+    agent: Path, worked_example: Path,
+) -> None:
+    """P2 for artefacts: once committed, one deleted is committed as gone rather than left in status."""
+    (worked_example / "show").mkdir()
+    (worked_example / "show" / "figure.html").write_text("<svg/>")
+    end_hook.commit_records(worked_example)
+    (worked_example / "show" / "figure.html").unlink()
+    end_hook.commit_records(worked_example)
+    assert committed(agent) == [f"sessions/{worked_example.name}/show/figure.html"]
+    assert in_status(agent) == []
 
 
 def test_records_in_flight_stay_out_of_status_and_edits_to_committed_ones_show(

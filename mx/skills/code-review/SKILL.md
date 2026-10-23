@@ -27,7 +27,7 @@ Look for what the work was ordered by, in this order:
 2. The ticket the branch builds: `tracker context <slug>` is its body with every ancestor's, which is the whole order for this work, and a branch named `ticket/<slug>` names its slug.
 3. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
 4. A specification the repo keeps outside the tracker: `docs/`, `specs/` matching the branch name.
-5. If nothing is found, ask the user where it is, unless the work is plainly loose in-session work that never had one.
+5. If nothing is found, ask the user where it is, unless the work is session work, which never had one.
 
 It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
 

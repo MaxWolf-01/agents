@@ -175,6 +175,10 @@ _Avoid_: context budget, token budget
 The one page a session's answers live on, the questions waiting on the user at its top.
 _Avoid_: session artifact, transcript, notebook, log
 
+**Session work**:
+A change a session makes itself, with the user in front of it, rather than a ticket a worker builds.
+_Avoid_: loose work
+
 ### Retros
 
 **Retro**:
