@@ -26,7 +26,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 1. State the question and pick N
 
-N is the number of rival whole designs the question holds, with no fixed count: a question with seven competing designs gets seven. Ten or more is fine where the space holds them: the reader cycles through them on the switcher, and stopping at three would leave rivals unseen.
+N is the number of rival whole designs the question holds, with no fixed count; a question with seven competing designs gets seven, and ten or more is fine, since the reader cycles through them on the switcher.
 
 Write down the plan in one line, in the prototype's location or a top-of-file comment:
 
@@ -47,7 +47,7 @@ Variants must be **structurally different**: different layout, different informa
 Two more tests every variant passes before it is offered for a pick:
 
 - **Different at rest.** Load each variant and look at it untouched: the difference shows on what a reader sees first, before anything is opened, hovered or expanded. Variants that part ways only once something is opened read as one design, and the pick never happens.
-- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis, so the user never has to assemble a design to pick one. Where it helps the user see more variations or try a combination of their own, the axes can also be exposed beside the wholes, as one control per axis on the switcher bar, starting from the current variant; the wholes stay what the pick is offered from.
+- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis, so the user never has to assemble a design to pick one. Where it helps the user see more variations or try a combination of their own, the axes can also be exposed beside the wholes (step 4); the wholes stay what the pick is offered from.
 
 ### 3. Wire them together
 
@@ -72,7 +72,7 @@ For sub-shape B (new page): the throwaway route under `/prototype/<name>` mounts
 
 ### 4. Build the floating switcher
 
-A small fixed-position bar at the bottom-centre of the screen with three pieces:
+A small fixed-position bar at the bottom-centre of the screen with three pieces, plus the axis controls below where they are exposed:
 
 - **Left arrow**: cycles to the previous variant (wraps around).
 - **Variant label**: shows the current variant key and, if the variant exports a name, that name too. e.g. `B: Sidebar layout`.
@@ -84,6 +84,8 @@ Behaviour:
 - Keyboard: `←` and `→` arrow keys also cycle. Don't intercept arrow keys when an `<input>`, `<textarea>`, or `[contenteditable]` is focused.
 - Visually distinct from the page (e.g. high-contrast pill, subtle shadow) so it's obviously not part of the design being evaluated.
 - Hidden in production builds: gate on `process.env.NODE_ENV !== 'production'` or an equivalent check, so a stray prototype merge can't ship the bar to users.
+
+Where the axes are exposed beside the wholes (step 2), the bar also carries one control per axis, each kept in its own search param beside `?variant=` (e.g. `?variant=B&panel=left`) so a combination is shareable and reload-stable too. Cycling to a variant resets every axis to that variant's answers.
 
 Put the switcher in a single shared component so both sub-shapes can reuse it. Locate it wherever shared UI lives in the project.
 
