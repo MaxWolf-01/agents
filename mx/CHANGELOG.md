@@ -1,3 +1,8 @@
+## 1.0.81
+
+- feat(workflow): fewer workflow concepts: no hinge, no loose work, no gate, debrief or review session; trunk; qualified, linked tags
+- feat(tracker): the hinge retired; no child ticket is ruled alone
+
 ## 1.0.80
 
 - feat(session-page): the line under a turn names each open question by its headline, and the recap stops listing them
