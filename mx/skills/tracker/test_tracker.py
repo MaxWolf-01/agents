@@ -1790,8 +1790,9 @@ def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path,
     git(repo, "worktree", "add", "-q", "--detach", str(worktree))
     (worktree / "agent" / "tickets").mkdir(parents=True)
     said = run(worktree, "hook")
-    assert said.out.strip() == str(repo / ".git" / "hooks" / "pre-commit"), said.said
-    assert (repo / ".git" / "hooks" / "pre-commit").exists()
+    hooks = repo / ".git" / "hooks"
+    assert said.out.split() == [str(hooks / name) for name in ("pre-commit", "post-commit", "post-merge")], said.said
+    assert all((hooks / name).exists() for name in ("pre-commit", "post-commit", "post-merge"))
 
 
 def test_every_subcommand_is_in_the_help_the_interface_is_read_from(repo: Path) -> None:
@@ -2460,10 +2461,11 @@ def commit_with_hooks(at: Path, message: str, *paths: str) -> subprocess.Complet
     return subprocess.run(["git", "-C", str(at), "commit", "-q", "-m", message, "--", *paths], capture_output=True, text=True, env=with_tracker())
 
 
-def cloned(tmp_path: Path, synced: bool = True) -> tuple[Machine, Machine, Path]:
+@pytest.fixture
+def machines(tmp_path: Path) -> tuple[Machine, Machine, Path]:
     """The laptop's and pc's main checkouts of one project, cloned from one origin, each agent repo
-    with the sync hook installed where `synced`. Answers both, and the directory holding origin's
-    repos."""
+    with the tracker's hooks installed as project setup installs them. Answers both, and the
+    directory holding origin's repos."""
     seed = tmp_path / "seed"
     (seed / "agent" / "tickets").mkdir(parents=True)
     for at in (seed, seed / "agent"):
@@ -2485,15 +2487,9 @@ def cloned(tmp_path: Path, synced: bool = True) -> tuple[Machine, Machine, Path]
             git(at, "config", "user.email", f"{host}@example.com")
             git(at, "config", "user.name", host)
             git(at, "config", "commit.gpgsign", "false")
-        if synced:
-            assert run(code / "agent", "hook", "--sync").code == 0
+        assert run(code / "agent", "hook").code == 0
         found.append(Machine(code))
     return found[0], found[1], origin
-
-
-@pytest.fixture
-def machines(tmp_path: Path) -> tuple[Machine, Machine, Path]:
-    return cloned(tmp_path)
 
 
 def upstream(origin: Path, repo: str) -> str:
@@ -2663,13 +2659,13 @@ def test_the_hook_pushes_only_the_main_checkout_on_a_branch_other_than_a_ticket_
     assert git(origin / "agent.git", "rev-parse", branch).strip() == pushed
 
 
-def test_a_project_with_no_sync_hook_is_never_fetched_or_pushed(tmp_path: Path) -> None:
-    laptop, _, origin = cloned(tmp_path, synced=False)
+def test_an_agent_repo_whose_branch_has_no_upstream_pushes_nothing_and_says_nothing(machines: tuple[Machine, Machine, Path]) -> None:
+    laptop, _, origin = machines
+    git(laptop.agent, "branch", "--unset-upstream")
     before = upstream(origin, "agent")
     ticket(laptop.tickets, "from-the-laptop")
-    git(laptop.agent, "add", "-A")
-    git(laptop.agent, "commit", "-q", "-m", "file from-the-laptop")
-    assert run(laptop.code, "set", "shared", "priority=2") == Run(0, "shared: priority: 1 → 2\n", "")
+    said = commit_with_hooks(laptop.agent, "file from-the-laptop")
+    assert said.returncode == 0 and said.stderr == "", said.stderr
     assert run(laptop.code, "sync") == Run(0, "", "")
     assert upstream(origin, "agent") == before
 
@@ -2678,7 +2674,7 @@ def test_a_sync_hook_this_did_not_write_is_left_standing_and_the_rest_installed(
     hooks = repo / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
     (hooks / "post-commit").write_text("#!/bin/sh\nexit 0\n")
-    said = run(repo, "hook", "--sync")
+    said = run(repo, "hook")
     assert said.code == 1 and "add `tracker sync --here` to it by hand" in said.err, said.said
     assert (hooks / "post-commit").read_text() == "#!/bin/sh\nexit 0\n"
     assert (hooks / "pre-commit").exists() and (hooks / "post-merge").exists()

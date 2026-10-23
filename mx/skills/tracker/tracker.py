@@ -32,8 +32,7 @@ Examples:
     tracker drop map-columns             # a ticket never done: the reject ruling
     tracker retire                       # every finished tree out, committed
     tracker retire --dry-run             # what that would take out, changing nothing
-    tracker hook                         # install the pre-commit hook that runs `check`
-    tracker hook --sync                  # and the hook keeping two main checkouts in step
+    tracker hook                         # install the hooks that run `check` and `sync`
     tracker sync                         # the agent repo pushed now, merging what the other machine pushed first
 """
 
@@ -76,10 +75,9 @@ OWN_REPOS = (None, "code", "agent")  # what a range names a repo every project h
 TICKETS = Path("agent") / "tickets"
 REPO_LIST = "repos.toml"  # beside the tickets, in the agent repo
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
-SYNC_HOOK = "tracker sync --here"  # what the sync hook runs, and how a project is known to have one
 # What `hook` installs: each hook's name, the file beside this one it is, and what it runs.
-HOOKS = {"pre-commit": ("pre-commit", "tracker check"), "post-commit": ("post-commit", SYNC_HOOK),
-         "post-merge": ("post-commit", SYNC_HOOK)}
+HOOKS = {"pre-commit": ("pre-commit", "tracker check"), "post-commit": ("post-commit", "tracker sync --here"),
+         "post-merge": ("post-commit", "tracker sync --here")}
 
 
 # ---- the commands ----------------------------------------------------------
@@ -1301,26 +1299,20 @@ def run(cwd: Path, *args: str, aside: bool = False) -> None:
 
 
 @app.command(name="hook")
-def hook(sync: bool = False) -> int:
-    """Install the pre-commit hook that runs `tracker check` over the staged ticket files and
-    reports, into the repository the working directory is in, from any worktree of it. Prints the
-    path of each hook it wrote. Leaves a hook this did not write standing, and says so.
+def hook() -> int:
+    """Install the tracker's hooks into the repository the working directory is in, from any
+    worktree of it: the pre-commit hook that runs `tracker check` over the staged ticket files and
+    reports, and the sync hook, as post-commit and post-merge, that runs `tracker sync --here`.
+    Prints the path of each hook it wrote. Leaves a hook this did not write standing, and says so.
 
-    It is the agent repo that wants one, since that is where every ticket file and report is
-    written. The hook is the `pre-commit` file beside this one, which dispatch also installs in a
-    worker host's agent repo.
-
-    Args:
-        sync: install the sync hook too, as post-commit and post-merge, which makes this project
-            one with two main checkouts kept in step (`tracker sync --help`). Run in the agent
-            repo's main checkout, on each machine that holds one.
+    It is the agent repo that wants them, since that is where every ticket file and report is
+    written. The hooks are the `pre-commit` and `post-commit` files beside this one; dispatch
+    installs the first alone in a worker host's agent repo, where nothing is pushed.
     """
     here_ = Path(__file__).resolve().parent
     hooks = Path(git(Path.cwd(), "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
     standing = []
     for name, (source, runs) in HOOKS.items():
-        if runs == SYNC_HOOK and not sync:
-            continue
         script, into = (here_ / source).read_text(), hooks / name
         if into.exists() and into.read_text() != script:
             standing.append(f"{into} is a {name} hook this did not write; add `{runs}` to it by hand")
@@ -1338,13 +1330,14 @@ def hook(sync: bool = False) -> int:
 
 @app.command(name="sync")
 def sync_checkouts(here: bool = False) -> int:
-    """Push the agent repo's main checkout to its upstream, where the project keeps a main checkout
-    on each of two machines (`tracker hook --sync` makes it one that does). A push refused because
-    the other machine pushed first merges what it pushed and pushes again; with nothing to push,
-    what the upstream has is merged in. Says a line where the checkout moved, or could not.
+    """Push the agent repo's main checkout to its branch's upstream, which keeps the main checkouts
+    of a project worked from two machines in step. A push refused because the other machine pushed
+    first merges what it pushed and pushes again; with nothing to push, what the upstream has is
+    merged in. Says a line where the checkout moved, or could not. An agent repo whose branch has no
+    upstream pushes nothing, and nothing is said.
 
-    The sync hook runs this after every commit and merge in that checkout, so a commit there is
-    pushed as it is made. A project with no sync hook is left alone, and nothing is said. Only the
+    The sync hook (`tracker hook`) runs this after every commit and merge in that checkout, so a
+    commit there is pushed as it is made. Only the
     agent repo is synced: an integration branch is pushed by whoever merges into it, and a ticket
     branch never is. A remote that does not answer leaves the commits waiting for the next sync. A
     conflict, the two machines having changed the same lines, leaves the merge stopped for whoever
@@ -1365,7 +1358,7 @@ def sync_checkouts(here: bool = False) -> int:
     else:
         root = tracker_root(Path.cwd())
         top = toplevel(root)
-        if not kept_in_step(root) or top == project_root(root) or ticket_branch_out(top):
+        if top == project_root(root) or ticket_branch_out(top):
             return 0
     synced = in_step.sync(top)
     if here and synced.outcome == "underway":  # the hook fires inside a rebase or cherry-pick, whose own output says it is underway
@@ -1373,14 +1366,6 @@ def sync_checkouts(here: bool = False) -> int:
     if synced.said:
         print(synced.said, file=sys.stderr)
     return 1 if synced.outcome in in_step.FAILS else 0
-
-
-def kept_in_step(root: Path) -> bool:
-    """Whether the project of the tracker at `root` keeps two main checkouts in step: its agent repo
-    has the sync hook installed."""
-    hooks = tried(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
-    found = Path(hooks.stdout.strip()) / "post-commit"
-    return hooks.returncode == 0 and found.is_file() and SYNC_HOOK in found.read_text()
 
 
 # ---- what the tracker's rules refuse ---------------------------------------

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installed by `tracker hook --sync`, as post-commit and post-merge both: every commit and merge in
+# Installed by `tracker hook`, as post-commit and post-merge both: every commit and merge in
 # this agent repo's main checkout goes to its upstream at once, so the project's other main checkout
 # finds it there.
 if ! command -v tracker >/dev/null 2>&1; then
