@@ -29,14 +29,15 @@
 #   --model  every reviewer's model, `opus` by default.
 #   --minutes every reviewer's time budget, which its prompt states and it
 #            paces its work to, 10 by default; a budget, not a timeout.
-# Reports land in <repo>/agent/reviews/<range>/<axis>.md, the prompt each
+# Reports land in <state>/mx/reviews/<repo>/<range>/<axis>.md, the prompt each
 # reviewer read under prompts/ beside them and its output in <axis>.log, and
 # the reports' paths are this script's own output: the reports of the axes
-# whose reviewer finished. Exit 1 names each axis that died or left no report,
-# with the last line its reviewer printed, which is where a usage limit or a
-# crash says itself, and the command that re-runs them. One review of a range
-# runs at a time: a second is refused while the first, or anything it started,
-# is alive.
+# whose reviewer finished. <state> is $XDG_STATE_HOME, ~/.local/state by
+# default; <repo> is the reviewed repo's git common dir. Exit 1 names each axis
+# that died or left no report, with the last line its reviewer printed, which
+# is where a usage limit or a crash says itself, and the command that re-runs
+# them. One review of a range runs at a time: a second is refused while the
+# first, or anything it started, is alive.
 #
 # A reviewer starts from none of the caller's setup: no settings files, MCP
 # servers, skills or memory, so what it works from is its prompt, the same on
@@ -135,9 +136,8 @@ range="$(git rev-parse --short=7 "$base")..$(git rev-parse --short=7 "$head")"
 diff_cmd="git diff $base $head"
 git diff --quiet "$base" "$head" && die "$diff_cmd is empty; nothing to review"
 # Untracked files as much as modified ones, since work that is all new files
-# would otherwise pass in silence; the reports are this script's own output,
-# not work, so they stay out of it.
-[ -z "$(git status --porcelain -- ':!agent/reviews')" ] ||
+# would otherwise pass in silence.
+[ -z "$(git status --porcelain)" ] ||
     echo "review: uncommitted changes in $root are not part of $range" >&2
 
 touched=$(git diff --name-only "$base" "$head")
@@ -165,7 +165,10 @@ for axis in $axis_list; do
     esac
 done
 
-dir=$root/agent/reviews/$range
+common=$(git rev-parse --path-format=absolute --git-common-dir) || die "cannot find the git dir of $root"
+common=${common%/.git}
+reviews=${XDG_STATE_HOME:-$HOME/.local/state}/mx/reviews/${common//\//-}
+dir=$reviews/$range
 mkdir -p "$dir/prompts" || die "cannot create $dir/prompts"
 # The ticket and its ancestry as one file, assembled the one way a worker's
 # prompt is: the reviewer reads what the work was asked for and the work the
@@ -228,8 +231,8 @@ drop_checkout() { # <checkout>
     fi
 }
 
-# Every Tests checkout git has registered under agent/reviews, its directory
-# there or already gone. One of this run's own range is a killed run's, since
+# Every Tests checkout git has registered under this repo's reviews, its
+# directory there or already gone. One of this run's own range is a killed run's, since
 # this run holds that lock. One of another range is removed only while this run
 # holds that range's lock too, on fd 8, so a review of it cannot start
 # meanwhile; the braces close fd 8 again, before any reviewer could inherit it.
@@ -237,7 +240,7 @@ drop_checkout() { # <checkout>
 # run cannot tell alive from dead.
 checkouts() {
     git worktree list --porcelain |
-        awk -v under="$root/agent/reviews/" '/^worktree / { w = substr($0, 10); if (index(w, under) == 1 && w ~ /\/checkout$/) print w }'
+        awk -v under="$reviews/" '/^worktree / { w = substr($0, 10); if (index(w, under) == 1 && w ~ /\/checkout$/) print w }'
 }
 while IFS= read -r left; do
     if [ "$left" = "$checkout" ]; then
