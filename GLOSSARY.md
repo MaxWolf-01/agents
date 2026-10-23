@@ -47,7 +47,7 @@ _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
 A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket.
-_Avoid_: subtask, sub-ticket, step, hinge (retired: no child ticket is ruled alone)
+_Avoid_: subtask, sub-ticket, step
 
 **Ticket context**:
 A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
@@ -125,7 +125,7 @@ _Avoid_: subagent, implementer
 
 **Worker report**:
 What a worker hands back for its ticket: its closing comment and the questions its build raised.
-_Avoid_: closing comment (one part of a report), handoff, debrief (retired: a close-out files what it finds as proposed tickets and ticket questions)
+_Avoid_: closing comment (one part of a report), handoff, debrief (a close-out's findings are proposed tickets and ticket questions)
 
 **Tick**:
 One pass of the orchestrator's loop.
@@ -141,6 +141,7 @@ _Avoid_: merged, finished, complete
 
 **Trunk**:
 The branch work merges into: the default branch, or dev where that layer exists.
+_In code_: `integration` (`agent/repos.toml`)
 _Avoid_: integration branch, mainline
 
 ### Testing
