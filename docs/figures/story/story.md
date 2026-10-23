@@ -25,7 +25,7 @@ step: 4
 An intent with several sensible shapes gets a throwaway prototype or a concept figure per shape, and you pick in front of the renders; the verdict goes into the ticket. Matt Pocock's walkthrough does the same for front-end work, asking for three prototypes to click between.
 
 step: 5
-Work a stranger could do from one chat line, such as a rename, gets no ticket, no worker and no agent review. The session commits it, you read the diff on a review page, and it merges on your word.
+A change the session can make with you in front of it, such as a rename, gets no ticket and no worker. The session commits it in a worktree of its own, its page links the review page of the diff, and it merges on your word.
 
 step: 6
 Work bigger than one worker is cut into child tickets, each a vertical slice through every layer it touches, and they go through the same dispatch, workers and landing into the parent's branch. Matt Pocock's walkthrough says why vertical: an agent left to itself builds layer by layer, and gets no feedback on the whole until the last layer is done.

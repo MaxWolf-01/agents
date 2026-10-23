@@ -77,7 +77,7 @@ Commit, merge, and push -- when and how:
 Commit messages:
   - Conventional -- unless a repo clearly follows another convention -- `type(scope): imperative summary (the what)`, the body carries the why (and optionally details on the what).
   - A merge commit's subject states what the branch as a whole delivered, with no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
-  - Include a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+  - Include a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 
 Miscl hygiene:
 - Unless you have a very good reason not to, clone from the remote/github url and not `git clone /path/to/repo`. 
