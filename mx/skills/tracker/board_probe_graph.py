@@ -2,13 +2,12 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-# What the graph does once a browser runs it, which is the only place it does anything: the side
-# column's preview, the same graph at full size over the board, and the same again in a window of
-# its own. Every move a reader makes is made here, and what the board did with it is read off the
-# board: the two keys and the buttons that do the same, Escape's order, a click on the preview and
-# on a node in it, a drag that pans and the click it ends with, the switch in each view, a node
-# clicked in each full size view, the board re-rendering under the window, and the board going
-# away.
+"""What the graph does once a browser runs it, which is the only place it does anything: the side
+column's preview, the same graph at full size over the board, and the same again in a window of its
+own. Every move a reader makes is made here, and what the board did with it is read off the board:
+the two keys and the buttons that do the same, Escape's order, a click on the preview and on a node
+in it, a drag that pans and the click it ends with, the switch in each view, a node clicked in each
+full size view, the board re-rendering under the window, and the board going away."""
 
 import json, os, shutil, sys
 from pathlib import Path

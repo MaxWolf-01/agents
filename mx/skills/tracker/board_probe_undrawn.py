@@ -2,11 +2,11 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-# A draw that fails after the engine loaded: the engine and what it imports come from a directory of
-# their own, with the network cut off, so the pieces mermaid fetches while it draws do not arrive.
-# The copies of those pieces are then put in, and the board draws with them from its next load on:
-# the browser keeps a failed import as failed for as long as the page lives, so nothing short of a
-# load fetches it again, and the board loads again on every change to the tracker.
+"""A draw that fails after the engine loaded: the engine and what it imports come from a directory of
+their own, with the network cut off, so the pieces mermaid fetches while it draws do not arrive. The
+copies of those pieces are then put in, and the board draws with them from its next load on: the
+browser keeps a failed import as failed for as long as the page lives, so nothing short of a load
+fetches it again, and the board loads again on every change to the tracker."""
 
 import json, os, shutil, sys
 from pathlib import Path

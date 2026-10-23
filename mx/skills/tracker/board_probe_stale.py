@@ -2,8 +2,9 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-# The tab polls the stamp file on a timer, which the page's clock runs forward rather than the check
-# waiting it out.
+"""What an open tab shows while the stamp file beside its page marks the board stale, and once the mark
+is gone, and whether it reloaded for either. The tab polls the stamp file on a timer, which the
+page's clock runs forward rather than the check waiting it out."""
 
 import json, os, shutil, sys
 from pathlib import Path

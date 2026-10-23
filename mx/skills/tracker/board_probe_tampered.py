@@ -2,9 +2,9 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-# A file of the engine changed at the CDN: the board draws once from this machine's copies, so they
-# hold every file it fetches, then loads again from a copy of them in which one file carries a
-# byte more than the one its hash was taken of.
+"""A file of the engine changed at the CDN: the board draws once from this machine's copies, so they
+hold every file it fetches, then loads again from a copy of them in which one file carries a byte
+more than the one its hash was taken of."""
 
 import json, os, re, shutil, sys
 from pathlib import Path

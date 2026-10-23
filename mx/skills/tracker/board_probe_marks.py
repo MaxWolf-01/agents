@@ -2,13 +2,14 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-# What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
-# opened a row, whether the graph beside it came back, whether the briefing is set as prose and says
-# what it is, and what each mark shows on hover, a copy button's account of what it copies among
-# them. The side column's own hints are `title` attributes, as the graph's buttons are: a box that
-# scrolls cuts a tooltip drawn inside it, and that column is the one box on the page that scrolls. A pseudo-element has no rect of its own, so a
-# tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
-# would hide it, which is how two marks came to carry words no reader could see.
+"""What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
+opened a row, whether the graph beside it came back, whether the briefing is set as prose and says
+what it is, and what each mark shows on hover, a copy button's account of what it copies among them.
+The side column's own hints are `title` attributes, as the graph's buttons are: a box that scrolls
+cuts a tooltip drawn inside it, and that column is the one box on the page that scrolls. A
+pseudo-element has no rect of its own, so a tooltip's box is its host's plus the offsets the element
+resolves; `clipped` is the ancestor that would hide it, which is how two marks came to carry words
+no reader could see."""
 
 import json, os, shutil, sys
 from pathlib import Path
