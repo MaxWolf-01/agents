@@ -165,10 +165,13 @@ trap 'stopped=1' TERM INT
 # They are also for an early stop: a clean exit before this round's report, which is a worker that
 # ended its turn to wait on something it started, since in print mode the turn's end is the run's.
 # The ticket's own status cannot say this: it stays `claimed` until the orchestrator imports the
-# report. A worktree with no agent repo can never report, so there a clean exit ends the run.
+# report. A worker stopped on a blocker exits the same way, which the runner cannot tell from the
+# outside, so it resumes one clean exit and takes a second as the worker's own stop. A worktree with
+# no agent repo can never report, so there a clean exit ends the run.
 max_attempts=3
-early_stop="Your session ended before this round's report was committed, so the run stopped before it finished: your run ends when your turn does. If you ended the turn to wait on something you started (a job, a subagent, a review), wait on it now in a blocking call (\`job wait <name>\`, a foreground agent) and carry on to the report. If you stopped on a blocker and the worklog says so, stop again."
+early_stop="Your session ended before this round's report was committed, so the run stopped before it finished. If you ended your turn to wait on something you started, the opening of your instructions says how to wait on it within the turn: do that and carry on to the report. If you stopped on a blocker the worklog records, stop again."
 resume=continue
+early_stopped=
 for attempt in $(seq 1 $max_attempts); do
     unit=$run_id-a$attempt-$$
     logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
@@ -185,7 +188,12 @@ for attempt in $(seq 1 $max_attempts); do
     # The report is the worker's finished signal, so a crash after it is a crash with the work done.
     reported && break
     [ "$rc" -eq 0 ] && [ -z "$has_agent_repo" ] && break
-    if [ "$rc" -eq 0 ]; then kind="an early stop" resume=$early_stop backoff=0
+    if [ "$rc" -eq 0 ] && [ -n "$early_stopped" ]; then
+        printf '%s runner: attempt %s exited 0 with no report again, taken as the worker'"'"'s own stop\n' \
+            "$(date -u +%FT%TZ)" "$attempt" >> "$DISPATCH_WORKLOG"
+        break
+    fi
+    if [ "$rc" -eq 0 ]; then kind="an early stop" resume=$early_stop backoff=0 early_stopped=1
     else kind="a crash" resume=continue backoff=$((attempt * 30)); fi
     if [ "$attempt" -eq "$max_attempts" ]; then
         printf '%s runner: attempt %s exited %s with no report, %s, and was the last\n' \

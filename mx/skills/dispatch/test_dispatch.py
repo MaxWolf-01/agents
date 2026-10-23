@@ -780,8 +780,8 @@ def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, st
 
 @pytest.mark.parametrize("already, wrote, exits, says", [
     (False, True, 1, "attempts=1 exit=1 report=yes"),
-    (False, False, 0, "attempts=3 exit=0 report=no"),
-    (True, False, 0, "attempts=3 exit=0 report=no"),
+    (False, False, 0, "attempts=2 exit=0 report=no"),
+    (True, False, 0, "attempts=2 exit=0 report=no"),
     (True, True, 0, "attempts=1 exit=0 report=yes"),
 ])
 def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
@@ -789,8 +789,8 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
 ) -> None:
     """The shipped runner, with `claude` stubbed rather than the runner itself: a run whose worker
     committed its report in the agent repo is finished whatever it exited with, one that committed
-    none says so on its status line. A clean exit with no report is an early stop and spends the
-    attempts a crash would.
+    none says so on its status line. A clean exit with no report is an early stop, resumed once on
+    the budget a crash spends; a second is the worker's own stop, as a blocker's is.
 
     A resumed round starts with the round before it still committed there, so what the status line
     reads is whether this run wrote that file, never whether the file is there."""
@@ -823,8 +823,8 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
 
 def test_a_worker_that_stops_early_is_resumed_until_it_reports(tmp_path: Path, runner: Path) -> None:
     """`runner-resumes-early-stops`: a worker that ended its turn to wait on its own background work
-    exits 0 with no report. The runner resumes it, telling it to wait in a blocking call, on one
-    attempt of its budget, and the worklog names the stop for what it was."""
+    exits 0 with no report. The runner resumes that session, telling it why, on one attempt of its
+    budget, and the worklog names the stop for what it was."""
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent").mkdir(parents=True)
     git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
@@ -832,8 +832,8 @@ def test_a_worker_that_stops_early_is_resumed_until_it_reports(tmp_path: Path, r
     said = tmp_path / "said"
     claude = (
         '#!/bin/sh\n[ "$1" = --version ] && exit 0\n'
-        f'echo >> {said}.calls; printf "%s\\n" "$*" > {said}\n'
-        f'[ "$(wc -l < {said}.calls)" -lt 2 ] && exit 0\n'
+        f'n=$(ls {tmp_path} | grep -c "^said"); printf "%s\\n" "$*" > {said}$((n + 1))\n'
+        '[ "$n" -lt 1 ] && exit 0\n'
         'mkdir -p agent/show/warm-preset\n'
         'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
@@ -842,9 +842,12 @@ def test_a_worker_that_stops_early_is_resumed_until_it_reports(tmp_path: Path, r
 
     done = run_worker(runner, claude=claude, model="sonnet", cwd=worktree)
     assert done.returncode == 0, done.stderr
-    assert (runner / "run-1.status").read_text().startswith("attempts=2 exit=0 report=yes")
-    resumed_with = said.read_text()
-    assert "report was committed" in resumed_with and "job wait" in resumed_with, resumed_with
+    status = (runner / "run-1.status").read_text()
+    assert status.startswith("attempts=2 exit=0 report=yes"), status
+    session = status.split("session=")[1].split()[0]
+    first, resumed = (tmp_path / "said1").read_text(), (tmp_path / "said2").read_text()
+    assert "report was committed" not in first, first
+    assert f"--resume {session} Your session ended before this round's report was committed" in resumed, resumed
     assert "attempt 1 exited 0 with no report, an early stop; resuming" in (runner / "run-1.log").read_text()
 
 
