@@ -21,7 +21,7 @@ Some resources that might be useful to consult when brainstorming architectural 
 
 # Related Porjects
 
-Always first read readme & claude.md of any repo youre working with / consulting.
+Always first read readme & AGENTS.md (or CLAUDE.md) of any repo youre working with / consulting.
 
 [**clankr**](https://github.com/MaxWolf-01/clankr) (`/home/max/repos/github/MaxWolf-01/clankr`): run Claude Code in isolated Docker containers. `--dangerously-skip-permissions` without the danger.
 

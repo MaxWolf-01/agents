@@ -141,7 +141,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:research` | primary-source investigation → findings on the ticket that asked |
 | `/mx:codex` | second opinion from a different model |
 | `/mx:handoff`, `/mx:pickup`, `/mx:recap` | session continuity (write a handoff, start from one) & status |
-| `/mx:writing-for-agents`, `/mx:writing-for-humans` | the writing references: documents that instruct agents (skills, CLAUDE.md, tickets) / artifact text read cold (docs, comments, UI copy) |
+| `/mx:writing-for-agents`, `/mx:writing-for-humans` | the writing references: documents that instruct agents (skills, AGENTS.md, tickets) / artifact text read cold (docs, comments, UI copy) |
 
 Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `project-setup`, `ml`, `house-style`, `session-name`, `restore-sessions`, `review-pr`, `github`, `gh-stack`, `sharpen`, `changelog`, `dependabot-triage`.
 
