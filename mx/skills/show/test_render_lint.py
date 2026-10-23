@@ -108,13 +108,13 @@ TWO_SCREENS = """
 # the badge beside it, and the feature tag is cut off by its box. `?fixed` lays the same marks
 # out on a grid, where each gets its own track. The offsets hold for any face whose glyphs average
 # 0.40em (Times) to 0.62em (a monospace one): each long title ends past its badge's text and short
-# of the chip, and on the grid fits its track.
+# of the chip, and on the grid fits its track, while the longest tag overruns its box.
 BOARD_ROWS = """
 <style>
   .rows { width: 56rem; margin: 2rem }
   .row { position: relative; height: 2.2rem }
   .row > * { position: absolute; top: 0.45rem }
-  .ftag { left: 0; width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .ftag { left: 0; width: 6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .num { left: 9.5rem }
   .title { left: 12rem; white-space: nowrap; font-size: 0.8rem }
   .badge { right: 24rem }
@@ -167,6 +167,7 @@ def test_board_row_marks_at_their_own_offsets_collide_and_the_tag_box_cuts_its_t
         ("overlap", frozenset({"claimed", "render-lint sees HTML text colliding, and says what a box cuts off"})),
     }
     assert len(findings) == 3
+    assert [f["cutters"] for f in findings if f["kind"] == "clipped"] == [["div.rows div.row span.ftag"]]
     assert code == 1
 
 
