@@ -1199,6 +1199,103 @@ def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fai
     assert "no run recorded" in probed.stderr, probed.stderr
 
 
+def built_on_host(toy: Path, staged: Path, host: str) -> tuple[dict[str, str], Path]:
+    """warm-preset claimed, spawned on `host` (`local`, or `agent@far` behind the fake ssh) and
+    built by a worker that reported: the environment that reaches the host, and the ticket's
+    worktree there."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING)
+    if host == "local":
+        env, worktree, state = environment(toy), toy.parent / "lamp-warm-preset", None
+    else:
+        remote, env = fake_remote(toy)
+        worktree, state = remote / "repos" / "dispatch" / "lamp-warm-preset", remote / ".local" / "state" / "dispatch" / "lamp-main"
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host=host, env=env).returncode == 0
+    waited(toy, state)
+    return env, worktree
+
+
+def tracker_writes(toy: Path, env: dict[str, str], *args: str) -> None:
+    """A session running `tracker` itself, outside dispatch, and committing what it wrote."""
+    wrote = subprocess.run(["tracker", *args], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert wrote.returncode == 0, wrote.stdout + wrote.stderr
+    git(toy / "agent", "commit", "-q", "-am", f"tracker {' '.join(args)}")
+
+
+@pytest.mark.full_path
+@pytest.mark.parametrize("host", ["local", "agent@far"])
+@pytest.mark.parametrize("left", ["done", "retired"])
+def test_a_run_whose_ticket_was_closed_outside_dispatch_leaves_its_host_at_the_next_probe(
+        toy: Path, staged: Path, host: str, left: str) -> None:
+    """The branches merged by hand and the `done` written by `tracker set`, as a bulk close-out
+    writes it; or the tree then taken out of the tracker by `tracker retire`. The next probe retires
+    the run as `review` would have: its worktree and branches on the host and here, its record."""
+    env, worktree = built_on_host(toy, staged, host)
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    for top in (toy, toy / "agent"):
+        git(top, "merge", "-q", "--no-ff", "-m", "warm-preset: merged by hand", "ticket/warm-preset")
+    for status in ("review", "done"):
+        tracker_writes(toy, env, "set", "warm-preset", f"status={status}")
+    if left == "retired":
+        for status in ("claimed", "review", "done"):
+            tracker_writes(toy, env, "set", "lamp-ui", f"status={status}")
+        subprocess.run(["tracker", "retire"], cwd=toy, capture_output=True, env=env, check=True, timeout=180)
+        assert not (tracked(toy) / "warm-preset.md").exists()
+    assert worktree.is_dir(), "nothing has touched the run yet"
+
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert "no run recorded for main" in probed.stderr, probed.stderr
+    assert not worktree.exists()
+    bare = [] if host == "local" else [worktree.parent / "lamp.git", worktree.parent / "lamp-agent.git"]
+    for top in (toy, toy / "agent", *bare):
+        assert not git(top, "branch", "--list", "ticket/warm-preset"), top
+    sessions = subprocess.run(["tmux", "list-sessions", "-F", "#S"], capture_output=True, text=True, env=env).stdout
+    assert "dispatch-lamp-warm-preset" not in sessions
+
+
+@pytest.mark.full_path
+@pytest.mark.parametrize("host, why", [
+    ("local", "ticket/warm-preset in code has not merged into main here"),
+    ("agent@far", "ticket/warm-preset in code holds commits this machine lacks"),
+])
+def test_a_run_of_a_ticket_gone_from_the_tracker_with_its_work_merged_nowhere_stays_and_says_why(
+        toy: Path, staged: Path, host: str, why: str) -> None:
+    """warm-preset dropped while its worker's commits sit on its branch alone: here and unmerged
+    for a local host, on the host and never fetched for a remote one. The probe keeps the run, names
+    it and says why, and lists it as before."""
+    env, worktree = built_on_host(toy, staged, host)
+    tracker_writes(toy, env, "drop", "warm-preset")
+
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert probed.returncode == 0, probed.stderr
+    assert f"warm-preset is gone from the tracker, and its run on {host} stays: {why}" in probed.stderr, probed.stderr
+    assert "dispatch-lamp-warm-preset exited" in probed.stdout
+    assert git(worktree, "log", "-1", "--format=%s").strip() == "warm-preset: the warm preset"
+
+
+@pytest.mark.full_path
+def test_a_run_of_a_ticket_gone_from_the_tracker_whose_worker_is_running_stays(toy: Path, staged: Path) -> None:
+    """A worker still at it when its ticket left the tracker, its branch no further than main: the
+    probe leaves it running in its worktree, and says why."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'attempts=1", 'until [ -e "$state/release" ]; do sleep 0.2; done\nprintf \'attempts=1'))
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    for _ in range(60):
+        if list(state.glob("*.log")):
+            break
+        time.sleep(0.5)
+    tracker_writes(toy, environment(toy), "drop", "warm-preset")
+
+    probed = run(toy, "ctl", "probe")
+    (state / "release").touch()
+    assert "warm-preset is gone from the tracker, and its run on local stays: its worker is still running" in probed.stderr, probed.stderr
+    assert "dispatch-lamp-warm-preset running" in probed.stdout
+    assert (toy.parent / "lamp-warm-preset").is_dir()
+
+
 @pytest.mark.full_path
 def test_a_local_host_writes_this_machines_log_itself_so_a_fetch_pulls_nothing(toy: Path, staged: Path) -> None:
     run(toy, "claim", "warm-preset")
