@@ -79,7 +79,6 @@ CLASSIFIER_ALLOWED = "[classifier allowed]"  # a digest's mark on a call auto mo
 NAMED_PATH = re.compile(r"(?<![\w.~/$-])~?/[^\s\"'`;|&<>(){}\[\],]*")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
-RETRO = Path("retro")  # in an agent repo: where its report is
 
 
 # ── what runs ────────────────────────────────────────────────────────────────

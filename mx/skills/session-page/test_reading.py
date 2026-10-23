@@ -15,16 +15,19 @@ record, the messages that turn answered.
 import html
 import json
 import re
+import shutil
+import sys
 import time
 from datetime import UTC, datetime
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
-from session_checks import followed, messages_of, rows_of, sections_of, text_of, view_of
+import session_page
+from session_page import Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
+from session_checks import SESSION, followed, messages_of, project_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -305,6 +308,22 @@ def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line(
     assert str(refused.value).startswith(f"{record}:{line}: ")
 
 
+def test_a_block_under_a_question_after_its_options_is_refused_and_told_where_it_goes(tmp_path: Path) -> None:
+    """session-page-question-continuation-lands-on-last-option: a draft quoted at the question's
+    indent after its options once rendered inside the last option; it is refused, pointing at
+    Details, while a line wrapped deeper than an option's `-` still continues that option."""
+    record = tmp_path / "07.md"
+    question = ("---\ndate: 2026-10-23\n---\n\n# Thomas's roles comment\n\n## Questions\n\n"
+                "- [Q20] **Post this reply on Thomas's roles comment?**\n"
+                "  - (a) As written below. *my pick*\n  - (b) With your\n    changes.\n")
+    record.write_text(question)
+    assert [o.text for o in read_turn(record).questions[0].options] == ["As written below.", "With your changes."]
+    record.write_text(f"{question}\n  > Done across the stack.\n")
+    with pytest.raises(RecordError, match=re.escape("goes in ## Details, which the question links as [text](#t07)")) as refused:
+        read_turn(record)
+    assert str(refused.value).startswith(f"{record}:14: text under Q20 after its sub-items")
+
+
 # A chat turn's record of any reply. A carriage return is left out: reading a file turns one into a
 # line break, so a reply carrying one reads back with a line break in its place.
 REPLIES = st.text(st.characters(blacklist_characters="\r", blacklist_categories=("Cs",))).filter(str.strip)
@@ -447,6 +466,44 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
     assert "Leading words for showing" in page.session.title
     assert page.rows == ()
     assert " 0 turns · rendered " in text_of(render_session(worked_example, transcript, now=NOW))
+
+
+def test_a_session_record_of_its_h1_alone_reads_as_one_with_frontmatter(worked_example: Path, transcript: Path) -> None:
+    """session-page-says-where-the-next-record-goes#P2: the worked example's frontmatter names what
+    the reader works out without it."""
+    described = worked_example / "session.md"
+    before = view_of(worked_example, transcript)
+    described.write_text(described.read_text().split("---\n", 2)[2])
+    after = view_of(worked_example, transcript)
+    assert (after.session.title, after.session.id, after.session.repo, after.resume) == (
+        before.session.title, before.session.id, before.session.repo, before.resume)
+
+
+AT = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
+# How each row changes the worked example's four records and session.md, and the line it then
+# prints under the directory.
+NEXT = {
+    "no records yet": (shutil.rmtree, "01.md · 0 written · session.md not yet written"),
+    "a gap and a chat turn": (lambda d: ((d / "turns/04.md").rename(d / "turns/06.md"),
+                                         chat_path(d / "turns", AT).write_text(chat_record("On it.", AT))),
+                              "07.md · 4 written · session.md written"),
+    "a record that does not parse": (lambda d: (d / "turns/04.md").write_text("no frontmatter\n"),
+                                     "05.md · 4 written · session.md written"),
+}
+
+
+@pytest.mark.parametrize("made, said", NEXT.values(), ids=NEXT)
+def test_session_page_prints_where_the_next_record_goes(
+    made: Callable[[Path], object], said: str, worked_example: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+) -> None:
+    """session-page-says-where-the-next-record-goes#P1 and #P3; `main` returning is the exit status 0."""
+    project = project_of(worked_example)
+    made(worked_example)
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    monkeypatch.setattr(sys, "argv", ["session-page"])
+    session_page.main()
+    assert capsys.readouterr().out == f"{worked_example}\nnext record: {worked_example / 'turns'}/{said}\n"
 
 
 def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:

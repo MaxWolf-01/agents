@@ -58,8 +58,9 @@ def test_the_turn_record_the_rules_give_the_agent_parses(tmp_path: Path) -> None
     record.write_text(example)
     turn = session_page.read_turn(record)
     assert turn.headline and turn.details and turn.links and turn.answered and turn.superseded
-    (question,) = turn.questions
+    question, cited = turn.questions
     assert len(question.options) >= 2 and sum(o.picked for o in question.options) == 1 and question.why
+    assert isinstance(cited, session_page.TicketQuestion), "a ticket's question put to the user"
 
 
 if __name__ == "__main__":

@@ -33,11 +33,12 @@ for the suite's processes to share out.
 Beside the width matrix, the same widths over a board with a defect put back into it: a clean run
 means nothing until the same widths have been shown reporting a defect.
 
-What render-lint measures is text against its own box, and text drawn over other text, HTML over
-HTML included; what it does not reach is text a box clips rather than spills, which every mark
-that truncates does by design, and an overlap the browser paints an opaque box over, which is
-what a card drawn over the page is. The Property is executable as far as that reaches; the rest
-was read by eye at these widths, in both schemes (02-rows' closing comment).
+What render-lint measures is text against its own box, text a box cuts off, and text drawn over
+other text, HTML over HTML included. Text its own `.clip` cuts off is not a finding here: that is
+every mark, name and brief that truncates by design. What render-lint does not reach is an overlap
+the browser paints an opaque box over, which is what a card drawn over the page is. The Property
+is executable as far as that reaches; the rest was read by eye at these widths, in both schemes
+(02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
@@ -67,7 +68,8 @@ from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
 
-SHOW = Path(__file__).resolve().parents[1] / "show"
+HERE = Path(__file__).resolve().parent  # the probes, each a script a browser check runs
+SHOW = HERE.parent / "show"
 RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
@@ -112,7 +114,13 @@ def lint(pages: list[str], width: int) -> list[dict]:
         f"render-lint at {width}px exited {done.returncode} with no findings to read: "
         f"{done.stderr.strip()[-2000:]}"
     )
-    return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
+    return [f for f in json.loads(done.stdout) if not (f["kind"] == "tight" or truncates(f))]
+
+
+def truncates(finding: dict) -> bool:
+    """Whether a finding is text cut off only where the board means to cut it: by its own `.clip`
+    (board.clipped_html), and by no box around one."""
+    return finding["kind"] == "clipped" and all(c.split()[-1] == "span.clip" for c in finding["cutters"])
 
 
 def band_edges(page: str) -> list[int]:
@@ -164,16 +172,22 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     assert not (found := lint(pages, width)), named({width: found})
 
 
-# A defect put back into the board: the brief of every folded row, in a box too narrow for the one
-# unbreakable line it is set as, with nothing left to hide the rest.
-DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
+# Defects put back into the board, each by the kind it is reported as and the tail of the address
+# of the element it is measured on: the brief of every folded row, in a box too narrow for the one
+# unbreakable line it is set as, with nothing left to hide the rest; every row's time, cut off by a
+# box that has no truncation of its own; and every row's name, whose `.clip` a box around it cuts.
+DEFECTS = {
+    ("escapes", "span.brief span.clip"): ".brief { display: block !important; width: 60px !important } .brief .clip { overflow: visible !important }",
+    ("clipped", "span.time"): ".time { display: block !important; width: 4px !important; overflow: hidden !important }",
+    ("clipped", "span.title span.clip"): ".titleline { height: .5rem !important; overflow: hidden !important }",
+}
 
 
 @pytest.mark.full_path
 @pytest.mark.parametrize("width", WIDTHS)
-def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
-    """A width where the defect goes unreported is a width the Property is not checked at, whatever
-    the clean run above says. The oracle is the defect itself, named by the element it was measured
+def test_defects_put_back_into_the_board_are_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
+    """A width where a defect goes unreported is a width the Property is not checked at, whatever
+    the clean run above says. The oracle is each defect itself, named by the element it was measured
     on: any other finding, an unmeasurable page among them, leaves the width unchecked."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
@@ -182,149 +196,16 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
     render(transcribed.root, transcribed.repo, out)
     assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
     broken = tmp_path / "broken.html"
-    broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
+    broken.write_text(out.read_text().replace("</head>", f"<style>{' '.join(DEFECTS.values())}</style></head>", 1))
     found = lint([f"{broken}?theme=day"], width)
-    assert any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in found), (
-        f"the defect went unseen at {width}px: {named({width: found})}"
-    )
+    unseen = [(kind, el) for kind, el in DEFECTS if not any(f["kind"] == kind and f["el"].endswith(el) for f in found)]
+    assert not unseen, f"{unseen} went unseen at {width}px: {named({width: found})}"
 
-
-# Whether the graph engine arrived, read off the requests that failed rather than off the page: one
-# of its two imports failing is the network's answer, save an abort, which is a navigation leaving
-# the page that asked and says nothing about the network. The chunks mermaid fetches while it draws
-# are not the engine.
-ENGINE = r'''
-def cdn(failed):
-    return not any(url.endswith(("mermaid.min.js", ".esm.min.mjs")) and why != "net::ERR_ABORTED" for url, why in failed)
-'''
-
-# What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
-# opened a row, whether the graph beside it came back, whether the briefing is set as prose and says
-# what it is, and what each mark shows on hover, a copy button's account of what it copies among
-# them. The side column's own hints are `title` attributes, as the graph's buttons are: a box that
-# scrolls cuts a tooltip drawn inside it, and that column is the one box on the page that scrolls. A pseudo-element has no rect of its own, so a
-# tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
-# would hide it, which is how two marks came to carry words no reader could see.
-PROBE = ENGINE + r'''
-import json, os, shutil, sys
-from pathlib import Path
-from playwright.sync_api import TimeoutError, sync_playwright
-from page_cache import default_root, serve
-
-page_url = Path(sys.argv[1]).resolve().as_uri()
-width, marks = int(sys.argv[2]), sys.argv[3].split(",")
-ROW, FOLDED = sys.argv[4].split(",")
-TIP = """
-(mark) => {
-  const el = document.querySelector(mark)
-  if (!el) return {missing: true}
-  const tip = getComputedStyle(el, "::after")
-  // an absolutely positioned box is laid out from the padding box of its nearest positioned
-  // ancestor, which is the row, not the mark
-  let cb = el
-  while (cb.parentElement && getComputedStyle(cb).position === "static") cb = cb.parentElement
-  const base = cb.getBoundingClientRect()
-  const [w, h] = [parseFloat(tip.width), parseFloat(tip.height)]
-  const left = tip.left === "auto" ? base.right - w - parseFloat(tip.right) : base.left + parseFloat(tip.left)
-  // what could clip the tip: its containing block and everything under it, up to the first
-  // positioned ancestor, which is where an absolutely positioned box is laid out from
-  let clipped = null
-  for (let a = el; a; a = a.parentElement) {
-    if (getComputedStyle(a).overflow !== "visible") clipped = a.className
-    if (a !== el && getComputedStyle(a).position !== "static") break
-  }
-  return {words: tip.content, w, h, left, right: left + w, clipped, viewport: innerWidth}
-}
-"""
-with sync_playwright() as pw:
-    # the run it belongs to, as `browsers --help` defines it
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
-                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
-    # the clipboard is what a copy button is for, and a page reaches it only where it is granted
-    context = browser.new_context(viewport={"width": width, "height": 1000},
-                                  permissions=["clipboard-read", "clipboard-write"])
-    page = context.new_page()
-    serve(context, default_root())
-    failed = []
-    page.on("requestfailed", lambda r: failed.append((r.url, r.failure)))
-    out = {"schemes": {}, "tips": {}}
-    for scheme in ("day", "night"):
-        page.goto(f"{page_url}?theme={scheme}#{ROW}")
-        page.evaluate("document.fonts.ready")
-        out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
-    # the row the anchor opened asks for its graph, which is when the engine is fetched: by the end
-    # of the wait it has drawn, or the panel says it could not load
-    try:
-        page.wait_for_selector(".side .mermaid svg, #gunloaded:not([hidden])", timeout=10_000)
-    except TimeoutError:
-        pass  # counted as no graph below
-    out["cdn"] = cdn(failed)
-    out["names"] = page.evaluate("""
-      () => [...document.querySelectorAll("details.ticket")].map((row) => {
-        const clip = row.querySelector(":scope > summary .title .clip"), name = clip.getBoundingClientRect()
-        const links = [...row.querySelectorAll(":scope > summary .titleline > a")]
-        return {
-          row: row.id, text: clip.textContent,
-          cut: clip.scrollWidth > clip.clientWidth + 1,
-          beside: links.filter((a) => Math.abs(a.getBoundingClientRect().top - name.top) < 4).length,
-        }
-      })
-    """)
-    out["opened"] = page.evaluate("document.querySelectorAll('details.ticket[open]').length")
-    out["briefing"] = page.evaluate("""
-      () => {
-        const p = document.querySelector(".btext p"), box = p.getBoundingClientRect()
-        return {wraps: getComputedStyle(p).whiteSpace !== "nowrap", over: p.scrollWidth - Math.ceil(box.width),
-                says: document.querySelector("#briefing .bwhen").title}
-      }
-    """)
-    out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
-    out["unloaded"] = page.is_visible("#gunloaded") and page.inner_text("#gunloaded")
-    for mark in marks:
-        where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
-        page.hover(where)
-        out["tips"][mark] = page.evaluate(TIP, where)
-    out["questions"] = page.evaluate("""
-      ([opened, folded]) => {
-        const listed = (id) => {
-          const list = document.getElementById(id).querySelector(".qs")
-          return list ? list.getBoundingClientRect().height > 0 : null
-        }
-        const row = document.getElementById(opened)
-        // each question of the opened row, as boxes rather than as nodes: a button the markup
-        // carries and the style hides is what this run is here to tell from one the reader can click
-        const asked = [...row.querySelectorAll(".asked > li")].map((li) => {
-          const line = li.getBoundingClientRect()
-          const button = li.querySelector(":scope > .copier")?.getBoundingClientRect()
-          return {copier: button ? button.width > 0 : false,
-                  at_the_end: button ? line.right - button.right < 1 : null}
-        })
-        return {opened_list: listed(opened), folded_list: listed(folded), asked}
-      }
-    """, [ROW, FOLDED])
-    page.click(f"#{FOLDED} .qall")
-    page.wait_for_timeout(500)
-    out["copied"] = {
-        "clipboard": page.evaluate("navigator.clipboard.readText()"),
-        "asked": page.evaluate(f"document.querySelector('#{FOLDED} .qall').dataset.copy"),
-        "note": page.inner_text("#toast"),
-        "shown": page.evaluate("document.getElementById('toast').classList.contains('on')"),
-        "still_folded": page.evaluate(f"!document.getElementById('{FOLDED}').open"),
-    }
-    out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
-    page.click("#scheme")
-    page.wait_for_timeout(2500)
-    out["graphs_after_switch"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
-    out["unloaded_after_switch"] = page.is_visible("#gunloaded")
-    out["scheme_after_switch"] = page.evaluate("document.documentElement.dataset.theme")
-    browser.close()
-print(json.dumps(out))
-'''
 
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
-MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
+MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
          "#t-month-close .kin",
          f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",
@@ -337,7 +218,7 @@ MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", 
 def cut_off(offline: bool, tmp_path: Path) -> dict[str, str]:
     """The environment a probe runs in: this machine's copies and its network, or neither. uv keeps
     the cache it runs the probe from, which would otherwise move with the copies."""
-    env = os.environ | {"PYTHONPATH": str(SHOW)}
+    env = dict(os.environ)
     if not offline:
         return env
     uv_cache = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
@@ -346,8 +227,8 @@ def cut_off(offline: bool, tmp_path: Path) -> dict[str, str]:
 
 def probe(page: Path, width: int, env: dict[str, str]) -> dict:
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
-        input=PROBE, capture_output=True, text=True, env=env,
+        ["uv", "run", str(HERE / "board_probe_marks.py"), str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
+        capture_output=True, text=True, env=env,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
     return json.loads(done.stdout)
@@ -380,6 +261,8 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     assert seen["cdn"] is not offline, "with the network cut off and no copies, the graph engine arrived all the same"
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
+    # the graph's name says which graph is on show, so the side column never cuts it short
+    assert seen["gname"] == {"text": "csv-import", "cut": False}, f"the graph's name reads {seen['gname']}"
     said = seen["briefing"]
     assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
     assert said["says"], "the briefing's own mark says nothing about what it is"
@@ -410,6 +293,17 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     assert copied["clipboard"].count("- [D") == 2, "the folded row's two questions, under its path"
     assert copied["shown"] and "retire-legacy-exporter.md" in copied["note"], f"the note reads {copied['note']!r}"
     assert copied["still_folded"], "the click opened the row instead of copying"
+    # what the needs-me group's button counts and copies is the questions of the rows on show
+    group = seen["group"]
+    asked = lambda said: int(re.search(r"\d+", said["word"]).group())
+    assert group["after"]["hidden"], "the saved-views pill hid no needs-me row"
+    assert group["clipboard"] == group["after"]["copy"], "the click put something else on the clipboard"
+    assert group["clipboard"].count("\n- [") == asked(group["after"]) < asked(group["before"]), (
+        f"with saved-views hidden the button reads {group['after']['word']!r} over {group['clipboard']!r}"
+    )
+    assert not [path for path in group["after"]["hidden"] if path in group["clipboard"]], (
+        f"the button copies the questions of a row the pill hid: {group['clipboard']!r}"
+    )
     # the name is what a row is read by, so it is never the thing that gives up its width
     for name in seen["names"]:
         assert not (name["cut"] and name["beside"]), (
@@ -430,220 +324,10 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         )
 
 
-# What the graph does once a browser runs it, which is the only place it does anything: the side
-# column's preview, the same graph at full size over the board, and the same again in a window of
-# its own. Every move a reader makes is made here, and what the board did with it is read off the
-# board: the two keys and the buttons that do the same, Escape's order, a click on the preview and
-# on a node in it, a drag that pans and the click it ends with, the switch in each view, a node
-# clicked in each full size view, the board re-rendering under the window, and the board going
-# away.
-GRAPH_PROBE = ENGINE + r'''
-import json, os, shutil, sys
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-from page_cache import default_root, serve
-
-page_url = Path(sys.argv[1]).resolve().as_uri()
-ROW, NODE, NEXT = "t-map-columns", "#t-commit-import", "#t-parse-rows"
-WIDE = "(sel) => document.querySelector(sel)?.getBoundingClientRect().width ?? 0"
-OVER = "(sel) => { const b = document.querySelector(sel); return b.scrollWidth - b.clientWidth }"
-OPEN = "document.getElementById('gfull').classList.contains('open')"
-
-def nodes(frame, where):
-    return frame.eval_on_selector_all(where + " g.node", "els => els.length")
-
-def click_node(frame, where, which):
-    """The node for `which`, clicked where the graph is drawn."""
-    attr = "els => els.map((a) => a.getAttribute('href') || a.getAttribute('xlink:href'))"
-    hrefs = frame.eval_on_selector_all(where + " a", attr)
-    assert which in hrefs, f"no node for {which} in {where}"
-    frame.locator(where + " a").nth(hrefs.index(which)).click()
-
-def named(frame, where, name):
-    frame.wait_for_function("([w, n]) => document.querySelector(w)?.textContent === n", arg=[where, name])
-
-with sync_playwright() as pw:
-    # the run it belongs to, as `browsers --help` defines it
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
-                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
-    context = browser.new_context(viewport={"width": 1600, "height": 950})
-    page = context.new_page()
-    serve(context, default_root())
-    failed = []
-    page.on("requestfailed", lambda r: failed.append((r.url, r.failure)))
-    errors = []
-    page.on("pageerror", lambda e: errors.append("board: " + str(e)))
-
-    # ?graph on the address, beside the row's anchor: the state the layout check measures. The
-    # overlay paints once the drawing is done, or once the engine has failed to arrive, and every
-    # step past this one that needs a drawing runs only where it arrived.
-    page.goto(f"{page_url}?theme=night&graph=1#{ROW}")
-    page.evaluate("document.fonts.ready")
-    page.wait_for_selector("#gfull .gsvg svg, #gfull .gnote:not([hidden])")
-    out = {"cdn": cdn(failed),
-           "ground": page.evaluate("getComputedStyle(document.body).backgroundColor"),
-           "font": page.evaluate("getComputedStyle(document.getElementById('gname')).fontFamily"),
-           "node": NODE}
-    drawn = out["cdn"]
-    PAINTED = ".gsvg svg" if drawn else ".gnote:not([hidden])"
-    out["from_the_address"] = {"open": page.is_visible("#gfull"), "nodes": nodes(page, "#gfull .gsvg"),
-                               "name": page.inner_text("#gfull .gname"), "note": page.inner_text("#gfull .gnote")}
-    if drawn:
-        out["preview_width"] = page.evaluate(WIDE, ".side .g:not([hidden]) .mermaid svg")
-
-    # the whole tracker at full size, dragged to pan, then a node
-    page.click("#gfull [data-gmode=all]")
-    named(page, "#gfull .gname", "whole tracker")
-    over = {"name": page.inner_text("#gfull .gname"), "note": page.inner_text("#gfull .gnote")}
-    if drawn:
-        page.wait_for_selector("#gfull .gsvg g.node.cur")
-        over |= {"width": page.evaluate(WIDE, "#gfull .gsvg svg"),
-                 "nodes": nodes(page, "#gfull .gsvg"), "overflow": page.evaluate(OVER, "#gfull .gfbody"),
-                 "marked": page.eval_on_selector_all("#gfull .gsvg g.node.cur", "els => els.map((n) => n.id)"),
-                 "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
-                 "viewbox": page.evaluate("() => { const v = document.querySelector('#gfull .gsvg svg').viewBox.baseVal; return [v.width, v.height] }"),
-                 "drawn": page.evaluate("() => { const b = document.querySelector('#gfull .gsvg svg').getBoundingClientRect(); return [b.width, b.height] }")}
-        # narrowed first, so the drag has something to move whatever the fixture's
-        # labels are as wide as: the check is that a drag pans, not that this
-        # tracker's graph happens to overflow the window this probe opens in
-        page.set_viewport_size({"width": 700, "height": 950})
-        page.wait_for_function("document.querySelector('#gfull .gfbody').scrollWidth > document.querySelector('#gfull .gfbody').clientWidth")
-        over["overflow"] = page.evaluate(OVER, "#gfull .gfbody")
-        box = page.evaluate("() => { const b = document.querySelector('#gfull .gfbody').getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height} }")
-        page.mouse.move(box["x"] + box["w"] * 0.8, box["y"] + box["h"] * 0.5)
-        page.mouse.down()
-        page.mouse.move(box["x"] + 3, box["y"] + box["h"] * 0.5, steps=12)  # out over the backdrop
-        page.mouse.up()
-        over["panned"] = page.evaluate("document.querySelector('#gfull .gfbody').scrollLeft")
-        over["open_after_pan"] = page.is_visible("#gfull")
-        over["grabbing"] = page.evaluate("document.querySelector('#gfull .gfbody').classList.contains('panning')")
-        click_node(page, "#gfull .gsvg", NODE)
-        over["open_after_node"] = page.is_visible("#gfull")
-        over["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
-    else:
-        page.click("#gclose")
-        over["open_after_close"] = page.is_visible("#gfull")
-    out["overlay"] = over
-
-    # the two keys, and Escape taking the overlay before the open row
-    page.keyboard.press("f")
-    page.wait_for_selector("#gfull " + PAINTED)
-    keys = {"f_opened": page.is_visible("#gfull")}
-    page.keyboard.press("Escape")
-    keys["esc_closed"] = not page.is_visible("#gfull")
-    keys["row_still_open"] = page.evaluate(f"!!document.getElementById('{ROW}')?.open")
-    out["keys"] = keys
-
-    # the buttons that do what the two keys do, clicked: the preview's `full` and `window`, and
-    # the overlay's `window`, which takes the overlay down as the window comes up
-    page.click("#gopen")
-    page.wait_for_selector("#gfull " + PAINTED)
-    buttons = {"full_opened": page.is_visible("#gfull")}
-    with page.expect_popup() as popped:
-        page.click("#gwinfull")
-    popped.value.wait_for_selector(".gfbody")
-    buttons |= {"overlay_closed": not page.is_visible("#gfull"), "from_overlay": popped.value.title()}
-    popped.value.close()
-    with page.expect_popup() as popped:
-        page.click("#gwinopen")
-    popped.value.wait_for_selector(".gfbody")
-    buttons["from_preview"] = popped.value.title()
-    popped.value.close()
-    out["buttons"] = buttons
-
-    # the preview: a click opens the full size view, a click on a node in it goes to that row
-    page.click(".side .g:not([hidden]) .mermaid" if drawn else "#gunloaded", position={"x": 3, "y": 3})
-    page.wait_for_selector("#gfull " + PAINTED)
-    preview = {"click_opened": page.is_visible("#gfull")}
-    page.keyboard.press("Escape")
-    if drawn:
-        click_node(page, ".side .g:not([hidden]) .mermaid", NEXT)
-        # a preview node is a link, so the board follows it through the address rather than at once
-        page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
-        preview["node_opened"] = page.is_visible("#gfull")
-        preview["node_cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
-    out["preview"] = preview
-
-    # the window of its own, opened with the other key
-    with page.expect_popup() as popped:
-        page.keyboard.press("w")
-    win = popped.value
-    win.on("pageerror", lambda e: errors.append("window: " + str(e)))
-    win.set_viewport_size({"width": 900, "height": 620})
-    win.wait_for_selector(".gfbody g.node.cur" if drawn else ".gfbody " + PAINTED)
-    window = {"title": win.title(), "scheme": win.evaluate("document.documentElement.dataset.theme"),
-              "ground": win.evaluate("getComputedStyle(document.body).backgroundColor"),
-              "font": win.evaluate("getComputedStyle(document.querySelector('.gname')).fontFamily"),
-              "name": win.inner_text(".gname"), "note": win.inner_text(".gfbody .gnote")}
-    if drawn:
-        window |= {"width": win.evaluate(WIDE, ".gfbody svg"),
-                   "nodes": nodes(win, ".gfbody"), "overflow": win.evaluate(OVER, ".gfbody"),
-                   "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
-                   "marked": win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")}
-    win.click("[data-gmode=tree]")  # the board is on the whole tracker, so this is a change in both
-    named(win, ".gname", "csv-import")
-    window["switched"] = win.inner_text(".gname")
-    window["board_name"] = page.inner_text("#gname")
-    if drawn:
-        click_node(win, ".gfbody", NODE)
-        page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NODE[1:]}'")
-        window["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
-        window["still_open"] = not win.is_closed()
-        # The window follows the board's cursor without redrawing: the cursor moves to another row of
-        # the tree on show, so the graph is one the new row has a node in. A row of any other tree is
-        # a different graph, and a standalone ticket's tree has none at all, which leaves the window
-        # showing its note and no mark for this to wait on.
-        drawing = win.evaluate("document.querySelector('.gfbody .gsvg svg').id")
-        steps, slug = page.evaluate("""
-          () => {
-            const shown = [...document.querySelectorAll(".ticket")].filter((r) => r.checkVisibility())
-            const at = shown.findIndex((r) => r.classList.contains("kcur"))
-            const next = shown.findIndex((r, i) => i > at && r.dataset.tree === shown[at].dataset.tree)
-            return [next - at, shown[next]?.dataset.slug]
-          }
-        """)
-        assert slug, "no row of the cursor's own tree below it, so j leaves the graph on show"
-        for _ in range(steps):
-            page.keyboard.press("j")
-        page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=f"t-{slug}")
-        node = "T_f_" + slug.replace("-", "_")
-        win.wait_for_selector(f'.gfbody g.node.cur[id*="-{node}-"]')
-        window["follows_cursor"] = win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")
-        window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').id") == drawing
-    window["html"] = win.evaluate("document.documentElement.outerHTML")
-    out["window"] = window
-
-    # the re-render every tracker change triggers, under a window that has to find the board again
-    page.reload()
-    page.evaluate("document.fonts.ready")
-    page.keyboard.press("Escape")
-    page.wait_for_selector(f"#{ROW} > summary")
-    page.click(f"#{ROW} > summary")
-    if drawn:
-        win.wait_for_selector(".gfbody g.node.cur")
-        click_node(win, ".gfbody", NEXT)
-        page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
-    else:
-        win.click("[data-gmode=all]")
-        named(page, "#gname", "whole tracker")
-    out["after_reload"] = {"orphan": win.evaluate("document.documentElement.dataset.orphan"),
-                           "cursor": page.evaluate("document.querySelector('.ticket.kcur')?.id"),
-                           "board_name": page.inner_text("#gname")}
-
-    # the board gone: a window that says so rather than one that looks live
-    page.close()
-    win.wait_for_function("document.documentElement.dataset.orphan === '1'", timeout=10_000)
-    out["orphan_says"] = win.inner_text(".gorphan")
-    out["errors"] = errors
-    browser.close()
-print(json.dumps(out))
-'''
-
-
 def graph_probe(page: Path, env: dict[str, str]) -> dict:
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(page)],
-        input=GRAPH_PROBE, capture_output=True, text=True, env=env,
+        ["uv", "run", str(HERE / "board_probe_graph.py"), str(page)],
+        capture_output=True, text=True, env=env,
     )
     assert done.returncode == 0, f"graph probe: {done.stderr.strip()[-3000:]}"
     return json.loads(done.stdout)
@@ -760,74 +444,6 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     assert {width: f for width in (450, 900, 1600) if (f := lint([str(doc)], width))} == {}
 
 
-
-# A draw that fails after the engine loaded: the engine and what it imports come from a directory of
-# their own, with the network cut off, so the pieces mermaid fetches while it draws do not arrive.
-# The copies of those pieces are then put in, and the board draws with them from its next load on:
-# the browser keeps a failed import as failed for as long as the page lives, so nothing short of a
-# load fetches it again, and the board loads again on every change to the tracker.
-UNDRAWN_PROBE = r"""
-import json, os, shutil, sys
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-from page_cache import copy_of, default_root, serve
-
-page_url, ENGINE = Path(sys.argv[1]).resolve().as_uri(), sys.argv[2].split(",")
-own, kept = Path(sys.argv[3]), default_root()
-UNDRAWN = "#gundrawn:not([hidden])"
-# mermaid is a classic script, its layout a module
-LOAD = '''(urls) => Promise.all(urls.map((u) => u.endsWith(".mjs") ? import(u) : new Promise((ok, no) =>
-  document.head.append(Object.assign(document.createElement("script"), {src: u, onload: ok, onerror: no})))))
-  .then(() => true, () => false)'''
-
-with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
-                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
-    # what importing the engine asks for, and nothing its drawing does
-    loader = browser.new_context()
-    page = loader.new_page()
-    serve(loader, kept)
-    asked = []
-    page.on("request", lambda r: asked.append(r.url))
-    if not page.evaluate(LOAD, ENGINE):
-        print(json.dumps({"cdn": False}))
-        sys.exit()
-    own.mkdir()
-    for url in asked:
-        shutil.copy(copy_of(kept, url), own)
-    loader.close()
-
-    os.environ["MX_PAGE_CACHE_OFFLINE"] = "1"
-    context = browser.new_context(viewport={"width": 1600, "height": 950})
-    page = context.new_page()
-    serve(context, own)
-    page.goto(f"{page_url}?theme=night#t-map-columns")
-    page.wait_for_selector(UNDRAWN)
-    out = {"cdn": True, "preview": {"note": page.inner_text("#gundrawn"), "unloaded": page.is_visible("#gunloaded"),
-                       "graphs": page.evaluate("document.querySelectorAll('.side .mermaid svg').length")}}
-    page.keyboard.press("f")
-    page.wait_for_selector("#gfull .gnote:not([hidden])")
-    out["overlay"] = page.inner_text("#gfull .gnote")
-    page.keyboard.press("Escape")
-    with page.expect_popup() as popped:
-        page.keyboard.press("w")
-    win = popped.value
-    win.wait_for_selector(".gfbody .gnote:not([hidden])")
-    out["window"] = win.inner_text(".gfbody .gnote")
-    win.close()
-    # a failed draw, in the preview or at full size, leaves no error drawing of mermaid's own behind
-    out["stray"] = page.evaluate("document.querySelectorAll('body > [id^=dm], body > [id^=dgf]').length")
-
-    shutil.copytree(kept, own, dirs_exist_ok=True)
-    page.reload()
-    page.wait_for_selector(".side .g:not([hidden]) .mermaid svg", timeout=20_000)
-    out["next"] = {"graphs": page.evaluate("document.querySelectorAll('.side .g:not([hidden]) .mermaid svg').length"),
-                   "note": page.is_visible("#gundrawn")}
-    browser.close()
-print(json.dumps(out))
-"""
-
-
 @pytest.mark.full_path
 def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criterion: the preview and both full size views say the graph could
@@ -841,8 +457,8 @@ def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_vie
     engine = sorted(set(re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+(?:\.esm\.min\.mjs|/mermaid\.min\.js))"', out.read_text())))
     assert len(engine) == 2, f"the page names {engine} as its engine"
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(out), ",".join(engine), str(tmp_path / "engine-only")],
-        input=UNDRAWN_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+        ["uv", "run", str(HERE / "board_probe_undrawn.py"), str(out), ",".join(engine), str(tmp_path / "engine-only")],
+        capture_output=True, text=True,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
     seen = json.loads(done.stdout)
@@ -857,59 +473,6 @@ def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_vie
     assert undrawn in seen["overlay"], f"the overlay says {seen['overlay']!r}"
     assert undrawn in seen["window"], f"the window of its own says {seen['window']!r}"
     assert seen["next"] == {"graphs": 1, "note": False}, f"the board's next load, once the pieces arrive: {seen['next']}"
-
-
-
-# A file of the engine changed at the CDN: the board draws once from this machine's copies, so they
-# hold every file it fetches, then loads again from a copy of them in which one file carries a
-# byte more than the one its hash was taken of.
-TAMPERED_PROBE = r"""
-import json, os, re, shutil, sys
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-from page_cache import copy_of, default_root, serve
-
-page = Path(sys.argv[1])
-page_url, changed, own, kept = page.resolve().as_uri(), sys.argv[2], Path(sys.argv[3]), default_root()
-pinned = sorted(set(re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+\.m?js)"', page.read_text())))
-
-with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
-                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
-    loader = browser.new_context()
-    tab = loader.new_page()
-    serve(loader, kept)
-    tab.goto(f"{page_url}#t-map-columns")
-    tab.wait_for_selector(".side .mermaid svg, .gnote[id^=gun]:not([hidden])")
-    if not tab.is_visible(".side .mermaid svg"):
-        print(json.dumps({"cdn": False}))
-        sys.exit()
-    loader.close()
-    own.mkdir()
-    for url in pinned:
-        shutil.copy(copy_of(kept, url), own)
-    [target] = [url for url in pinned if url.endswith(changed)]
-    with copy_of(own, target).open("ab") as f:
-        f.write(b"\n;")
-
-    os.environ["MX_PAGE_CACHE_OFFLINE"] = "1"
-    context = browser.new_context(viewport={"width": 1600, "height": 950})
-    tab = context.new_page()
-    serve(context, own)
-    errors = []
-    tab.on("pageerror", lambda e: errors.append(str(e)))
-    tab.goto(f"{page_url}?theme=day#t-map-columns")
-    tab.wait_for_selector("#gunloaded:not([hidden]), #gundrawn:not([hidden]), .side .mermaid svg")
-    out = {"cdn": True, "pinned": pinned, "graphs": tab.eval_on_selector_all(".mermaid svg", "els => els.length"),
-           "notes": [tab.inner_text(n) for n in ("#gunloaded", "#gundrawn") if tab.is_visible(n)]}
-    # the rest of the board: the open row folds, and the scheme switches
-    tab.click("#t-map-columns > summary")
-    tab.keyboard.press("t")
-    out["rest"] = {"folded": not tab.evaluate("document.getElementById('t-map-columns').open"),
-                   "scheme": tab.evaluate("document.documentElement.dataset.theme"), "errors": errors}
-    browser.close()
-print(json.dumps(out))
-"""
 
 
 # The layout's chunks, as the page's import map pins them: the render chunk is fetched once the
@@ -934,8 +497,8 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(out), changed, str(tmp_path / "changed")],
-        input=TAMPERED_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+        ["uv", "run", str(HERE / "board_probe_tampered.py"), str(out), changed, str(tmp_path / "changed")],
+        capture_output=True, text=True,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
     seen = json.loads(done.stdout)
@@ -946,43 +509,6 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     assert len(seen["notes"]) == 1 and note in said and "pinned" in said, f"the panel says {seen['notes']}"
     assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
-
-
-# The tab polls the stamp file on a timer, which the page's clock runs forward rather than the check
-# waiting it out.
-STALE_PROBE = r"""
-import json, os, shutil, sys
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-from page_cache import default_root, serve
-
-page, stale = Path(sys.argv[1]), sys.argv[2]
-stamp = Path(f"{page}.stamp.js")
-drawn = stamp.read_text()
-NOTE = "[data-absent=board-stale]"
-
-with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
-                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
-    context = browser.new_context(viewport={"width": 1600, "height": 950})
-    serve(context, default_root())
-    tab = context.new_page()
-    tab.clock.install()
-    tab.goto(page.resolve().as_uri())
-    tab.evaluate("window.__loaded = true")  # gone on a reload
-    out = {"before": tab.is_visible(NOTE)}
-    stamp.write_text(stale)
-    tab.clock.run_for(6_000)
-    tab.wait_for_selector(f"{NOTE}:not([hidden])")
-    out["stale"] = tab.inner_text(NOTE)
-    stamp.write_text(drawn)
-    tab.clock.run_for(6_000)
-    tab.wait_for_selector(f"{NOTE}[hidden]", state="attached")
-    out["after"] = tab.is_visible(NOTE)
-    out["reloaded"] = not tab.evaluate("window.__loaded === true")
-    browser.close()
-print(json.dumps(out))
-"""
 
 
 @pytest.mark.full_path
@@ -1000,8 +526,8 @@ def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(tran
     stale = Path(f"{out}.stamp.js").read_text()
     Path(f"{out}.stamp.js").write_text(drawn)
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(out), stale],
-        input=STALE_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)}, timeout=180,
+        ["uv", "run", str(HERE / "board_probe_stale.py"), str(out), stale],
+        capture_output=True, text=True, timeout=180,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
     seen = json.loads(done.stdout)

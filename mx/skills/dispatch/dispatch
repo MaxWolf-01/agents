@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # The orchestrator's side of dispatch and its one door to the worker hosts. Run
 # it on the branch ticket branches cut from and merge back into: a parent
-# ticket's, or the integration branch for a ticket with no parent. A ticket's
+# ticket's, or the trunk for a ticket with no parent. A ticket's
 # branch is ticket/<slug> in the code repo, in the agent repo at `agent/`, and
 # in each listed repo its `repos:` names (`tracker repos --help`).
 #
 # claim <slug>    before the spawn. Writes `claimed`, committed in the agent repo.
 #                 Exit 1: already claimed, or the tracker refused (rule printed).
 # prompt <slug> < <file>
-#                 before a spawn or a resume: stdin is the worker's message. A
-#                 spawn sends the ticket's context and its listed repos' paths
-#                 under it; a resume sends it alone.
+#                 before a spawn or a resume: stdin is the worker's message,
+#                 staged under the ticket's context as it stands; a resume
+#                 sends it alone, flagged when that context changed.
 # ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
 #                 spawn names the host, user@host or `local`; later commands
-#                 find it from the slug, and `probe` with no --host asks every
-#                 host this branch has a run on. --setup-cmd replaces the line
+#                 find it from the slug. `probe` with no --host first retires
+#                 the run of each ticket done or out of the tracker whose work
+#                 merged, then asks every host this branch has a run on.
+#                 --setup-cmd replaces the line
 #                 each new worktree there runs first (default `make install`,
 #                 under `nix develop -c` with a flake.nix). `resume` claims a
 #                 ticket in `review` again; `cleanup` forgets the run.
@@ -36,11 +38,11 @@
 #                 or `done` once every branch is merged (a squashed or rebased
 #                 PR is read from GitHub), each repo's range in `diff:`; a
 #                 `done` retires the run. A child merged into its parent's
-#                 branch stays in `review` for the parent's ruling, unless it
-#                 is a hinge. Exit 1: the branch wrote a ticket file; a page it
-#                 didn't render is in the way (named); a PR it could not read,
-#                 or a branch holding commits its PR did not carry; the tracker
-#                 refused, or the run did not retire (reason printed).
+#                 branch stays in `review` for the parent's ruling. Exit 1:
+#                 the branch wrote a ticket file; a page it didn't render is
+#                 in the way (named); a PR it could not read, or a branch
+#                 holding commits its PR did not carry; the tracker refused,
+#                 or the run did not retire (reason printed).
 # accept <slug>   once a parent ticket's branch merged --no-ff into this one, on
 #                 the user's accept. Writes `done`, with its ranges, on it and
 #                 every child of it in `review`, in one commit, and retires
@@ -50,15 +52,15 @@
 # ps [--color] [--follow]
 #                 every worker on every host, for a human; the orchestrator's
 #                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
-#                 --follow keeps the table on screen, redrawn as the hosts
-#                 change, over one ssh login per host, until Ctrl-C.
+#                 --follow redraws the table as the hosts change, until Ctrl-C.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
 # <worker> is a slug or a session name; one held twice lists the forms to type.
 #
-# Env: DISPATCH_PERMISSION_MODE reaches the worker; DISPATCH_RUNNER is a runner
-# file here that a spawn or resume runs the worker on (`dispatch ctl --help`).
+# Env: DISPATCH_PERMISSION_MODE and DISPATCH_EFFORT reach the worker; DISPATCH_RUNNER
+# is a runner file here that a spawn or resume runs the worker on (`dispatch ctl
+# --help`).
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -108,7 +110,7 @@ base_at() { case $1 in code) echo "$base" ;; agent) echo "$agent_base" ;; *) ech
 declare -A listed_top=() listed_onto=()
 
 # Every repo on the project's list, read through `tracker repos`, its one reader. Its base is the
-# parent ticket's branch there where the repo has one, and its integration branch otherwise, both
+# parent ticket's branch there where the repo has one, and its trunk otherwise, both
 # its own and origin's where it has both: a merge on this machine is local, and a PR's is at origin.
 # Space-separated, since a ref name holds no space.
 listed() { # <parent slug, or nothing>
@@ -141,7 +143,7 @@ ticket_listed() { # <slug>
     listed "$(field "$1" parent)"
     for name in "${ticket_repos[@]}"; do
         [ -n "${listed_top[$name]-}" ] || die "$1's repos: names $name, which \`tracker repos\` does not list"
-        # Of a local integration branch and origin's, the one ahead, and the local one where the two
+        # Of a local trunk and origin's, the one ahead, and the local one where the two
         # have parted: a PR merges at origin, which a local branch may not have taken in yet.
         read -r -a refs <<< "${listed_onto[$name]}"
         cut_from[$name]=${refs[0]}
@@ -156,7 +158,7 @@ ticket_listed() { # <slug>
 remote_of() { case $1 in code | agent) echo "${2//[@.]/-}" ;; *) echo "${2//[@.]/-}-$repo" ;; esac; } # <repo> <host>
 
 # Every command runs on the branch ticket branches cut from and merge back
-# into: a parent ticket's, or the integration branch. With --read, the tracker
+# into: a parent ticket's, or the trunk. With --read, the tracker
 # is read first (`read_tracker`), and where it is comes with that read.
 locate() { # [--read [<slug>]]
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
@@ -177,7 +179,7 @@ locate() { # [--read [<slug>]]
     [ "$(git -C "$agent_top" rev-parse --show-toplevel 2>/dev/null)" = "$agent_top" ] ||
         die "$agent_top is no git repo of its own, so this project is not two repos yet; /mx:project-setup splits it out"
     # Each repo's own: the code repo is on the branch this worktree holds, a parent ticket's or the
-    # integration branch, while the agent repo keeps the branch its main checkout has out, since a
+    # trunk, while the agent repo keeps the branch its main checkout has out, since a
     # ticket file is written there and on no branch of its own.
     agent_base=$(git -C "$agent_top" branch --show-current)
     [ -n "$agent_base" ] || die "$agent_top is on a detached HEAD; ticket files are written on the branch it has out"
@@ -199,7 +201,7 @@ locate() { # [--read [<slug>]]
 # and on a shared path its runner and worker prompt would replace this one's
 # under running workers; named after the repo too, because the directory is per
 # user, not per project. Tickets with no parent ticket all dispatch from the
-# integration branch, so one repo's share one.
+# trunk, so one repo's share one.
 scratch_dir() { # <host>
     d=$state_root/$repo-$base
     [ "$1" = local ] && d=$HOME/$d
@@ -316,6 +318,13 @@ stage() { # <host> [setup-command]
         printf '%s\n' "$cmd" > "$staged/setup"
         files+=("$staged/setup")
     fi
+    # Checked on every spawn, staged host or not: a remote is this machine's, and the stamp is the host's.
+    if [ "$h" != local ]; then
+        remote=$(remote_of code "$h")
+        host_remote "$repo_root" "$remote" "$h:repos/dispatch/$repo.git" &&
+            host_remote "$agent_top" "$remote" "$h:repos/dispatch/$repo-agent.git" ||
+            die "staging $h stopped at its git remotes; the line above says why"
+    fi
     if [ "$(on_host "$h" cat "$scratch/stamp" 2>/dev/null)" = "$stamp" ]; then
         # A new --setup-cmd is the one thing a staged host still takes, so a
         # failure here is the spawn building worktrees with the old one.
@@ -327,10 +336,6 @@ stage() { # <host> [setup-command]
         copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
         run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" "$agent_top" "$agent_base" || die "init failed"
     else
-        remote=$(remote_of code "$h")
-        git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$h:repos/dispatch/$repo.git"
-        git -C "$agent_top" remote get-url "$remote" >/dev/null 2>&1 ||
-            run git -C "$agent_top" remote add "$remote" "$h:repos/dispatch/$repo-agent.git"
         run on_host "$h" mkdir -p "$scratch" || die "cannot reach $h"
         copy_to "$h" "$scratch" "${files[@]}" || die "copy to $h:$scratch failed"
         # init creates the two bare repos a push lands in; until it has run, the
@@ -340,6 +345,20 @@ stage() { # <host> [setup-command]
     fi
     # Last, so a staging that broke halfway is done again instead of trusted.
     printf '%s\n' "$stamp" | on_host "$h" tee "$scratch/stamp" > /dev/null
+}
+
+# The remote <top> reaches a host's bare repo at <url> through, added where missing. One at another
+# of the host's dispatch repos is a staging's from before the project's repo name changed, and is
+# repointed, so the push lands where the host's worktrees cut from; one anywhere else is somebody
+# else's, and stays as it is.
+host_remote() { # <top> <remote> <url>
+    local at
+    at=$(git -C "$1" remote get-url "$2" 2> /dev/null) || { run git -C "$1" remote add "$2" "$3"; return; }
+    [ "$at" = "$3" ] && return 0
+    case $at in
+        "${3%%:*}:repos/dispatch/"*.git) run git -C "$1" remote set-url "$2" "$3" ;;
+        *) echo "dispatch: remote $2 at $1 names $at, not $3, the host's bare repo, so nothing is pushed there" >&2; return 1 ;;
+    esac
 }
 
 push_to() { # <host>
@@ -353,17 +372,14 @@ push_to() { # <host>
 }
 
 # The base of every listed repo `ticket_listed` read, to the bare repo of its own the host holds,
-# under the name of the branch it is there: origin's integration branch arrives as the integration
-# branch.
+# under the name of the branch it is there: origin's trunk arrives as the trunk.
 push_listed() { # <host>
     [ "$1" = local ] && return 0
     local name top remote url rc=0
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} remote=$(remote_of "$name" "$1") url=$1:repos/dispatch/$repo-$name.git
-        git -C "$top" remote get-url "$remote" > /dev/null 2>&1 || run git -C "$top" remote add "$remote" "$url"
         # The push below is forced, so it goes to no remote of that name the repo had for another use.
-        [ "$(git -C "$top" remote get-url "$remote")" = "$url" ] ||
-            { echo "dispatch: $name's remote $remote at $top is not $url, so nothing is pushed there" >&2; rc=1; continue; }
+        host_remote "$top" "$remote" "$url" || { rc=1; continue; }
         # Forced: the host's copy is dispatch's own, and which of local and origin's branch is the
         # base may change between two pushes, where the two have parted.
         run git -C "$top" push -q "$remote" "+${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
@@ -396,7 +412,7 @@ stage_listed() { # <host> <slug>
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
-        # under the integration branch's own name.
+        # under the trunk's own name.
         if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
         else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
@@ -448,17 +464,35 @@ push() {
     return $rc
 }
 
-# What a spawn sends: the orchestrator's message, then the ticket's context,
-# which is its own body and every ancestor's, assembled by the one command that
-# assembles it for a review's --spec too. A resume sends the message alone: the
-# context is already in the conversation it resumes. The composed file keeps
-# the message's name, since that is what the host stages it under.
-prompted() { # <subcommand> <slug> <message> → the file to copy
-    if [ "$1" != spawn ]; then echo "$3"; return 0; fi
-    composed=$state/prompts/$base/spawn/${3##*/}
-    mkdir -p "$(dirname "$composed")" || return 1
-    { cat "$3"; [ -z "${listed_prompt:-}" ] || printf '\n%s\n' "$listed_prompt"; echo; "$tracker" context "$2"; } > "$composed" || return 1
-    echo "$composed"
+# What a round is given, composed here under the names the host stages it by. Its context file is
+# the ticket's context as the tracker here holds it now, by the one command that assembles it, then
+# the round's message: the worker reads its ticket there every round (`$DISPATCH_CONTEXT`), and its
+# review takes the file as its spec, so an amendment or a ruling made between rounds reaches both.
+# The listed repos' paths go under the message every round: a spawn works them out (stage_listed)
+# and keeps them as listed-<slug>, and a resume reuses them, as dispatch-ctl keeps their worktrees.
+# A spawn sends that file whole. A resume sends the message alone, which `continue` often is, under
+# a line sending the worker back to the file when the context is not the one its last round was
+# staged with; that one is kept as ticket-<slug>.md, and replaced by ticket-<slug>.next once the
+# round has started (`ctl`).
+compose_round() { # <subcommand> <slug> <message>; the two files to copy in `carry`
+    local dir=$state/prompts/$base/round listed said
+    mkdir -p "$dir" || return 1
+    [ "$1" != spawn ] || printf '%s' "${listed_prompt:-}" > "$dir/listed-$2" || return 1
+    listed=$(cat "$dir/listed-$2" 2> /dev/null)
+    "$tracker" context "$2" > "$dir/ticket-$2.next" || return 1
+    { cat "$dir/ticket-$2.next"; printf "\n## this round's message\n\n"; cat "$3"
+      [ -z "$listed" ] || printf '\n%s\n' "$listed"; } > "$dir/context-$2.md" || return 1
+    if [ "$1" = spawn ]; then
+        cp "$dir/context-$2.md" "$dir/prompt-$2.md"
+    elif cmp -s "$dir/ticket-$2.md" "$dir/ticket-$2.next"; then
+        cp "$3" "$dir/prompt-$2.md"
+    else
+        # No record: the run was staged by a dispatch that kept none, or this state was lost.
+        said=changed; [ -f "$dir/ticket-$2.md" ] || said="may have changed"
+        { echo "Your ticket's context $said since your last round: read \`\$DISPATCH_CONTEXT\` again, whole, before you act on the message under this line."
+          echo; cat "$3"; } > "$dir/prompt-$2.md"
+    fi || return 1
+    carry=("$dir/prompt-$2.md" "$dir/context-$2.md")
 }
 
 # Here, not on a host: the host is named at the spawn, and a message written
@@ -476,6 +510,8 @@ message_of() { echo "$state/prompts/$base/prompt-$1.md"; } # <name>
 # spawned on, so each worker's line goes behind the host it is on, and a host
 # that cannot answer says so where its workers would have been.
 probe_all() {
+    # Its own lines are the orchestrator's to read beside the probe's, never in them.
+    sweep >&2
     hosts=$(hosts_used)
     [ -n "$hosts" ] || die "no run recorded for $base; nothing has been spawned from here"
     rc=0
@@ -508,14 +544,16 @@ ctl() {
     # subcommand once: the run it names, whether the host is staged first,
     # whether the ticket message travels with it, whether the run record
     # outlives it.
-    sub=${1:-} name= stages= carries= forgets=
+    sub=${1:-} name= stages= pushes= carries= forgets=
     case $sub in
         spawn|wait|stop|resume|log|cleanup)
             [ -n "${2:-}" ] || die "$sub takes a ticket's slug"
             name=$2
             case $sub in
-                spawn)   stages=1 carries=1 ;;
-                resume)  carries=1 ;;
+                spawn)   stages=1 pushes=1 carries=1 ;;
+                # Staged too: a host staged by another plugin version would start the round on
+                # the contract and the dispatch-ctl that version had.
+                resume)  stages=1 carries=1 ;;
                 cleanup) forgets=1 ;;
             esac ;;
     esac
@@ -541,10 +579,10 @@ ctl() {
         esac
     fi
     scratch=$(scratch_dir "$host")
+    [ -z "$stages" ] || stage "$host" "$setup_cmd"
     # Every spawn pushes this branch of both repos to a remote host, so a ticket branch cuts from
     # its current tip; a local host cuts from these checkouts.
-    if [ -n "$stages" ]; then
-        stage "$host" "$setup_cmd"
+    if [ -n "$pushes" ]; then
         push_to "$host" || die "$host has no $base for $name to cut from"
         stage_listed "$host" "$name" || die "$host has no base for $name to cut from in a listed repo"
         record_run "$name" "$host"
@@ -552,12 +590,13 @@ ctl() {
     if [ -n "$carries" ]; then
         message=$(message_of "$name")
         [ -f "$message" ] || die "no message for $2 here; write one: dispatch prompt $2 < <file>"
-        carry=$(prompted "$sub" "$2" "$message") || die "could not assemble $2's prompt; \`tracker context $2\` says why"
-        copy_to "$host" "$scratch" "$carry"
+        compose_round "$sub" "$2" "$message" || die "could not assemble $2's prompt; \`tracker context $2\` says why"
+        copy_to "$host" "$scratch" "${carry[@]}" || die "copying $2's prompt and context to $host failed"
     fi
-    # The permission mode travels only when set here; unset, the host's default holds.
+    # The permission mode and the effort travel only when set here; unset, the host's default holds.
     env=()
     [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
+    [ -n "${DISPATCH_EFFORT:-}" ] && env+=("DISPATCH_EFFORT=$DISPATCH_EFFORT")
     # A replacement runner travels with the command that starts a worker on it, as the message does.
     # It is renamed after the ticket: under its own name it could replace a file the scratch dir
     # holds, the manifest say, which scp does silently, and one shared name would let two tickets'
@@ -574,6 +613,7 @@ ctl() {
     # ticket's command went to.
     [ "$sub" != spawn ] || set -- "$@" "${listed_args[@]}"
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
+    [ -z "$carries" ] || mv "$state/prompts/$base/round/ticket-$2.next" "$state/prompts/$base/round/ticket-$2.md"
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
     [ "$sub" = resume ] && reclaim "$2"
     return 0
@@ -641,6 +681,14 @@ merged_into() {
     return $found
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
+
+# Whether <tip> in <repo> has merged where its ticket lands: into the branch the run was spawned
+# from (`is_merged`), or, in the code and agent repos, into the branch this checkout has out, which
+# is where a parent's accept has merged the parent's branch by the time it retires the runs under it.
+landed() { # <repo> <tip>
+    is_merged "$1" "$2" 2> /dev/null && return 0
+    case $1 in code | agent) git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" HEAD ;; *) return 1 ;; esac
+}
 
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: the assumptions the tracker read become the page's notes, and the
@@ -885,9 +933,11 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
         forget_run "$1"
     fi
     # A local host's cleanup has deleted these already: they were the branches its worktrees held.
-    for top in "$repo_root" "$agent_top"; do
-        git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1" > /dev/null || continue
-        run git -C "$top" branch -q -d "ticket/$1" || return 1
+    for at in code agent; do
+        tip=$(git -C "$(repo_at "$at")" rev-parse -q --verify "refs/heads/ticket/$1") || continue
+        landed "$at" "$tip" ||
+            { echo "dispatch: ticket/$1 in the $at repo is merged into neither $(base_at "$at") nor the branch out here, so it stays" >&2; return 1; }
+        run git -C "$(repo_at "$at")" branch -q -D "ticket/$1" || return 1
     done
     # In every listed repo the caller has read the list of (`listed`): the ticket file that names its
     # repos may be retired by now. A listed repo's checkout here has whatever branch out, so `-d`
@@ -903,6 +953,69 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
         fi
     done
     return $rc
+}
+
+# The run of every ticket that is `done` or has left the tracker, retired (`retire`) whoever wrote
+# the `done` and whichever branch the run was spawned from: one written by `tracker` itself, or a
+# tree `tracker retire` took out, leaves a run nothing else would ever come back to. A run whose
+# worker is running stays, and so does one holding work not merged into a branch here (`retirable`);
+# each says why on every sweep until that changes.
+sweep() {
+    local spawned slug h
+    # Each scratch dir probed once, and a host that does not answer asked nothing more, so a host
+    # that is off costs a sweep one connect timeout however many runs it holds.
+    local -A probed=() down=()
+    [ -f "$runs" ] || return 0
+    read_tracker || { echo "dispatch: the tracker did not read, so no run of a done ticket was retired" >&2; return 0; }
+    while IFS=$'\t' read -r spawned slug h; do
+        case $(field "$slug" status) in done | "") ;; *) continue ;; esac
+        [ -z "${down[$h]-}" ] || continue
+        if [ -z "${probed["$spawned $h"]+set}" ]; then
+            probed["$spawned $h"]=$(base=$spawned; on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" probe 2> /dev/null)
+            [ $? -ne 255 ] || { down[$h]=1; echo "dispatch: $h did not answer, so its runs of tickets done or out of the tracker stay" >&2; continue; }
+        fi
+        # A subshell each: the run is found under the branch it was spawned from, and one that
+        # stays stops no other.
+        ( base=$spawned; retire_swept "$slug" "$h" "${probed["$spawned $h"]}" )
+    done < <(awk -F'\t' '{ at[$1 FS $2] = $3 } END { for (k in at) print k FS at[k] }' "$runs")
+}
+
+retire_swept() { # <slug> <host> <the probe of its scratch dir there>
+    local why left=done up
+    [ -n "$(field "$1" status)" ] || left="gone from the tracker"
+    up=$(field "$1" parent)
+    why=$(retirable "$1" "$2" "$up" "$3") || {
+        echo "dispatch: $1 is $left, and its run on $2 stays: ${why:-its branches could not be read}" >&2
+        return 1
+    }
+    # shellcheck disable=SC2046
+    retire "$1" "$up" $(field "$1" repos)
+}
+
+# Whether <slug>'s run on <host> may go; where it may not, exit 1 and why: its worker is running,
+# or a branch the host holds for the ticket, in the code repo, the agent repo or a listed repo, has
+# a tip this machine lacks or one that has not `landed`. A read that fails keeps the run as well.
+retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its scratch dir there>
+    local state at top tip onto
+    state=$(awk -v n="dispatch-$repo-$1" '$1 == n { print $2 }' <<< "$4")
+    [ "$state" != running ] || { echo "its worker is still running"; return 1; }
+    for at in code agent $(on_host "$2" cat "$(scratch_dir "$2")/repos-$1" 2> /dev/null | cut -f1); do
+        [ "$at" = code ] || [ "$at" = agent ] || [ ${#listed_top[@]} -gt 0 ] || listed "$3"
+        top=$(repo_at "$at")
+        [ -n "$top" ] || { echo "$2 holds its branch in $at, which \`tracker repos\` does not list"; return 1; }
+        if [ "$2" = local ]; then
+            tip=$(git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1")
+        else
+            tip=$(git -C "$top" ls-remote --heads "$(remote_of "$at" "$2")" "refs/heads/ticket/$1") ||
+                { echo "ticket/$1 in $at could not be read on $2"; return 1; }
+            tip=${tip%%[[:space:]]*}
+        fi
+        [ -n "$tip" ] || continue
+        git -C "$top" cat-file -e "$tip^{commit}" 2> /dev/null ||
+            { echo "ticket/$1 in $at holds commits this machine lacks; fetch them, or let them go with \`dispatch ctl cleanup $1\` from $base"; return 1; }
+        landed "$at" "$tip" ||
+            { onto=$(base_at "$at"); echo "ticket/$1 in $at has not merged into ${onto// / or } here; \`dispatch ctl cleanup $1\` from $base retires it once that work is merged or let go"; return 1; }
+    done
 }
 
 # The user's accept of a parent ticket ruled whole, written and committed by the tracker (`tracker
@@ -928,8 +1041,7 @@ accept() { # <slug>
     tracked=$(run "$tracker" accept "$id") || exit 1
     retire_trees
     run board "$tickets" --no-watch --no-open
-    # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
-    # retired by its own `review`, so only the children the accept took in come up here.
+    # Each child ran from the parent's branch, so that is where its run is recorded.
     rc=0
     for child in $(jq -r --arg p "$id" '.tickets[] | select(.slug != $p) | .slug' <<< "$tracked"); do
         # shellcheck disable=SC2046
@@ -939,8 +1051,8 @@ accept() { # <slug>
 }
 
 # What a squash or a rebase merge on GitHub landed as, recorded in place of what the ticket branch
-# carried: such a merge leaves the branch unmerged for good and its commits on no integration
-# branch, so neither the range read off the branch nor the done check would ever hold. GitHub is
+# carried: such a merge leaves the branch unmerged for good and its commits on no trunk,
+# so neither the range read off the branch nor the done check would ever hold. GitHub is
 # asked about <slug>'s `gh:` pull requests in <names>, the listed repos whose branch is unmerged,
 # and nothing else: a ticket whose listed branches have all merged asks it nothing. Each repo a
 # squash or a rebase rewrote has its ranges replaced by what landed (`record_landed`) and the branches

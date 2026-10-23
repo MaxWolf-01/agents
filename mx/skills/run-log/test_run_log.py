@@ -13,10 +13,10 @@ whether or not claude reported, carrying what the ticket lists; a host's lines c
 
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -127,16 +127,17 @@ def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:
     # a claude that writes one more message on its way out, which the line has to carry
     (tmp_path / "late").write_text(stream({"type": "assistant", "message": {"id": "m7", "model": "claude-opus-5-5",
                                    "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1}}}))
-    fake_claude(tmp_path, stream(INIT, TURN_A), then=f"trap 'sleep 0.5; cat {tmp_path}/late; exit 143' TERM\nsleep 30 & wait $!")
+    # claude says it is ready on a pipe it inherits through run-log, once its own trap is set
+    ready, ready_w = os.pipe()
+    fake_claude(tmp_path, stream(INIT, TURN_A),
+                then=f"trap 'sleep 0.5; cat {tmp_path}/late; exit 143' TERM\necho >&{ready_w}\nsleep 30 & wait $!")
     proc = subprocess.Popen([str(SCRIPT), "run", "--site", "worker", "--", "claude", "-p"], cwd=tmp_path,
                             env={**os.environ, "RUN_LOG": str(tmp_path / "runs.jsonl"),
                                  "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}"},
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    for _ in range(100):
-        if (tmp_path / "argv").exists():
-            break
-        time.sleep(0.1)
-    time.sleep(0.3)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, pass_fds=(ready_w,))
+    os.close(ready_w)
+    assert select.select([ready], [], [], 60)[0] and os.read(ready, 1), "claude never got as far as its TERM trap"
+    os.close(ready)
     proc.send_signal(signal.SIGTERM)
     proc.wait(timeout=20)
     assert proc.returncode == 143

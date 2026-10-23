@@ -34,7 +34,7 @@ Then `job wait codex-<slug> --deadline <secs>` as a background task. Pick the de
 Codex has **zero context** from your session. Everything it needs must be in the prompt or readable from the filesystem.
 
 **Give it orientation first:**
-- Tell it to read `./CLAUDE.md` (project root) for project context, knowledge map, and conventions
+- Codex loads the project's `AGENTS.md` itself; where the project keeps its instructions in a `CLAUDE.md` instead, tell it to read `./CLAUDE.md` for project context, knowledge map, and conventions
 - Point it to `GLOSSARY.md`, `decisions/`, and `agent/tickets/` when relevant; written records is more efficient than re-explaining what's already documented
 - Name the specific files and directories to review; it can read them, but won't know which ones matter unless told
 

@@ -16,11 +16,11 @@
 #            correctness and standards, plus spec when --spec names one, plus
 #            tests when the diff touches test files too. An axis is a file in
 #            prompts/, and a repo with no spec runs two of the four.
-#   --spec   what the work was asked for: a ticket's slug, whose body and
-#            every ancestor's `tracker context` assembles into the report
-#            directory, or any file (an issue body fetched to one, a prompt),
-#            and whatever discussion the reviewers should not reopen. The spec
-#            and tests axes both read it, so both need it.
+#   --spec   what the work was asked for: a ticket's slug, whose context
+#            `tracker context` assembles into the report directory, or any
+#            file (an issue body fetched to one, a prompt), and whatever
+#            discussion the reviewers should not reopen. The spec and tests
+#            axes both read it, so both need it.
 #   --light  one reviewer over the correctness and standards prompts joined,
 #            reporting as the `light` axis. With --spec it takes the spec
 #            prompt too, so one reviewer judges the diff against what was asked
@@ -29,11 +29,14 @@
 #   --model  every reviewer's model, `opus` by default.
 #   --minutes every reviewer's time budget, which its prompt states and it
 #            paces its work to, 10 by default; a budget, not a timeout.
-# Reports land in <repo>/agent/reviews/<range>/<axis>.md, the prompt each
-# reviewer read under prompts/ beside them and its output in <axis>.log, and
-# the reports' paths are this script's own output. Exit 1 names an axis whose
-# report never arrived, to re-run with --axes. One review of a range runs at a
-# time: a second is refused while the first, or anything it started, is alive.
+# Reports land in ${XDG_STATE_HOME:-~/.local/state}/mx/reviews/<repo>/<range>/,
+# one <axis>.md per axis, the prompt each reviewer read under prompts/ beside
+# them and its output in <axis>.log, and the reports' paths are this script's
+# own output: the reports of the axes whose reviewer finished. Exit 1 names
+# each axis that died or left no report, with the last line its reviewer
+# printed, which is where a usage limit or a crash says itself, and the command
+# that re-runs them. One review of a range runs at a time: a second is refused
+# while the first, or anything it started, is alive.
 #
 # A reviewer starts from none of the caller's setup: no settings files, MCP
 # servers, skills or memory, so what it works from is its prompt, the same on
@@ -90,7 +93,8 @@ help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
 
 case ${1:-} in
     -h|--help) help; exit 0 ;;
-    ""|-*)     help >&2; exit 1 ;;
+    "")        help >&2; exit 1 ;;
+    -*)        die "$1 came before the fixed point, which comes first: review <fixed-point> [flags]" ;;
 esac
 fixed=$1; shift
 
@@ -131,9 +135,8 @@ range="$(git rev-parse --short=7 "$base")..$(git rev-parse --short=7 "$head")"
 diff_cmd="git diff $base $head"
 git diff --quiet "$base" "$head" && die "$diff_cmd is empty; nothing to review"
 # Untracked files as much as modified ones, since work that is all new files
-# would otherwise pass in silence; the reports are this script's own output,
-# not work, so they stay out of it.
-[ -z "$(git status --porcelain -- ':!agent/reviews')" ] ||
+# would otherwise pass in silence.
+[ -z "$(git status --porcelain)" ] ||
     echo "review: uncommitted changes in $root are not part of $range" >&2
 
 touched=$(git diff --name-only "$base" "$head")
@@ -161,7 +164,10 @@ for axis in $axis_list; do
     esac
 done
 
-dir=$root/agent/reviews/$range
+common=$(git rev-parse --path-format=absolute --git-common-dir) || die "cannot find the git dir of $root"
+common=${common%/.git}
+reviews=${XDG_STATE_HOME:-$HOME/.local/state}/mx/reviews/${common//\//-}
+dir=$reviews/$range
 mkdir -p "$dir/prompts" || die "cannot create $dir/prompts"
 # The ticket and its ancestry as one file, assembled the one way a worker's
 # prompt is: the reviewer reads what the work was asked for and the work the
@@ -224,16 +230,16 @@ drop_checkout() { # <checkout>
     fi
 }
 
-# Every Tests checkout git has registered under agent/reviews, its directory
-# there or already gone. One of this run's own range is a killed run's, since
-# this run holds that lock. One of another range is removed only while this run
-# holds that range's lock too, on fd 8, so a review of it cannot start
-# meanwhile; the braces close fd 8 again, before any reviewer could inherit it.
-# A range with no lock file is from a review older than the lock, which this
-# run cannot tell alive from dead.
+# Every Tests checkout git has registered under this repo's reviews, its
+# directory there or already gone. One of this run's own range is a killed
+# run's, since this run holds that lock. One of another range is removed only
+# while this run holds that range's lock too, on fd 8, so a review of it cannot
+# start meanwhile; the braces close fd 8 again, before any reviewer could
+# inherit it. A range with no lock file is from a review older than the lock,
+# which this run cannot tell alive from dead.
 checkouts() {
     git worktree list --porcelain |
-        awk -v under="$root/agent/reviews/" '/^worktree / { w = substr($0, 10); if (index(w, under) == 1 && w ~ /\/checkout$/) print w }'
+        awk -v under="$reviews/" '/^worktree / { w = substr($0, 10); if (index(w, under) == 1 && w ~ /\/checkout$/) print w }'
 }
 while IFS= read -r left; do
     if [ "$left" = "$checkout" ]; then
@@ -249,11 +255,22 @@ done < <(checkouts)
 # A directory git no longer lists would stop this run's own checkout being added.
 [ ! -e "$checkout" ] || rm -rf "$checkout"
 
+# The letter an axis's finding ids open with, which a citation of a finding
+# qualifies with its range: `review <range> S13`.
+finding_id() { # <axis>
+    case $1 in
+        correctness) echo C ;; standards) echo S ;; spec) echo R ;; tests) echo T ;; light) echo L ;;
+        *) die "the $1 axis has no letter its finding ids open with: give it one in finding_id" ;;
+    esac
+}
+
 # The prompt a reviewer reads, whole: the preamble, the axis's own template, and
 # for the light axis the prompts it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
 render() { # <axis>
     local axis=$1 parts part text one sources_block commits left
+    local id
+    id=$(finding_id "$axis") || exit 1
     parts="preamble $axis"
     sources_block=$standards
     commits=$(git log --oneline "$base..$head")
@@ -279,6 +296,7 @@ render() { # <axis>
         one=${one//'{{SPEC}}'/$spec}
         one=${one//'{{CHECKOUT}}'/$checkout}
         one=${one//'{{MINUTES}}'/$minutes}
+        one=${one//'{{ID}}'/$id}
         left=$(printf '%s' "$one" | grep -o '{{[A-Z_]*}}' | sort -u | grep -v '^{{COMMITS}}$' | tr '\n' ' ')
         [ -z "$left" ] || die "prompts/$part.md asks for ${left% }, which this script does not substitute"
         # The commit messages go in last, and are checked over above: a message
@@ -332,23 +350,33 @@ reviewer() { # <axis>
     # Whatever it left there, and whether it finished or died: the checkout is
     # this run's, not the worktree's.
     [ "$axis" = tests ] && drop_checkout "$checkout"
-    return 0
+    return "$rc"
 }
 
 echo "review: $range, ${axis_list// /, } on $model at $effort effort; reports in $dir" >&2
-for axis in $axis_list; do reviewer "$axis" & done
-wait
+declare -A pid
+for axis in $axis_list; do reviewer "$axis" & pid[$axis]=$!; done
 
-# An absent report is an axis to re-run, never a clean axis, which is what this
+# A reviewer that died has usually written its report's opening already, since
+# its prompt has it create the file first, so the file being there says nothing
+# of whether the axis finished: its reviewer's exit status does. A died or
+# absent report is an axis to re-run, never a clean axis, which is what this
 # exit status is for.
 missing=()
 for axis in $axis_list; do
-    if [ -s "$dir/$axis.md" ]; then echo "$dir/$axis.md"; else missing+=("$axis"); fi
+    wait "${pid[$axis]}"
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -s "$dir/$axis.md" ]; then echo "$dir/$axis.md"; continue; fi
+    missing+=("$axis")
+    last=$(grep -v '^[[:space:]]*$' "$dir/$axis.log" 2>/dev/null | tail -n 1 | cut -c 1-300)
+    if [ "$rc" -eq 0 ]; then
+        echo "review: the $axis axis left no report at $dir/$axis.md${last:+ (\"$last\")}; its output is $dir/$axis.log" >&2
+        continue
+    fi
+    [ -s "$dir/$axis.md" ] && wrote="what it wrote before that is at $dir/$axis.md" || wrote="it left no report"
+    echo "review: the $axis axis died: its reviewer exited $rc${last:+ (\"$last\")}; $wrote; its output is $dir/$axis.log" >&2
 done
 if [ ${#missing[@]} -gt 0 ]; then
-    for axis in "${missing[@]}"; do
-        echo "review: the $axis axis left no report at $dir/$axis.md; its output is $dir/$axis.log" >&2
-    done
     # The merge-base rather than the caller's fixed point, and before HEAD
     # moves: a re-run after a commit lands its report under another range.
     die "re-run what is missing, before HEAD moves: review $base --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec ${slug:-$spec}} --model $model --effort $effort --minutes $minutes"

@@ -25,13 +25,13 @@ step: 4
 An intent with several sensible shapes gets a throwaway prototype or a concept figure per shape, and you pick in front of the renders; the verdict goes into the ticket. Matt Pocock's walkthrough does the same for front-end work, asking for three prototypes to click between.
 
 step: 5
-Work a stranger could do from one chat line, such as a rename, gets no ticket, no worker and no agent review. The session commits it, you read the diff on a review page, and it merges on your word.
+A change the session can make with you in front of it, such as a rename, gets no ticket and no worker. The session commits it in a worktree of its own, its page links the review page of the diff, and it merges on your word.
 
 step: 6
 Work bigger than one worker is cut into child tickets, each a vertical slice through every layer it touches, and they go through the same dispatch, workers and landing into the parent's branch. Matt Pocock's walkthrough says why vertical: an agent left to itself builds layer by layer, and gets no feedback on the whole until the last layer is done.
 
 step: 7
-A slice the later slices build on, such as an interface or a data shape, is a hinge. It is ruled on alone, so a wrong one is caught before anything depends on it.
+An interface or a data shape the slices build on is settled before the cut, in the grilling or a prototype. A shape question a slice raises anyway becomes a question on its ticket, and the slices that would build on it wait for your answer.
 
 step: 8
 Once the last slice has landed, the close-out runs the full suite and a code review of the whole branch, where an incoherence between slices shows, and writes a debrief.
@@ -52,7 +52,7 @@ step: 13
 What agents find on their own, such as a worker's friction, work a build deferred, or a reviewer's finding, is filed as a proposed ticket. It waits outside the frontier, the tickets that can be worked now.
 
 step: 14
-A triage, which you start (`/mx:triage`), groups the proposed tickets by shared cause, and you drop, merge or promote each. Only what you promote is built.
+A triage, which you start (`/mx:triage`), groups the proposed tickets by shared cause, drops, merges and promotes them itself, and asks you only the calls that change what the product does or how it is built. Only what is promoted is built.
 
 step: 15
 What outlives every session is on disk. The tickets carry the design, with every call marked by who settled it.
@@ -142,7 +142,7 @@ step: 9
 What the orchestrator finds on its own, a worker's friction, work a build deferred, a finding of the review one level up, it files as proposed with `tracker new`. Filing is not a ruling.
 
 step: 10
-A triage is yours to start (`/mx:triage`). It groups the proposed tickets by shared cause, and you drop, merge or promote each; saying "build this" promotes one at once.
+A triage is yours to start (`/mx:triage`). It groups the proposed tickets by shared cause and does the bookkeeping itself, putting only the design calls to you; saying "build this" promotes one at once.
 
 step: 11
 A dropped ticket leaves the live tracker. Its file stays in git, with the reason in the commit that took it out.
@@ -160,7 +160,7 @@ step: 15
 Each worker runs in a worktree of its own, on the branch `ticket/<slug>`. It builds, reviews its code and finishes by committing its report; it writes no ticket file.
 
 step: 16
-`dispatch review` imports the report into the ticket, renders the review page and writes review. A child ticket that is no hinge merges into its parent's branch as soon as the orchestrator has read it.
+`dispatch review` imports the report into the ticket, renders the review page and writes review. A child ticket merges into its parent's branch as soon as the orchestrator has read it.
 
 step: 17
 Your ruling is accept, amend, redo or reject, on the calls the landing shows you. A build with none of your calls merges on your standing yes.
@@ -243,7 +243,7 @@ Each chip at the top shows or hides one tree of tickets. Here only the saved-vie
 
 step: 2
 region: .01 .08 .71 .095
-The opened row is a hinge, a child ticket ruled on alone because the tickets after it would have to be rewritten if it were wrong.
+The opened row is a prototype, a child ticket you work through together, in front of three takes on the list.
 
 step: 3
 region: .02 .175 .52 .08
@@ -259,7 +259,7 @@ Then the artefacts made for it: here, three rendered takes on the list to choose
 
 step: 6
 region: 0 .91 .72 .09
-At the bottom are the proposed tickets. A triage (`/mx:triage`) groups them by shared cause before you drop, merge or promote each, so a recurring problem arrives as one group rather than as scattered fixes.
+At the bottom are the proposed tickets. A triage (`/mx:triage`) groups them by shared cause before the agent drops, merges or promotes each, so a recurring problem arrives as one group rather than as scattered fixes.
 
 ## A landing
 
@@ -304,7 +304,7 @@ step: 12
 It sorts the build's calls into three kinds: calls you already made, the agent's own calls about how it is built, and calls that change what you asked for.
 
 step: 13
-A build with nothing yours to make merges once it has the yes its merge needs: your standing yes for a hinge, your word for work going into the integration branch, the one the whole project merges into. You get one line about it, with the show and the review page.
+A build with nothing yours to make merges once it has the yes its merge needs: your word for work going into the integration branch, the one the whole project merges into. You get one line about it, with the show and the review page.
 
 step: 14
 Each call that is yours becomes a question on its ticket and arrives on your session page with the smallest artefact that makes it visible. A forked agent builds one show, an artefact explaining what was built, around them all.

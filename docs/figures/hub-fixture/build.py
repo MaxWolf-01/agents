@@ -47,8 +47,10 @@ MX = CHECKOUT / "mx"
 OUT = MX / "assets"
 sys.dont_write_bytecode = True  # no __pycache__ beside the fixture or in the plugin's skills
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(MX / "skills" / "session-page"))
 import fixture  # noqa: E402
+import rendered_from  # noqa: E402
 import session_page  # noqa: E402  this checkout's renderer, not the installed plugin's
 
 SHOT = "hub.png"  # the README shows the hub at night only
@@ -445,6 +447,7 @@ def main(args: Args) -> None:
         panes = len(fixture.SELECTED.opens)
         shots = shoot(port, fixture.SELECTED.id, panes, front)
         run(os.environ.copy(), str(HERE.parent / "compress.py"), *map(str, shots))
+        rendered_from.record(Path(SHOT).stem, Path(__file__), HERE)
     finally:
         if hub:
             stop_hub(hub)

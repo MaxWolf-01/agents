@@ -46,24 +46,19 @@ The ticket another ticket is part of. It holds the design its children are slice
 _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
-A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket unless it is a hinge.
-_Avoid_: subtask, sub-ticket, step
-
-**Hinge**:
-A child ticket its dependents would have to be rewritten, not amended, were it wrong, so it is ruled alone.
-_In code_: `hinge: true`
-_Avoid_: checkpoint (a context checkpoint is a session's), gate (orient's gate routes an intent), milestone
+A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket.
+_Avoid_: subtask, sub-ticket, step, hinge
 
 **Ticket context**:
-A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
+A ticket's own body with every ancestor's, and for a parent ticket's close-out review every other child's: the whole of the ticket a worker or a reviewer is given.
 _Avoid_: brief (the brief is one section of it), spec, background
 
 **Proposed**:
-The status of a ticket an agent filed that the user has not yet ruled on: off the frontier until a triage promotes it to open.
+The status of a ticket an agent filed that nobody has promoted yet: off the frontier until a triage or the user's word makes it open.
 _Avoid_: backlog, suggested, draft ticket, idea
 
 **Triage**:
-A pass the user starts over the proposed tickets: they are grouped by shared cause, and each is dropped, merged into another, or promoted to open.
+A pass the user starts over the proposed tickets: grouped by shared cause, each is dropped, merged, or promoted to open, and only the design calls go to the user.
 _Avoid_: grooming, backlog review
 
 **Review**:
@@ -130,7 +125,7 @@ _Avoid_: subagent, implementer
 
 **Worker report**:
 What a worker hands back for its ticket: its closing comment and the questions its build raised.
-_Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
+_Avoid_: closing comment (one part of a report), handoff, debrief
 
 **Tick**:
 One pass of the orchestrator's loop.
@@ -144,9 +139,10 @@ _Avoid_: batch, round
 A ticket's work is on the branch the user's accept merges it into, and verified there.
 _Avoid_: merged, finished, complete
 
-**Debrief**:
-What the orchestrator tells the user when a ticket's tree is finished: what the workers and the review one level up found, and what it proposes to do about it.
-_Avoid_: synthesis, summary, PR description, report (a worker's is one)
+**Trunk**:
+The branch work merges into: the default branch, or dev where that layer exists.
+_In code_: `integration` (`agent/repos.toml`)
+_Avoid_: integration branch, mainline
 
 ### Testing
 
@@ -179,6 +175,10 @@ _Avoid_: context budget, token budget
 **Session page**:
 The one page a session's answers live on, the questions waiting on the user at its top.
 _Avoid_: session artifact, transcript, notebook, log
+
+**Session work**:
+A change a session makes itself, with the user in front of it, rather than a ticket a worker builds.
+_Avoid_: loose work
 
 ### Retros
 

@@ -1,3 +1,58 @@
+## 1.0.84
+
+- feat(wrap): /mx:wrap checks a session for what is left, then cleans it up to close
+- fix(tests): flaky checks wait on what they check, and dispatch fixes a flaky check at once
+- fix(code-review): review writes its reports outside every working tree
+- test(render-lint): the board-row collision page becomes two fixtures
+- Revert "test(render-lint): the board-row collision page becomes two fixtures"
+- test(render-lint): the board-row collision page becomes two fixtures
+
+## 1.0.83
+
+- docs(dispatch): the worker contract's scratch sentence moved beside the listed-repo rule
+- feat(workflow): project instructions live in AGENTS.md, landed again on max's word
+- docs(dispatch): the worker contract calls ignored files in a worktree scratch
+
+## 1.0.82
+
+- better safe than sorry
+- feat(dispatch): every round reads its ticket from a context staged for it
+- revert: hold agents-md-instead-of-claude-md back from the release
+- feat(session-page): session-page prints where the next record goes, and session.md is its title alone
+- feat(dispatch): the probe retires the run of every done or untracked ticket whose work merged
+- feat(tracker): check refuses a session turn a ticket cites without quoting it
+- refactor(board): the page is a module of its own and the layout probes are scripts
+- fix(board): the layout check fails on any text a box cuts that its own .clip did not, and render-lint names every box that cuts
+- fix(skills): mermaid and code-review load in claude -p in the default permission mode
+- feat(dispatch): a worker reviews its branch once per ticket
+- chore(figures): ticket-life's figure record matches its HTML on master
+- feat(figures): make check fails on a README image whose sources changed since its render
+- feat(code-review): review says which reviewer died and why, and names the fixed point's order
+- fix(dispatch): dispatch-ctl --help back within its 400-word budget after two accepted builds
+- fix(dispatch): cleanup refuses over work no spawn put in the ticket worktree
+- fix(dispatch): the runner resumes a worker that stops early, and the prompt says how to wait
+- feat(triage): the agent applies the bookkeeping and puts only design calls to the user
+- feat(prototype): variants offered for a pick differ at rest and are each whole, with no fixed count
+- test(board): the demo tracker carries a question cut at the copy cap
+- fix(session-page): a block under a question's options is refused and pointed at Details
+- fix(board): proposed rows ask for a triage, copy-all counts what is on show, the graph name shows whole, the keep-alive says what it guards
+- fix(dispatch): a host's stale git remote is repointed or refused, and a spawn names its setup's source
+- fix(dispatch): DISPATCH_EFFORT reaches the worker on every host
+- feat(workflow): project instructions live in AGENTS.md, which Claude Code and Codex both load
+
+## 1.0.81
+
+- feat(workflow): fewer workflow concepts: no hinge, no loose work, no gate, debrief or review session; trunk; qualified, linked tags
+- feat(tracker): the hinge retired; no child ticket is ruled alone
+
+## 1.0.80
+
+- feat(session-page): the line under a turn names each open question by its headline, and the recap stops listing them
+
+## 1.0.79
+
+- feat(mx): /mx:pickup starts a session from a handoff's path
+
 ## 1.0.78
 
 - "Brief" means a ticket's, and what an agent is handed is its prompt

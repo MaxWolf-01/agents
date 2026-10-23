@@ -1,7 +1,6 @@
 ---
 status: open
 parent: saved-views
-hinge: true
 needs-user: true
 priority: 1
 size: M

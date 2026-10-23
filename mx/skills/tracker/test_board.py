@@ -13,7 +13,7 @@ stylesheet read. The oracle is the tracker skill, the board's --help and the doc
 code that draws the page: the frontier is open, unblocked, unclaimed; a proposed ticket is not
 open whatever blocks it; a build in review waits for the user's ruling in its own group and
 unblocks nothing until the accept writes done, save a sibling merged into the branch of the parent
-ticket the two share, no hinge; a gh reference is a link to GitHub; a row copies the absolute path
+ticket the two share; a gh reference is a link to GitHub; a row copies the absolute path
 of the file it was read from; a review page is linked relative to the page, as every link on it
 is; a reference whose file no longer exists counts as done; a graph draws only tickets with an
 edge; one tracker directory holds every ticket the board shows, a build in flight included; a
@@ -47,6 +47,7 @@ from pathlib import Path
 import pytest
 
 import board
+import board_page
 import tracker as tracker_module
 from board import (
     ALONE,
@@ -78,7 +79,7 @@ TREE = "lamp-ui"  # a hyphen, so a slugged id and the raw slug can be told apart
 def ticket(
     path: Path, status: str, blocked_by: list[str] | None = None, parent: str | None = None,
     needs_user: bool = False, gh: list[str] | None = None, priority: int | None = 2,
-    size: str | None = "S", brief: str | None = None, name: str | None = None, hinge: bool = False,
+    size: str | None = "S", brief: str | None = None, name: str | None = None,
 ) -> None:
     """One ticket file the tracker's rules accept, at `path`; its slug is the file's stem."""
     lines = ["---", f"status: {status}"]
@@ -88,8 +89,6 @@ def ticket(
         lines.append(f"blocked-by: [{', '.join(blocked_by)}]")
     if needs_user:
         lines.append("needs-user: true")
-    if hinge:
-        lines.append("hinge: true")
     if gh:
         lines.append(f"gh: [{', '.join(gh)}]")
     if priority:
@@ -143,7 +142,7 @@ def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[
         script = bin_dir / "diffview"
         script.write_text(
             '#!/bin/sh\nprintf "%s\\n" "$*" >> "$0.args"\n'
-            f'echo "diffview: serving $2 at {address}/  (exits 30 minutes after the last page closes)"\n'
+            f'echo "diffview: serving $2 at {address}/"\n'
         )
         script.chmod(0o755)
         return script
@@ -544,7 +543,7 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     status, each named by house tokens the stylesheet declares as a light and a dark pair. The ink
     is read back out of the script it is handed to, where a build in review is drawn in the accent
     on its wash, and a proposal and a context node with a dashed edge, a proposal's the longer."""
-    declared = {prop.removeprefix("--") for selectors, said in style_rules(board.STYLE) if ":root" in selectors
+    declared = {prop.removeprefix("--") for selectors, said in style_rules(board_page.STYLE) if ":root" in selectors
                 for prop, value in said.items() if value.startswith("light-dark(")}
     assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
     handed = json.loads(re.search(r"classDefs = Object\.entries\((\{.*?\})\)", page_of(tracker)).group(1))
@@ -680,10 +679,10 @@ def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(track
 SIZE_WORDS = {"XS": ("15 min", "under 15 min"), "S": ("20 min", "about 20 min"), "M": ("1 h", "about an hour"),
               "L": ("half a day", "half a day"), "XL": ("several sessions", "several sessions")}
 PRIORITY_WORDS = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
-ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build", "whole": "with parent"}
+ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build", "triage": "to triage", "whole": "with parent"}
 # Every kind of mark a row wears. The demo tracker has a row wearing each, which is what makes the
 # check below catch a mark a later slice adds rather than skip it.
-KINDS = {"tree", "slug", "asks", "time", "pri", "chip", "rp", "gh", "hinge", "kin"}
+KINDS = {"tree", "slug", "asks", "time", "pri", "chip", "rp", "gh", "kin"}
 
 
 def test_a_rows_marks_are_read_from_the_ticket_file(tmp_path: Path) -> None:
@@ -846,10 +845,11 @@ def test_the_stamp_the_open_tab_polls_moves_when_the_session_rewrites_the_briefi
 
 
 def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -> None:
-    """The spec's four words, each against the fixture ticket that earns it: a build in review asks
+    """Each word a row asks with, against the fixture ticket that earns it: a build in review asks
     for a ruling; a ticket the user is in the loop for asks for the session the user sits in,
     whether or not its question is written down; a ticket a worker takes is stopped by an open
-    question of its own and asks for the answer; one with no question asks nothing of the user."""
+    question of its own and asks for the answer; one with no question asks nothing of the user.
+    A proposed ticket asks for the triage the user starts, since no worker takes it before one."""
     rows = view_of(demo.root, demo.repo).rows
     expected = {
         "map-columns": "review",  # status: review, a build waiting on a ruling
@@ -862,6 +862,8 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -
         "pick-a-date-library": "answer",  # a worker's ticket, stopped on a question
         "view-storage": "answer",
         "parse-rows": "build",  # no question, not in review, and the user is not in the loop
+        "import-report": "triage",  # proposed, so off the frontier until a triage promotes it
+        "tidy-cli-help": "triage",
     }
     for slug, kind in expected.items():
         asks = mark(rows[slug], "asks")
@@ -871,8 +873,8 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -
 def test_every_mark_on_the_page_says_its_own_words_on_hover() -> None:
     """Pins the format, the page's half of P2: whatever its kind, a mark shows its words and carries
     what it says it means as its hover words, which the page paints (test_board_layout.py)."""
-    for kind in board.MARK_HTML:
-        written = board.mark_html(board.Mark(kind, "p1 now", "What this mark means, in words.", look="x", href="#t-x"))
+    for kind in board_page.MARK_HTML:
+        written = board_page.mark_html(board.Mark(kind, "p1 now", "What this mark means, in words.", look="x", href="#t-x"))
         assert 'data-tip="What this mark means, in words."' in written and ">p1 now<" in written, f"the {kind} mark: {written}"
 
 
@@ -906,11 +908,11 @@ def test_the_page_writes_every_mark_and_question_a_row_carries(demo: Demo) -> No
     """The demo tracker's rows as the page writes them: every mark a row carries, and the button of
     every question it lists, is on the row's element, in the form the format checks above pin."""
     for slug, row in view_of(demo.root, demo.repo).rows.items():
-        written = board.row_html(row)
+        written = board_page.row_html(row)
         for m in row.marks:
-            assert board.mark_html(m) in written, f"{slug}: the page drops its {m.kind} mark {m.shows!r}"
+            assert board_page.mark_html(m) in written, f"{slug}: the page drops its {m.kind} mark {m.shows!r}"
         for c in [q.copy for q in row.questions] + ([row.copy_all] if row.copy_all else []):
-            assert board.copy_html(c) in written, f"{slug}: the page drops the {c.kind} button copying {c.shows!r}"
+            assert board_page.copy_html(c) in written, f"{slug}: the page drops the {c.kind} button copying {c.shows!r}"
 
 
 # ---- questions and the needs-me group -------------------------------------
@@ -1070,6 +1072,11 @@ def test_p1_every_copy_button_a_row_carries_shows_what_it_copies(transcribed: De
     seen = view_of(transcribed.root, transcribed.repo)
     found = copies(seen)
     assert {c.kind for c in found} == {"qcopy", "qall", "qgroup", "runcopy", "resume"}
+    # the copy-alls run past the cap on any host; this keeps a single question's button cut by
+    # what it asks, not by how long this host's scratch path is
+    assert any(c.kind == "qcopy" and len(c.text.split("\n", 1)[1]) > board.COPY_CAP for c in found), (
+        "no question in the demo tracker runs past the cap, so no button here is cut by what it asks"
+    )
     for c in found:
         assert len(c.does.split()) >= 4 and "copy" in c.does, f"the {c.kind} button says {c.does!r} of the click"
         assert c.shows, f"the {c.kind} button shows nothing of what it copies"
@@ -1096,12 +1103,12 @@ def test_a_copy_button_carries_what_it_copies_and_what_it_shows_onto_the_page() 
     and the hover paints `data-tip`, which is what the click does over what it shows of what it
     copies: all of it under the cap, the start of it past."""
     short = board.Copy("qcopy", "copy", "Click to copy this question.", "agent/tickets/a.md\n- [D1] **A & B?**", "D1 of a.md")
-    assert board.copy_html(short) == (
+    assert board_page.copy_html(short) == (
         '<span class="copier qcopy" data-copy="agent/tickets/a.md\n- [D1] **A &amp; B?**" data-copied="D1 of a.md" '
         'data-tip="Click to copy this question.\n\nagent/tickets/a.md\n- [D1] **A &amp; B?**">copy</span>'
     )
     long = board.Copy("resume", "copy resume", "Click to copy the command.", "cd " + "a" * 300, "the command")
-    assert board.copy_html(long) == (
+    assert board_page.copy_html(long) == (
         f'<span class="copier resume" data-copy="cd {"a" * 300}" data-copied="the command" '
         f'data-tip="Click to copy the command.\n\ncd {"a" * 217}\u2026">copy resume</span>'
     )
@@ -1268,10 +1275,10 @@ def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
 def test_the_page_folds_the_comments_away_as_history() -> None:
     """Pins the format: the comments open only when the reader asks for them, and a block of the
     ticket's own words is a section under its label."""
-    assert board.block_html(board.Block("comments", "<p>Built, not merged.</p>")) == (
+    assert board_page.block_html(board.Block("comments", "<p>Built, not merged.</p>")) == (
         '<details class="history"><summary><span class="label">comments</span></summary><p>Built, not merged.</p></details>'
     )
-    assert board.block_html(board.Block("answer", "<p>JSON.</p>")) == (
+    assert board_page.block_html(board.Block("answer", "<p>JSON.</p>")) == (
         '<section class="block"><p class="label">answer</p><p>JSON.</p></section>'
     )
 
@@ -1362,6 +1369,39 @@ def test_the_watcher_notices_an_artefact_landing_in_a_show_directory(repo: Path,
     assert written != before
     walkthrough.chmod(walkthrough.stat().st_mode | 0o111)
     assert tracker_snapshot(tracker, repo) != written
+
+
+def test_a_qualified_tag_on_the_board_links_to_what_it_names_or_is_struck_where_that_is_gone(
+    repo: Path, tracker: Path, tmp_path: Path,
+) -> None:
+    """`tags-linked-on-board-and-review-pages`: a tag naming another ticket's question links to that
+    ticket's row with the question as its hover words, a headline on a folded row included; a retro
+    entry links to its place on the retro's page, from where the board is written; and one naming
+    an entry the retro's report does not hold shows as gone, linking nowhere."""
+    ticket(tracker / "cites.md", "open", brief="Waits on second D1, as retro F2 asks, and on retro F9.")
+    (tracker / "second.md").write_text((tracker / "second.md").read_text()
+                                       + "\n## Questions\n\n- [D1] **Ship it now?** Or wait for the suite.\n")
+    (tracker / "small-chore.md").write_text((tracker / "small-chore.md").read_text()
+                                            + "\n## Questions\n\n- [D1] **After second D1?** Its answer decides.\n")
+    retro = tracker.parent / "retro"
+    retro.mkdir()
+    (retro / "report.md").write_text("# Workflow retro: repo\n\n## Findings\n\n### F2 Builds add machinery\n")
+    (retro / "report.html").write_text('<h3 id="f2">F2</h3>')
+    out = tmp_path / "out" / "board.html"
+    render(tracker, repo, out)
+    page = out.read_text()
+
+    def links(text: str) -> list[str]:
+        return re.findall(rf'<a class="qualified" [^>]*>{re.escape(text)}</a>', page)
+
+    to_second = '<a class="qualified" href="#t-second" title="second D1 · Ship it now? Or wait for the suite.">second D1</a>'
+    assert links("second D1") and set(links("second D1")) == {to_second}
+    assert f"Waits on {to_second}, as" in page, "the brief"
+    assert f"After {to_second}?" in page, "the folded row's question headline"
+    (to_retro,) = set(links("retro F2"))
+    assert 'href="../repo/agent/retro/report.html#f2"' in to_retro and 'title="retro F2 · Builds add machinery"' in to_retro
+    (gone,) = re.findall(r"<s [^>]*>retro F9</s>", page)
+    assert 'class="qualified gone"' in gone and "href" not in gone and "no longer in the retro" in gone
 
 
 # ---- the sessions behind a ticket ------------------------------------------
@@ -1554,10 +1594,10 @@ def test_the_page_opens_a_session_page_in_a_tab_of_its_own_and_says_so() -> None
     """Pins the format: the link opens a new tab and says on hover what it opens, beside the button
     that resumes the session."""
     resume = board.Copy("resume", "copy resume", board.RESUME_TIP, "claude --resume abc", "the command resuming Ledger imports")
-    written = board.block_html(board.Block("sessions on this machine", worked=(
+    written = board_page.block_html(board.Block("sessions on this machine", worked=(
         board.Worked("Ledger imports", "2026-09-14", "sessions/abc/index.html", resume),
     )))
-    assert f'<a class="spage" href="sessions/abc/index.html" target="_blank" data-tip="{html.escape(board.PAGE_TIP)}">page</a><span class="copier resume"' in written
+    assert f'<a class="spage" href="sessions/abc/index.html" target="_blank" data-tip="{html.escape(board_page.PAGE_TIP)}">page</a><span class="copier resume"' in written
 
 
 def test_a_session_page_in_another_projects_agent_repo_is_not_linked(worked: tuple[Path, Path], path_with: Callable[..., Path]) -> None:
@@ -2050,9 +2090,9 @@ def test_every_state_a_link_can_wear_has_a_look_of_its_own_on_the_page() -> None
     """The ticket's "a link shows its state in its own look": the state a link wears is its class
     on the page, and the stylesheet dresses each one apart. The layout checks render without gh, so
     the styles the states wear are only visible here."""
-    written = board.mark_html(board.Mark("gh", "acme/backend#4", "A merged pull request.", look="pr-merged", href="https://github.com/acme/backend/issues/4"))
+    written = board_page.mark_html(board.Mark("gh", "acme/backend#4", "A merged pull request.", look="pr-merged", href="https://github.com/acme/backend/issues/4"))
     assert written.startswith('<a class="gh pr-merged" href="https://github.com/acme/backend/issues/4"'), written
-    rules = style_rules(board.STYLE)
+    rules = style_rules(board_page.STYLE)
     looks = {state: {prop: value for selectors, said in rules if any(re.search(rf"\.gh\.{state}\b", one) for one in selectors)
                      for prop, value in said.items()}
              for state in github.SAYS}
@@ -2566,7 +2606,7 @@ def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file
     # the three above
     ticket = demo.root / "map-columns.md"
     assert (
-        f"map-columns \u00b7 review \u00b7 to rule on \u00b7 p1 now \u00b7 1 h \u00b7 Map columns once per bank \u00b7 {ticket} \u00b7 a hinge\n"
+        f"map-columns \u00b7 review \u00b7 to rule on \u00b7 p1 now \u00b7 1 h \u00b7 Map columns once per bank \u00b7 {ticket}\n"
         "  brief: You tell the importer once which column holds the date, the amount and the payee;"
         " it remembers that per bank and never asks again.\n"
         "  waits on: parse-rows\n"
@@ -2630,7 +2670,7 @@ def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo
 # ---- a parent ticket ruled whole ------------------------------------------
 # speculative-first's Decisions, The board: a leaf in review under a parent not yet closed out
 # waits in its tree, not in the needs-me group; a parent at its close-out is one needs-me row with
-# its children under it; a hinge carries a row mark.
+# its children under it.
 
 
 def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_the_user(demo: Demo) -> None:
@@ -2646,9 +2686,9 @@ def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_
 
 
 def test_a_parent_at_its_close_out_is_one_needs_me_row_with_its_children_folded_under_it(demo: Demo) -> None:
-    """month-close is in review with carry-balances; lock-period, its hinge, was ruled alone and is
-    done. The group counts the parent as one row, and the parent's row asks carry-balances'
-    question, which the button copying the group's questions copies with the rest."""
+    """month-close is in review with carry-balances and lock-period. The group counts the parent
+    as one row, and the parent's row asks carry-balances' question, which the button copying the
+    group's questions copies with the rest."""
     seen = view_of(demo.root, demo.repo)
     children = {"carry-balances", "lock-period"}
     assert "month-close" in rows_in(seen, "needs")
@@ -2701,14 +2741,6 @@ def test_a_rows_copy_all_names_the_file_its_questions_are_on(tracker: Path) -> N
     assert copy_all.text.startswith(str(built)) and copy_all.note == "2 questions of built.md", copy_all.note
 
 
-def test_a_hinge_carries_its_mark_on_its_row(demo: Demo) -> None:
-    """map-columns, a hinge in review, is ruled alone: a needs-me row of its own; lock-period is a
-    hinge already ruled. Every other row carries no such mark."""
-    seen = view_of(demo.root, demo.repo)
-    assert {slug for slug, row in seen.rows.items() if board.wears(row, "hinge")} == {"map-columns", "lock-period"}
-    assert "map-columns" in rows_in(seen, "needs")
-
-
 def built_on_its_branch(repo: Path) -> None:
     """`built`'s round: lamp-ui's branch cut from main, and ticket/built one commit ahead of it."""
     git(repo, "branch", TREE)
@@ -2726,7 +2758,7 @@ def merged_into_the_tree(repo: Path) -> None:
     git(repo, "checkout", "-q", "main")
 
 
-def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch_and_a_hinge_never(tracker: Path, repo: Path) -> None:
+def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch(tracker: Path, repo: Path) -> None:
     """The same rule at the tracker's seam, before and after the merge the orchestrator's read
     makes: `built` is in review under lamp-ui, which is still being built."""
     built_on_its_branch(repo)
@@ -2735,14 +2767,11 @@ def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch_an
     seen = view_of(tracker)
     assert "built" not in anywhere_in(seen, "needs")
     assert [r.ticket.slug for r in seen.rows[TREE].kids] == ["built"]
-    ticket(tracker / "built.md", "review", parent=TREE, blocked_by=["first"], hinge=True)
-    assert "built" in rows_in(view_of(tracker), "needs"), "a hinge is ruled alone, merged or not"
 
 
-def test_a_sibling_merged_into_the_parents_branch_blocks_nothing_and_a_hinge_blocks_until_done(tracker: Path, repo: Path) -> None:
+def test_a_sibling_merged_into_the_parents_branch_blocks_nothing(tracker: Path, repo: Path) -> None:
     """The board's blocked is the frontier's: `after-built` waits on `built`, its sibling under
-    lamp-ui in review. It is blocked until `built` merges into lamp-ui's branch, open from then on,
-    and blocked again once `built` is a hinge, which frees nothing until the user accepts it."""
+    lamp-ui in review. It is blocked until `built` merges into lamp-ui's branch, open from then on."""
     ticket(tracker / "after-built.md", "open", parent=TREE, blocked_by=["built"])
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "after-built")
@@ -2755,10 +2784,6 @@ def test_a_sibling_merged_into_the_parents_branch_blocks_nothing_and_a_hinge_blo
     assert "in review and merged into the parent ticket's branch" in mark(seen.rows["after-built"], "chip").says, (
         "the chip of a blocker that frees it says so, rather than that the row still waits"
     )
-    ticket(tracker / "built.md", "review", parent=TREE, blocked_by=["first"], hinge=True)
-    assert load(tracker)["after-built"].status == "blocked", "a hinge frees nothing before its accept"
-    ticket(tracker / "built.md", "done", parent=TREE, blocked_by=["first"], hinge=True)
-    assert load(tracker)["after-built"].status == "open", "a hinge accepted frees what waited on it"
 
 
 def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo: Demo) -> None:

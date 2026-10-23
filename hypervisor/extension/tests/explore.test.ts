@@ -7,6 +7,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
+import { crc32, deflateSync } from "node:zlib";
 import { exploreTools } from "../src/explore.ts";
 
 const SECRET = "c4n4ry-content-7f3a91";
@@ -155,4 +156,92 @@ test("every Claude Code config directory's credentials are denied, as .claude's 
 	} finally {
 		rmSync(own, { recursive: true, force: true });
 	}
+});
+
+/** A grey PNG of the given size, built byte by byte so its dimensions are known without a decoder. */
+function png(width: number, height: number): Buffer {
+	const chunk = (type: string, data: Buffer) => {
+		const body = Buffer.concat([Buffer.from(type), data]);
+		const framed = Buffer.alloc(body.length + 8);
+		framed.writeUInt32BE(data.length);
+		body.copy(framed, 4);
+		framed.writeUInt32BE(crc32(body), body.length + 4);
+		return framed;
+	};
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(width);
+	header.writeUInt32BE(height, 4);
+	header.set([8, 2], 8); // 8 bits a channel, RGB
+	const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x80)]);
+	const pixels = deflateSync(Buffer.concat(Array.from({ length: height }, () => row)));
+	return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", pixels), chunk("IEND", Buffer.alloc(0))]);
+}
+/** 3x2 images Pillow wrote. */
+const SMALL = {
+	"image/jpeg":
+		"/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAMDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDkKKKK8U/TD//Z",
+	"image/gif": "R0lGODdhAwACAIEAAMgeHgAAAAAAAAAAACwAAAAAAwACAAAIBgABCBwYEAA7",
+	"image/webp": "UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoDAAIAAUAmJaACdLoABDAAAP7x3I/4DdfFtMv/vYL/3YL/3YL/WwAA",
+	"image/png": png(3, 2).toString("base64"),
+};
+
+/** An encoded PNG's or JPEG's width x height, read from its header, so a check holds whichever pi's resizer picked. */
+function dimensions(bytes: Buffer): string {
+	if (bytes.readUInt32BE(0) === 0x89504e47) return `${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}`;
+	for (let at = 2; at < bytes.length; at += 2 + bytes.readUInt16BE(at + 2)) {
+		if (bytes[at + 1] >= 0xc0 && bytes[at + 1] <= 0xc3) return `${bytes.readUInt16BE(at + 7)}x${bytes.readUInt16BE(at + 5)}`;
+	}
+	throw new Error("neither a PNG nor a JPEG with a frame header");
+}
+
+/** read's whole result, as the model gets it: its text, and each image with its type and, for a PNG or JPEG, its size. */
+async function readImage(spelled: string, model?: object) {
+	const result = await tools.get("read")!.execute("check", { path: spelled } as never, undefined, undefined, { model } as never);
+	const images = result.content.flatMap((part) => {
+		if (part.type !== "image") return [];
+		const scaled = ["image/png", "image/jpeg"].includes(part.mimeType);
+		return [{ mimeType: part.mimeType, size: scaled ? dimensions(Buffer.from(part.data, "base64")) : undefined, data: part.data }];
+	});
+	return { text: result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"), images };
+}
+
+test("hypervisor-reads-images#P1: read shows the model a PNG, JPEG, GIF or WebP, named as read takes it, whatever the file is called", async () => {
+	mkdirSync(path.join(home, "shots"), { recursive: true });
+	for (const [mimeType, data] of Object.entries(SMALL)) {
+		const name = `shots/${mimeType.split("/")[1]}.txt`;
+		writeFileSync(path.join(home, name), Buffer.from(data, "base64"));
+		const { text, images } = await readImage(name);
+		assert.equal(text, `~/${name}: ${mimeType}, ${Buffer.from(data, "base64").length} bytes, 3x2`);
+		assert.deepEqual(images.map((image) => [image.mimeType, image.data]), [[mimeType, data]], "a small image goes as it is");
+	}
+	writeFileSync(path.join(home, "shots/fake.png"), "not an image");
+	assert.equal(await run("read", { path: "shots/fake.png" }), "not an image");
+});
+
+test("hypervisor-reads-images#P3: a larger image is scaled to the model's limits, pi's 2000 px where it names none", async () => {
+	writeFileSync(path.join(home, "shots/wide.png"), png(3000, 1500));
+	const plain = await readImage("shots/wide.png");
+	assert.match(plain.text, /: image\/png, \d+ bytes, 3000x1500, shown at 2000x1000$/);
+	assert.deepEqual(plain.images.map((image) => image.size), ["2000x1000"]);
+	const small = await readImage("shots/wide.png", { inputLimits: { images: { resize: { maxWidth: 600, maxHeight: 600 } } } });
+	assert.match(small.text, /shown at 600x300$/);
+	assert.deepEqual(small.images.map((image) => image.size), ["600x300"]);
+});
+
+test("hypervisor-reads-images#P3: an image file too large, or one that does not decode, is named without its bytes", async () => {
+	const head = png(1, 1).subarray(0, 33);
+	writeFileSync(path.join(home, "shots/huge.png"), Buffer.concat([head, Buffer.alloc(20_000_001)]));
+	const huge = await readImage("shots/huge.png");
+	assert.match(huge.text, /^~\/shots\/huge\.png: image\/png, 20000034 bytes, over the 20 MB an image is read up to$/);
+	assert.deepEqual(huge.images, []);
+	writeFileSync(path.join(home, "shots/broken.png"), Buffer.concat([head, Buffer.from("garbage")]));
+	const broken = await readImage("shots/broken.png");
+	assert.match(broken.text, /could not be decoded/);
+	assert.deepEqual(broken.images, []);
+});
+
+test("hypervisor-reads-images#P2: an image under a denied root is refused like any file there", async () => {
+	writeFileSync(path.join(home, ".ssh/shot.png"), png(3, 2));
+	symlinkSync("../.ssh/shot.png", path.join(home, "shots/linked.png"));
+	for (const spelled of ["~/.ssh/shot.png", "shots/linked.png", "shots/../.ssh/shot.png"]) await assert.rejects(readImage(spelled), /denied/);
 });
