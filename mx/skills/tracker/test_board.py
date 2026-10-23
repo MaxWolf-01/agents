@@ -47,6 +47,7 @@ from pathlib import Path
 import pytest
 
 import board
+import board_page
 import tracker as tracker_module
 from board import (
     ALONE,
@@ -542,7 +543,7 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     status, each named by house tokens the stylesheet declares as a light and a dark pair. The ink
     is read back out of the script it is handed to, where a build in review is drawn in the accent
     on its wash, and a proposal and a context node with a dashed edge, a proposal's the longer."""
-    declared = {prop.removeprefix("--") for selectors, said in style_rules(board.STYLE) if ":root" in selectors
+    declared = {prop.removeprefix("--") for selectors, said in style_rules(board_page.STYLE) if ":root" in selectors
                 for prop, value in said.items() if value.startswith("light-dark(")}
     assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
     handed = json.loads(re.search(r"classDefs = Object\.entries\((\{.*?\})\)", page_of(tracker)).group(1))
@@ -872,8 +873,8 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -
 def test_every_mark_on_the_page_says_its_own_words_on_hover() -> None:
     """Pins the format, the page's half of P2: whatever its kind, a mark shows its words and carries
     what it says it means as its hover words, which the page paints (test_board_layout.py)."""
-    for kind in board.MARK_HTML:
-        written = board.mark_html(board.Mark(kind, "p1 now", "What this mark means, in words.", look="x", href="#t-x"))
+    for kind in board_page.MARK_HTML:
+        written = board_page.mark_html(board.Mark(kind, "p1 now", "What this mark means, in words.", look="x", href="#t-x"))
         assert 'data-tip="What this mark means, in words."' in written and ">p1 now<" in written, f"the {kind} mark: {written}"
 
 
@@ -907,11 +908,11 @@ def test_the_page_writes_every_mark_and_question_a_row_carries(demo: Demo) -> No
     """The demo tracker's rows as the page writes them: every mark a row carries, and the button of
     every question it lists, is on the row's element, in the form the format checks above pin."""
     for slug, row in view_of(demo.root, demo.repo).rows.items():
-        written = board.row_html(row)
+        written = board_page.row_html(row)
         for m in row.marks:
-            assert board.mark_html(m) in written, f"{slug}: the page drops its {m.kind} mark {m.shows!r}"
+            assert board_page.mark_html(m) in written, f"{slug}: the page drops its {m.kind} mark {m.shows!r}"
         for c in [q.copy for q in row.questions] + ([row.copy_all] if row.copy_all else []):
-            assert board.copy_html(c) in written, f"{slug}: the page drops the {c.kind} button copying {c.shows!r}"
+            assert board_page.copy_html(c) in written, f"{slug}: the page drops the {c.kind} button copying {c.shows!r}"
 
 
 # ---- questions and the needs-me group -------------------------------------
@@ -1102,12 +1103,12 @@ def test_a_copy_button_carries_what_it_copies_and_what_it_shows_onto_the_page() 
     and the hover paints `data-tip`, which is what the click does over what it shows of what it
     copies: all of it under the cap, the start of it past."""
     short = board.Copy("qcopy", "copy", "Click to copy this question.", "agent/tickets/a.md\n- [D1] **A & B?**", "D1 of a.md")
-    assert board.copy_html(short) == (
+    assert board_page.copy_html(short) == (
         '<span class="copier qcopy" data-copy="agent/tickets/a.md\n- [D1] **A &amp; B?**" data-copied="D1 of a.md" '
         'data-tip="Click to copy this question.\n\nagent/tickets/a.md\n- [D1] **A &amp; B?**">copy</span>'
     )
     long = board.Copy("resume", "copy resume", "Click to copy the command.", "cd " + "a" * 300, "the command")
-    assert board.copy_html(long) == (
+    assert board_page.copy_html(long) == (
         f'<span class="copier resume" data-copy="cd {"a" * 300}" data-copied="the command" '
         f'data-tip="Click to copy the command.\n\ncd {"a" * 217}\u2026">copy resume</span>'
     )
@@ -1274,10 +1275,10 @@ def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
 def test_the_page_folds_the_comments_away_as_history() -> None:
     """Pins the format: the comments open only when the reader asks for them, and a block of the
     ticket's own words is a section under its label."""
-    assert board.block_html(board.Block("comments", "<p>Built, not merged.</p>")) == (
+    assert board_page.block_html(board.Block("comments", "<p>Built, not merged.</p>")) == (
         '<details class="history"><summary><span class="label">comments</span></summary><p>Built, not merged.</p></details>'
     )
-    assert board.block_html(board.Block("answer", "<p>JSON.</p>")) == (
+    assert board_page.block_html(board.Block("answer", "<p>JSON.</p>")) == (
         '<section class="block"><p class="label">answer</p><p>JSON.</p></section>'
     )
 
@@ -1580,10 +1581,10 @@ def test_the_page_opens_a_session_page_in_a_tab_of_its_own_and_says_so() -> None
     """Pins the format: the link opens a new tab and says on hover what it opens, beside the button
     that resumes the session."""
     resume = board.Copy("resume", "copy resume", board.RESUME_TIP, "claude --resume abc", "the command resuming Ledger imports")
-    written = board.block_html(board.Block("sessions on this machine", worked=(
+    written = board_page.block_html(board.Block("sessions on this machine", worked=(
         board.Worked("Ledger imports", "2026-09-14", "sessions/abc/index.html", resume),
     )))
-    assert f'<a class="spage" href="sessions/abc/index.html" target="_blank" data-tip="{html.escape(board.PAGE_TIP)}">page</a><span class="copier resume"' in written
+    assert f'<a class="spage" href="sessions/abc/index.html" target="_blank" data-tip="{html.escape(board_page.PAGE_TIP)}">page</a><span class="copier resume"' in written
 
 
 def test_a_session_page_in_another_projects_agent_repo_is_not_linked(worked: tuple[Path, Path], path_with: Callable[..., Path]) -> None:
@@ -2076,9 +2077,9 @@ def test_every_state_a_link_can_wear_has_a_look_of_its_own_on_the_page() -> None
     """The ticket's "a link shows its state in its own look": the state a link wears is its class
     on the page, and the stylesheet dresses each one apart. The layout checks render without gh, so
     the styles the states wear are only visible here."""
-    written = board.mark_html(board.Mark("gh", "acme/backend#4", "A merged pull request.", look="pr-merged", href="https://github.com/acme/backend/issues/4"))
+    written = board_page.mark_html(board.Mark("gh", "acme/backend#4", "A merged pull request.", look="pr-merged", href="https://github.com/acme/backend/issues/4"))
     assert written.startswith('<a class="gh pr-merged" href="https://github.com/acme/backend/issues/4"'), written
-    rules = style_rules(board.STYLE)
+    rules = style_rules(board_page.STYLE)
     looks = {state: {prop: value for selectors, said in rules if any(re.search(rf"\.gh\.{state}\b", one) for one in selectors)
                      for prop, value in said.items()}
              for state in github.SAYS}
