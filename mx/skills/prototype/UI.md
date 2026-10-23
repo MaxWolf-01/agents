@@ -1,6 +1,6 @@
 # UI Prototype
 
-Generate **several radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one (or steals bits from each), then throws the rest away.
+Generate **two or three radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one or asks for parts of several built whole in the next round, then throws the rest away.
 
 ## Two sub-shapes: strongly prefer sub-shape A
 
@@ -26,7 +26,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 1. State the question and pick N
 
-Offer **two or three variants**. Past three the reader stops comparing and starts skimming.
+Offer **two or three variants**; past three a reader skims instead of comparing.
 
 Write down the plan in one line, in the prototype's location or a top-of-file comment:
 
@@ -46,8 +46,8 @@ Variants must be **structurally different**: different layout, different informa
 
 Two more tests every variant passes before it is offered for a pick:
 
-- **Different at rest.** Load each variant and look at it untouched: the difference shows on what a reader sees first, before anything is opened, hovered or expanded. Variants that part ways only once a step is opened read as one design, and the pick never happens.
-- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis; a grid of combinable parts hands the user the design work, and they pick from wholes only.
+- **Different at rest.** Load each variant and look at it untouched: the difference shows on what a reader sees first, before anything is opened, hovered or expanded. Variants that part ways only once something is opened read as one design, and the pick never happens.
+- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis; a grid of combinable parts hands the user the design work, so offer only wholes.
 
 ### 3. Wire them together
 
