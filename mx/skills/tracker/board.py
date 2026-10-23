@@ -26,10 +26,10 @@ of these it cannot reach, and the page says so once.
 
 Every link the page writes is relative to it, so it opens wherever the page is
 opened: served from any origin, or as a file. `board` opens the page served,
-from the diffview server over the whole agent repo (`diffview --serve
-agent/`), and while it watches it brings that server back on the same port
-whenever it exits, so an open tab keeps answering. Where no diffview is
-installed or its server does not answer, it opens the file. Served, a review
+at the address `diffview --serve agent/` prints for the whole agent repo, and
+while it watches it runs that again whenever nothing answers there, so an open
+tab keeps answering. Where no diffview is installed or nothing answers at the
+address, it opens the file. Served, a review
 page opened from the board saves the comments written on it; opened as a file,
 the board opens its review pages as files, read-only. --no-open starts no
 server.
@@ -117,6 +117,7 @@ ASKS = {  # what a row asks of the user: the word in its column, and what that w
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
     "session": ("with you", "A ticket you are in the loop for: it is worked with you, and dispatch keeps it from a worker."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
+    "triage": ("to triage", "Proposed by an agent, it waits off the frontier for a triage you start, which drops it, merges it into another ticket or promotes it to open."),
     "whole": ("with parent", "Built and merged into its parent ticket's branch. You rule on it with the parent, whole, at the parent's close-out."),
 }
 # what a parent ticket's row says of the child tickets folded under it (board.folded)
@@ -930,13 +931,13 @@ def assert_safe_name(name: str) -> None:
 
 
 def served(agent: Path, out: Path) -> str | None:
-    """The address the page `out` answers on from the diffview server over the agent repo, or None
+    """The address the page `out` answers on where `diffview --serve` serves the agent repo, or None
     where it can be opened only as a file: the page is outside the agent repo, no diffview is
-    installed, or the server does not answer.
+    installed, or nothing answers at the address it prints.
 
-    `diffview --serve` is idempotent and prints the server's address, so the port stays diffview's
-    to decide, and one that exited comes back on the port it had, which is the one an open page
-    knows."""
+    `diffview --serve` is idempotent and prints the agent repo's address on whichever server it
+    handed the repo to, so the port stays diffview's to decide, and a server that exited comes back
+    on the port it had, which is the one an open page knows."""
     if not out.is_relative_to(agent):
         return None
     try:
@@ -960,13 +961,17 @@ SERVER_RETRY = 60  # seconds between the watcher's tries at a server that did no
 
 def kept(agent: Path, out: Path, address: str) -> str | None:
     """The address the open page is served at, its server brought back where it has exited, or
-    None where it did not come back: the watcher's part in keeping a served tab answering."""
+    None where it did not come back: the watcher's part in keeping a served tab answering.
+
+    Whatever serves the page can stop between two passes: a hub its service manager has yet to
+    restart, or a server diffview started on a machine with no hub, which nothing restarts. Asking
+    is one local connection a pass, so the watcher asks whichever it is."""
     return address if answers(address) else served(agent, out)
 
 
 def answers(address: str) -> bool:
-    """Whether a server is listening where `address` points. A connection, not a request: a request
-    is what keeps a diffview server from idling out, and this is asked every pass of the watcher."""
+    """Whether a server is listening where `address` points. A connection, not a request, since it
+    is asked every pass of the watcher and listening is all it needs to know."""
     at = urllib.parse.urlsplit(address)
     try:
         socket.create_connection((at.hostname, at.port or 80), timeout=1).close()
@@ -1571,7 +1576,8 @@ class Mark:
 class Row:
     """One ticket as the board shows it. `group` is the group it sits in, FOLDED for a row folded
     under its parent ticket's, and `kids` are the rows folded under it. `questions` are the open
-    questions it lists while folded, with `copy_all` copying them once there are two; `search` is
+    questions it lists while folded, `copied` those questions as a copy button puts them on the
+    clipboard ("" where it asks none), with `copy_all` copying them once there are two; `search` is
     the words a filter finds it by, its folded rows' included. What it reads as opened is its
     ticket's `blocks`."""
 
@@ -1579,6 +1585,7 @@ class Row:
     group: str
     marks: tuple[Mark, ...]
     questions: tuple[Asked, ...]
+    copied: str
     copy_all: Copy | None
     search: str
     kids: tuple["Row", ...]
@@ -1638,9 +1645,7 @@ def view(tickets: list[Ticket], gh: github.Answer = github.NOTHING) -> View:
     for state, label in GROUPS:
         held = sorted((rows[t.slug] for t in tickets if rows[t.slug].group == state), key=lambda r: sort_key(r.ticket))
         if held:
-            # the needs-me group's button copies what each of its rows asks (ruled_with)
-            asking = [one for r in held for one in (ruled_with(r.ticket, kids) if state == "needs" else [r.ticket])]
-            groups.append(Group(state, label, tuple(held), group_copy(asking), state == "done"))
+            groups.append(Group(state, label, tuple(held), group_copy(held), state == "done"))
     return View(rows, tuple(groups), tuple(pill(tree, tickets) for tree in trees_of(tickets)))
 
 
@@ -1652,14 +1657,16 @@ def shown_row(t: Ticket, under: tuple[Row, ...], kids: dict[str, list[Ticket]], 
     asked = [(one, shown_questions(one.status, one.questions)) for one in ruled_with(t, kids)]
     asked = [(one, questions) for one, questions in asked if questions]
     count = sum(len(questions) for _, questions in asked)
+    copied = "\n\n".join(copy_text(one.path, questions) for one, questions in asked)
     copy_all = None if count < 2 else Copy(  # one question's own button already copies the ticket's whole list
         "qall", f"copy all {count}", "Click to copy every open question on this row, each under the path of the file it is on.",
-        "\n\n".join(copy_text(one.path, questions) for one, questions in asked),
+        copied,
         f"{count} questions of {asked[0][0].path.name}" if len(asked) == 1 else f"{count} questions of {t.slug}'s tree",
     )
     return Row(
         ticket=t, group=group_of(t), marks=marks_of(t, len(under), gh),
         questions=tuple(asked_of(q, one.path, True, "" if one is t else one.slug) for one, questions in asked for q in questions),
+        copied=copied,
         copy_all=copy_all,
         search=search_words(*(part for one in with_folded(t, kids) for part in ticket_words(one))),
         kids=under,
@@ -1737,13 +1744,16 @@ def text_of(markup: str) -> str:
 
 def asks(status: str, needs_user: bool, open_question: bool) -> str:
     """Which of ASKS a row asks of the user, from what its ticket file says: a build in review asks
-    for a ruling, a ticket stopped on a question of its own asks for the answer, and a ticket the
-    user is in the loop for asks for the session that is the work.
+    for a ruling, a proposed ticket for a triage, a ticket stopped on a question of its own for the
+    answer, and a ticket the user is in the loop for, the session that is the work.
 
     That session is asked for whether or not a question of the ticket's is written down yet, since
-    sitting down together is the work."""
+    sitting down together is the work. A proposed ticket carrying an open question asks for the
+    answer, as the needs-me group it sits in does (needs_me)."""
     if status == "review":
         return "review"
+    if status == "proposed" and not open_question:
+        return "triage"
     if needs_user:
         return "session"
     if open_question and status != "done":
@@ -1790,19 +1800,19 @@ def shown_questions(status: str, asked: Sequence[Question]) -> list[Question]:
     return [] if status == "done" else open_questions(asked)
 
 
-def group_copy(rows: Sequence[Ticket]) -> Copy | None:
-    """The needs-me group's own copy button: every open question on the board at once, for pasting
-    into an editor. None for a group whose rows ask nothing, which is every other group."""
-    asked = [(t.path, shown_questions(t.status, t.questions)) for t in rows]
-    asked = [(path, questions) for path, questions in asked if questions]
-    if not asked:
+def group_copy(rows: Sequence[Row]) -> Copy | None:
+    """The needs-me group's own copy button: every open question its rows ask at once, for pasting
+    into an editor. None for a group whose rows ask nothing, which is every other group. The page's
+    script words it again for the rows a filter leaves on show (`recount`), so the count and the
+    copy are those of the questions the user sees."""
+    asking = [r for r in rows if r.copied]
+    if not asking:
         return None
-    count = sum(len(questions) for _, questions in asked)
+    count = sum(len(r.questions) for r in asking)
     return Copy(
         "qgroup", f"copy all {count} question{'s' if count != 1 else ''}",
-        "Click to copy every open question on the board, each under the path of the ticket it is on.",
-        "\n\n".join(copy_text(path, questions) for path, questions in asked),
-        f"{count} question{'s' if count != 1 else ''}",
+        "Click to copy every open question of the rows on show, each under the path of the ticket it is on.",
+        "\n\n".join(r.copied for r in asking), f"{count} question{'s' if count != 1 else ''}",
     )
 
 
@@ -1994,7 +2004,7 @@ def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
     footmeta = f"{len(reading.tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     notes = absences(reading) + [Absence("board-server", UNSERVED, hidden=True), Absence("board-stale", "", hidden=True)]
     return PAGE.substitute(
-        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK),
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK), copycap=COPY_CAP,
         project=html.escape(reading.project), chips="".join(map(pill_html, board.pills)),
         groups="".join(map(group_html, board.groups)), graphs=graphs, log=log_html,
         columns="".join(column_tokens(selector, widths) for selector, widths in columns(board).items()),
@@ -2025,7 +2035,7 @@ def row_html(r: Row) -> str:
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
     inner = f'<div class="kids">{"".join(map(row_html, r.kids))}</div>' if r.kids else ""
     return (
-        row_open(t, r.search) + some("tree", "slug", "asks")
+        row_open(r) + some("tree", "slug", "asks")
         + f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
         f'{some("kin", "rp", "gh")}</span>{brief}{asks_html(r)}</span>'
         f'<span class="meta">{some("time", "pri")}<span class="chips">{some("chip")}</span></span>'
@@ -2033,12 +2043,15 @@ def row_html(r: Row) -> str:
     )
 
 
-def row_open(t: Ticket, search: str) -> str:
-    """The element every row is: what the page's script matches a row on, and the file a click on
-    its slug copies."""
+def row_open(r: Row) -> str:
+    """The element every row is: what the page's script matches a row on, the file a click on its
+    slug copies, and the questions it asks, which the needs-me group's button copies while the row
+    is on show."""
+    t = r.ticket
+    asked = f' data-asks="{len(r.questions)}" data-asked="{html.escape(r.copied)}"' if r.copied else ""
     return (
         f'<details class="ticket row-{t.status}" id="t-{t.slug}" data-tree="{html.escape(t.tree or ALONE)}" '
-        f'data-slug="{html.escape(t.slug)}" data-search="{html.escape(search)}" data-path="{html.escape(str(t.path))}"><summary>'
+        f'data-slug="{html.escape(t.slug)}" data-search="{html.escape(r.search)}" data-path="{html.escape(str(t.path))}"{asked}><summary>'
     )
 
 
@@ -2275,7 +2288,7 @@ VIEW_JS = r"""
   // whatever the reader had panned to; only the mark on the cursor's node moves.
   function paintView(root, view, last) {
     const name = root.querySelector(".gname");
-    name.title = name.textContent = view.name;
+    name.textContent = view.name;
     for (const b of root.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === view.mode);
     const body = root.querySelector(".gfbody"), svg = body.querySelector(".gsvg");
     if (view.key !== last) {
@@ -2390,6 +2403,10 @@ ${columns}
     main { grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 2.5rem; }
     .side { order: 0; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
       border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
+    /* the column leaves a name beside the buttons a few letters, so it takes the line under them */
+    .ghead .label { flex: 1; }
+    .ghead .gname { order: 1; flex-basis: 100%; }
+    .ghead .gname:empty { display: none; }  /* no row under the cursor: no graph, so no line for its name */
   }
   /* the briefing, at the head of the column: prose, so it is set as the page's prose is */
   .briefing { margin-bottom: 1.1rem; }
@@ -2405,8 +2422,9 @@ ${columns}
   .btext li { margin-top: .3rem; }
   .btext strong { color: var(--strong); font-weight: 600; }
 
-  .ghead { display: flex; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
-  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ghead { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
+  /* the name says which graph is on show, so it wraps rather than being cut short */
+  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .gnote { color: var(--muted); font-size: .92rem; padding: .4rem 0; }
   .mermaid { margin: 0; display: flex; justify-content: center; }
   /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
@@ -2879,10 +2897,23 @@ ${viewjs}
       g.querySelector(".n").textContent = n;
       g.classList.toggle("empty", n === 0);
     }
+    for (const c of rowsEl.querySelectorAll(".qgroup")) recount(c);
     for (const b of document.querySelectorAll(".treechip")) b.classList.toggle("off", off.has(b.dataset.tree));
     localStorage.setItem("board-off:" + document.title, JSON.stringify([...off]));
     if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);  // a hidden tree takes its row, and its graph, with it
     showGraph();
+  }
+
+  // The needs-me group's copy button, worded as group_copy words it for the rows a filter leaves on
+  // show, and gone while none of them asks a question.
+  function recount(c) {
+    const asking = [...c.closest("details.grp").querySelectorAll(":scope > .tickets > .ticket[data-asked]:not(.off):not(.miss)")];
+    const n = asking.reduce((sum, t) => sum + Number(t.dataset.asks), 0), text = asking.map((t) => t.dataset.asked).join("\n\n");
+    const counted = n + " question" + (n === 1 ? "" : "s");
+    const shows = text.length <= ${copycap} ? text : text.slice(0, ${copycap}).trimEnd() + "…";
+    Object.assign(c.dataset, { copy: text, copied: counted, tip: c.dataset.tip.split("\n\n")[0] + "\n\n" + shows });
+    c.textContent = "copy all " + counted;
+    c.hidden = !n;
   }
 
   // The whole tracker's graph is composed here from its parts, so a hidden tree drops out of it
@@ -2923,9 +2954,7 @@ ${viewjs}
     const key = mode === "all" ? "*" : tree;
     for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.tree !== key;
     if (key === "*") composeAll();
-    const gname = document.getElementById("gname");
-    // the column is narrow enough to cut a parent ticket's slug short, so the whole one is on hover
-    gname.title = gname.textContent = mode === "all" ? "whole tracker" : (tree || "");
+    document.getElementById("gname").textContent = mode === "all" ? "whole tracker" : (tree || "");
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
