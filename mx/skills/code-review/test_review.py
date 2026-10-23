@@ -33,7 +33,7 @@ REVIEW = Path(__file__).parent / "review"
 
 FAKE_CLAUDE = r"""#!/usr/bin/env bash
 prompt=$(cat)
-report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/agent/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
+report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/mx/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
 printf '%s\n' "$@" > "$FAKE_ARGV"
 sleep "${FAKE_REVIEW_SECS:-0}"
 if [ -n "${FAKE_DIES:-}" ] && [[ $report == */$FAKE_DIES.md ]]; then
@@ -62,7 +62,7 @@ def repo(tmp_path: Path) -> Path:
     and the stand-in `claude`."""
     repo = tmp_path / "repo"
     git(tmp_path, "init", "-q", "-b", "main", str(repo))
-    commit(repo, ".gitignore", "agent/reviews/\n")
+    commit(repo, "README.md", "A scratch repo.\n")
     commit(repo, "tests/test_one.py", "def test_one(): assert 1 + 1 == 2\n")
     (tmp_path / "spec.md").write_text("# Spec: add a test\n")
     (tmp_path / "bin").mkdir()
@@ -83,7 +83,7 @@ def argv_file(repo: Path) -> Path:
 def command(repo: Path, secs: int, args: tuple[str, ...], **extra: str) -> dict:
     env = {**os.environ, "PATH": f"{repo.parent / 'bin'}:{os.environ['PATH']}",
            "FAKE_REVIEW_SECS": str(secs), "FAKE_ARGV": str(argv_file(repo)),
-           "RUN_LOG": str(repo.parent / "runs.jsonl"), **extra}
+           "RUN_LOG": str(repo.parent / "runs.jsonl"), "XDG_STATE_HOME": str(repo.parent / "state"), **extra}
     return {"args": [str(REVIEW), "main~1", *args], "cwd": repo, "env": env, "text": True}
 
 
@@ -119,10 +119,15 @@ def killed(repo: Path, *args: str) -> None:
         pass
 
 
+def reviews(repo: Path) -> Path:
+    """Where the reviews of the scratch repo land: the state directory, named for the repo's path."""
+    return repo.parent / "state" / "mx" / "reviews" / str(repo).replace("/", "-")
+
+
 def review_dir(repo: Path) -> Path:
     """The report directory of the range main~1..main."""
     base, head = (git(repo, "rev-parse", "--short=7", ref).strip() for ref in ("main~1", "main"))
-    return repo / "agent" / "reviews" / f"{base}..{head}"
+    return reviews(repo) / f"{base}..{head}"
 
 
 def worktrees(repo: Path) -> int:
@@ -135,6 +140,20 @@ def launched(repo: Path) -> list[str]:
 
 def value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1]
+
+
+# review-inside-agent-repo: where the reports land
+
+
+def test_a_review_leaves_the_reviewed_tree_as_it_found_it(repo):
+    """Run from an agent repo, a listed repo or one nested in a worker's worktree, `review` once
+    wrote its reports to an `agent/reviews/` of the tree it stood in, where nothing reads them and
+    where they showed as untracked debris; the scratch repo has no `agent/` and ignores nothing."""
+    done = run(repo, "--axes", "tests", "--spec", spec(repo))
+
+    assert done.returncode == 0, done.stderr
+    assert git(repo, "status", "--porcelain", "--ignored") == ""
+    assert done.stdout.strip() == str(review_dir(repo) / "tests.md")
 
 
 # D113: the range lock
@@ -203,7 +222,7 @@ def test_a_live_review_of_another_range_keeps_its_checkout(repo):
 
 def test_a_killed_reviews_directory_deleted_by_hand_does_not_block_its_range(repo):
     killed(repo, "--axes", "tests", "--spec", spec(repo))
-    shutil.rmtree(repo / "agent" / "reviews")  # git still lists the checkout
+    shutil.rmtree(reviews(repo))  # git still lists the checkout
 
     again = run(repo, "--axes", "tests", "--spec", spec(repo))
 
@@ -212,7 +231,7 @@ def test_a_killed_reviews_directory_deleted_by_hand_does_not_block_its_range(rep
 
 
 def test_a_checkout_from_before_range_locks_is_left_and_named(repo):
-    old = repo / "agent" / "reviews" / "aaaaaaa..bbbbbbb" / "checkout"
+    old = reviews(repo) / "aaaaaaa..bbbbbbb" / "checkout"
     git(repo, "worktree", "add", "-q", "--detach", str(old), "main~1")
 
     done = run(repo, "--axes", "correctness")

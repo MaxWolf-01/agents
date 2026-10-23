@@ -123,8 +123,13 @@ def git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
 
 
+def reviews(agent: Path) -> Path:
+    """Where code-review/review keeps a review's reports on this machine, one directory per repo."""
+    return agent / "state" / "mx" / "reviews"
+
+
 @pytest.fixture
-def agent(tmp_path: Path) -> Path:
+def agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """An agent repo: the tracker holding `sync`, git's history of it holding `old-sync` retired,
     the retro's report and its page, and one review's reports on this machine."""
     git(tmp_path, "init", "-q")
@@ -139,7 +144,8 @@ def agent(tmp_path: Path) -> Path:
     (tmp_path / "retro").mkdir()
     (tmp_path / "retro" / "report.md").write_text(REPORT)
     (tmp_path / "retro" / "report.html").write_text('<h3 id="f2">F2</h3><h3>A20</h3><li id="a23">A23</li>')
-    review = tmp_path / "reviews" / "2339177..8424220"
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    review = reviews(tmp_path) / "-code" / "2339177..8424220"
     review.mkdir(parents=True)
     (review / "standards.md").write_text("# Standards review\n\n## Findings\n\n### S1 `QUALIFIED` copies the slug pattern\n")
     return tmp_path
@@ -171,25 +177,19 @@ def test_a_retro_entry_cites_its_place_on_the_retros_page_and_a_dropped_one_is_g
 
 def test_a_review_finding_cites_its_report_where_this_machine_has_it(agent) -> None:
     assert cited(agent, "review 2339177..8424220 S1") == (
-        "reviews/2339177..8424220/standards.md", "", "review 2339177..8424220 S1 · `QUALIFIED` copies the slug pattern")
+        str(reviews(agent) / "-code" / "2339177..8424220" / "standards.md"), "", "review 2339177..8424220 S1 · `QUALIFIED` copies the slug pattern")
     assert cited(agent, "review 2339177..8424220 S2")[0] is None
     assert cited(agent, "review 1111111..2222222 S1") == (None, "", "review 1111111..2222222 S1 · not in a report of that review on this machine")
 
 
-def test_a_review_finding_cites_its_report_in_the_worktree_the_review_ran_in(tmp_path: Path) -> None:
-    """A worker reviews in its own worktree, which holds the reports until it is removed; the board
-    reads the tracker in the main checkout."""
-    code = tmp_path / "code"
-    (code / "agent" / "tickets").mkdir(parents=True)
-    git(code, "init", "-q")
-    git(code, "commit", "-q", "--allow-empty", "-m", "start")
-    git(code, "worktree", "add", "-q", str(tmp_path / "code-ticket"))
-    report = tmp_path / "code-ticket" / "agent" / "reviews" / "2339177..8424220" / "correctness.md"
+def test_a_review_finding_cites_its_report_whichever_repo_the_review_read(agent) -> None:
+    """A citation names a range and no repo, so a review of a listed repo or of the agent repo is
+    found as one of the code repo is."""
+    report = reviews(agent) / "-listed" / "3a4b5c6..7d8e9f0" / "correctness.md"
     report.parent.mkdir(parents=True)
     report.write_text("# Correctness review\n\n### C1 The board strikes every review citation\n")
-    found = cites(code / "agent")(QUALIFIED.fullmatch("review 2339177..8424220 C1"))
-    assert (Path(found.path).resolve(), found.preview) == (
-        report.resolve(), "review 2339177..8424220 C1 · The board strikes every review citation")
+    assert cited(agent, "review 3a4b5c6..7d8e9f0 C1") == (
+        str(report), "", "review 3a4b5c6..7d8e9f0 C1 · The board strikes every review citation")
 
 
 def link(agent: Path, page: str) -> str:

@@ -23,7 +23,6 @@ import tracker
 
 TICKETS = Path(tracker.TICKETS.name)  # in an agent repo: the tracker
 RETRO = Path("retro")  # in an agent repo: where its living report is, `report.md` and the page built from it (retro/retro_run.py)
-REVIEWS = Path("reviews")  # in an agent repo: a review's reports, one directory per range, on the machine that ran it (code-review/review)
 RANGE = r"[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}"  # a review's range, as its reports' directory is named
 
 # A qualified tag in text: `retro` and an entry's id; `review`, the range and a finding's id; or a
@@ -115,7 +114,7 @@ def named(ticket: tracker.Ticket, tag: str) -> Named | None:
 @dataclass(frozen=True)
 class Cited:
     """What a qualified tag in text names, as a page links it: the file it lives in, from the agent
-    repo's root (absolute where it is in another checkout), the anchor of its place on that file
+    repo's root (absolute for a review's report, which is outside it), the anchor of its place on that file
     where it has one, and its hover preview. `path` is None where it no longer exists: a ticket
     retired, a tag or an entry its file dropped, a review whose reports are not on this machine."""
 
@@ -132,7 +131,7 @@ def cites(agent: Path) -> Callable[[re.Match], Cited | None]:
     tracker has it."""
     resolve = resolver(agent / TICKETS)
     report = functools.cache(lambda: retro_entries(agent / RETRO))
-    review = functools.cache(lambda span: findings(agent, span))
+    review = functools.cache(findings)
     retired = functools.cache(lambda: ever_tracked(agent))
 
     def cite(m: re.Match) -> Cited | None:
@@ -216,24 +215,18 @@ def struck_html(inner: str, preview: str) -> str:
 FINDING = re.compile(r"#{2,4} ([A-Z]\d+)\b[.:]?\s*(.*)")
 
 
-def findings(agent: Path, span: str) -> dict[str, tuple[str, str]]:
-    """Every finding in the reports of the review of `span`, by id: its report, from the agent
-    repo's root, and its claim. A review writes its reports in the checkout it ran in, so they are
-    looked for in the agent repo of each checkout of the project: a worker's worktree holds them
-    until it is removed. Empty where no checkout on this machine holds a report of that range."""
+def findings(span: str) -> dict[str, tuple[str, str]]:
+    """Every finding in the reports of the review of `span`, by id: its report and its claim. A
+    review's reports are kept in this machine's state directory, under the repo it reviewed
+    (code-review/review); a citation names no repo, and its range is one repo's alone. Empty where
+    this machine holds no report of that range."""
     found: dict[str, tuple[str, str]] = {}
-    for checkout in [agent, *(Path(c) / agent.name for c in checkouts(agent.parent))]:
-        for report in sorted((checkout / REVIEWS / span).glob("*.md")):
-            for line in report.read_text().splitlines():
-                if m := FINDING.fullmatch(line):
-                    found.setdefault(m.group(1), (str(report.relative_to(agent) if checkout == agent else report), m.group(2)))
+    reviews = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "mx" / "reviews"
+    for report in sorted(reviews.glob(f"*/{span}/*.md")):
+        for line in report.read_text().splitlines():
+            if m := FINDING.fullmatch(line):
+                found.setdefault(m.group(1), (str(report), m.group(2)))
     return found
-
-
-def checkouts(project: Path) -> list[str]:
-    """Every work tree of the project's repo; none where `project` is in no repo."""
-    done = tracker.tried(project, "worktree", "list", "--porcelain")
-    return [line[len("worktree "):] for line in done.stdout.splitlines() if line.startswith("worktree ")] if done.returncode == 0 else []
 
 
 def ever_tracked(agent: Path) -> set[str]:
