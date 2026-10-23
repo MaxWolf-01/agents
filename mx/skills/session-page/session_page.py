@@ -143,7 +143,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     """
     # an older session.md may carry frontmatter and a `## Brief`, which parse, and the brief stays off the page
     front, title, _ = read_record(
-        directory / "session.md", required=set(), allowed={"session", "repo"}, sections={"Brief"},
+        directory / "session.md", allowed={"session", "repo"}, sections={"Brief"},
     ) if (directory / "session.md").exists() else ({}, "", {})
     root = directory.parents[len(SESSIONS.parts)]
     turns = read_turns(directory / "turns")
@@ -552,13 +552,11 @@ def check_ticket_questions(root: Path, turn: "Turn") -> None:
         raise RecordError(turn.path, n, f"{c.handle} was ruled {c.named.ruled} ({c.named.answer}), so it waits on nobody")
 
 
-def read_record(
-    path: Path, required: set[str], allowed: set[str], sections: set[str]
-) -> tuple[dict, str, dict[str, tuple[int, str]]]:
+def read_record(path: Path, allowed: set[str], sections: set[str]) -> tuple[dict, str, dict[str, tuple[int, str]]]:
     """A record's frontmatter as data, empty where the record opens on its H1, its H1, and each of
     its `##` sections as (first line, text)."""
     text = path.read_text()
-    front, body, offset = read_frontmatter(path, required, allowed) if text.startswith("---\n") else ({}, text, 1)
+    front, body, offset = read_frontmatter(path, set(), allowed) if text.startswith("---\n") else ({}, text, 1)
     h1, parts = split_sections(path, body, offset, sections)
     return front, h1, parts
 
