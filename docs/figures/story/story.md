@@ -52,7 +52,7 @@ step: 13
 What agents find on their own, such as a worker's friction, work a build deferred, or a reviewer's finding, is filed as a proposed ticket. It waits outside the frontier, the tickets that can be worked now.
 
 step: 14
-A triage, which you start (`/mx:triage`), groups the proposed tickets by shared cause, and you drop, merge or promote each. Only what you promote is built.
+A triage, which you start (`/mx:triage`), groups the proposed tickets by shared cause, drops, merges and promotes them itself, and asks you only the calls that change what the product does or how it is built. Only what is promoted is built.
 
 step: 15
 What outlives every session is on disk. The tickets carry the design, with every call marked by who settled it.
@@ -142,7 +142,7 @@ step: 9
 What the orchestrator finds on its own, a worker's friction, work a build deferred, a finding of the review one level up, it files as proposed with `tracker new`. Filing is not a ruling.
 
 step: 10
-A triage is yours to start (`/mx:triage`). It groups the proposed tickets by shared cause, and you drop, merge or promote each; saying "build this" promotes one at once.
+A triage is yours to start (`/mx:triage`). It groups the proposed tickets by shared cause and does the bookkeeping itself, putting only the design calls to you; saying "build this" promotes one at once.
 
 step: 11
 A dropped ticket leaves the live tracker. Its file stays in git, with the reason in the commit that took it out.
@@ -259,7 +259,7 @@ Then the artefacts made for it: here, three rendered takes on the list to choose
 
 step: 6
 region: 0 .91 .72 .09
-At the bottom are the proposed tickets. A triage (`/mx:triage`) groups them by shared cause before you drop, merge or promote each, so a recurring problem arrives as one group rather than as scattered fixes.
+At the bottom are the proposed tickets. A triage (`/mx:triage`) groups them by shared cause before the agent drops, merges or promotes each, so a recurring problem arrives as one group rather than as scattered fixes.
 
 ## A landing
 
