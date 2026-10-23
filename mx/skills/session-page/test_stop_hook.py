@@ -11,7 +11,7 @@ and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-ac
 Properties, over the worked example in `fixtures/`, whose records a check corrupts one at a time.
 The prose reviewer, which the hook never calls, is stubbed by conftest.py.
 The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
-for which session; the hub is absent unless a check starts a stand-in of it on a port of its own.
+for which session; the hub is absent unless a check starts a stand-in of it on a socket of its own.
 """
 
 import io
@@ -20,13 +20,15 @@ import os
 import re
 import socket
 import shutil
+import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
@@ -43,26 +45,28 @@ from session_page import PAGE, PREVIOUS, SESSIONS
 from stop_hook import decide
 
 
+@pytest.fixture
+def sockets() -> Iterator[Path]:
+    """A directory of its own whose path is short enough for a unix socket in it, which a test's
+    tmp_path may not be."""
+    where = Path(tempfile.mkdtemp(prefix="hub."))
+    yield where
+    shutil.rmtree(where, ignore_errors=True)
+
+
 @pytest.fixture(autouse=True)
-def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sockets: Path) -> Path:
     """A `claude-browser` first on PATH that appends each open it is asked for to the file handed
     back, as the session it was told and the path, so no check starts a browser. No hub answers on
-    the port the hook asks, so no check reaches one running on the host."""
+    the socket the hook asks, so no check reaches one running on the host."""
     where = tmp_path / "browser"
     where.mkdir()
     (where / "claude-browser").write_text(
         f'#!/usr/bin/env bash\nprintf \'%s\\t%s\\n\' "$MX_ORIGIN_SESSION" "$*" >> "{where}/opened"\n')
     (where / "claude-browser").chmod(0o755)
     monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("CONTAINER_HUB_PORT", str(closed_port()))
+    monkeypatch.setenv("CONTAINER_HUB_SOCKET", str(sockets / "hub.sock"))
     return where / "opened"
-
-
-def closed_port() -> int:
-    """A port nothing listens on: one the system just handed out and took back."""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def opened(record: Path, count: int) -> list[tuple[str, str]]:
@@ -288,7 +292,7 @@ PAGE_OPENS = {"a hub that answers": (True, 3), "no hub": (False, 1)}
 @pytest.mark.parametrize("answers, opens", PAGE_OPENS.values(), ids=PAGE_OPENS)
 def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_where_none_does(
     answers: bool, opens: int, worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None],
-    attended: Path, hub: Callable[[int], int],
+    attended: Path, hub: Callable[..., None],
 ) -> None:
     """stop-hook-opens-the-turns-artefacts and its D4: a render hands the page to `claude-browser`,
     told the session it belongs to, every time where the hub turns a repeat into a reload, and only
@@ -385,26 +389,35 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
 # ---- the hub ----------------------------------------------------------------
 
 
-@pytest.fixture
-def hub(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[int], int]]:
-    """Start a stand-in of the container hub on a port of its own, which answers every GET with the
-    status given, and point the hook at that port. Hands back the port."""
-    servers: list[ThreadingHTTPServer] = []
+class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
 
-    def start(status: int) -> int:
+
+HUB_URL = "https://pc.example.ts.net:8377"
+"""The address the stand-in hub says it is at: no loopback port, as pc's hub has none."""
+
+
+@pytest.fixture
+def hub(sockets: Path) -> Iterator[Callable[..., None]]:
+    """Start a stand-in of the container hub on the socket the hook asks, which answers its health
+    check with the status given and, where one is given, its address."""
+    servers: list[SocketServer] = []
+
+    def start(status: int, url: str | None = HUB_URL) -> None:
         class Answer(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
+                body = json.dumps({"saves": True, **({"url": url} if url else {})}).encode()
                 self.send_response(status if self.path == "/.health" else 404)
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
+                self.wfile.write(body)
 
             def log_message(self, *args: object) -> None:
                 pass
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Answer)
+        server = SocketServer(str(sockets / "hub.sock"), Answer)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         servers.append(server)
-        monkeypatch.setenv("CONTAINER_HUB_PORT", str(server.server_port))
-        return server.server_port
 
     yield start
     for server in servers:
@@ -412,30 +425,39 @@ def hub(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[int], int]]:
         server.server_close()
 
 
-# Each is what answers the hub's health check, None for nothing on the port, and whether the line
-# links the unit.
-HUBS = {"a hub that answers": (200, True), "something else on the port": (404, False), "no hub": (None, False)}
+# Each is what answers the hub's health check, None for nothing on the socket, the address it names,
+# and whether the line links the unit.
+HUBS = {
+    "a hub that answers": (200, HUB_URL, True),
+    "a hub that names no address": (200, None, False),
+    "something else on the socket": (404, HUB_URL, False),
+    "no hub": (None, None, False),
+}
 
 
-@pytest.mark.parametrize("status, unit", HUBS.values(), ids=HUBS)
+@pytest.mark.parametrize("status, url, unit", HUBS.values(), ids=HUBS)
 def test_the_hooks_line_links_the_sessions_unit_where_a_hub_answers_and_the_page_where_none_does(
-    status: int | None, unit: bool, worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], hub: Callable[[int], int],
+    status: int | None, url: str | None, unit: bool, worked_example: Path, transcript: Path,
+    capsys: pytest.CaptureFixture, run: Callable[[dict], None], hub: Callable[..., None],
 ) -> None:
-    """stop-hook-opens-the-turns-artefacts: the hub tab at the session's unit is
-    `http://127.0.0.1:<port>/u/<session id>`, and the hub answers `GET /.health` when it runs;
-    where nothing does, the line keeps the page's `file://` link."""
-    port = hub(status) if status else None
-    link = f"http://127.0.0.1:{port}/u/{worked_example.name}" if unit else (worked_example / PAGE).as_uri()
+    """stop-hook-opens-the-turns-artefacts and hub-backend-on-a-socket: the hub answers `GET /.health`
+    on its socket when it runs, naming the address its tab is at, and the line links that tab at the
+    session's unit, `<address>/u/<session id>`; where nothing does, the line keeps the page's
+    `file://` link."""
+    if status:
+        hub(status, url)
+    link = f"{HUB_URL}/u/{worked_example.name}" if unit else (worked_example / PAGE).as_uri()
     run(payload(worked_example, transcript))
     assert shown(capsys) == f"session page · waiting on you: Q7 · {link}"
 
 
 @pytest.fixture
-def speaks_no_http() -> Iterator[int]:
-    """Something on a port of its own that answers a request with a line that is no HTTP. Hands back
-    the port."""
-    server = socket.create_server(("127.0.0.1", 0))
+def speaks_no_http(sockets: Path) -> Iterator[Path]:
+    """Something on a socket of its own that answers a request with a line that is no HTTP. Hands
+    back the socket."""
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(sockets / "other.sock"))
+    server.listen()
 
     def answer() -> None:
         while True:
@@ -448,25 +470,26 @@ def speaks_no_http() -> Iterator[int]:
                 connection.sendall(b"hello, this is no hub\r\n")
 
     threading.Thread(target=answer, daemon=True).start()
-    yield server.getsockname()[1]
+    yield sockets / "other.sock"
     server.close()
 
 
-# Each hands back a hub port the health check cannot ask.
+# Each hands back a hub socket the health check cannot ask.
 UNASKABLE = {
-    "a port that is no number": lambda request: "abc",
-    "something on the port that speaks no HTTP": lambda request: str(request.getfixturevalue("speaks_no_http")),
+    "a file that is no socket": lambda request: request.getfixturevalue("tmp_path") / "browser" / "claude-browser",
+    "something on the socket that speaks no HTTP": lambda request: request.getfixturevalue("speaks_no_http"),
 }
 
 
-@pytest.mark.parametrize("port", UNASKABLE.values(), ids=UNASKABLE)
-def test_a_hub_port_that_cannot_be_asked_is_no_hub(
-    port: Callable[[pytest.FixtureRequest], str], worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, attended: Path,
+@pytest.mark.parametrize("hub_socket", UNASKABLE.values(), ids=UNASKABLE)
+def test_a_hub_socket_that_cannot_be_asked_is_no_hub(
+    hub_socket: Callable[[pytest.FixtureRequest], Path], worked_example: Path, transcript: Path,
+    capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest, attended: Path,
 ) -> None:
     """The first render still opens the page, keeps `sessions/` out of the agent repo's status and
     links the page's file, as it does where nothing listens."""
-    monkeypatch.setenv("CONTAINER_HUB_PORT", port(request))
+    monkeypatch.setenv("CONTAINER_HUB_SOCKET", str(hub_socket(request)))
     run(payload(worked_example, transcript))
     assert [entry["opened"].startswith("started ") for entry in logged(attended, "page")] == [True]
     assert logged(attended, "excluded")

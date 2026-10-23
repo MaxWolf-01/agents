@@ -32,13 +32,13 @@ Every decision is one JSON line in `turn_review.LOG`, beside the review's own: t
 hook took that path, and the session directory it resolved.
 """
 
+import http.client
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
-import http.client
-import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,10 +68,10 @@ class Decision:
 
 
 # The container hub's half of the contract, which the dotfiles' `container-hub --help` names: the
-# port it serves on, the variable that moves it, the path it answers while it runs, and its tab at a
-# session's unit.
-HUB_PORT = 8377
-HUB_PORT_VARIABLE = "CONTAINER_HUB_PORT"
+# socket it listens on, the variable that moves it, the path it answers while it runs with its
+# address, and its tab at a session's unit.
+HUB_SOCKET = "~/.local/state/container-hub/hub.sock"
+HUB_SOCKET_VARIABLE = "CONTAINER_HUB_SOCKET"
 HUB_HEALTH = "/.health"
 HUB_UNIT = "/u/{session}"
 
@@ -144,17 +144,34 @@ def shown(session: Session) -> str:
     return f"session page · {ask}"
 
 
+class HubConnection(http.client.HTTPConnection):
+    """HTTP to the container hub, over its socket."""
+
+    def __init__(self, path: str):
+        super().__init__("localhost", timeout=1)
+        self.path = path
+
+    def connect(self) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.path)
+
+
 def hub_unit(session_id: str) -> str:
-    """The container hub's tab at the session's unit, where a hub answers its health check on this
-    host; empty where none does."""
-    hub = f"http://127.0.0.1:{os.environ.get(HUB_PORT_VARIABLE) or HUB_PORT}"
+    """The container hub's tab at the session's unit, where a hub on this host answers its health
+    check with its address; empty where none does."""
+    hub = HubConnection(os.path.expanduser(os.environ.get(HUB_SOCKET_VARIABLE) or HUB_SOCKET))
     try:
-        with urllib.request.urlopen(hub + HUB_HEALTH, timeout=1):
-            return hub + HUB_UNIT.format(session=session_id)
-    # Refused, timed out or an error status (OSError); a port that is no number (InvalidURL), or
-    # something on the port that speaks no HTTP (BadStatusLine), both HTTPException.
-    except (OSError, http.client.HTTPException):
+        hub.request("GET", HUB_HEALTH)
+        answer = hub.getresponse()
+        url = json.loads(answer.read()).get("url") if answer.status == 200 else None
+    # Refused, absent or timed out (OSError); something on the socket that speaks no HTTP
+    # (HTTPException), or answers with no address (ValueError, AttributeError).
+    except (OSError, http.client.HTTPException, ValueError, AttributeError):
         return ""
+    finally:
+        hub.close()
+    return url + HUB_UNIT.format(session=session_id) if isinstance(url, str) and url else ""
 
 
 def linked(session: Session, turn: Turn) -> tuple[str, ...]:
