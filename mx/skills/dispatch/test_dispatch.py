@@ -1836,8 +1836,69 @@ def test_a_listed_repo_whose_remote_for_the_host_points_elsewhere_is_pushed_noth
     git(repos["jarvis"], "remote", "add", "agent-far-lamp", str(elsewhere))
     said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
     assert said.returncode != 0
-    assert f"remote agent-far-lamp at {repos['jarvis']} is not" in said.stderr, said.stderr
+    assert f"remote agent-far-lamp at {repos['jarvis']} names {elsewhere}, not agent@far:repos/dispatch/lamp-jarvis.git" in said.stderr, said.stderr
     assert not git(elsewhere, "for-each-ref")
+
+
+def test_a_hosts_remote_left_at_the_bare_repo_of_an_older_repo_name_is_repointed_and_the_branch_lands_where_the_host_cuts(
+        toy: Path, staged: Path) -> None:
+    """The helferline staging: earlier waves named the repo `workspace`, so both repos still carry
+    the host's remote at `workspace.git`; the project is `lamp` now, and the spawn's push lands in
+    the bare repos the host's init made for it."""
+    remote, env = fake_remote(toy)
+    for top, old in ((toy, "workspace.git"), (toy / "agent", "workspace-agent.git")):
+        git(top, "remote", "add", "agent-far", f"agent@far:repos/dispatch/{old}")
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode == 0, said.stderr
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    hosted = remote / "repos" / "dispatch"
+    for top, bare in ((toy, "lamp.git"), (toy / "agent", "lamp-agent.git")):
+        assert git(top, "remote", "get-url", "agent-far").strip() == f"agent@far:repos/dispatch/{bare}"
+        assert git(hosted / bare, "branch", "--list", "main"), bare
+    assert not (hosted / "workspace.git").exists()
+
+
+def test_a_hosts_remote_naming_a_repo_outside_dispatchs_on_that_host_stops_the_spawn_naming_both(
+        toy: Path, staged: Path) -> None:
+    remote, env = fake_remote(toy)
+    elsewhere = toy.parent / "elsewhere.git"
+    git(toy.parent, "init", "-q", "--bare", str(elsewhere))
+    git(toy / "agent", "remote", "add", "agent-far", str(elsewhere))
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode != 0
+    assert f"remote agent-far at {toy / 'agent'} names {elsewhere}, not agent@far:repos/dispatch/lamp-agent.git" in said.stderr, said.stderr
+    assert git(toy / "agent", "remote", "get-url", "agent-far").strip() == str(elsewhere)
+    assert not git(elsewhere, "for-each-ref")
+    assert not (remote / "repos" / "dispatch" / "lamp-warm-preset").exists(), "no worker started"
+
+
+@pytest.mark.parametrize("project, says", [
+    ({"flake.nix": "{}\n"}, "nix develop -c make install`, from no `setup` file in {state}, which `dispatch ctl --setup-cmd` writes, so the default for a flake.nix"),
+    ({"Makefile": "install:\n\ttrue\n"}, "make install`, from no `setup` file in {state}, which `dispatch ctl --setup-cmd` writes, so the default for a Makefile with install"),
+])
+def test_a_spawn_onto_a_scratch_dir_with_no_setup_file_says_which_default_it_runs(
+        toy: Path, staged: Path, project: dict[str, str], says: str) -> None:
+    """A scratch dir new to a host holds no `setup` an older one did, so the spawn names the
+    default it fell back to and why."""
+    for name, body in project.items():
+        (toy / name).write_text(body)
+    git(toy, "add", "-A")
+    git(toy, "commit", "-q", "-m", "a setup")
+    fakes = toy.parent / "fakes"
+    fakes.mkdir()
+    (fakes / "nix").write_text("#!/bin/sh\nexit 0\n")  # `nix develop -c` with nothing to build
+    (fakes / "nix").chmod(0o755)
+    env = environment(toy)
+    env["PATH"] = f"{fakes}:{env['PATH']}"
+    run(toy, "claim", "warm-preset")
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+    said = subprocess.run([str(staged), "ctl", "--host", "local", "spawn", "warm-preset", "sonnet"],
+                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    state = waited(toy).parent
+    assert said.returncode == 0, said.stderr
+    assert "dispatch-ctl: setup `" + says.format(state=state) in said.stderr, said.stderr
 
 
 def test_a_review_reads_the_list_for_a_range_in_a_listed_repo_the_ticket_does_not_name(toy: Path) -> None:
