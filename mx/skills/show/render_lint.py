@@ -34,9 +34,9 @@ fixed chrome is no finding.
 Skipped on purpose: overflow under 2px, and a cut under 2px by each box (a clipped finding's
 size is the most any one box cut); the touching line boxes of a multi-line label; text a
 clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs cross by
-less than half the shorter one's height. Text in a scrolling ancestor never counts as escaping,
-and a box that scrolls on either axis never counts as cutting, even on an axis it hides; a box
-around the scroller still cuts what it shows, and the text still counts as overlapping.
+less than half the shorter one's height. Text inside an ancestor that scrolls sideways never
+counts as escaping, and still counts as overlapping. A box that scrolls on either axis never counts
+as cutting, even on an axis whose overflow it hides; a box around it still cuts what it shows.
 
 How far the paint-over rule reaches: a surface counts as covering a text when its background
 resolves to an opaque colour, so a card drawn as an image or a gradient does not, and neither
