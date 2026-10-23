@@ -56,7 +56,7 @@ import tyro
 import yaml
 from tyro.extras import SubcommandApp
 
-import sync
+import in_step  # two main checkouts of a repo kept in step through git, beside this script
 
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
@@ -77,6 +77,9 @@ TICKETS = Path("agent") / "tickets"
 REPO_LIST = "repos.toml"  # beside the tickets, in the agent repo
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
 SYNC_HOOK = "tracker sync --here"  # what the sync hook runs, and how a project is known to have one
+# What `hook` installs: each hook's name, the file beside this one it is, and what it runs.
+HOOKS = {"pre-commit": ("pre-commit", "tracker check"), "post-commit": ("post-commit", SYNC_HOOK),
+         "post-merge": ("post-commit", SYNC_HOOK)}
 
 
 # ---- the commands ----------------------------------------------------------
@@ -1314,12 +1317,13 @@ def hook(sync: bool = False) -> int:
     """
     here_ = Path(__file__).resolve().parent
     hooks = Path(git(Path.cwd(), "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
-    wanted = {"pre-commit": "pre-commit"} | ({"post-commit": "post-commit", "post-merge": "post-commit"} if sync else {})
     standing = []
-    for name, source in wanted.items():
+    for name, (source, runs) in HOOKS.items():
+        if name != "pre-commit" and not sync:
+            continue
         script, into = (here_ / source).read_text(), hooks / name
         if into.exists() and into.read_text() != script:
-            standing.append(f"{into} is a {name} hook this did not write; add `{'tracker check' if name == 'pre-commit' else SYNC_HOOK}` to it by hand")
+            standing.append(f"{into} is a {name} hook this did not write; add `{runs}` to it by hand")
             continue
         into.parent.mkdir(parents=True, exist_ok=True)
         into.write_text(script)
@@ -1343,11 +1347,12 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
     the code repo and of each listed repo that has its integration branch out; a ticket branch is
     never synced. Each merge stays a merge of the same ticket tip, which is what `land` reads.
 
-    The sync hook runs this after every commit and merge in the agent repo's main checkout, every
-    write of a ticket file runs it on the agent repo first, and `dispatch review` and `dispatch
-    accept` run it once their merge is in. A checkout whose remote does not answer is left as it
-    is, its commits waiting for the next sync. A conflict, the two machines having changed the same
-    lines, pushes nothing and leaves the checkout as it was. Exit 1: a conflict, or a remote that
+    It runs on its own as well: on the agent repo after every commit and before every ticket write,
+    and on each integration branch once dispatch has merged into it. A project with no sync hook is
+    left alone, and nothing is said. A checkout whose remote does not answer is left as it is, its
+    commits waiting for the next sync. A conflict, the two machines having changed the same lines,
+    pushes nothing and leaves the checkout as it was. So does a commit another branch here is built
+    on, which a replay would copy. Exit 1: a conflict, a checkout left as it was, or a remote that
     refused the push; the line says which file or why.
 
     Args:
@@ -1364,10 +1369,9 @@ def sync_checkouts(here: bool = False, resolve: bool = False) -> int:
     else:
         root = tracker_root(Path.cwd())
         if not kept_in_step(root):
-            print(f"{root.parent} has no sync hook, so this project keeps one main checkout and nothing is synced; `tracker hook --sync` there makes it two", file=sys.stderr)
             return 0
         found = in_step_checkouts(root)
-    outcomes = [sync.sync(top, resolve) for top in found]
+    outcomes = [in_step.sync(top, resolve) for top in found]
     for outcome in outcomes:
         if outcome.said:
             print(outcome.said, file=sys.stderr)
@@ -2174,7 +2178,7 @@ def writing() -> Tracker:
         if built := ticket_branch_out(top):
             raise Refused([f"{built} is the branch {top} has out, and a ticket file is written in the agent repo's main checkout, never from a ticket branch"])
     root = tracker_root(Path.cwd())
-    if kept_in_step(root) and (synced := sync.sync(toplevel(root))).said:
+    if kept_in_step(root) and (synced := in_step.sync(toplevel(root))).said:
         if synced.outcome == "conflict":
             raise Refused([synced.said, "the write waits until the two checkouts are in step"])
         print(synced.said, file=sys.stderr)
