@@ -28,8 +28,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parents[1]))
 sys.path.insert(0, str(Path(__file__).parents[3] / "mx" / "skills" / "tracker"))
 import fixture as F  # noqa: E402
+import rendered_from  # noqa: E402
 from briefing import cache_path  # noqa: E402
 
 HERE = Path(__file__).parent
@@ -326,6 +328,7 @@ def render() -> tuple[Path, Path | None]:
                 env=os.environ | {"MX_ORIGIN_SESSION": ORCH_CSV, "CLAUDE_CONFIG_DIR": str(CLAUDE)})
     else:
         (ASSETS / "review-page.png").unlink(missing_ok=True)  # gone reads as not shot; stale reads as fresh
+        (ASSETS / f"review-page{rendered_from.SUFFIX}").unlink(missing_ok=True)
         print("no diffview on PATH: skipping review-page.png, and the board's review links stay bare")
     board = AGENT / "board.html"
     # one render, so no briefing session runs: the answer one really gave on this tracker stands in
@@ -486,4 +489,6 @@ if __name__ == "__main__":
     board, review = render()
     written = shoot(board, review)
     subprocess.run([str(COMPRESS), *map(str, written)], check=True)
+    for stem in {path.stem.removesuffix("-light") for path in written}:
+        rendered_from.record(stem, Path(__file__), HERE)
     print(f"repo: {REPO}")
