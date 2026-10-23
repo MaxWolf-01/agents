@@ -844,7 +844,7 @@ def test_the_stamp_the_open_tab_polls_moves_when_the_session_rewrites_the_briefi
 
 
 def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -> None:
-    """The spec's four words, each against the fixture ticket that earns it: a build in review asks
+    """Each word a row asks with, against the fixture ticket that earns it: a build in review asks
     for a ruling; a ticket the user is in the loop for asks for the session the user sits in,
     whether or not its question is written down; a ticket a worker takes is stopped by an open
     question of its own and asks for the answer; one with no question asks nothing of the user.

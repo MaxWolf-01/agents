@@ -279,6 +279,10 @@ with sync_playwright() as pw:
       }
     """)
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
+    out["gname"] = page.evaluate("""
+      () => { const g = document.getElementById("gname"), box = g.getBoundingClientRect(), head = g.parentElement
+              return {text: g.textContent, cut: g.scrollWidth > g.clientWidth + 1 || box.right > head.getBoundingClientRect().right + 1} }
+    """)
     out["unloaded"] = page.is_visible("#gunloaded") and page.inner_text("#gunloaded")
     for mark in marks:
         where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
@@ -394,6 +398,8 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     assert seen["cdn"] is not offline, "with the network cut off and no copies, the graph engine arrived all the same"
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
+    # the graph's name says which graph is on show, so the side column never cuts it short
+    assert seen["gname"] == {"text": "csv-import", "cut": False}, f"the graph's name reads {seen['gname']}"
     said = seen["briefing"]
     assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
     assert said["says"], "the briefing's own mark says nothing about what it is"

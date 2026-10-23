@@ -26,10 +26,10 @@ of these it cannot reach, and the page says so once.
 
 Every link the page writes is relative to it, so it opens wherever the page is
 opened: served from any origin, or as a file. `board` opens the page served,
-from the diffview server over the whole agent repo (`diffview --serve
-agent/`), and while it watches it brings that server back on the same port
-whenever it exits, so an open tab keeps answering. Where no diffview is
-installed or its server does not answer, it opens the file. Served, a review
+at the address `diffview --serve agent/` prints for the whole agent repo, and
+while it watches it runs that again whenever nothing answers there, so an open
+tab keeps answering. Where no diffview is installed or nothing answers at the
+address, it opens the file. Served, a review
 page opened from the board saves the comments written on it; opened as a file,
 the board opens its review pages as files, read-only. --no-open starts no
 server.
@@ -931,13 +931,13 @@ def assert_safe_name(name: str) -> None:
 
 
 def served(agent: Path, out: Path) -> str | None:
-    """The address the page `out` answers on from the diffview server over the agent repo, or None
+    """The address the page `out` answers on where `diffview --serve` serves the agent repo, or None
     where it can be opened only as a file: the page is outside the agent repo, no diffview is
-    installed, or the server does not answer.
+    installed, or nothing answers at the address it prints.
 
-    `diffview --serve` is idempotent and prints the server's address, so the port stays diffview's
-    to decide, and one that exited comes back on the port it had, which is the one an open page
-    knows."""
+    `diffview --serve` is idempotent and prints the agent repo's address on whichever server it
+    handed the repo to, so the port stays diffview's to decide, and a server that exited comes back
+    on the port it had, which is the one an open page knows."""
     if not out.is_relative_to(agent):
         return None
     try:
@@ -2406,6 +2406,7 @@ ${columns}
     /* the column leaves a name beside the buttons a few letters, so it takes the line under them */
     .ghead .label { flex: 1; }
     .ghead .gname { order: 1; flex-basis: 100%; }
+    .ghead .gname:empty { display: none; }  /* no row under the cursor: no graph, so no line for its name */
   }
   /* the briefing, at the head of the column: prose, so it is set as the page's prose is */
   .briefing { margin-bottom: 1.1rem; }
