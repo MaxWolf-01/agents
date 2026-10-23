@@ -298,15 +298,18 @@ set_up() {
     # The setup command is what makes a worktree reproducible on any host: the
     # project's own, as its docs give it, or its `make install`. A project with
     # neither gets a ticket, not an environment improvised here.
+    # Which one is said, since a scratch dir new to a host holds no `setup` an older one did.
+    local none="$here has no \`setup\` (\`dispatch ctl --setup-cmd\` writes one)" from
     if [ -f "$here/setup" ]; then
-        setup=$(cat "$here/setup")
+        setup=$(cat "$here/setup") from="$here/setup"
     elif [ -f "$worktree/flake.nix" ]; then
-        setup="nix develop -c make install"
+        setup="nix develop -c make install" from="the default for a flake.nix: $none"
     elif grep -qs '^install:' "$worktree/Makefile"; then
-        setup="make install"
+        setup="make install" from="the default for a Makefile with install: $none"
     else
         die "no setup command for $worktree (no \`setup\` file here, no flake.nix, no make install); the project needs one before it can be dispatched"
     fi
+    echo "dispatch-ctl: setup from $from" >&2
     echo "+ (cd $worktree && $setup) > $here/$name.install.log 2>&1" >&2
     (cd "$worktree" && bash -c "$setup") > "$here/$name.install.log" 2>&1 && return 0
     tail -20 "$here/$name.install.log" >&2

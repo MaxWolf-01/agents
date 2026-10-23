@@ -317,6 +317,13 @@ stage() { # <host> [setup-command]
         printf '%s\n' "$cmd" > "$staged/setup"
         files+=("$staged/setup")
     fi
+    # Checked on every spawn, staged host or not: a remote is this machine's, and the stamp is the host's.
+    if [ "$h" != local ]; then
+        remote=$(remote_of code "$h")
+        host_remote "$repo_root" "$remote" "$h:repos/dispatch/$repo.git" &&
+            host_remote "$agent_top" "$remote" "$h:repos/dispatch/$repo-agent.git" ||
+            die "staging $h stopped at its git remotes; the line above says why"
+    fi
     if [ "$(on_host "$h" cat "$scratch/stamp" 2>/dev/null)" = "$stamp" ]; then
         # A new --setup-cmd is the one thing a staged host still takes, so a
         # failure here is the spawn building worktrees with the old one.
@@ -328,10 +335,6 @@ stage() { # <host> [setup-command]
         copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
         run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" "$agent_top" "$agent_base" || die "init failed"
     else
-        remote=$(remote_of code "$h")
-        git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$h:repos/dispatch/$repo.git"
-        git -C "$agent_top" remote get-url "$remote" >/dev/null 2>&1 ||
-            run git -C "$agent_top" remote add "$remote" "$h:repos/dispatch/$repo-agent.git"
         run on_host "$h" mkdir -p "$scratch" || die "cannot reach $h"
         copy_to "$h" "$scratch" "${files[@]}" || die "copy to $h:$scratch failed"
         # init creates the two bare repos a push lands in; until it has run, the
@@ -341,6 +344,20 @@ stage() { # <host> [setup-command]
     fi
     # Last, so a staging that broke halfway is done again instead of trusted.
     printf '%s\n' "$stamp" | on_host "$h" tee "$scratch/stamp" > /dev/null
+}
+
+# The remote <top> reaches a host's bare repo at <url> through, added where missing. One at another
+# of the host's dispatch repos is a staging's from before the project's repo name changed, and is
+# repointed, so the push lands where the host's worktrees cut from; one anywhere else is somebody
+# else's, and stays as it is.
+host_remote() { # <top> <remote> <url>
+    local at
+    at=$(git -C "$1" remote get-url "$2" 2> /dev/null) || { run git -C "$1" remote add "$2" "$3"; return; }
+    [ "$at" = "$3" ] && return 0
+    case $at in
+        "${3%%:*}:repos/dispatch/"*.git) run git -C "$1" remote set-url "$2" "$3" ;;
+        *) echo "dispatch: remote $2 at $1 names $at, not $3, the host's bare repo, so nothing is pushed there" >&2; return 1 ;;
+    esac
 }
 
 push_to() { # <host>
@@ -360,10 +377,8 @@ push_listed() { # <host>
     local name top remote url rc=0
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} remote=$(remote_of "$name" "$1") url=$1:repos/dispatch/$repo-$name.git
-        git -C "$top" remote get-url "$remote" > /dev/null 2>&1 || run git -C "$top" remote add "$remote" "$url"
         # The push below is forced, so it goes to no remote of that name the repo had for another use.
-        [ "$(git -C "$top" remote get-url "$remote")" = "$url" ] ||
-            { echo "dispatch: $name's remote $remote at $top is not $url, so nothing is pushed there" >&2; rc=1; continue; }
+        host_remote "$top" "$remote" "$url" || { rc=1; continue; }
         # Forced: the host's copy is dispatch's own, and which of local and origin's branch is the
         # base may change between two pushes, where the two have parted.
         run git -C "$top" push -q "$remote" "+${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
