@@ -97,7 +97,9 @@ def commit_records(directory: Path) -> str:
         without = ""
     except (RuntimeError, OSError) as error:  # the records still go; the artefacts wait for the next end
         without = f", without its artefacts: {error}"
-    tracked = set(git(agent, "ls-files", "--", *(f"{SESSIONS.name}/{session_id}/{name}" for name in kept)).stdout.split())
+    # -z: without it git quotes a path holding a non-ASCII character, and a space would split one in two
+    listed = git(agent, "ls-files", "-z", "--", *(f"{SESSIONS.name}/{session_id}/{name}" for name in kept)).stdout
+    tracked = {path for path in listed.split("\0") if path}
     tracked = {path.removeprefix(f"{SESSIONS.name}/") for path in tracked}
     wanted = {f"{session_id}/{record}" for record in records}
     # what git cannot put back: each untracked path the copy writes, as it was, None where it was not there
