@@ -57,7 +57,7 @@ from tyro.extras import SubcommandApp
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
-Field = Literal["status", "parent", "blocked-by", "needs-user", "hinge", "priority", "size", "repos", "diff", "gh"]
+Field = Literal["status", "parent", "blocked-by", "needs-user", "priority", "size", "repos", "diff", "gh"]
 STATUSES, SIZES, PRIORITIES = get_args(Status), get_args(Size), get_args(Priority)
 FIELDS = get_args(Field)
 LIST_FIELDS = ("blocked-by", "repos", "diff", "gh")
@@ -144,8 +144,7 @@ def repos() -> int:
 
     A repo with no `integration` integrates on the branch its `origin/HEAD` names. A ticket's work
     in a listed repo has landed once it is in the branch the ticket's accept merges it into there:
-    its parent ticket's branch for a hinge, and the integration branch, locally or at `origin`, for
-    a top-level ticket and any other child of one. A list this cannot read whole is refused with
+    the integration branch, locally or at `origin`, for a top-level ticket and any child of one. A list this cannot read whole is refused with
     the reason: TOML that does not parse, a table with no `path`, a path that is no git repo's
     root, an integration branch the repo does not have."""
     root = tracker_root(Path.cwd())
@@ -180,7 +179,7 @@ def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") ->
     JSON schema:
 
         {"root": "str", "tickets": [{"slug": "str", "path": "str", "status": "str",
-          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "hinge": bool, "priority": int,
+          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "priority": int,
           "size": "str", "repos": ["str"], "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
           "sections": [{"heading": "str", "line": int, "text": "str"}],
           "questions": [{"tag": "str", "headline": "str", "detail": "str", "ruled": "str|null",
@@ -219,7 +218,7 @@ def as_data(ticket: Ticket, tracker: Tracker) -> dict:
     return {
         "slug": ticket.slug, "path": str(ticket.path), "status": ticket.status,
         "parent": ticket.parent, "blocked-by": ticket.blocked_by, "needs-user": ticket.needs_user,
-        "hinge": ticket.hinge, "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
+        "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
         "repos": ticket.repos,
         "diff": [str(one) for one in ticket.meta.get("diff") or []],
         "gh": [str(one) for one in ticket.meta.get("gh") or []],
@@ -263,9 +262,9 @@ def assembled(ticket: Ticket, tracker: Tracker) -> str:
 def frontier() -> int:
     """What can be started right now: the unclaimed, unblocked open tickets that do not need the
     user; a proposed ticket waits for a triage to promote it to open. A blocker holds until it is
-    done, or until it is a sibling in review, no hinge, and merged into the branch of the parent
-    ticket the two share: a parent ticket ruled whole lets its children build on each other
-    unruled, and a hinge is ruled alone before anything builds on it. Everything else not done
+    done, or until it is a sibling in review merged into the branch of the parent ticket the two
+    share: a parent ticket ruled whole lets its children build on each other unruled. Everything
+    else not done
     follows under `waiting`, with what holds it back.
     """
     tracker = here()
@@ -294,17 +293,17 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
         return "on the user, who is in the loop for it"
     blocking = [tracker.tickets[ref] for ref in ticket.blocked_by if not frees(tracker.tickets[ref], ticket, tracker)]
     if blocking:
-        return "on " + ", ".join(f"{one.slug} ({one.status}{', a hinge' if one.hinge else ''})" for one in blocking)
+        return "on " + ", ".join(f"{one.slug} ({one.status})" for one in blocking)
     return ""
 
 
 def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker, start: Path | None = None) -> bool:
-    """Whether `blocker` no longer holds `ticket` back: it is done, or it is a sibling in review, no
-    hinge, merged into the branch of the parent ticket the two share. `start` is where the code
+    """Whether `blocker` no longer holds `ticket` back: it is done, or it is a sibling in review
+    merged into the branch of the parent ticket the two share. `start` is where the code
     repo is looked for (repos_of)."""
     if blocker.status == "done":
         return True
-    if blocker.hinge or not ticket.parent or blocker.parent != ticket.parent:
+    if not ticket.parent or blocker.parent != ticket.parent:
         return False
     return merged_under_parent(blocker, tracker, start)
 
@@ -342,7 +341,6 @@ def new(
     repos: tuple[str, ...] = (),
     status: Literal["proposed", "open"] = "proposed",
     needs_user: bool = False,
-    hinge: bool = False,
     title: str = "",
     brief: str = "",
 ) -> int:
@@ -358,7 +356,6 @@ def new(
         repos: the listed repos the work lands in, by the names `tracker repos` prints.
         status: the status to file it at.
         needs_user: mark the ticket as one the user is in the loop for.
-        hinge: mark a child ticket as a hinge, ruled alone before anything builds on it (SLICING.md).
         title: the ticket's name; the slug's words when not given.
         brief: a file holding the ticket's brief, or `-` for one on stdin; the brief is left to the
             filing agent when not given.
@@ -372,7 +369,7 @@ def new(
     if brief not in ("", "-") and not Path(brief).is_file():
         raise Refused([f"{brief} is no file to read a brief from"])
     meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by), "repos": list(repos),
-            "needs-user": needs_user, "hinge": hinge, "priority": priority, "size": size}
+            "needs-user": needs_user, "priority": priority, "size": size}
     written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
     told = (sys.stdin.read() if brief == "-" else Path(brief).read_text()).strip() if brief else ""
     written += f"\n# {title or slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n"
@@ -487,8 +484,8 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     """Write what the merge of a ticket's round gives it, in one write committed in the agent repo.
     The round is the ticket's `ticket/<slug>` branch in the code repo this runs in, in the agent
     repo, and in each listed repo its `repos:` names. Once every one of them has merged into the
-    branch it cut from, the ticket gets the round's ranges and is `done`, except a child ticket that
-    is no hinge, merged into its parent's branch: that one waits in `review` for its parent's ruling.
+    branch it cut from, the ticket gets the round's ranges and is `done`, except a child ticket
+    merged into its parent's branch: that one waits in `review` for its parent's ruling.
     A `done` here is held to the rule `set` holds every `done` to: the work has reached the branch
     the user's accept merges it into. A merged round that rule refuses is refused with the reason,
     and nothing is written. Unmerged, the ticket waits in `review`. A round whose branches carry no
@@ -518,7 +515,7 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     elif merged:
         changes = ranged(ticket, branches)
         base = head(repos_of(tracker)[0])
-        ruled_with_parent = ticket.parent == base and not ticket.hinge
+        ruled_with_parent = ticket.parent == base
         now = "review" if ruled_with_parent else "done"
         if ticket.status not in ("done", now):
             changes["status"] = now
@@ -781,8 +778,8 @@ def listed_branches(ticket: Ticket, tracker: Tracker) -> list[tuple[Listed, str]
 
 def accepted_into(top: Path, ticket: Ticket, tracker: Tracker, base: str = "") -> str | None:
     """The branch the user's accept merges the ticket's work into, in `top`. Where its parent ticket
-    has a branch there: the parent's branch for a hinge, ruled alone, and for a parent ticket, ruled
-    at its close-out; for any other child, the branch above the parent's, which the parent's accept
+    has a branch there: the parent's branch for a parent ticket, ruled at its close-out; for any
+    other child, the branch above the parent's, which the parent's accept
     brings it to: the grandparent's branch, or the base. None where that would be the parent's
     branch itself. Where the parent has no branch, the base. The base is the branch this runs on,
     or the integration branch of a listed repo, which nothing runs on."""
@@ -790,7 +787,7 @@ def accepted_into(top: Path, ticket: Ticket, tracker: Tracker, base: str = "") -
     parent = ticket.parent and parent_branch(top, ticket.parent)
     if not parent:
         return base
-    if ticket.hinge or tracker.children(ticket.slug):
+    if tracker.children(ticket.slug):
         return parent
     grand = tracker.tickets[ticket.parent].parent if ticket.parent in tracker.tickets else None
     if grand and (above := parent_branch(top, grand)):
@@ -1348,6 +1345,8 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
     for key in meta:
         if key == "type":
             refuse(key, "`type` is dropped, and a ticket whose deliverable is an answer is a ticket like any other; `needs-user` says whether the user is in the loop")
+        elif key == "hinge":
+            refuse(key, "`hinge` is gone: no child ticket is ruled alone; a shape later children build on is settled before the cut, and a shape question a build raises is a ticket question blocking its dependents")
         elif key not in FIELDS:
             refuse(key, f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}")
 
@@ -1368,8 +1367,6 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
 
     if "needs-user" in meta and not isinstance(meta["needs-user"], bool):
         refuse("needs-user", "`needs-user` is true or false: whether the ticket is worked with the user rather than by a worker")
-    if "hinge" in meta and not isinstance(meta["hinge"], bool):
-        refuse("hinge", "`hinge` is true or false: whether the child ticket is a hinge, ruled alone (SLICING.md)")
 
     # a list field is checked for being a list first: a bare scalar is a string, and walking it
     # would refuse the line once per character
@@ -1578,10 +1575,6 @@ class Ticket:
     @property
     def needs_user(self) -> bool:
         return bool(self.meta.get("needs-user"))
-
-    @property
-    def hinge(self) -> bool:
-        return bool(self.meta.get("hinge"))
 
 
 @dataclass(frozen=True)

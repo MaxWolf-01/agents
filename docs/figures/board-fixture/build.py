@@ -67,7 +67,7 @@ REVIEWS = {
         "upload-and-parse-report",
         "The upload gets a report instead of a row list: every line the mapping could not read comes back "
         "with its number and the reason, so the account holder sees the whole statement before anything is "
-        "committed. The hinge of csv-import: the mapping and the commit both read this shape."),
+        "committed. The mapping and the commit both read this shape."),
     "csv-import": (
         "csv-import, closed out",
         "The whole tree: the parse report, the per-bank mapping and the commit behind its dry run, with the "
@@ -144,7 +144,6 @@ def build_code() -> dict[str, list[str]]:
         "upload-and-parse-report", "csv-import", F.PARSE_REPORT,
         "upload-and-parse-report: every line the mapping could not read, with its number",
         "2026-09-17T10:20:00+02:00", "2026-09-17T16:45:00+02:00")]
-    git(REPO, "branch", "-q", "-D", "ticket/upload-and-parse-report")  # a hinge, accepted: its branch went with the merge
     ranges["map-columns-to-fields"] = [built(
         "map-columns-to-fields", "csv-import", F.MAPPING,
         "map-columns-to-fields: a bank's mapping is remembered for its next statement",
@@ -249,7 +248,7 @@ def build_agent(ranges: dict[str, list[str]]) -> None:
     step(t(("csv-import", "claimed", False), ("upload-and-parse-report", "claimed", False)),
          "csv-import: claimed for its tree; upload-and-parse-report claimed", "2026-09-16T11:00:00+02:00", ORCH_CSV)
     step(t("upload-and-parse-report", ("map-columns-to-fields", "claimed", False)),
-         "upload-and-parse-report: accepted, merged into csv-import", "2026-09-17T16:50:00+02:00", ORCH_CSV)
+         "upload-and-parse-report: merged into csv-import, for its close-out", "2026-09-17T16:50:00+02:00", ORCH_CSV)
     step(t(("saved-views", "open"), ("filters-as-data", "open", False), "filters-in-the-address",
            ("view-storage-research", "open"), ("view-list-shape", "open", False),
            "save-and-reopen-a-view", "share-a-view-by-link"),

@@ -21,7 +21,7 @@ Understand the current state of the code before slicing. Look for prefactoring t
 
 Give each its **blocking edges**: the tickets that must be done before it can start. Prefer orderings that make the work **drivable early**: human QA is gated on what it costs to drive the work, and every slice that lands before a drivable surface exists accumulates unreviewed taste debt.
 
-**Mark the hinges.** A slice is a **hinge** when the slices it blocks would have to be rewritten, not amended, were it wrong: an interface or data shape they consume. The user rules on a hinge alone before its dependents start; every other slice is ruled with the ticket being cut, at its close-out, and its dependents build on it unruled. Test each blocking edge: if the blocker came back wrong, would the fix to the dependent be an amend? Then it is no hinge.
+**Settle the shapes before the cut.** Every slice is ruled with the ticket being cut, at its close-out, and its dependents build on it unruled. So an interface or data shape the slices consume is decided in that ticket's Decisions, in its grilling or a prototype, before any slice is filed. Test each blocking edge: if the blocker came back wrong, would the fix to the dependent be an amend? Where it would be a rewrite, the shape is still open, and the cut waits for it.
 
 **Properties stay on the ticket being cut.** Every slice reads them through its ancestry; no slice copies one. Each slice's review checks them, reading the ancestry with the diff.
 
@@ -37,7 +37,7 @@ A property no single slice can make hold means the cut is wrong: merge the slice
 
 ## 3. File them
 
-`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, `--hinge` on a hinge, in dependency order, each `--status open`, so it builds without a triage: how a ticket is cut is the cutting agent's call, and a slice's ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
+`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, in dependency order, each `--status open`, so it builds without a triage: how a ticket is cut is the cutting agent's call, and a slice's ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
 
 Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker knows what it builds on; they reach the user when the parent ticket is ruled, and the slice's worker files none of them again.
 

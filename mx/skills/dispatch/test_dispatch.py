@@ -134,12 +134,11 @@ def git(at: Path, *args: str) -> str:
 
 
 def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_user: bool = False,
-           brief: str = "What it is, cold.", hinge: bool = False, blocked_by: str = "") -> Path:
+           brief: str = "What it is, cold.", blocked_by: str = "") -> Path:
     front = ["---", f"status: {status}"]
     front += [f"parent: {parent}"] if parent else []
     front += [f"blocked-by: [{blocked_by}]"] if blocked_by else []
     front += ["needs-user: true"] if needs_user else []
-    front += ["hinge: true"] if hinge else []
     front += ["priority: 1", "size: S", "---"]
     path = root / f"{slug}.md"
     path.write_text("\n".join(front) + f"\n\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n{brief}\n")
@@ -588,12 +587,12 @@ BUILDING_ITS_OWN = BUILDING.replace(
 
 @pytest.mark.full_path
 def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Path) -> None:
-    """`speculative-first`'s review unit through the toy: a hinge ruled alone, then two leaves, the
-    second built on the first while the first waits unruled in its parent's branch, and the
-    parent's accept writing `done` on all four. `speculative-first#P1`: nothing reaches `main`
+    """`speculative-first`'s review unit through the toy: three child tickets in a chain, each built
+    on the one before while that one waits unruled in its parent's branch, and the parent's accept
+    writing `done` on all four. `speculative-first#P1`: nothing reaches `main`
     before the parent's accept."""
     tickets, agent = tracked(toy), toy / "agent"
-    ticket(tickets, "preset-format", parent="lamp-ui", hinge=True, brief="The shape every preset is stored in.")
+    ticket(tickets, "preset-format", parent="lamp-ui", brief="The shape every preset is stored in.")
     ticket(tickets, "cool-preset", parent="lamp-ui", blocked_by="warm-preset", brief="One preset, cool.")
     ticket(tickets, "warm-preset", parent="lamp-ui", blocked_by="preset-format", brief="One preset, warm.")
     git(agent, "add", "-A")
@@ -631,11 +630,10 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
 
     assert "warm-preset" not in frontier()
     built("preset-format")
-    assert "warm-preset" not in frontier(), "a hinge in review holds its dependents"
-    assert "on preset-format (review, a hinge)" in frontier(held=True)
-    merged("preset-format")  # the user's accept of the hinge, ruled alone
-    assert status_of(toy, "preset-format") == "done"
-    assert not (toy.parent / "lamp-preset-format").exists(), "a hinge's `done` retires its run"
+    assert "warm-preset" not in frontier(), "unmerged, the shape holds what builds on it"
+    assert "on preset-format (review)" in frontier(held=True)
+    merged("preset-format")  # the orchestrator's read passed it: the shape every preset reads waits for its parent's ruling too
+    assert status_of(toy, "preset-format") == "review", "no child is ruled alone"
 
     assert "warm-preset" in frontier()
     built("warm-preset")
@@ -690,7 +688,7 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
         assert "status: done" in landed(slug), slug
         assert not (tickets / f"{slug}.md").exists(), f"{slug} retired"
     assert not git(agent, "status", "--porcelain", "--", "tickets")
-    for slug in ("warm-preset", "cool-preset"):
+    for slug in ("preset-format", "warm-preset", "cool-preset"):
         assert not (toy.parent / f"lamp-{slug}").exists(), f"the accept retires {slug}'s run"
         for at in (toy, agent):
             assert not git(at, "branch", "--list", f"ticket/{slug}")
