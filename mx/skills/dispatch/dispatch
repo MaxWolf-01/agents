@@ -469,26 +469,28 @@ push() {
 # the ticket's context as the tracker here holds it now, by the one command that assembles it, then
 # the round's message: the worker reads its ticket there every round (`$DISPATCH_CONTEXT`), and its
 # review takes the file as its spec, so an amendment or a ruling made between rounds reaches both.
-# A spawn sends that file whole, the listed repos' paths under the message. A resume sends the
-# message alone, which `continue` often is, under a line sending the worker back to the file when
-# the context is not the one its last round was staged with; that one is kept as ticket-<slug>.md,
-# and replaced by ticket-<slug>.next once the round has started (`ctl`).
+# The listed repos' paths go under the message every round: a spawn works them out (stage_listed)
+# and keeps them as listed-<slug>, and a resume reuses them, as dispatch-ctl keeps their worktrees.
+# A spawn sends that file whole. A resume sends the message alone, which `continue` often is, under
+# a line sending the worker back to the file when the context is not the one its last round was
+# staged with; that one is kept as ticket-<slug>.md, and replaced by ticket-<slug>.next once the
+# round has started (`ctl`).
 compose_round() { # <subcommand> <slug> <message>; the two files to copy in `carry`
-    local dir=$state/prompts/$base/round
+    local dir=$state/prompts/$base/round listed said
     mkdir -p "$dir" || return 1
+    [ "$1" != spawn ] || printf '%s' "${listed_prompt:-}" > "$dir/listed-$2" || return 1
+    listed=$(cat "$dir/listed-$2" 2> /dev/null)
     "$tracker" context "$2" > "$dir/ticket-$2.next" || return 1
-    { cat "$dir/ticket-$2.next"; printf '\n## this round'"'"'s message\n\n'; cat "$3"
-      [ -z "${listed_prompt:-}" ] || printf '\n%s\n' "$listed_prompt"; } > "$dir/context-$2.md" || return 1
+    { cat "$dir/ticket-$2.next"; printf "\n## this round's message\n\n"; cat "$3"
+      [ -z "$listed" ] || printf '\n%s\n' "$listed"; } > "$dir/context-$2.md" || return 1
     if [ "$1" = spawn ]; then
         cp "$dir/context-$2.md" "$dir/prompt-$2.md"
     elif cmp -s "$dir/ticket-$2.md" "$dir/ticket-$2.next"; then
         cp "$3" "$dir/prompt-$2.md"
     else
-        { if [ -f "$dir/ticket-$2.md" ]; then
-              echo "Your ticket's context changed since your last round: read \`\$DISPATCH_CONTEXT\` again, whole, before you act on the message under this line."
-          else
-              echo "Whether your ticket's context changed since your last round was not recorded: read \`\$DISPATCH_CONTEXT\` again, whole, before you act on the message under this line."
-          fi
+        # No record: the run was staged by a dispatch that kept none, or this state was lost.
+        said=changed; [ -f "$dir/ticket-$2.md" ] || said="may have changed"
+        { echo "Your ticket's context $said since your last round: read \`\$DISPATCH_CONTEXT\` again, whole, before you act on the message under this line."
           echo; cat "$3"; } > "$dir/prompt-$2.md"
     fi || return 1
     carry=("$dir/prompt-$2.md" "$dir/context-$2.md")

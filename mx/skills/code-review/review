@@ -16,11 +16,11 @@
 #            correctness and standards, plus spec when --spec names one, plus
 #            tests when the diff touches test files too. An axis is a file in
 #            prompts/, and a repo with no spec runs two of the four.
-#   --spec   what the work was asked for: a ticket's slug, whose body and
-#            every ancestor's `tracker context` assembles into the report
-#            directory, or any file (an issue body fetched to one, a prompt),
-#            and whatever discussion the reviewers should not reopen. The spec
-#            and tests axes both read it, so both need it.
+#   --spec   what the work was asked for: a ticket's slug, whose context
+#            `tracker context` assembles into the report directory, or any
+#            file (an issue body fetched to one, a prompt), and whatever
+#            discussion the reviewers should not reopen. The spec and tests
+#            axes both read it, so both need it.
 #   --light  one reviewer over the correctness and standards prompts joined,
 #            reporting as the `light` axis. With --spec it takes the spec
 #            prompt too, so one reviewer judges the diff against what was asked

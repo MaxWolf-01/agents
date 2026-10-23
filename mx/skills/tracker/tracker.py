@@ -20,7 +20,7 @@ Examples:
     tracker repos                        # the repos its tickets land in beside the code repo
     tracker get map-columns status
     tracker data | jq -r '.tickets[] | select(.status == "open") | .slug'
-    tracker context map-columns          # the ticket's body, then every ancestor's
+    tracker context map-columns          # the context it is built and reviewed in
     tracker frontier
     tracker new map-columns --parent csv-import --priority 2 --size M
     tracker new map-columns --priority 2 --size M --title "Map the CSV's columns" --brief - < brief.md
@@ -244,28 +244,30 @@ def context(slug: Annotated[str, tyro.conf.Positional]) -> int:
         slug: the ticket.
     """
     tracker = here()
-    ticket = tracker.ticket(slug)
-    read = (ticket, *tracker.ancestors(slug), *tree_of(ticket, tracker))
-    refuse([refusal for one in read for refusal in refusals_of(one, tracker)])
-    print(assembled(ticket, tracker))
+    held = in_context(tracker.ticket(slug), tracker)
+    refuse([refusal for _, one in held for refusal in refusals_of(one, tracker)])
+    print(assembled(held))
     return 0
 
 
-def assembled(ticket: Ticket, tracker: Tracker) -> str:
+def in_context(ticket: Ticket, tracker: Tracker) -> list[tuple[str, Ticket]]:
+    """Every ticket a ticket's context holds, under the heading that says whose body follows, which
+    is what tells a worker its own from its context. The ticket comes first, since it is what is
+    being built; its ancestors follow in the order the work widens. A close-out review's ends on
+    the tree it reviews: every other child of its parent, less an earlier close-out review, whose
+    range is no longer the one being reviewed."""
+    held = [(ticket.slug, ticket)]
+    held += [(f"parent ticket: {one.slug}", one) for one in tracker.ancestors(ticket.slug)]
+    if ticket.close_out and ticket.parent:
+        held += [(f"child ticket of {one.parent}: {one.slug}", one) for one in tracker.children(ticket.parent)
+                 if one.slug != ticket.slug and not one.close_out]
+    return held
+
+
+def assembled(held: list[tuple[str, Ticket]]) -> str:
     """The one assembly every reader of a ticket's context gets: the worker's prompt, the reviewer's
-    spec. The ticket comes first, since it is what is being built; its ancestors follow in the order
-    the work widens."""
-    written = [f"## {ticket.slug}\n{ticket.body.strip()}"]
-    written += [f"## parent ticket: {one.slug}\n{one.body.strip()}" for one in tracker.ancestors(ticket.slug)]
-    written += [f"## child ticket of {one.parent}: {one.slug}\n{one.body.strip()}" for one in tree_of(ticket, tracker)]
-    return "\n\n".join(written) + "\n"
-
-
-def tree_of(ticket: Ticket, tracker: Tracker) -> list[Ticket]:
-    """The children a close-out review reviews whole: every other child of its parent."""
-    if not ticket.close_out or not ticket.parent:
-        return []
-    return [one for one in tracker.children(ticket.parent) if one.slug != ticket.slug]
+    spec."""
+    return "\n\n".join(f"## {heading}\n{one.body.strip()}" for heading, one in held) + "\n"
 
 
 @app.command(name="frontier")

@@ -463,6 +463,12 @@ def test_a_resumed_worker_reads_its_ticket_as_amended_since_its_last_round(toy: 
     assert unchanged.with_suffix(".prompt").read_text() == "continue\n"
     assert unchanged.with_suffix(".context").read_text() == read
 
+    # A run staged by a dispatch that kept no record of the context it was given.
+    (toy / ".git" / "dispatch" / "prompts" / "main" / "round" / "ticket-warm-preset.md").unlink()
+    unrecorded = resume(toy, staged, "warm-preset", "continue\n").with_suffix(".prompt").read_text()
+    assert unrecorded.startswith("Your ticket's context may have changed since your last round")
+    assert unrecorded.endswith("\n\ncontinue\n")
+
 
 @pytest.mark.full_path
 def test_a_resume_stages_a_host_another_plugin_version_staged(toy: Path, staged: Path) -> None:
@@ -470,13 +476,28 @@ def test_a_resume_stages_a_host_another_plugin_version_staged(toy: Path, staged:
     a spawned one does: an older contract would point the worker at no context file."""
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
-    stamp = waited(toy).parent / "stamp"
-    current = stamp.read_text()
-    stamp.write_text("an older version's\n")
+    scratch = waited(toy).parent
+    (scratch / "stamp").write_text("an older version's\n")
+    (scratch / "worker-prompt.md").write_text("An older contract, which names no context file.\n")
 
     resume(toy, staged, "warm-preset", "continue\n")
 
-    assert stamp.read_text() == current
+    assert (scratch / "worker-prompt.md").read_text() == (staged.parent / "worker-prompt.md").read_text()
+
+
+@pytest.mark.full_path
+def test_a_resumed_rounds_context_names_the_listed_repos_its_spawn_cut(toy: Path, staged: Path) -> None:
+    """The worker is sent back to its context file whole, so a resumed round's file says where its
+    listed repos are as the spawn's did."""
+    staged_listed(toy)
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+
+    read = resume(toy, staged, "warm-preset", "continue\n").with_suffix(".context").read_text()
+
+    assert read.startswith(context_of(toy, "warm-preset") + "\n## this round's message\n\ncontinue\n")
+    assert "- Backend: `Backend/` in your worktree, from `development`" in read
+    assert "- jarvis: `../jarvis-warm-preset`, beside your worktree" in read
 
 
 @pytest.mark.full_path

@@ -23,7 +23,7 @@ Whatever the user said is the fixed point: a commit SHA, branch name, tag, `main
 Look for what the work was ordered by, in this order:
 
 1. A path, URL, or text the user passed as an argument.
-2. The ticket the branch builds: `tracker context <slug>` is its body with every ancestor's, which is the whole order for this work, and a branch named `ticket/<slug>` names its slug.
+2. The ticket the branch builds: `tracker context <slug>` is its ticket context, the whole order for this work, and a branch named `ticket/<slug>` names its slug.
 3. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
 4. A specification the repo keeps outside the tracker: `docs/`, `specs/` matching the branch name.
 5. If nothing is found, ask the user where it is, unless the work is session work, which never had one.

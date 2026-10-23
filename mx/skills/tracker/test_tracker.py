@@ -1165,13 +1165,18 @@ def test_p4_a_tickets_context_is_its_body_and_every_ancestors_body(
 
 def test_p4_a_close_out_reviews_context_carries_every_other_child_of_its_parent(tickets: Path, repo: Path) -> None:
     """The review one level up judges the tree whole, so its spec is the children its parent was cut
-    into; a child built alone reads its ancestors and none of its siblings."""
+    into, as `tracker new --close-out` files it; a child built alone reads its ancestors and none of
+    its siblings. An earlier close-out review is no part of the order: it names a range since
+    replaced. A child no reader can read stops the context, as an ancestor does."""
     fresh(tickets)
     ticket(tickets, "lamp-ui", parent=None)
     for slug in ("warm-preset", "cold-preset"):
         ticket(tickets, slug, f"## Acceptance criteria\n\n- [ ] What {slug} has to hold.\n", parent="lamp-ui", status="done")
-    ticket(tickets, "lamp-ui-review", parent="lamp-ui", **{"close-out": "true"})
+    ticket(tickets, "lamp-ui-first-review", parent="lamp-ui", status="done", **{"close-out": "true"})
     ticket(tickets, "beside-it")
+    filed = run(repo, "new", "lamp-ui-review", "--priority", "1", "--size", "S", "--status", "open",
+                "--parent", "lamp-ui", "--close-out")
+    assert filed.code == 0, filed.said
 
     said = run(repo, "context", "lamp-ui-review")
     assert said.code == 0, said.said
@@ -1179,10 +1184,14 @@ def test_p4_a_close_out_reviews_context_carries_every_other_child_of_its_parent(
     assert marked[:2] == ["lamp-ui-review", "parent ticket: lamp-ui"]
     assert sorted(marked[2:]) == ["child ticket of lamp-ui: cold-preset", "child ticket of lamp-ui: warm-preset"]
     assert all(f"What {slug} has to hold." in said.out for slug in ("warm-preset", "cold-preset"))
-    assert "beside-it" not in said.out
+    assert "beside-it" not in said.out and "lamp-ui-first-review" not in said.out
 
     alone = run(repo, "context", "warm-preset")
     assert "child ticket of" not in alone.out and "cold-preset" not in alone.out
+
+    ticket(tickets, "cold-preset", parent="lamp-ui", status="done", **{"needs-user": "maybe"})
+    broken = run(repo, "context", "lamp-ui-review")
+    assert broken.code == 1 and "`needs-user` is true or false" in broken.out + broken.err, broken.said
 
 
 def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
