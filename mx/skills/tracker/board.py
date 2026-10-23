@@ -2284,7 +2284,7 @@ VIEW_JS = r"""
   // whatever the reader had panned to; only the mark on the cursor's node moves.
   function paintView(root, view, last) {
     const name = root.querySelector(".gname");
-    name.title = name.textContent = view.name;
+    name.textContent = view.name;
     for (const b of root.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === view.mode);
     const body = root.querySelector(".gfbody"), svg = body.querySelector(".gsvg");
     if (view.key !== last) {
@@ -2399,6 +2399,9 @@ ${columns}
     main { grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 2.5rem; }
     .side { order: 0; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
       border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
+    /* the column leaves a name beside the buttons a few letters, so it takes the line under them */
+    .ghead .label { flex: 1; }
+    .ghead .gname { order: 1; flex-basis: 100%; }
   }
   /* the briefing, at the head of the column: prose, so it is set as the page's prose is */
   .briefing { margin-bottom: 1.1rem; }
@@ -2414,8 +2417,9 @@ ${columns}
   .btext li { margin-top: .3rem; }
   .btext strong { color: var(--strong); font-weight: 600; }
 
-  .ghead { display: flex; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
-  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ghead { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
+  /* the name says which graph is on show, so it wraps rather than being cut short */
+  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .gnote { color: var(--muted); font-size: .92rem; padding: .4rem 0; }
   .mermaid { margin: 0; display: flex; justify-content: center; }
   /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
@@ -2945,9 +2949,7 @@ ${viewjs}
     const key = mode === "all" ? "*" : tree;
     for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.tree !== key;
     if (key === "*") composeAll();
-    const gname = document.getElementById("gname");
-    // the column is narrow enough to cut a parent ticket's slug short, so the whole one is on hover
-    gname.title = gname.textContent = mode === "all" ? "whole tracker" : (tree || "");
+    document.getElementById("gname").textContent = mode === "all" ? "whole tracker" : (tree || "");
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
