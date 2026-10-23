@@ -305,6 +305,8 @@ def test_a_tag_runs_as_one_sequence_across_the_questions_and_the_closing_comment
 @pytest.mark.parametrize("written, refused", [
     ({"kind": "build"}, "`kind` is no ticket field"),
     ({"needs-user": "maybe"}, "`needs-user` is true or false"),
+    ({"close-out": "maybe"}, "`close-out` is true or false"),
+    ({"close-out": "true"}, "goes on a child of that parent"),
     ({"hinge": "true"}, "`hinge` is gone"),
     ({"parent": "one-flow"}, "a ticket is not its own parent ticket"),
     ({"gh": "[acme/backend]"}, "a reference is `owner/repo#number`"),
@@ -1054,7 +1056,7 @@ def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_s
 # What a second parser of a ticket file looks like in a script: a frontmatter field matched at the
 # start of a line, a `## ` heading, a `[Dn]` question, a `- A<n>` assumption, an `NN-` file name.
 SECOND_PARSER = re.compile(
-    r"\^(?:status|parent|blocked-by|needs-user|priority|size|diff|gh):"
+    r"\^(?:status|parent|blocked-by|needs-user|close-out|priority|size|diff|gh):"
     r"|\^##\\?s|\^## |\[D\\d|- A\\d|\[0-9\]\[0-9\]-|\\d\\d-"
 )
 PLUGIN = Path(tr.__file__).parents[2]
@@ -1159,6 +1161,28 @@ def test_p4_a_tickets_context_is_its_body_and_every_ancestors_body(
         (tickets / f"{chain[0]}.md").unlink()
         gone = run(repo, "context", chain[-1])
         assert gone.code == 1 and "names no ticket" in gone.err
+
+
+def test_p4_a_close_out_reviews_context_carries_every_other_child_of_its_parent(tickets: Path, repo: Path) -> None:
+    """The review one level up judges the tree whole, so its spec is the children its parent was cut
+    into; a child built alone reads its ancestors and none of its siblings."""
+    fresh(tickets)
+    ticket(tickets, "lamp-ui", parent=None)
+    for slug in ("warm-preset", "cold-preset"):
+        ticket(tickets, slug, f"## Acceptance criteria\n\n- [ ] What {slug} has to hold.\n", parent="lamp-ui", status="done")
+    ticket(tickets, "lamp-ui-review", parent="lamp-ui", **{"close-out": "true"})
+    ticket(tickets, "beside-it")
+
+    said = run(repo, "context", "lamp-ui-review")
+    assert said.code == 0, said.said
+    marked = re.findall(r"^## ((?:parent ticket: |child ticket of lamp-ui: )?[a-z-]+)$", said.out, re.M)
+    assert marked[:2] == ["lamp-ui-review", "parent ticket: lamp-ui"]
+    assert sorted(marked[2:]) == ["child ticket of lamp-ui: cold-preset", "child ticket of lamp-ui: warm-preset"]
+    assert all(f"What {slug} has to hold." in said.out for slug in ("warm-preset", "cold-preset"))
+    assert "beside-it" not in said.out
+
+    alone = run(repo, "context", "warm-preset")
+    assert "child ticket of" not in alone.out and "cold-preset" not in alone.out
 
 
 def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
