@@ -28,8 +28,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parents[1]))
 sys.path.insert(0, str(Path(__file__).parents[3] / "mx" / "skills" / "tracker"))
 import fixture as F  # noqa: E402
+import rendered_from  # noqa: E402
 from briefing import cache_path  # noqa: E402
 
 HERE = Path(__file__).parent
@@ -67,7 +69,7 @@ REVIEWS = {
         "upload-and-parse-report",
         "The upload gets a report instead of a row list: every line the mapping could not read comes back "
         "with its number and the reason, so the account holder sees the whole statement before anything is "
-        "committed. The hinge of csv-import: the mapping and the commit both read this shape."),
+        "committed. The mapping and the commit both read this shape."),
     "csv-import": (
         "csv-import, closed out",
         "The whole tree: the parse report, the per-bank mapping and the commit behind its dry run, with the "
@@ -144,7 +146,6 @@ def build_code() -> dict[str, list[str]]:
         "upload-and-parse-report", "csv-import", F.PARSE_REPORT,
         "upload-and-parse-report: every line the mapping could not read, with its number",
         "2026-09-17T10:20:00+02:00", "2026-09-17T16:45:00+02:00")]
-    git(REPO, "branch", "-q", "-D", "ticket/upload-and-parse-report")  # a hinge, accepted: its branch went with the merge
     ranges["map-columns-to-fields"] = [built(
         "map-columns-to-fields", "csv-import", F.MAPPING,
         "map-columns-to-fields: a bank's mapping is remembered for its next statement",
@@ -249,7 +250,7 @@ def build_agent(ranges: dict[str, list[str]]) -> None:
     step(t(("csv-import", "claimed", False), ("upload-and-parse-report", "claimed", False)),
          "csv-import: claimed for its tree; upload-and-parse-report claimed", "2026-09-16T11:00:00+02:00", ORCH_CSV)
     step(t("upload-and-parse-report", ("map-columns-to-fields", "claimed", False)),
-         "upload-and-parse-report: accepted, merged into csv-import", "2026-09-17T16:50:00+02:00", ORCH_CSV)
+         "upload-and-parse-report: merged into csv-import, for its close-out", "2026-09-17T16:50:00+02:00", ORCH_CSV)
     step(t(("saved-views", "open"), ("filters-as-data", "open", False), "filters-in-the-address",
            ("view-storage-research", "open"), ("view-list-shape", "open", False),
            "save-and-reopen-a-view", "share-a-view-by-link"),
@@ -266,7 +267,7 @@ def build_agent(ranges: dict[str, list[str]]) -> None:
     step(t("view-list-shape", "paginate-the-view-list"),
          "view-list-shape: three takes on the list; paging proposed from them", "2026-09-23T17:05:00+02:00", PROTO)
     step(t("csv-import", "blank-column-reason"),
-         "csv-import: closed out, for the ruling on the whole; the debrief's one ticket", "2026-09-24T11:00:00+02:00", ORCH_CSV)
+         "csv-import: closed out, for the ruling on the whole; the close-out's one ticket", "2026-09-24T11:00:00+02:00", ORCH_CSV)
     step(t("saved-views", ("filters-as-data", "claimed", False), "view-storage-research"),
          "saved-views: claimed for its tree; filters-as-data and view-storage-research claimed",
          "2026-09-25T09:30:00+02:00", ORCH_VIEWS)
@@ -327,6 +328,7 @@ def render() -> tuple[Path, Path | None]:
                 env=os.environ | {"MX_ORIGIN_SESSION": ORCH_CSV, "CLAUDE_CONFIG_DIR": str(CLAUDE)})
     else:
         (ASSETS / "review-page.png").unlink(missing_ok=True)  # gone reads as not shot; stale reads as fresh
+        (ASSETS / f"review-page{rendered_from.SUFFIX}").unlink(missing_ok=True)
         print("no diffview on PATH: skipping review-page.png, and the board's review links stay bare")
     board = AGENT / "board.html"
     # one render, so no briefing session runs: the answer one really gave on this tracker stands in
@@ -487,4 +489,6 @@ if __name__ == "__main__":
     board, review = render()
     written = shoot(board, review)
     subprocess.run([str(COMPRESS), *map(str, written)], check=True)
+    for stem in {path.stem.removesuffix("-light") for path in written}:
+        rendered_from.record(stem, Path(__file__), HERE)
     print(f"repo: {REPO}")

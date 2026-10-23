@@ -1,6 +1,6 @@
 # UI Prototype
 
-Generate **several radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one (or steals bits from each), then throws the rest away.
+Generate **radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one or asks for parts of several built whole in the next round, then throws the rest away.
 
 ## Two sub-shapes: strongly prefer sub-shape A
 
@@ -26,7 +26,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 1. State the question and pick N
 
-Default to **3 variants**. More than 5 stops being radically different and starts being noise; cap there.
+N is the number of rival whole designs the question holds, with no fixed count: two where it holds two, ten or more where it holds that many, since the reader cycles through them on the switcher.
 
 Write down the plan in one line, in the prototype's location or a top-of-file comment:
 
@@ -43,6 +43,11 @@ Draft each variant. Hold each one to:
 - A clear exported component name, e.g. `VariantA`, `VariantB`, `VariantC`.
 
 Variants must be **structurally different**: different layout, different information hierarchy, different primary affordance, not just different colours. Three slightly-tweaked card grids isn't a UI prototype, it's wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
+
+Two more tests every variant passes before it is offered for a pick:
+
+- **Different at rest.** Load each variant and look at it untouched: the difference shows on what a reader sees first, before anything is opened, hovered or expanded. Variants that part ways only once something is opened read as one design, and the pick never happens.
+- **Whole.** Each variant is a complete design that could ship as it stands. Where the question has independent axes (where a panel sits, how its rows read), each variant commits to one answer on every axis, so the user never has to assemble a design to pick one. Where it helps the user see more variations or try a combination of their own, the axes can also be exposed beside the wholes (step 4); the wholes stay what the pick is offered from.
 
 ### 3. Wire them together
 
@@ -67,7 +72,7 @@ For sub-shape B (new page): the throwaway route under `/prototype/<name>` mounts
 
 ### 4. Build the floating switcher
 
-A small fixed-position bar at the bottom-centre of the screen with three pieces:
+A small fixed-position bar at the bottom-centre of the screen with three pieces, plus the axis controls below where they are exposed:
 
 - **Left arrow**: cycles to the previous variant (wraps around).
 - **Variant label**: shows the current variant key and, if the variant exports a name, that name too. e.g. `B: Sidebar layout`.
@@ -80,11 +85,13 @@ Behaviour:
 - Visually distinct from the page (e.g. high-contrast pill, subtle shadow) so it's obviously not part of the design being evaluated.
 - Hidden in production builds: gate on `process.env.NODE_ENV !== 'production'` or an equivalent check, so a stray prototype merge can't ship the bar to users.
 
+Where the axes are exposed beside the wholes (step 2), the bar also carries one control per axis, each kept in its own search param beside `?variant=` (e.g. `?variant=B&panel=left`) so a combination is shareable and reload-stable too. Cycling to a variant resets every axis to that variant's answers.
+
 Put the switcher in a single shared component so both sub-shapes can reuse it. Locate it wherever shared UI lives in the project.
 
 ### 5. Hand it over
 
-Surface the URL (and the `?variant=` keys). The user will flip through whenever they get to it. The interesting feedback is usually **"I want the header from B with the sidebar from C"**; that's the actual design they want.
+Surface the URL (and the `?variant=` keys). The user will flip through whenever they get to it. The interesting feedback is usually **"I want the header from B with the sidebar from C"**; that's the actual design they want, and the next round offers it built whole.
 
 ### 6. Capture the answer and clean up
 

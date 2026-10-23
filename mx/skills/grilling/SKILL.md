@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted on fog, an intent too unclear to draft a brief for; `/mx:orient`'s gate sends it here. Also on any \"grill\" trigger phrase. The goal is a shared mental model and a default the user can just say yes to."
+description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted on fog, an intent too unclear to draft a brief for. Also on any \"grill\" trigger phrase. The goal is a shared mental model and a default the user can just say yes to."
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for a whole design.
@@ -45,7 +45,7 @@ The brief fixes the scope: work past it is out of scope, not fog; a part found t
 
 ## The frontier empties
 
-The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the ticket current; one that several sessions wrote is read whole once first, because each session saw only its part and the parts can disagree. Then cut it into child tickets (`/mx:tracker`, SLICING.md), or build it as it stands when it is one slice. A question the design does not hinge on, one that is naturally its own work, leaves as a child ticket so the rest can be cut; one the design hinges on holds the cut.
+The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the ticket current; one that several sessions wrote is read whole once first, because each session saw only its part and the parts can disagree. Then cut it into child tickets (`/mx:tracker`, SLICING.md), or build it as it stands when it is one slice. A question the design does not rest on, one that is naturally its own work, leaves as a child ticket so the rest can be cut; one the design rests on holds the cut, and so does a shape the slices would consume (SLICING.md).
 
 A mark is stripped when the user rules on it, in whichever session holds the ticket; the ruling on what that ticket built shows them the unruled ones that change what they asked for (`/mx:dispatch`).
 

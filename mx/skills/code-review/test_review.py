@@ -11,16 +11,19 @@ by kill -9 or a crash, never blocks a later one, and a review that is still runn
 it started, is never disturbed by another; D114 and D115, a reviewer starts from none of the
 caller's setup and runs Opus at the effort the caller gives, `medium` by default; and
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
-every ancestor's, assembled by the one command that assembles a worker's prompt.
+every ancestor's, assembled by the one command that assembles a worker's prompt; and
+`agent/tickets/review-says-when-an-axis-died.md`, that an axis whose reviewer died reads
+differently from one that reported, and that a flag before the fixed point is refused naming the order.
 """
 
 import json
 import os
+import re
+import select
 import shutil
 import signal
 import subprocess
 import sys
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -30,9 +33,15 @@ REVIEW = Path(__file__).parent / "review"
 
 FAKE_CLAUDE = r"""#!/usr/bin/env bash
 prompt=$(cat)
-report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/agent/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
+report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/mx/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
 printf '%s\n' "$@" > "$FAKE_ARGV"
+[ -z "${FAKE_STARTED:-}" ] || echo > "$FAKE_STARTED"
 sleep "${FAKE_REVIEW_SECS:-0}"
+if [ -n "${FAKE_DIES:-}" ] && [[ $report == */$FAKE_DIES.md ]]; then
+    echo "# Review" > "$report"
+    echo "You've hit your limit · resets 3am"
+    exit 1
+fi
 [ -n "$report" ] && [ -z "${FAKE_NO_REPORT:-}" ] && echo "No findings." > "$report"
 """
 
@@ -54,7 +63,7 @@ def repo(tmp_path: Path) -> Path:
     and the stand-in `claude`."""
     repo = tmp_path / "repo"
     git(tmp_path, "init", "-q", "-b", "main", str(repo))
-    commit(repo, ".gitignore", "agent/reviews/\n")
+    commit(repo, "README.md", "A scratch repo.\n")
     commit(repo, "tests/test_one.py", "def test_one(): assert 1 + 1 == 2\n")
     (tmp_path / "spec.md").write_text("# Spec: add a test\n")
     (tmp_path / "bin").mkdir()
@@ -75,7 +84,7 @@ def argv_file(repo: Path) -> Path:
 def command(repo: Path, secs: int, args: tuple[str, ...], **extra: str) -> dict:
     env = {**os.environ, "PATH": f"{repo.parent / 'bin'}:{os.environ['PATH']}",
            "FAKE_REVIEW_SECS": str(secs), "FAKE_ARGV": str(argv_file(repo)),
-           "RUN_LOG": str(repo.parent / "runs.jsonl"), **extra}
+           "RUN_LOG": str(repo.parent / "runs.jsonl"), "XDG_STATE_HOME": str(repo.parent / "state"), **extra}
     return {"args": [str(REVIEW), "main~1", *args], "cwd": repo, "env": env, "text": True}
 
 
@@ -88,14 +97,16 @@ def running(repo: Path, *args: str):
     """A review whose reviewer works for 30 s, in its own process group so it can be killed whole,
     as a crash would; yielded once its reviewer has started, and killed on the way out."""
     argv_file(repo).unlink(missing_ok=True)
-    proc = subprocess.Popen(**command(repo, 30, args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            start_new_session=True)
+    # The reviewer says it started down a pipe. The check holds a write end of its own, so the pipe
+    # reads as empty until then rather than as closed, and no reviewer blocks writing to it.
+    started = repo.parent / "started"
+    started.unlink(missing_ok=True)
+    os.mkfifo(started)
+    ends = os.open(started, os.O_RDONLY | os.O_NONBLOCK), os.open(started, os.O_WRONLY)
+    proc = subprocess.Popen(**command(repo, 30, args, FAKE_STARTED=str(started)), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, start_new_session=True)
     try:
-        for _ in range(200):
-            if argv_file(repo).exists():
-                break
-            time.sleep(0.05)
-        else:
+        if not select.select(ends[:1], [], [], 60)[0]:
             raise AssertionError("the reviewer never started")
         yield proc
     finally:
@@ -104,6 +115,8 @@ def running(repo: Path, *args: str):
         except ProcessLookupError:
             pass
         proc.wait()
+        for end in ends:
+            os.close(end)
 
 
 def killed(repo: Path, *args: str) -> None:
@@ -111,10 +124,15 @@ def killed(repo: Path, *args: str) -> None:
         pass
 
 
+def reviews(repo: Path) -> Path:
+    """Where the reviews of the scratch repo land: the state directory, named for the repo's path."""
+    return repo.parent / "state" / "mx" / "reviews" / str(repo).replace("/", "-")
+
+
 def review_dir(repo: Path) -> Path:
     """The report directory of the range main~1..main."""
     base, head = (git(repo, "rev-parse", "--short=7", ref).strip() for ref in ("main~1", "main"))
-    return repo / "agent" / "reviews" / f"{base}..{head}"
+    return reviews(repo) / f"{base}..{head}"
 
 
 def worktrees(repo: Path) -> int:
@@ -127,6 +145,20 @@ def launched(repo: Path) -> list[str]:
 
 def value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1]
+
+
+# review-inside-agent-repo: where the reports land
+
+
+def test_a_review_leaves_the_reviewed_tree_as_it_found_it(repo):
+    """Run from an agent repo, a listed repo or one nested in a worker's worktree, `review` once
+    wrote its reports to an `agent/reviews/` of the tree it stood in, where nothing reads them and
+    where they showed as untracked debris; the scratch repo has no `agent/` and ignores nothing."""
+    done = run(repo, "--axes", "tests", "--spec", spec(repo))
+
+    assert done.returncode == 0, done.stderr
+    assert git(repo, "status", "--porcelain", "--ignored") == ""
+    assert done.stdout.strip() == str(review_dir(repo) / "tests.md")
 
 
 # D113: the range lock
@@ -195,7 +227,7 @@ def test_a_live_review_of_another_range_keeps_its_checkout(repo):
 
 def test_a_killed_reviews_directory_deleted_by_hand_does_not_block_its_range(repo):
     killed(repo, "--axes", "tests", "--spec", spec(repo))
-    shutil.rmtree(repo / "agent" / "reviews")  # git still lists the checkout
+    shutil.rmtree(reviews(repo))  # git still lists the checkout
 
     again = run(repo, "--axes", "tests", "--spec", spec(repo))
 
@@ -204,7 +236,7 @@ def test_a_killed_reviews_directory_deleted_by_hand_does_not_block_its_range(rep
 
 
 def test_a_checkout_from_before_range_locks_is_left_and_named(repo):
-    old = repo / "agent" / "reviews" / "aaaaaaa..bbbbbbb" / "checkout"
+    old = reviews(repo) / "aaaaaaa..bbbbbbb" / "checkout"
     git(repo, "worktree", "add", "-q", "--detach", str(old), "main~1")
 
     done = run(repo, "--axes", "correctness")
@@ -314,6 +346,17 @@ def test_light_mode_without_a_spec_carries_no_spec_part(repo):
     assert not (review_dir(repo) / "ticket.md").exists()
 
 
+def test_each_axis_numbers_its_findings_under_a_letter_of_its_own(repo):
+    """A finding is cited `review <range> S13` outside its report (`fewer-workflow-concepts`), which
+    reads as one finding only while no two axes of a review share a letter."""
+    assert run(repo, "--axes", "correctness,standards,spec,tests", "--spec", spec(repo)).returncode == 0
+    assert run(repo, "--light").returncode == 0
+    heading = {axis: re.findall(r"### ([A-Z])1\b", (review_dir(repo) / "prompts" / f"{axis}.md").read_text())
+               for axis in ("correctness", "standards", "spec", "tests", "light")}
+    assert all(len(found) == 1 for found in heading.values()), f"each prompt asks for one heading form: {heading}"
+    assert len({found[0] for found in heading.values()}) == 5, heading
+
+
 def sources(prompt: Path) -> list[Path]:
     return [Path(line[2:]) for line in prompt.read_text().splitlines() if line.startswith("- /")]
 
@@ -379,6 +422,26 @@ def test_a_missing_report_is_rerun_at_the_same_effort_and_on_the_spec_as_it_was_
     rerun = done.stderr.strip().splitlines()[-1]
     assert "--axes spec" in rerun and "--effort low" in rerun
     assert "--spec lamp-presets" in rerun, f"the re-run reads the assembled file rather than the ticket: {rerun}"
+
+
+def test_an_axis_whose_reviewer_died_after_opening_its_report_reads_as_died_not_as_reported(repo):
+    """The first four-axis review of testing-weight hit the usage limit: every reviewer had
+    created its report and exited 1, and the paths were printed as if the reports had landed."""
+    done = run(repo, "--axes", "correctness,standards", FAKE_DIES="standards")
+
+    assert done.returncode == 1
+    assert done.stdout.split() == [str(review_dir(repo) / "correctness.md")]
+    died = next(line for line in done.stderr.splitlines() if "standards axis died" in line)
+    assert "exited 1" in died and "You've hit your limit" in died
+    assert "--axes standards " in done.stderr.strip().splitlines()[-1]
+
+
+def test_a_flag_before_the_fixed_point_is_refused_with_the_order(repo):
+    cmd = command(repo, 0, ())
+    done = subprocess.run(**{**cmd, "args": [str(REVIEW), "--light", "main~1"]}, capture_output=True, timeout=60)
+
+    assert done.returncode == 1
+    assert done.stderr.strip() == "review: --light came before the fixed point, which comes first: review <fixed-point> [flags]"
 
 
 if __name__ == "__main__":

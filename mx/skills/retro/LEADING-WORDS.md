@@ -13,7 +13,7 @@ The workflow is the mx plugin: its skills, scripts, hooks and checks, run in eve
 - **reinvention**: the same throwaway tool rebuilt across sessions.
 - **escaped defect**: a bug found after merge, or a defect a lint, a type, a test or a render check could have caught, and the cheapest stage that could have caught it.
 - **rubber stamp** and **"glad I looked"**: a look, a review or a gate that changed nothing, and one that found something; what a reviewer should have held the diff to.
-- **one-way and two-way doors, hinges**: whether what a gate guards is cheap to undo; a hinge mark, right or wrong, is evidence.
+- **one-way and two-way doors**: whether what a gate guards is cheap to undo.
 - **a word that beats a skill**: where one of max's words did more than the skill on the same ground.
 - **no-op**: an instruction that changes nothing; a skill not invoked when it should have been, or invoked and not followed.
 - **bloat**: repos, PRs and their bodies, comments, docs, skills (a skill's inlined `--help` counts toward it), always-loaded files grown past what they earn.

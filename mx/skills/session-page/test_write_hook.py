@@ -29,8 +29,8 @@ import write_hook
 from session_page import PAGE
 from stop_hook import RECAP
 from session_checks import (
-    CATALOGUE_FIXTURE, LEFT_ALONE, LONG, RULES_FIXTURE, SESSION, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended,
-    logged, project_of, unreachable, with_write,
+    CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SESSION, SPOKEN_AFTER, TICKET_QUESTION_UNPARSEABLE, TURN_STARTS,
+    UNATTENDED, UNPARSEABLE, appended, logged, project_of, unreachable, with_write,
 )
 from session_checks import payload as stopped
 from write_hook import decide
@@ -109,6 +109,7 @@ def test_a_record_with_findings_goes_back_on_its_write_with_at_most_three(
     assert [quote for quote in IN_RECORD if f'"{quote}"' in said] == IN_RECORD[:3]
     assert "**AI vocabulary.**" in said, "a cited rule comes with its text"
     assert RECAP in said
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
     assert (worked_example / PAGE).read_text() == stale_page
 
     monkeypatch.setattr(turn_review, "review", unreachable)
@@ -302,6 +303,7 @@ def test_a_write_that_leaves_the_records_unparseable_is_answered_with_the_reader
     said = run(wrote(record, writing, tool))
     assert said.startswith(f"{record}:{line}: " if line else f"{record}: ")
     assert "carry on" in said and RECAP in said, "the turn goes on, and still ends on its recap"
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
 
 def test_a_session_record_that_does_not_parse_is_answered_on_its_edit(
@@ -341,10 +343,78 @@ def test_a_turn_record_pointing_at_another_part_of_the_page_in_words_goes_back_u
     said = run(wrote(record, writing))
     assert said.startswith(f"{record}:{text.count(chr(10)) + 3}: 'under Details' ")
     assert "(#t07)" in said and RECAP in said
+    assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
     monkeypatch.setattr(turn_review, "review", reviewer())
     record.write_text(text + "\n\nThe four ways out are in [turn 03](#t03); `see below` is code.\n")
     assert run(wrote(record, writing, "Edit")) == ""
+
+
+TICKET_ASKING = (
+    "---\nstatus: open\n---\n\n# Two main checkouts\n\n## Brief\n\nBoth checkouts stay in step.\n\n"
+    "## Acceptance criteria\n\n- [ ] It holds.\n\n## Questions\n\n"
+    "- [D1] **Sync on every commit?** Or on a timer.\n- [D2] **Keep the old remote?** Nothing reads it.\n"
+    "  - Ruled 2026-10-20: drop it.\n\n## Comments\n\n- [D3] **Friction** the suite was slow.\n"
+)
+PUTS = {
+    "a ticket the tracker does not hold": ("one-checkout D1", "the tracker holds no ticket one-checkout"),
+    "a question its ticket does not ask": ("two-main-checkouts D4", "two-main-checkouts asks no question D4"),
+    "a detail entry of its closing comment": ("two-main-checkouts D3", "two-main-checkouts asks no question D3"),
+    "a question its ticket has ruled": ("two-main-checkouts D2", "was ruled 2026-10-20 (drop it.)"),
+    "a question of a ticket done": ("done-checkouts D1", "done-checkouts is done"),
+}
+
+
+@pytest.mark.parametrize("handle, said", PUTS.values(), ids=PUTS)
+def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold_open_goes_back(
+    handle: str, said: str, worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ticket-questions-at-the-top-of-the-session-page: a ticket's question waits at the top only
+    while its ticket holds it open, so one that names nothing there, or nothing open, would never
+    reach the user; the send-back names the line, and one its ticket holds open passes."""
+    tickets = worked_example.parents[2] / "agent" / "tickets"
+    (tickets / "two-main-checkouts.md").write_text(TICKET_ASKING)
+    (tickets / "done-checkouts.md").write_text(TICKET_ASKING.replace("status: open", "status: done"))
+    record = worked_example / "turns" / "04.md"
+    text = record.read_text().replace("## Questions\n\n", f"## Questions\n\n- [{handle}]\n", 1)
+    assert text != record.read_text(), "record 04 asks a question of its own"
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text)
+    answer = run(wrote(record, writing))
+    assert answer.startswith(f"{record}:{text.splitlines().index(f'- [{handle}]') + 1}: ") and said in answer
+    assert RECAP in answer
+
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    record.write_text(text.replace(handle, "two-main-checkouts D1"))
+    assert run(wrote(record, writing, "Edit")) == ""
+
+
+def test_a_ticket_question_ruled_while_its_turn_runs_leaves_the_turns_later_writes_alone(
+    worked_example: Path, transcript: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ticket's question can be ruled while the turn that put it to the user still runs, so only a
+    write of the turn's own record checks it: record 04 put one the ticket has ruled since, and the
+    turn's later write of session.md goes through."""
+    ticket = worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md"
+    ticket.write_text(TICKET_ASKING.replace("Or on a timer.\n", "Or on a timer.\n  - Ruled 2026-10-21: on every commit.\n"))
+    record = worked_example / "turns" / "04.md"
+    record.write_text(record.read_text().replace("## Questions\n\n", "## Questions\n\n- [two-main-checkouts D1]\n", 1))
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    assert run(wrote(worked_example / "session.md", transcript, "Edit")) == ""
+
+
+@pytest.mark.parametrize("text, line, said", TICKET_QUESTION_UNPARSEABLE.values(), ids=TICKET_QUESTION_UNPARSEABLE)
+def test_a_ticket_question_written_like_the_sessions_own_goes_back_saying_it_lives_in_its_ticket(
+    text: str, line: int, said: str, worked_example: Path, writing: Path, run: Callable[[dict], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Its words, its options and its ruling live in its ticket, and the send-back says so, at the
+    line the reader gave up on."""
+    record = worked_example / "turns" / "04.md"
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text)
+    answer = run(wrote(record, writing))
+    assert answer.startswith(f"{record}:{line}: ") and said in answer
 
 
 # ---- what it leaves alone ---------------------------------------------------

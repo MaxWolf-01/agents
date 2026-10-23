@@ -6,9 +6,10 @@ allowed by a permission rule, and a skill's `allowed-tools` is the only rule it 
 `${CLAUDE_SKILL_DIR}` stays unexpanded on both sides: Claude Code substitutes it in the line and in
 the rule alike.
 
-What this cannot see: a model-invoked skill that has any `allowed-tools` at all makes the Skill
-call itself ask for permission, and in `claude -p` in the default mode that ask is refused before
-a `!` line runs.
+A model-invoked skill that has any `allowed-tools` at all makes the Skill call itself ask for
+permission, and in `claude -p` in the default mode that ask is refused before a `!` line runs. So
+a model-invoked skill carries none, and has no `!` line either; `dispatch` is the exception, run
+by an orchestrator in auto mode, where its manuals arrive without extra calls.
 """
 
 import re
@@ -68,3 +69,11 @@ def test_every_injected_command_is_in_its_skills_allowed_tools():
     assert injections, "no skill has a `!` line: the pattern no longer finds them"
     unapproved = [f"  {skill}: {command}" for (skill, command), ok in injections.items() if not ok]
     assert not unapproved, "these `!` commands fall outside their skill's allowed-tools:\n" + "\n".join(unapproved)
+
+
+def test_only_dispatch_carries_allowed_tools_among_model_invoked_skills():
+    fronts = {path.parent.name: frontmatter_and_body(path)[0] for path in sorted(SKILLS.glob("*/SKILL.md"))}
+    model_invoked = {name for name, front in fronts.items() if not front.get("disable-model-invocation")}
+    assert {"dispatch", "mermaid", "tmux"} <= model_invoked, "the frontmatter no longer reads as it did"
+    carrying = sorted(name for name in model_invoked - {"dispatch"} if fronts[name].get("allowed-tools"))
+    assert not carrying, "these model-invoked skills carry allowed-tools, which fails them in claude -p: " + ", ".join(carrying)

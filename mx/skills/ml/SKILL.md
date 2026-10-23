@@ -16,6 +16,7 @@ figure-2a:
 ```
 
 The data, under `results/<id>/`, is committed when it is small (the run's metrics as JSONL, its log), and kept where the project keeps large files when it is not, with `figure-2a` fetching it from there.
+If there's no convention on where to put large files, raise the question. Writing results to gitignored directories in worktrees is guaranteed to loose them, it is not a safe option.
 
 When an exploratory run graduates into a keeper, freeze its invocation as the pair of targets. Exploration itself calls the scripts directly, `uv run python -u experiments/<x>.py --seed 1 ...` (`-u` so tmux scrollback streams progress), and stays out of the Makefile: the tracker already records every run's config, so an unfrozen invocation is never lost; the Makefile holds the runs worth reproducing, by someone else or by you in three months.
 

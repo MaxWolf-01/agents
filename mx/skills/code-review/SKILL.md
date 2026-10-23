@@ -1,7 +1,6 @@
 ---
 name: code-review
 description: "Review the changes since a fixed point (a commit, branch or tag). Use when the user asks to review a branch or work in progress, to \"review since X\", or for a \"light review\"."
-allowed-tools: Bash(${CLAUDE_SKILL_DIR}/review --help)
 ---
 
 Review of the diff between `HEAD` and a fixed point, along four axes:
@@ -24,10 +23,10 @@ Whatever the user said is the fixed point: a commit SHA, branch name, tag, `main
 Look for what the work was ordered by, in this order:
 
 1. A path, URL, or text the user passed as an argument.
-2. The ticket the branch builds: `tracker context <slug>` is its body with every ancestor's, which is the whole order for this work, and a branch named `ticket/<slug>` names its slug.
+2. The ticket the branch builds: `tracker context <slug>` is its ticket context, the whole order for this work, and a branch named `ticket/<slug>` names its slug.
 3. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
 4. A specification the repo keeps outside the tracker: `docs/`, `specs/` matching the branch name.
-5. If nothing is found, ask the user where it is, unless the work is plainly loose in-session work that never had one.
+5. If nothing is found, ask the user where it is, unless the work is session work, which never had one.
 
 It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
 
@@ -39,11 +38,7 @@ The standards sources are the script's to gather, by what the diff touches, and 
 
 ### 4. Run the reviewers
 
-`review`, beside this file and on `PATH`, runs them:
-
-```text
-!`${CLAUDE_SKILL_DIR}/review --help`
-```
+`review`, beside this file and on `PATH`, runs them. `review --help` is the manual: run it before your first review.
 
 It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). The judgment it leaves you is `--effort` and `--minutes`, higher for a large diff; `run-log report --site review` shows what past rounds cost and took per axis and effort. For a cross-model review, run the same prompts through `/mx:codex` instead.
 
@@ -59,7 +54,7 @@ Read the reports per axis and give every finding one of three dispositions:
 
 Two callers hold no ticket. A bare "review this branch" anchors its declines and its index on the review page as notes. A review of a branch the caller does not own, an incoming PR, delivers every finding where the review is happening, the PR's comments or the reply: nothing there is the caller's to fix, so every finding is one of the user's calls.
 
-Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
+Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, cited by its id qualified with the range (`review 2339177..8424220 S3`): fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
 
 A review's reader is the agent that owns the branch, never the user. It fixes, files or declines each finding, and what it cannot dispose of alone (a declined finding worth a ruling, a question the review raised) it escalates through its own closing comment, under the worker contract. Findings the review fixed, per-axis summaries and verification lists stay in the reports, which die with the worktree.
 

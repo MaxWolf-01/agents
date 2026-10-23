@@ -27,6 +27,7 @@ refused and which weeks skipped, the oracle being git's record of the agent repo
 import fnmatch
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -64,7 +65,7 @@ case $stage in
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && for f in leading-words permissions critique; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
-    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
+    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "${STUB_PAGE:-<html>}" > report.html ;;
 esac
 """
 
@@ -188,6 +189,22 @@ def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stay
     assert last_logged(tmp_path, repo.name).startswith("committed ")
     if start == "a worktree":
         assert git(agent, "rev-parse", branch) == ticket_branch, "the report went to the main checkout, not the ticket's branch"
+
+
+def test_each_qualified_tag_on_the_committed_page_links_to_what_it_names_or_is_struck_where_that_is_gone(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`tags-linked-on-board-and-review-pages`, for the retro's page: a ticket's question it cites is
+    a link to its ticket with the question as its hover words, and an entry the report no longer
+    holds is struck through, in the page the commit holds."""
+    agent = repo / "agent"
+    (agent / "tickets/held.md").write_text("---\nstatus: open\n---\n\n# Held\n\n## Questions\n\n- [D1] **Ship it?** Or wait.\n")
+    monkeypatch.setenv("STUB_PAGE", "<p>Taken up in held D1; retro F9 dropped.</p>")
+    retro(tmp_path, repo, FIRST, SINCE)
+    page = git(agent, "show", "HEAD:retro/report.html")
+    (link,) = re.findall(r"<a [^>]*>held D1</a>", page)
+    assert 'href="../tickets/held.md"' in link and 'title="held D1 · Ship it? Or wait."' in link
+    (gone,) = re.findall(r"<s [^>]*>retro F9</s>", page)
+    assert "href" not in gone and "no longer in the retro" in gone
 
 
 @pytest.mark.parametrize("operation", ["rebase", "merge"])

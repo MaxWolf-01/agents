@@ -17,7 +17,7 @@ Slice of the parent ticket, building on the Decisions on `## Questions`, a build
 
 ## What to build
 
-The board reads a ticket's `## Questions`: each item tagged `[Dn]` with a bold headline, open until a `Ruled <date>:` line sits under it. A build in review is read from its ticket branch (`ticket/<feature>/<NN-slug>`, or `ticket/<integration branch>/<slug>` for a standalone ticket), where its questions and closing comment are until the merge. One group, needs me, holds every ticket that is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed; the separate "needs my review" group goes. Under each needs-me row its open questions show as tag and headline, each with a copy button that shows what it copies; a ticket's "copy all" and the group's "copy all" copy every open question with its tag and ticket path, for pasting into an editor.
+The board reads a ticket's `## Questions`: each item tagged `[Dn]` with a bold headline, open until a `Ruled <date>:` line sits under it. A build in review is read from its ticket branch (`ticket/<feature>/<NN-slug>`, or `ticket/<trunk>/<slug>` for a standalone ticket), where its questions and closing comment are until the merge. One group, needs me, holds every ticket that is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed; the separate "needs my review" group goes. Under each needs-me row its open questions show as tag and headline, each with a copy button that shows what it copies; a ticket's "copy all" and the group's "copy all" copy every open question with its tag and ticket path, for pasting into an editor.
 
 The board keeps reading the `needs-human.md` queues until ticket 10 migrates them.
 
@@ -121,7 +121,7 @@ instead.)
     the branch asks. The board hands out that path on the clipboard, so it is where the session
     taking your answer writes; the branch is the worker's and does not move again before the merge.
   - A4 `mx/skills/tracker/board.py:792`: a feature ticket reads only `ticket/<feature>/<NN-slug>`;
-    a standalone ticket's integration branch is not knowable from its file, so the sole branch
+    a standalone ticket's trunk is not knowable from its file, so the sole branch
     ending in its slug is its own, and an ambiguous one is named on stderr rather than as an
     absence on the page: a ticket at `review` need not be a build with a branch at all, so the note
     would fire on ordinary states (a declined finding).

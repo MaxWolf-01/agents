@@ -14,7 +14,9 @@ its title off, which is a finding that never fails a run; and text a clip leaves
 like the text a folded disclosure holds, is hidden on purpose. An element with no box of its own
 hides its text by visibility, and not by opacity, which has no box to act on. Text the browser
 renders late, or lays out below the first screen of a page that scrolls, is measured. A box cuts
-off only what it is the containing block of, the page itself included.
+off only what it is the containing block of, the page itself included. Board rows whose marks
+each sit at their own offset collide wherever a long title runs under its badge, and the same marks
+on a grid collide nowhere.
 
 What the reader sees also depends on when and where the page is read: a page still moving once its
 requests are done is measured once it stops and reported unmeasurable when it never does; what an
@@ -102,6 +104,38 @@ TWO_SCREENS = """
 """
 
 
+# The board prototype's rows with every mark placed at its own offset, so a long title runs under
+# the badge beside it, and the feature tag is cut off by its box. `?fixed` lays the same marks
+# out on a grid, where each gets its own track. The offsets hold for any face whose glyphs average
+# 0.40em (Times) to 0.62em (a monospace one): each long title ends past its badge's text and short
+# of the chip, and on the grid fits its track, while the long tag overruns its box and the short
+# ones fit theirs.
+BOARD_ROWS = """
+<style>
+  .rows { width: 56rem; margin: 2rem }
+  .row { position: relative; height: 2.2rem }
+  .row > * { position: absolute; top: 0.45rem }
+  .ftag { left: 0; width: 6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .num { left: 9.5rem }
+  .title { left: 12rem; white-space: nowrap; font-size: 0.8rem }
+  .badge { right: 24rem }
+  .chip { right: 0 }
+  .fixed .row { height: auto; display: grid; grid-template-columns: 8rem 1.5rem 1fr 4.5rem 2rem; gap: 0.8rem; align-items: baseline; padding: 0.35rem 0 }
+  .fixed .row > * { position: static }
+  .fixed .title { overflow: hidden; text-overflow: ellipsis }
+  .fixed .badge, .fixed .chip { justify-self: end }
+  .ftag, .num, .badge, .chip { font-size: 0.8125rem }
+  .ftag, .badge, .chip { border: 1px solid; padding: 0 0.4rem }
+</style>
+<div class="rows">
+  <div class="row"><span class="ftag">board</span><span class="num">02</span><span class="title">Rows</span><span class="badge">claimed</span><span class="chip">01</span></div>
+  <div class="row"><span class="ftag">board</span><span class="num">03</span><span class="title">Open questions on a ticket, and the needs-me group they put it into</span><span class="badge">open</span><span class="chip">01</span></div>
+  <div class="row"><span class="ftag">render-lint-html-overlap</span><span class="num">—</span><span class="title">render-lint sees HTML text colliding, and says what a box cuts off</span><span class="badge">claimed</span><span class="chip">—</span></div>
+</div>
+<script>if (new URLSearchParams(location.search).has("fixed")) document.body.classList.add("fixed")</script>
+"""
+
+
 def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "", env: dict | None = None) -> tuple[int, list[dict]]:
     """The tool over `body` as a page, at the address `at` appends to it. Exit code and findings."""
     page = tmp_path / "page.html"
@@ -109,6 +143,9 @@ def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: 
     run = subprocess.run(
         [str(LINT), f"{page}{at}", "--json", *flags, *(["--crops", str(crops)] if crops else [])],
         capture_output=True, text=True, env=os.environ | (env or {}),
+        # past the browser's launch limit (Playwright's 180 s) and the page's patience, so a run
+        # that went on waiting fails the check rather than holding up the suite
+        timeout=300,
     )
     assert run.returncode in (0, 1, 2) and run.stdout, run.stderr
     return run.returncode, json.loads(run.stdout)
@@ -122,6 +159,27 @@ def png_size(path: Path) -> tuple[int, int]:
     """A PNG's pixel width and height, out of the IHDR chunk its header opens with."""
     header = path.read_bytes()[16:24]
     return int.from_bytes(header[:4]), int.from_bytes(header[4:])
+
+
+def test_board_row_marks_at_their_own_offsets_collide_and_the_tag_box_cuts_its_tag_off(tmp_path):
+    """Each long title runs under the badge in its row, and the feature tag too long for its box is
+    cut off by that box."""
+    code, findings = lint(tmp_path, BOARD_ROWS)
+    assert {(f["kind"], frozenset(f["text"].split(" | "))) for f in findings} == {
+        ("clipped", frozenset({"render-lint-html-overlap"})),
+        ("overlap", frozenset({"open", "Open questions on a ticket, and the needs-me group they put it into"})),
+        ("overlap", frozenset({"claimed", "render-lint sees HTML text colliding, and says what a box cuts off"})),
+    }
+    assert len(findings) == 3
+    assert [f["cutters"] for f in findings if f["kind"] == "clipped"] == [["div.rows div.row span.ftag"]]
+    assert code == 1
+
+
+def test_the_same_board_row_marks_on_a_grid_collide_nowhere(tmp_path):
+    """The tag its box still cuts off is truncated by design, which never fails a run."""
+    code, findings = lint(tmp_path, BOARD_ROWS, at="?fixed")
+    assert set(kinds(findings)) <= {"clipped"}
+    assert code == 0
 
 
 def test_a_line_wider_than_its_box_escapes_it(tmp_path):
@@ -176,6 +234,29 @@ def test_a_clipped_title_is_reported_and_the_run_still_passes(tmp_path):
     assert kinds(findings) == ["clipped", "clipped"]
     assert [f["text"][:14] for f in findings] == ["An ellipsised ", "A plainly clip"]
     assert code == 0
+
+
+def test_a_clipped_text_names_every_box_that_cuts_it(tmp_path):
+    """A text set to truncate in a box of its own can still be cut by a box around it, which is a
+    different finding: the cutters tell the two apart, the box that cuts less included. A box
+    around it counts only for what it cuts off of what the inner box left showing, so a text in a
+    scroller a wider card leaves wholly showing is no finding at all, and one a narrower card cuts
+    names the card."""
+    _, findings = lint(
+        tmp_path,
+        """
+        <div style="width:300px"><span class="clip" style="display:block;width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Its own ellipsis, cut where it means to be</span></div>
+        <div class="card" style="height:4px;overflow:hidden"><span class="clip" style="display:block;overflow:hidden;white-space:nowrap">Short, cut by the card</span></div>
+        <div class="row" style="height:12px;overflow:hidden"><span class="clip" style="display:block;width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Long and cut both ways, mostly by its own ellipsis</span></div>
+        <div class="panel" style="width:200px;overflow:hidden"><span class="clip" style="display:block;width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Wider than the panel, which hides none of what its ellipsis left</span></div>
+        <div class="card" style="width:200px;overflow:hidden"><div style="width:100px;overflow-x:auto;white-space:nowrap">Scrolled to, wider than the card around its scroller</div></div>
+        <div class="card" style="width:60px;overflow:hidden"><div style="width:100px;overflow-x:auto;white-space:nowrap">In a scroller its card cuts</div></div>
+        """,
+    )
+    assert [(f["text"][:5], sorted(c.split()[-1] for c in f["cutters"])) for f in findings] == [
+        ("Its o", ["span.clip"]), ("Short", ["div.card"]), ("Long ", ["div.row", "span.clip"]), ("Wider", ["span.clip"]),
+        ("In a ", ["div.card"]),
+    ]
 
 
 def test_text_a_clip_leaves_nothing_of_is_hidden_rather_than_clipped(tmp_path):
@@ -508,22 +589,21 @@ def test_a_page_measured_from_its_copies_no_longer_waits_on_the_server_they_came
     remote.hanging.set()
     code, findings = lint(tmp_path, remote.page, "--patience", "2")
     assert kinds(findings) == ["unmeasurable"] and findings[0]["text"] == "still loading after 2s"
-    code, findings = lint(tmp_path, remote.page, "--cache", str(cache), "--patience", "2")
+    code, findings = lint(tmp_path, remote.page, "--cache", str(cache))
     assert kinds(findings) == ["overlap"] and code == 1
 
 
 def test_a_script_behind_a_redirect_is_kept_with_the_redirect(tmp_path, remote):
     moved, cache = remote.page.replace("labels.js", "moved.js"), str(tmp_path / "cache")
-    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5")
+    code, findings = lint(tmp_path, moved, "--cache", cache)
     assert kinds(findings) == ["overlap"] and code == 1
-    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5", env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    code, findings = lint(tmp_path, moved, "--cache", cache, env={"MX_PAGE_CACHE_OFFLINE": "1"})
     assert kinds(findings) == ["overlap"] and code == 1, "the redirect was not kept, so the page lost its script offline"
 
 
 def test_with_the_network_cut_off_a_page_without_its_copy_is_measured_without_the_script(tmp_path, remote):
     remote.hanging.set()
-    code, findings = lint(tmp_path, remote.page, "--cache", str(tmp_path / "cache"), "--patience", "2",
-                          env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    code, findings = lint(tmp_path, remote.page, "--cache", str(tmp_path / "cache"), env={"MX_PAGE_CACHE_OFFLINE": "1"})
     assert findings == [] and code == 0
 
 
