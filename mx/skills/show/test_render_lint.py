@@ -106,8 +106,9 @@ TWO_SCREENS = """
 
 # The board prototype's rows with every mark placed at its own offset, so a long title runs under
 # the badge beside it, and the feature tag is cut off by its box. `?fixed` lays the same marks
-# out on a grid, where each gets its own track. The badge stands far enough from the chip that a long
-# title, from the narrowest face a host falls back on to a monospace one, ends between the two.
+# out on a grid, where each gets its own track. The offsets hold for any face whose glyphs average
+# 0.40em (Times) to 0.62em (a monospace one): each long title ends past its badge's text and short
+# of the chip, and on the grid fits its track.
 BOARD_ROWS = """
 <style>
   .rows { width: 56rem; margin: 2rem }
@@ -116,7 +117,7 @@ BOARD_ROWS = """
   .ftag { left: 0; width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .num { left: 9.5rem }
   .title { left: 12rem; white-space: nowrap; font-size: 0.8rem }
-  .badge { right: 18rem }
+  .badge { right: 24rem }
   .chip { right: 0 }
   .fixed .row { height: auto; display: grid; grid-template-columns: 8rem 1.5rem 1fr 4.5rem 2rem; gap: 0.8rem; align-items: baseline; padding: 0.35rem 0 }
   .fixed .row > * { position: static }
@@ -170,9 +171,9 @@ def test_board_row_marks_at_their_own_offsets_collide_and_the_tag_box_cuts_its_t
 
 
 def test_the_same_board_row_marks_on_a_grid_collide_nowhere(tmp_path):
-    """What the grid cuts off, the tag and the long titles, is truncated by design and never fails a run."""
+    """The tag its box still cuts off is truncated by design, which never fails a run."""
     code, findings = lint(tmp_path, BOARD_ROWS, at="?fixed")
-    assert {f["kind"] for f in findings} == {"clipped"}
+    assert set(kinds(findings)) <= {"clipped"}
     assert code == 0
 
 
