@@ -11,7 +11,9 @@ by kill -9 or a crash, never blocks a later one, and a review that is still runn
 it started, is never disturbed by another; D114 and D115, a reviewer starts from none of the
 caller's setup and runs Opus at the effort the caller gives, `medium` by default; and
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
-every ancestor's, assembled by the one command that assembles a worker's prompt.
+every ancestor's, assembled by the one command that assembles a worker's prompt; and
+`agent/tickets/review-says-when-an-axis-died.md`, that an axis whose reviewer died reads
+differently from one that reported, and that a flag before the fixed point is refused naming the order.
 """
 
 import json
@@ -34,6 +36,11 @@ prompt=$(cat)
 report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/agent/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
 printf '%s\n' "$@" > "$FAKE_ARGV"
 sleep "${FAKE_REVIEW_SECS:-0}"
+if [ -n "${FAKE_DIES:-}" ] && [[ $report == */$FAKE_DIES.md ]]; then
+    echo "# Review" > "$report"
+    echo "You've hit your limit · resets 3am"
+    exit 1
+fi
 [ -n "$report" ] && [ -z "${FAKE_NO_REPORT:-}" ] && echo "No findings." > "$report"
 """
 
@@ -391,6 +398,26 @@ def test_a_missing_report_is_rerun_at_the_same_effort_and_on_the_spec_as_it_was_
     rerun = done.stderr.strip().splitlines()[-1]
     assert "--axes spec" in rerun and "--effort low" in rerun
     assert "--spec lamp-presets" in rerun, f"the re-run reads the assembled file rather than the ticket: {rerun}"
+
+
+def test_an_axis_whose_reviewer_died_after_opening_its_report_reads_as_died_not_as_reported(repo):
+    """The first four-axis review of testing-weight hit the usage limit: every reviewer had
+    created its report and exited 1, and the paths were printed as if the reports had landed."""
+    done = run(repo, "--axes", "correctness,standards", FAKE_DIES="standards")
+
+    assert done.returncode == 1
+    assert done.stdout.split() == [str(review_dir(repo) / "correctness.md")]
+    died = next(line for line in done.stderr.splitlines() if "standards axis died" in line)
+    assert "exited 1" in died and "You've hit your limit" in died
+    assert "--axes standards " in done.stderr.strip().splitlines()[-1]
+
+
+def test_a_flag_before_the_fixed_point_is_refused_with_the_order(repo):
+    cmd = command(repo, 0, ())
+    done = subprocess.run(**{**cmd, "args": [str(REVIEW), "--light", "main~1"]}, capture_output=True, timeout=60)
+
+    assert done.returncode == 1
+    assert done.stderr.strip() == "review: --light came before the fixed point, which comes first: review <fixed-point> [flags]"
 
 
 if __name__ == "__main__":
