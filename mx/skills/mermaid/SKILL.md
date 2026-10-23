@@ -1,16 +1,11 @@
 ---
 name: mermaid
 description: "Mermaid diagrams, validated before they go anywhere. Use when creating or editing a mermaid chart."
-allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/tools/validate.sh --help)
 ---
 
 # Mermaid Skill
 
-Validate a Mermaid diagram before it goes anywhere, with `bash <skill-dir>/tools/validate.sh`:
-
-```text
-!`bash ${CLAUDE_SKILL_DIR}/tools/validate.sh --help`
-```
+Validate a Mermaid diagram before it goes anywhere, with `bash <skill-dir>/tools/validate.sh`, `<skill-dir>` being this skill's base directory. Its `--help` is the manual: run it before your first validation.
 
 ## Workflow
 
