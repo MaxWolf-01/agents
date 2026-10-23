@@ -58,7 +58,7 @@ The status of a ticket an agent filed that nobody has promoted yet: off the fron
 _Avoid_: backlog, suggested, draft ticket, idea
 
 **Triage**:
-A pass the user starts over the proposed tickets: they are grouped by shared cause, and each is dropped, merged into another, or promoted to open. The agent makes the bookkeeping calls; a call that changes what the product does or how it is built is the user's.
+A pass the user starts over the proposed tickets: grouped by shared cause, each is dropped, merged, or promoted to open, and only the design calls go to the user.
 _Avoid_: grooming, backlog review
 
 **Review**:
