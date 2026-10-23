@@ -57,8 +57,9 @@
 #                 the last lines of a worker's pane, 100 by default.
 # <worker> is a slug or a session name; one held twice lists the forms to type.
 #
-# Env: DISPATCH_PERMISSION_MODE reaches the worker; DISPATCH_RUNNER is a runner
-# file here that a spawn or resume runs the worker on (`dispatch ctl --help`).
+# Env: DISPATCH_PERMISSION_MODE and DISPATCH_EFFORT reach the worker; DISPATCH_RUNNER
+# is a runner file here that a spawn or resume runs the worker on (`dispatch ctl
+# --help`).
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -554,9 +555,10 @@ ctl() {
         carry=$(prompted "$sub" "$2" "$message") || die "could not assemble $2's prompt; \`tracker context $2\` says why"
         copy_to "$host" "$scratch" "$carry"
     fi
-    # The permission mode travels only when set here; unset, the host's default holds.
+    # The permission mode and the effort travel only when set here; unset, the host's default holds.
     env=()
     [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
+    [ -n "${DISPATCH_EFFORT:-}" ] && env+=("DISPATCH_EFFORT=$DISPATCH_EFFORT")
     # A replacement runner travels with the command that starts a worker on it, as the message does.
     # It is renamed after the ticket: under its own name it could replace a file the scratch dir
     # holds, the manifest say, which scp does silently, and one shared name would let two tickets'

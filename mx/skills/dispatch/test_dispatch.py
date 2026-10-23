@@ -98,10 +98,12 @@ printf 'attempts=1 exit=0 report=yes""",
 )
 
 # ssh as the real one behaves: every argument after the host joined with spaces into one line for
-# the remote shell, run in the remote user's home. scp copies into that home the same way.
+# the remote shell, run in the remote user's home, without the settings dispatch forwards on that
+# line, which the caller's environment never carries across. scp copies into that home the same way.
 FAKE_SSH = """#!/usr/bin/env bash
 while [[ ${1:-} == -* ]]; do case $1 in -o|-p|-i|-l) shift 2 ;; *) shift ;; esac; done
 shift
+unset DISPATCH_EFFORT DISPATCH_PERMISSION_MODE DISPATCH_RUNNER
 cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec bash -c "$*"
 """
 FAKE_SCP = """#!/usr/bin/env bash
@@ -457,6 +459,21 @@ def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path
     assert said.returncode == 0, said.stderr
     assert "effort=low" in said.stdout, said.stdout
     assert "stub: built warm-preset at low" in logs()
+
+
+@pytest.mark.full_path
+def test_the_effort_set_in_the_orchestrators_environment_reaches_a_remote_host(toy: Path, staged: Path) -> None:
+    """`dispatch-forwards-effort`: `DISPATCH_EFFORT=medium dispatch ctl spawn` started five workers at
+    high, since ssh carries none of the caller's environment to the host."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env={**env, "DISPATCH_EFFORT": "medium"})
+    state = waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main").parent
+    assert said.returncode == 0, said.stderr
+    assert "effort=medium" in said.stdout, said.stdout
+    assert "stub: built warm-preset at medium" in "".join(p.read_text() for p in state.glob("*.log"))
 
 
 @pytest.mark.full_path

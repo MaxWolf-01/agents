@@ -10,7 +10,7 @@
 #                 cuts the ticket's branches and worktrees where missing, sets
 #                 a new worktree up, updates claude, and starts the worker in
 #                 the tmux session dispatch-<repo>-<slug> on the message
-#                 `dispatch prompt` wrote. --effort is high unless given. A
+#                 `dispatch prompt` wrote. --effort overrides DISPATCH_EFFORT. A
 #                 --repo sits at <place> inside the worktree, or beside it as
 #                 <name>-<slug> when <place> is empty. Exit 1: no mx plugin
 #                 here, the setup failed (its tail printed), the run is still
@@ -22,8 +22,8 @@
 # stop <slug>     ends the run, resumably: worktrees and branches stay.
 # resume <slug> <model> [--effort <level>]
 #                 the run's conversation again, on its message file, which
-#                 `dispatch prompt` has rewritten as the guidance. --effort is
-#                 high unless given again. Exit 1: still running, or gone
+#                 `dispatch prompt` has rewritten as the guidance; --effort as
+#                 at a spawn. Exit 1: still running, or gone
 #                 with no session id (spawn afresh).
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the status line (attempts, exit code, report=,
@@ -41,6 +41,7 @@
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto)
+#   DISPATCH_EFFORT           the worker's effort (default high)
 #   DISPATCH_PLUGIN_DIR       the mx install a worker loads, in place of the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
@@ -60,7 +61,7 @@ manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
 case $runner in /*) ;; *) runner=$here/$runner ;; esac
 mode=${DISPATCH_PERMISSION_MODE:-auto}
-effort=high
+effort=${DISPATCH_EFFORT:-high}
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
 # Every command that changes something is echoed before it runs, so a transcript shows the
