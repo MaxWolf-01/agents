@@ -265,7 +265,7 @@ def build_agent(ranges: dict[str, list[str]]) -> None:
     step(t("view-list-shape", "paginate-the-view-list"),
          "view-list-shape: three takes on the list; paging proposed from them", "2026-09-23T17:05:00+02:00", PROTO)
     step(t("csv-import", "blank-column-reason"),
-         "csv-import: closed out, for the ruling on the whole; the debrief's one ticket", "2026-09-24T11:00:00+02:00", ORCH_CSV)
+         "csv-import: closed out, for the ruling on the whole; the close-out's one ticket", "2026-09-24T11:00:00+02:00", ORCH_CSV)
     step(t("saved-views", ("filters-as-data", "claimed", False), "view-storage-research"),
          "saved-views: claimed for its tree; filters-as-data and view-storage-research claimed",
          "2026-09-25T09:30:00+02:00", ORCH_VIEWS)

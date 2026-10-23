@@ -172,8 +172,8 @@ button.id:hover { color: var(--accent); }
 .q-body { min-height: 0; overflow-y: auto; }
 .pickline { display: none; min-width: 0; margin-top: 0.05rem; color: var(--muted); font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pickline .v-num { font-size: 0.85em; }
-.q.folded .pickline, .pickline.blind { display: block; }
-.pickline.blind a { color: var(--accent); }
+.q.folded .pickline, .pickline.blind, .pickline.ticket { display: block; }
+.pickline.blind a, .pickline.ticket a { color: var(--accent); }
 .q-detail { margin-top: 0.35rem; }
 .opts { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
 .opts li { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); }
@@ -233,8 +233,8 @@ button.id:hover { color: var(--accent); }
 
 .answers a { color: var(--body); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; }
 .answers a:hover { color: var(--accent); }
-a.path { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-a.path:hover { text-decoration-color: var(--accent); }
+a.path, a.qualified { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
 
 .links { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; max-width: var(--measure); }
 .links li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: baseline; }

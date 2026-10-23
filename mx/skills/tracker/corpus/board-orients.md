@@ -100,7 +100,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 ### What the board reads
 
 - **Sessions come from `Session: <id>` commit trailers**, added by a `prepare-commit-msg` hook from `$CLAUDE_CODE_SESSION_ID`, which every Claude Code shell carries. The hook lives in the dotfiles' global git hooks, beside the existing pre-push hook, so it covers every repo on the machine. The board reads `git log --all` for the ticket file, and takes each session's title (the `/rename` name, else Claude Code's own) and working directory from its transcript on this machine; a session with no transcript here, a worker on another host, is left out, because the user does not resume those.
-- **A build in review is read from its ticket branch**, `ticket/<feature>/<NN-slug>` or `ticket/<integration branch>/<slug>`, where its questions and closing comment are until the merge.
+- **A build in review is read from its ticket branch**, `ticket/<feature>/<NN-slug>` or `ticket/<trunk>/<slug>`, where its questions and closing comment are until the merge.
 - **Artefacts come from the ticket's show directory**: every file in it as a link, and each one its executable bit says runs on a copy button showing the command that runs it from the code repo's root. No frontmatter declares them (amended 2026-09-25, was the file named `demo` on a copy button showing its path, figures as links).
 - **GitHub state**: the board resolves every `gh` reference in one GraphQL query per render, cached beside the board with a short lifetime, so the watcher's cadence makes one request rather than one per reference; no network or no `gh` auth leaves the links bare and says so once.
 - **Review pages** are linked once per row, on the address diffview serves them on.

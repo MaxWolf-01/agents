@@ -54,4 +54,4 @@ never the parser's own output.
 
 **Closed out 2026-09-24, on `csv-import`, not merged.** All four child tickets are in, the suite is
 green, and the review one level up found one gap: nothing tested the dry run's already-settled branch,
-fixed on the branch. The debrief filed `blank-column-reason`.
+fixed on the branch. The close-out filed `blank-column-reason`.

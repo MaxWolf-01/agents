@@ -16,6 +16,7 @@ every ancestor's, assembled by the one command that assembles a worker's prompt.
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -312,6 +313,17 @@ def test_light_mode_without_a_spec_carries_no_spec_part(repo):
     prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
     assert "## Spec:" not in prompt
     assert not (review_dir(repo) / "ticket.md").exists()
+
+
+def test_each_axis_numbers_its_findings_under_a_letter_of_its_own(repo):
+    """A finding is cited `review <range> S13` outside its report (`fewer-workflow-concepts`), which
+    reads as one finding only while no two axes of a review share a letter."""
+    assert run(repo, "--axes", "correctness,standards,spec,tests", "--spec", spec(repo)).returncode == 0
+    assert run(repo, "--light").returncode == 0
+    heading = {axis: re.findall(r"### ([A-Z])1\b", (review_dir(repo) / "prompts" / f"{axis}.md").read_text())
+               for axis in ("correctness", "standards", "spec", "tests", "light")}
+    assert all(len(found) == 1 for found in heading.values()), f"each prompt asks for one heading form: {heading}"
+    assert len({found[0] for found in heading.values()}) == 5, heading
 
 
 def sources(prompt: Path) -> list[Path]:

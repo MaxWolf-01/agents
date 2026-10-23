@@ -54,7 +54,7 @@ Every landing (`/mx:dispatch`) comes with its review page and one show, a build 
 
 ## Where it goes
 
-An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work. That directory is the agent repo's, so `git -C agent` is what commits it, and a landing's show is committed in its main checkout, as a ticket file is. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
+An artifact goes to the show directory of the work it serves. A ticket's is `agent/show/<slug>/`, committed with that work: that directory is the agent repo's, so `git -C agent` is what commits it, and a landing's show is committed in its main checkout, as a ticket file is. Session work's (`/mx:orient`) is `show/` in the session's directory, the one `session-page` prints, committed with the session's records as it ends. One that serves neither goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
 
 ## A figure
 

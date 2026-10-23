@@ -31,15 +31,17 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from session_checks import DRAWN, SESSION, TURN_ANCHOR, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of
-from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
+from session_checks import (
+    DRAWN, SESSION, TURN_ANCHOR, anchors, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_tickets,
+)
+from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 
 
 def waiting(page: View) -> list[str]:
-    """The questions the top shows, by tag, once per time it shows one."""
-    return [q.tag for _, q in page.waiting]
+    """The questions the top shows, by the handle it shows each by, once per time it shows one."""
+    return [q.handle for _, q in page.waiting]
 
 
 # ---- sessions to render -----------------------------------------------------
@@ -81,8 +83,11 @@ def prompts(count: int) -> list[str]:
 
 def write_session(directory: Path, turns: list[dict]) -> tuple[Path, Path]:
     """A drawn session on disk: its directory, and the transcript whose prompts its turns
-    answered, one per turn."""
+    answered, one per turn; and where a turn puts a ticket's question to the user, the ticket, in
+    the tracker of the project the directory sits in."""
     (directory / "turns").mkdir(parents=True, exist_ok=True)
+    if any(turn.get("cites") for turn in turns):
+        write_tickets(directory.parents[len(SESSIONS.parts)], turns)
     (directory / "session.md").write_text(
         f"---\nsession: {DRAWN}\nrepo: {directory.parent}\n---\n\n"
         "# A session with questions\n"
@@ -125,7 +130,7 @@ def test_the_top_holds_the_open_questions_each_once(
     """session-page#P1, over sessions whose questions meet every fate in turn: the open ones are
     what the top holds, each once, and the page's top block holds nothing a turn settled."""
     turns, open_tags = drawn
-    session = write_session(scratch() / DRAWN, turns)
+    session = write_session(scratch() / SESSIONS / DRAWN, turns)
     top = waiting(view_of(*session))
     assert set(top) == open_tags
     assert len(top) == len(open_tags)
@@ -157,6 +162,132 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
     assert 'href="../../../agent/show/refusals/blind-q1.html"' in top
     assert "my pick" not in text_of(top)
+
+
+# A ticket as the tracker holds one, with a question open, a question ruled, a property, a worker's
+# assumption and a detail entry of its closing comment: each a tag a session's page can name it by.
+TICKET = """---
+status: review
+---
+
+# Two main checkouts synced by git
+
+## Brief
+
+Both checkouts of the agent repo stay in step through git alone.
+
+## Properties
+
+- P1 A ticket file is written in one checkout only.
+
+## Acceptance criteria
+
+- [ ] It holds.
+
+## Questions
+
+- [D5] **Sync on every commit, or on a timer?** A timer batches; a commit hook is immediate.
+- [D7] **Keep the old remote?** Nothing reads it any more.
+
+## Comments
+
+- [D6] **Friction** the suite took four minutes.
+- A3 `mx/sync.py:12`: one remote per checkout.
+"""
+TWO_MAIN = "two-main-checkouts-synced-by-git"
+
+
+def ticket_session(root: Path, questions: str, details: str = "The round.") -> tuple[Path, Path]:
+    """A session at `root` whose one turn puts `questions` to the user, beside a tracker holding
+    TICKET."""
+    (root / "agent" / "tickets").mkdir(parents=True)
+    (root / "agent" / "tickets" / f"{TWO_MAIN}.md").write_text(TICKET)
+    directory, transcript = write_session(root / SESSIONS / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
+    (directory / "turns" / "01.md").write_text(
+        f"---\ndate: 2026-10-23\n---\n\n# Round 1\n\n## Questions\n\n{questions}\n\n## Details\n\n{details}\n")
+    return directory, transcript
+
+
+def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_records_the_ruling(tmp_path: Path) -> None:
+    """ticket-questions-at-the-top-of-the-session-page, its criterion: the question waits among the
+    session's own, by the handle `<ticket> D5`, a link to its ticket with the question as its hover
+    preview and its words as the ticket has them; once the ticket records the ruling it leaves the
+    top, and its turn shows the ruling. A ticket done with it unruled, or that no longer holds it,
+    lets it go the same way."""
+    directory, transcript = ticket_session(tmp_path, f"- [Q1] **One page or two?**\n  - (a) One. *my pick*\n  - (b) Two.\n- [{TWO_MAIN} D5]")
+    assert waiting(view_of(directory, transcript)) == ["Q1", f"{TWO_MAIN} D5"]
+    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    assert "Sync on every commit, or on a timer?" in text_of(top) and "A timer batches" in text_of(top)
+    (link,) = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
+    assert link["href"] == f"../../../agent/tickets/{TWO_MAIN}.md"
+    assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
+
+    ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
+    ticket.write_text(TICKET.replace("immediate.\n", "immediate.\n  - Ruled 2026-10-24: on every commit.\n"))
+    assert waiting(view_of(directory, transcript)) == ["Q1"]
+    turn = text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
+    assert "on every commit." in turn and "ruled 2026-10-24" in turn
+
+    ticket.write_text(TICKET.replace("status: review", "status: done"))
+    assert waiting(view_of(directory, transcript)) == ["Q1"]
+    assert "is done with it unruled" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
+
+    ticket.unlink()
+    assert waiting(view_of(directory, transcript)) == ["Q1"]
+    assert "no longer a question of its ticket" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
+
+
+def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
+    """`fewer-workflow-concepts`' tag rule: a ticket's question, detail entry, property and
+    assumption, a retro entry, and another session's question, named in prose by their qualified
+    tag, the ticket's slug as code or not, each link to their home with what they name as the hover
+    preview. A tag of a ticket that holds no such tag is struck through, linking nowhere
+    (`tags-linked-on-board-and-review-pages`). Words that only look like one, a tag inside a link of
+    its own, and a question of a session whose id prefix two sessions share, stay text. Pins the
+    format: the links are in the record's prose."""
+    other = tmp_path / SESSIONS / "8e0f1c22-0000-0000-0000-000000000000"
+    (other / "turns").mkdir(parents=True)
+    (other / PAGE).write_text("")
+    (other / "turns" / "01.md").write_text(record(1, {"asks": ["Q3"], "answered": {}, "superseded": {}}))
+    (other / "turns" / "02.md").write_text(record(2, {"asks": [], "answered": {"Q3": "a"}, "superseded": {}}))
+    for twin in ("5a1b2c3d-0000-0000-0000-000000000000", "5a1b2c3d-1111-1111-1111-111111111111"):
+        (tmp_path / SESSIONS / twin / "turns").mkdir(parents=True)
+        (tmp_path / SESSIONS / twin / PAGE).write_text("")
+        (tmp_path / SESSIONS / twin / "turns" / "01.md").write_text(record(1, {"asks": ["Q1"], "answered": {}, "superseded": {}}))
+    directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D7]", details=(
+        f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3, as retro F2 asked; "
+        f"8e0f1c22 Q3 asked the same, and 5a1b2c3d Q1 could be either session's. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
+    (tmp_path / "agent" / "retro").mkdir()
+    (tmp_path / "agent" / "retro" / "report.md").write_text("# Workflow retro: agents\n\n## Findings\n\n### F2 Builds add machinery\n")
+    (tmp_path / "agent" / "retro" / "report.html").write_text('<h3 id="f2">F2</h3>')
+    details = sections_of(render_session(directory, transcript, now=NOW))["01"]
+    linked = {text: (attrs["href"], attrs["title"]) for attrs, text in anchors(details) if attrs.get("class") == "qualified"}
+    ticket = f"../../../agent/tickets/{TWO_MAIN}.md"
+    assert {text: href for text, (href, _) in linked.items()} == {
+        f"{TWO_MAIN} D5": ticket, f"{TWO_MAIN} D6": ticket, f"{TWO_MAIN}#P1": ticket, f"{TWO_MAIN} A3": ticket,
+        "retro F2": "../../../agent/retro/report.html#f2",
+        "8e0f1c22 Q3": f"../../../{other.relative_to(tmp_path)}/{PAGE}#q3",
+    }
+    assert {text: title.split(" · ", 1)[1] for text, (_, title) in linked.items()} == {
+        f"{TWO_MAIN} D5": "Sync on every commit, or on a timer? A timer batches; a commit hook is immediate.",
+        f"{TWO_MAIN} D6": "Friction the suite took four minutes.",
+        f"{TWO_MAIN}#P1": "A ticket file is written in one checkout only.",
+        f"{TWO_MAIN} A3": "one remote per checkout.",
+        "retro F2": "Builds add machinery",
+        "8e0f1c22 Q3": "What about Q3? · answered a",
+    }
+    assert details.count('class="qualified"') == len(linked), "a tag inside a link of its own was linked again"
+    (gone,) = re.findall(rf"<s [^>]*>{TWO_MAIN} D9</s>", details)
+    assert 'class="qualified gone"' in gone and f'title="{TWO_MAIN} D9 · no longer in its ticket"' in gone
+
+
+def test_a_ticket_question_put_to_the_user_again_waits_under_the_turn_that_put_it_last(tmp_path: Path) -> None:
+    """A close-out puts a child's call to the user that a tick already put: the question waits once,
+    asked in the later turn, which the user is reading."""
+    directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D5]")
+    (directory / "turns" / "02.md").write_text(
+        f"---\ndate: 2026-10-24\n---\n\n# Close-out\n\n## Questions\n\n- [{TWO_MAIN} D5]\n\n## Details\n\nStill yours.\n")
+    assert [(t.key, q.handle) for t, q in view_of(directory, transcript).waiting] == [("02", f"{TWO_MAIN} D5")]
 
 
 def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Path, transcript: Path) -> None:
@@ -206,7 +337,7 @@ def test_a_turns_record_is_the_only_source_of_its_section(
     every other one as it was."""
     turns, _ = drawn
     number = which % len(turns) + 1
-    directory, transcript = write_session(scratch() / DRAWN, turns)
+    directory, transcript = write_session(scratch() / SESSIONS / DRAWN, turns)
     before_page = view_of(directory, transcript)
     (directory / "turns" / f"{number:02d}.md").write_text(
         record(number, turns[number - 1], headline="Rewritten", details="Rewritten too.")
@@ -248,7 +379,7 @@ def test_a_message_reaches_one_turn_and_no_other(
     """session-page#P2: the transcript is the page's other source, and one prompt belongs to one
     turn. Which turn is not this check's business."""
     turns, _ = drawn
-    directory, transcript = write_session(scratch() / DRAWN, turns)
+    directory, transcript = write_session(scratch() / SESSIONS / DRAWN, turns)
     before = rows_of(view_of(directory, transcript))
     said = prompts(len(turns))
     said[which % len(said)] = "What I asked instead."
@@ -500,7 +631,7 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
     that turn's number, newest turn first, and nothing else; a turn that links none has its row."""
     home = tmp_path_factory.mktemp("home")
     turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
-    directory, transcript = write_session(scratch() / DRAWN, turns)
+    directory, transcript = write_session(scratch() / SESSIONS / DRAWN, turns)
     for number, paths in enumerate(linked, start=1):
         record_path = directory / "turns" / f"{number:02d}.md"
         record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The orchestrator's side of dispatch and its one door to the worker hosts. Run
 # it on the branch ticket branches cut from and merge back into: a parent
-# ticket's, or the integration branch for a ticket with no parent. A ticket's
+# ticket's, or the trunk for a ticket with no parent. A ticket's
 # branch is ticket/<slug> in the code repo, in the agent repo at `agent/`, and
 # in each listed repo its `repos:` names (`tracker repos --help`).
 #
@@ -108,7 +108,7 @@ base_at() { case $1 in code) echo "$base" ;; agent) echo "$agent_base" ;; *) ech
 declare -A listed_top=() listed_onto=()
 
 # Every repo on the project's list, read through `tracker repos`, its one reader. Its base is the
-# parent ticket's branch there where the repo has one, and its integration branch otherwise, both
+# parent ticket's branch there where the repo has one, and its trunk otherwise, both
 # its own and origin's where it has both: a merge on this machine is local, and a PR's is at origin.
 # Space-separated, since a ref name holds no space.
 listed() { # <parent slug, or nothing>
@@ -141,7 +141,7 @@ ticket_listed() { # <slug>
     listed "$(field "$1" parent)"
     for name in "${ticket_repos[@]}"; do
         [ -n "${listed_top[$name]-}" ] || die "$1's repos: names $name, which \`tracker repos\` does not list"
-        # Of a local integration branch and origin's, the one ahead, and the local one where the two
+        # Of a local trunk and origin's, the one ahead, and the local one where the two
         # have parted: a PR merges at origin, which a local branch may not have taken in yet.
         read -r -a refs <<< "${listed_onto[$name]}"
         cut_from[$name]=${refs[0]}
@@ -156,7 +156,7 @@ ticket_listed() { # <slug>
 remote_of() { case $1 in code | agent) echo "${2//[@.]/-}" ;; *) echo "${2//[@.]/-}-$repo" ;; esac; } # <repo> <host>
 
 # Every command runs on the branch ticket branches cut from and merge back
-# into: a parent ticket's, or the integration branch. With --read, the tracker
+# into: a parent ticket's, or the trunk. With --read, the tracker
 # is read first (`read_tracker`), and where it is comes with that read.
 locate() { # [--read [<slug>]]
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
@@ -177,7 +177,7 @@ locate() { # [--read [<slug>]]
     [ "$(git -C "$agent_top" rev-parse --show-toplevel 2>/dev/null)" = "$agent_top" ] ||
         die "$agent_top is no git repo of its own, so this project is not two repos yet; /mx:project-setup splits it out"
     # Each repo's own: the code repo is on the branch this worktree holds, a parent ticket's or the
-    # integration branch, while the agent repo keeps the branch its main checkout has out, since a
+    # trunk, while the agent repo keeps the branch its main checkout has out, since a
     # ticket file is written there and on no branch of its own.
     agent_base=$(git -C "$agent_top" branch --show-current)
     [ -n "$agent_base" ] || die "$agent_top is on a detached HEAD; ticket files are written on the branch it has out"
@@ -199,7 +199,7 @@ locate() { # [--read [<slug>]]
 # and on a shared path its runner and worker prompt would replace this one's
 # under running workers; named after the repo too, because the directory is per
 # user, not per project. Tickets with no parent ticket all dispatch from the
-# integration branch, so one repo's share one.
+# trunk, so one repo's share one.
 scratch_dir() { # <host>
     d=$state_root/$repo-$base
     [ "$1" = local ] && d=$HOME/$d
@@ -353,8 +353,7 @@ push_to() { # <host>
 }
 
 # The base of every listed repo `ticket_listed` read, to the bare repo of its own the host holds,
-# under the name of the branch it is there: origin's integration branch arrives as the integration
-# branch.
+# under the name of the branch it is there: origin's trunk arrives as the trunk.
 push_listed() { # <host>
     [ "$1" = local ] && return 0
     local name top remote url rc=0
@@ -396,7 +395,7 @@ stage_listed() { # <host> <slug>
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
-        # under the integration branch's own name.
+        # under the trunk's own name.
         if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
         else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
@@ -938,8 +937,8 @@ accept() { # <slug>
 }
 
 # What a squash or a rebase merge on GitHub landed as, recorded in place of what the ticket branch
-# carried: such a merge leaves the branch unmerged for good and its commits on no integration
-# branch, so neither the range read off the branch nor the done check would ever hold. GitHub is
+# carried: such a merge leaves the branch unmerged for good and its commits on no trunk,
+# so neither the range read off the branch nor the done check would ever hold. GitHub is
 # asked about <slug>'s `gh:` pull requests in <names>, the listed repos whose branch is unmerged,
 # and nothing else: a ticket whose listed branches have all merged asks it nothing. Each repo a
 # squash or a rebase rewrote has its ranges replaced by what landed (`record_landed`) and the branches
