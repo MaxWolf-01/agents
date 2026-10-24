@@ -1600,6 +1600,9 @@ peek() {
         END { for (i = last - n + 1 > 1 ? last - n + 1 : 1; i <= last; i++) print l[i] }'
 }
 
+# Sourced, it defines its functions and runs no command, which is how its checks reach them.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+
 cmd=${1:-}
 case $cmd in
     claim)   shift; claim "$@" ;;
