@@ -1398,6 +1398,7 @@ peek() {
     lines=${2:-100}
     [[ $lines =~ ^[0-9]+$ ]] || die "peek takes a number of lines, not \`$lines\`"
     resolve "$@"
+    # `=name:` is the session by its exact name: a bare one also matches a longer name by prefix.
     # The capture is the history plus the screen, blank rows included, so the last <lines> written
     # are cut out below; captured first, so a failure is not an empty pane.
     pane=$(look "$r_host" tmux capture-pane -p -J -t "=$r_session:" -S "-$lines") ||

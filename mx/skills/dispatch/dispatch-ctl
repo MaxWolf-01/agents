@@ -538,7 +538,8 @@ drop_listed() { # <git dir> <worktree>
 }
 
 # Removes the ticket's worktrees and branches, nested ones first; the bare repos stay. --force,
-# for the setup's untracked files; -D, as a ticket branch never merges on this host.
+# for the setup's untracked files. -D, as a ticket branch never merges on this host: safe only
+# because the orchestrator has fetched both branches before a cleanup runs.
 remove_worktrees() {
     if [ -f "$repos_record" ]; then
         while IFS=$'\t' read -r -u 3 _ dir _ at; do drop_listed "$dir" "$at"; done 3< "$repos_record"
