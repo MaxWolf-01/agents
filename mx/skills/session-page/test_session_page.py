@@ -34,7 +34,10 @@ from hypothesis import given, settings, strategies as st
 from session_checks import (
     DRAWN, SESSION, TURN_ANCHOR, anchors, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_tickets,
 )
-from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, block, chat_path, chat_record, inline, render_session
+from session_page import (
+    AGENT_REPO, ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, account, block, chat_path, chat_record, inline, pages_directory,
+    render_session,
+)
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 
@@ -160,7 +163,7 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     transcript.write_text("")
     assert waiting(view_of(directory, transcript)) == ["Q1"]
     top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
-    assert 'href="../../../agent/show/refusals/blind-q1.html"' in top
+    assert f'href="{(tmp_path / "agent/show/refusals/blind-q1.html").as_uri()}"' in top
     assert "my pick" not in text_of(top)
 
 
@@ -219,7 +222,7 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
     assert "Sync on every commit, or on a timer?" in text_of(top) and "A timer batches" in text_of(top)
     (link,) = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
-    assert link["href"] == f"../../../agent/tickets/{TWO_MAIN}.md"
+    assert link["href"] == (tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md").as_uri()
     assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
 
     ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
@@ -244,16 +247,19 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
     preview. A tag of a ticket that holds no such tag is struck through, linking nowhere
     (`tags-linked-on-board-and-review-pages`). Words that only look like one, a tag inside a link of
     its own, and a question of a session whose id prefix two sessions share, stay text. Pins the
-    format: the links are in the record's prose."""
-    other = tmp_path / SESSIONS / "8e0f1c22-0000-0000-0000-000000000000"
+    format: the links are in the record's prose. Another session's question is found where its page
+    is, under the account while it runs (session-records-outside-the-checkout), and a prefix two
+    sessions share stays text across the two places."""
+    other = pages_directory(account(), "8e0f1c22-0000-0000-0000-000000000000")
     (other / "turns").mkdir(parents=True)
     (other / PAGE).write_text("")
     (other / "turns" / "01.md").write_text(record(1, {"asks": ["Q3"], "answered": {}, "superseded": {}}))
     (other / "turns" / "02.md").write_text(record(2, {"asks": [], "answered": {"Q3": "a"}, "superseded": {}}))
-    for twin in ("5a1b2c3d-0000-0000-0000-000000000000", "5a1b2c3d-1111-1111-1111-111111111111"):
-        (tmp_path / SESSIONS / twin / "turns").mkdir(parents=True)
-        (tmp_path / SESSIONS / twin / PAGE).write_text("")
-        (tmp_path / SESSIONS / twin / "turns" / "01.md").write_text(record(1, {"asks": ["Q1"], "answered": {}, "superseded": {}}))
+    for twin in (tmp_path / SESSIONS / "5a1b2c3d-0000-0000-0000-000000000000",
+                 pages_directory(account(), "5a1b2c3d-1111-1111-1111-111111111111")):
+        (twin / "turns").mkdir(parents=True)
+        (twin / PAGE).write_text("")
+        (twin / "turns" / "01.md").write_text(record(1, {"asks": ["Q1"], "answered": {}, "superseded": {}}))
     directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D7]", details=(
         f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3, as retro F2 asked; "
         f"8e0f1c22 Q3 asked the same, and 5a1b2c3d Q1 could be either session's. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
@@ -262,11 +268,11 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
     (tmp_path / "agent" / "retro" / "report.html").write_text('<h3 id="f2">F2</h3>')
     details = sections_of(render_session(directory, transcript, now=NOW))["01"]
     linked = {text: (attrs["href"], attrs["title"]) for attrs, text in anchors(details) if attrs.get("class") == "qualified"}
-    ticket = f"../../../agent/tickets/{TWO_MAIN}.md"
+    ticket = (tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md").as_uri()
     assert {text: href for text, (href, _) in linked.items()} == {
         f"{TWO_MAIN} D5": ticket, f"{TWO_MAIN} D6": ticket, f"{TWO_MAIN}#P1": ticket, f"{TWO_MAIN} A3": ticket,
-        "retro F2": "../../../agent/retro/report.html#f2",
-        "8e0f1c22 Q3": f"../../../{other.relative_to(tmp_path)}/{PAGE}#q3",
+        "retro F2": f"{(tmp_path / 'agent' / 'retro' / 'report.html').as_uri()}#f2",
+        "8e0f1c22 Q3": f"{(other / PAGE).as_uri()}#q3",
     }
     assert {text: title.split(" · ", 1)[1] for text, (_, title) in linked.items()} == {
         f"{TWO_MAIN} D5": "Sync on every commit, or on a timer? A timer batches; a commit hook is immediate.",
@@ -353,21 +359,21 @@ def test_a_turns_record_is_the_only_source_of_its_section(
 def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     worked_example: Path, transcript: Path, stale_page: str, tmp_path: Path
 ) -> None:
-    """session-page#P2: the records and the transcript, carried on their own to a directory of the
-    same name and depth, give back the page the session's own directory did, whatever else was
-    lying beside them there. The path an artefact link carries for the hub names the repo root the
-    page was rendered under, so the two pages compare with that attribute's new root read as the old."""
+    """session-page#P2: the records, the agent repo they name and the transcript, carried on their
+    own to a directory of the same name anywhere else, give back the page the session's own
+    directory did, whatever else was lying beside them there: a record's paths are read from the
+    agent repo the directory names, not from where it sits."""
     (worked_example / PAGE).write_text(stale_page)
     (worked_example / "turns" / "notes.txt").write_text("a scratch file, which is not a record")
     page = render_session(worked_example, transcript, now=NOW)
 
-    elsewhere = tmp_path / "elsewhere" / worked_example.relative_to(tmp_path)
+    elsewhere = tmp_path / "elsewhere" / "deeper" / worked_example.name
     (elsewhere / "turns").mkdir(parents=True)
-    shutil.copy(worked_example / "session.md", elsewhere)
+    for name in ("session.md", AGENT_REPO):
+        shutil.copy(worked_example / name, elsewhere)
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
     again = render_session(elsewhere, Path(shutil.copy(transcript, tmp_path)), now=NOW)
-    again = again.replace(f'{ARTEFACT}="{tmp_path / "elsewhere"}/', f'{ARTEFACT}="{tmp_path}/')
     assert again == page
 
 
@@ -414,7 +420,7 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
     section = sections_of(render_session(directory, transcript, now=NOW))["01"]
     linked = re.findall(r'<a class="path" href="([^"]+)"[^>]*><code>([^<]*)</code></a>', section)
     assert linked == [
-        ("../../../mx/tool.py", "mx/tool.py:12"),
+        ((root / "mx" / "tool.py").as_uri(), "mx/tool.py:12"),
         (elsewhere.as_uri(), str(elsewhere)),
         ((home / "notes.md").as_uri(), "~/notes.md"),
     ]
@@ -548,14 +554,14 @@ TICKET_LINKS = [
 
 
 def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_and_no_ticket(
-    worked_example: Path, transcript: Path
+    worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
     """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
     whose record links it, newest turn first, a turn with none listed bare, each carrying the path it
     resolves to on this machine; and a ticket file the newest turn links is not listed, carries
     no attribute the hub marks by, and takes no key, so the keys beside the turn's links are the
     column's."""
-    root = worked_example.parents[2]
+    root = tmp_path  # the worked example's project, which its `agent-repo` names
     listed = [(key, [(text, str(root / path)) for text, path in items]) for key, items in LISTED]
     assert column_of(view_of(worked_example, transcript)) == listed
     newest = worked_example / "turns" / "04.md"
@@ -631,11 +637,12 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
     that turn's number, newest turn first, and nothing else; a turn that links none has its row."""
     home = tmp_path_factory.mktemp("home")
     turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
-    directory, transcript = write_session(scratch() / SESSIONS / DRAWN, turns)
+    root = scratch()  # the project, whose agent repo the session's directory under its account names
+    directory, transcript = write_session(root / "claude-config" / "session-pages" / DRAWN, turns)
+    (directory / AGENT_REPO).write_text(f"{root / 'agent'}\n")
     for number, paths in enumerate(linked, start=1):
         record_path = directory / "turns" / f"{number:02d}.md"
         record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))
-    root = directory.parents[2]
     expected = []
     for number, paths in reversed(list(enumerate(linked, start=1))):
         listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]

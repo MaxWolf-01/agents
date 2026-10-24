@@ -33,7 +33,8 @@ Examples:
     tracker drop map-columns --message "drop map-columns: the import covers it"
     tracker retire                       # every finished tree out, committed
     tracker retire --dry-run             # what that would take out, changing nothing
-    tracker hook                         # install the pre-commit hook that runs `check`
+    tracker hook                         # install the hooks that run `check` and `sync`
+    tracker sync                         # the agent repo pushed now, merging what the other machine pushed first
 """
 
 from __future__ import annotations
@@ -55,6 +56,8 @@ import tyro
 import yaml
 from tyro.extras import SubcommandApp
 
+import in_step  # two main checkouts of a repo kept in step through git, beside this script
+
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
@@ -74,6 +77,9 @@ OWN_REPOS = (None, "code", "agent")  # what a range names a repo every project h
 TICKETS = Path("agent") / "tickets"
 REPO_LIST = "repos.toml"  # beside the tickets, in the agent repo
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
+# What `hook` installs: each hook's name, the file beside this one it is, and what it runs.
+HOOKS = {"pre-commit": ("pre-commit", "tracker check"), "post-commit": ("post-commit", "tracker sync --here"),
+         "post-merge": ("post-commit", "tracker sync --here")}
 
 
 # ---- the commands ----------------------------------------------------------
@@ -693,13 +699,18 @@ def ranged(ticket: Ticket, branches: Sequence[Branch]) -> dict[str, str]:
 
 def commit_tickets(tracker: Tracker, message: str, paths: Sequence[Path]) -> None:
     """The ticket files at `paths` committed in the agent repo as they stand, a file the write made or
-    removed among them, and nothing else staged there; no commit where none of them changed."""
+    removed among them, and nothing else staged there; no commit where none of them changed. While a
+    merge of what the other main checkout pushed stops at a conflict (`tracker sync`), git commits no
+    path alone, so the files are staged and go in with the merge's resolution."""
     top = toplevel(tracker.root)
     names = [str(path.relative_to(top)) for path in paths]
     if not git(top, "status", "--porcelain", "--", *names).strip():
         return
     if made := [name for name, path in zip(names, paths) if path.exists()]:  # one removed is staged by its `git rm`
         run(top, "git", "add", "--", *made, aside=True)
+    if in_step.underway_in(top) == "a merge":
+        print(f"tracker: a merge is underway in {top}, so {message!r} is staged and goes in with its resolution", file=sys.stderr)
+        return
     run(top, "git", "commit", "-q", "-m", message, "--", *names, aside=True)
 
 
@@ -1500,24 +1511,74 @@ def run(cwd: Path, *args: str, aside: bool = False) -> None:
 
 @app.command(name="hook")
 def hook() -> int:
-    """Install the pre-commit hook that runs `tracker check` over the staged ticket files and
-    reports, into the repository the working directory is in, from any worktree of it. Prints the
-    path it wrote. Leaves a pre-commit hook this did not write standing, and says so.
+    """Install the tracker's hooks into the repository the working directory is in, from any
+    worktree of it: the pre-commit hook that runs `tracker check` over the staged ticket files and
+    reports, and the sync hook, as post-commit and post-merge, that runs `tracker sync --here`.
+    Prints the path of each hook it wrote. Leaves a hook this did not write standing, and says so.
 
-    It is the agent repo that wants one, since that is where every ticket file and report is
-    written. The hook is the `pre-commit` file beside this one, which dispatch also installs in a
-    worker host's agent repo.
+    It is the agent repo that wants them, since that is where every ticket file and report is
+    written. The hooks are the `pre-commit` and `post-commit` files beside this one; dispatch
+    installs the first alone in a worker host's agent repo, where nothing is pushed.
     """
-    script = (Path(__file__).resolve().parent / "pre-commit").read_text()
-    repo = Path.cwd()
-    into = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
-    if into.exists() and into.read_text() != script:
-        raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
-    into.parent.mkdir(parents=True, exist_ok=True)
-    into.write_text(script)
-    into.chmod(0o755)
-    print(into)
+    here_ = Path(__file__).resolve().parent
+    hooks = Path(git(Path.cwd(), "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
+    standing = []
+    for name, (source, runs) in HOOKS.items():
+        script, into = (here_ / source).read_text(), hooks / name
+        if into.exists() and into.read_text() != script:
+            standing.append(f"{into} is a {name} hook this did not write; add `{runs}` to it by hand")
+            continue
+        into.parent.mkdir(parents=True, exist_ok=True)
+        into.write_text(script)
+        into.chmod(0o755)
+        print(into)
+    refuse(standing)
     return 0
+
+
+# ---- two main checkouts ---------------------------------------------------
+
+
+@app.command(name="sync")
+def sync_checkouts(here: bool = False) -> int:
+    """Push the agent repo's main checkout to its branch's upstream, which keeps the main checkouts
+    of a project worked from two machines in step. A push refused because the other machine pushed
+    first merges what it pushed and pushes again; with nothing to push, what the upstream has is
+    merged in. Says a line where the checkout moved, or could not. An agent repo whose branch has no
+    upstream pushes nothing, and nothing is said.
+
+    The sync hook (`tracker hook`) runs this after every commit and merge in that checkout, so a
+    commit there is pushed as it is made. Only the agent repo is synced: an integration branch is
+    pushed by whoever merges into it, and a ticket branch never is. A remote that does not answer
+    leaves the commits waiting for the next sync. A conflict, the two machines having changed the
+    same lines, leaves the merge stopped for whoever resolves it; committing the resolution pushes
+    it. The tracker refuses no write meanwhile: git takes no commit of single files during a
+    merge, so a ticket write, the tracker's or dispatch's, is staged and goes in with the
+    resolution.
+    Exit 1: a conflict, a merge or rebase underway, or a remote that refused the push; the line says
+    which file or why.
+
+    Args:
+        here: only the checkout the working directory is in, and only where it is an agent repo's
+            main checkout on a branch other than a ticket branch: what the sync hook runs, so the
+            hook in a code repo pushes nothing.
+    """
+    if here:
+        top = toplevel(Path.cwd())
+        is_agent_repo = top.name == TICKETS.parent.name and (top / TICKETS.name).is_dir()
+        if not is_agent_repo or top != main_checkout(top) or ticket_branch_out(top):
+            return 0
+    else:
+        root = tracker_root(Path.cwd())
+        top = toplevel(root)
+        if top == project_root(root) or ticket_branch_out(top):
+            return 0
+    synced = in_step.sync(top)
+    if here and synced.outcome == "underway":  # the hook fires inside a rebase or cherry-pick, whose own output says it is underway
+        return 0
+    if synced.said:
+        print(synced.said, file=sys.stderr)
+    return 1 if synced.outcome in in_step.FAILS else 0
 
 
 # ---- what the tracker's rules refuse ---------------------------------------

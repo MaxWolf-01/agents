@@ -12,7 +12,7 @@ import pytest
 
 import turn_review
 from session_checks import BEFORE_IT, SESSION, SPOKEN_AFTER, UNATTENDED
-from session_page import SESSIONS
+from session_page import AGENT_REPO, pages_directory
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -40,18 +40,20 @@ def registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def worked_example(tmp_path: Path) -> Path:
+def worked_example(tmp_path: Path, registry: Path) -> Path:
     """The prototype's four turns as the session directory they describe, copied so that a check
     can corrupt or perturb a record.
 
-    It sits under a project of its own (`tmp_path`, whose agent repo holds a tracker), at the path
-    the hook derives from a session id, so the two seams read the same fixture. The records are
+    It belongs to a project of its own (`tmp_path`, whose agent repo holds a tracker, and which its
+    `agent-repo` names), and sits where the hooks derive it from a session id, under the check's own
+    account, so the two seams read the same fixture. The records are
     stamped a second apart in their own order, so the last turn's is the newest by its modification
     time as well as by its write call.
     """
-    directory = tmp_path / SESSIONS / SESSION
+    directory = pages_directory(registry.parent, SESSION)
     shutil.copytree(FIXTURES / "session", directory)
-    (tmp_path / "agent" / "tickets").mkdir()
+    (tmp_path / "agent" / "tickets").mkdir(parents=True)
+    (directory / AGENT_REPO).write_text(f"{tmp_path / 'agent'}\n")
     written = time.time()
     for number, record in enumerate(sorted((directory / "turns").glob("[0-9][0-9].md"))):
         os.utime(record, (written + number, written + number))

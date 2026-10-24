@@ -1,7 +1,8 @@
 # The worked example
 
-`session/` is the four grilling rounds this feature was designed in, as the session directory the
-Decisions of `agent/tickets/session-page.md` put under `agent/sessions/<session-id>/`. The records
+`session/` is the four grilling rounds this feature was designed in, as a session directory, which
+the checks place where the hooks look for it and tie to an agent repo of their own (`conftest.py`,
+`worked_example`). The records
 are `agent/prototypes/session-page/sample/`'s, with four changes: the prototype's relative links
 are written from the repo root, `session.md`'s `spec:` went with the spec page it named,
 `04.md`'s third link, the one to the record itself, went with it, having no repo-root form, and
