@@ -19,8 +19,9 @@
 #                 merged, then asks every host this branch has a run on.
 #                 --setup-cmd replaces the line
 #                 each new worktree there runs first (default `make install`,
-#                 under `nix develop -c` with a flake.nix). `resume` claims a
-#                 ticket in `review` again; `cleanup` forgets the run.
+#                 under `nix develop -c` with a flake.nix). `resume` fetches the
+#                 round and imports its report first (`tracker import`), then
+#                 claims a ticket in `review` again; `cleanup` forgets the run.
 #                 Exit 1: the ticket needs the user, has no message, or the
 #                 host could not be staged (named).
 # wait <slug> [--stall SECS] [--deadline SECS]
@@ -33,22 +34,20 @@
 # push            after this branch moved under workers that must rebase onto
 #                 it. Pushes it to every host with a run of it. Exit 1: a host
 #                 refused (named); the rest have it.
-# review <slug>   after every fetch and every merge. Imports the worker's
-#                 report, renders agent/diffviews/<slug>.html, writes `review`,
-#                 or `done` once every branch is merged (a squashed or rebased
-#                 PR is read from GitHub), each repo's range in `diff:`; a
-#                 `done` retires the run. A child merged into its parent's
-#                 branch stays in `review` for the parent's ruling. Exit 1:
-#                 the branch wrote a ticket file; a page it didn't render is
-#                 in the way (named); a PR it could not read, or a branch
-#                 holding commits its PR did not carry; the tracker refused,
-#                 or the run did not retire (reason printed).
-# accept <slug>   once a parent ticket's branch merged --no-ff into this one, on
-#                 the user's accept. Writes `done`, with its ranges, on it and
-#                 every child of it in `review`, in one commit, and retires
-#                 their runs; a squashed or rebased PR of its branch is read as
-#                 `review` reads one. Exit 1: not merged yet, or the tracker
-#                 refused one, and nothing is written.
+# review <slug> [--merge]
+#                 after every fetch and every code merge: `tracker land`
+#                 (its --help says what a round gives the ticket), a squashed
+#                 or rebased PR read from GitHub first, then renders
+#                 agent/diffviews/<slug>.html; a `done` retires the run.
+#                 Exit 1: a page it didn't render is in the way (named); a PR
+#                 it could not read, or a branch holding commits its PR did
+#                 not carry; the tracker refused, or the run did not retire.
+# accept <slug>   on the user's accept, once its code merged --no-ff here: a
+#                 ticket ruled alone lands as `review --merge`, refused short
+#                 of `done`; a parent ruled whole writes `done` on it and every
+#                 child in `review`, one commit, a squashed or rebased PR of
+#                 its branch read as `review` reads one, their runs retired.
+#                 Exit 1: not merged, or the tracker refused; nothing written.
 # ps [--color] [--follow]
 #                 every worker on every host, for a human; the orchestrator's
 #                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
@@ -80,8 +79,6 @@ run_log=$skill/../run-log/run-log
 # primitives, and any step this script got wrong can be redone by hand.
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
-
-commit_ticket() { run git -C "$agent_top" commit -q -m "$2" -- "$tickets/$1.md"; } # <slug> <message>
 
 # The tracker as `tracker data` reads it, in `tracked`: <slug> alone where one is given, every
 # ticket otherwise. One launch of the tracker answers every field `field` picks out of it, so a
@@ -264,10 +261,7 @@ record_run() { # <name> <host>
 
 # A cleaned-up run has nothing left on its host, so what stays on file is the
 # runs still there, which is what the commands that fan out over hosts follow.
-# The report it imported goes with it: the next build of that slug is a build of
-# its own, and its first report is one this has never seen.
 forget_run() { # <name>
-    rm -f "$state/imported/$1"
     [ -f "$runs" ] || return 0
     ( flock 9
       awk -F'\t' -v f="$base" -v n="$1" '!($1 == f && $2 == n)' "$runs" > "$runs.tmp"
@@ -431,16 +425,14 @@ claim() {
     # A claim that changes nothing is no claim: `tracker set` takes a write to
     # the status a ticket already has, so the ticket in hand is refused here.
     [ "$(field "$1" status)" != claimed ] || die "$1 is already claimed; a claim is taken from the frontier"
-    run "$tracker" set "$1" status=claimed || exit 1
-    commit_ticket "$1" "claim $1"
+    run "$tracker" set "$1" status=claimed --message "claim $1" || exit 1
 }
 
 # A worker resumed on a build the user sent back holds its ticket again. The ticket is the one
 # `read_tracker` read.
 reclaim() { # <slug>
     [ "$(field "$1" status)" = review ] || return 0
-    run "$tracker" set "$1" status=claimed || exit 1
-    commit_ticket "$1" "claim $1"
+    run "$tracker" set "$1" status=claimed --message "claim $1" || exit 1
 }
 
 # This branch of both repos, and the base of each listed repo a run's ticket names, to every host
@@ -580,6 +572,17 @@ ctl() {
     fi
     scratch=$(scratch_dir "$host")
     [ -z "$stages" ] || stage "$host" "$setup_cmd"
+    # The round a resume ends is fetched and its report imported before the worker can write over
+    # it, so the context staged below carries it and the round's report reaches its ticket whether
+    # or not that round was ever reviewed.
+    if [ "$sub" = resume ]; then
+        fetch_round "$name" || die "fetching $name's round from $host failed, so it was not resumed"
+        run "$tracker" import "$name" || die "the tracker refused $name's report, so it was not resumed; the lines above say why"
+        # Claimed again at once, so a resume that fails below leaves a ticket in somebody's hands
+        # rather than one reading as a build waiting for the user.
+        read_tracker "$name" || exit 1
+        reclaim "$name"
+    fi
     # Every spawn pushes this branch of both repos to a remote host, so a ticket branch cuts from
     # its current tip; a local host cuts from these checkouts.
     if [ -n "$pushes" ]; then
@@ -615,7 +618,6 @@ ctl() {
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -z "$carries" ] || mv "$state/prompts/$base/round/ticket-$2.next" "$state/prompts/$base/round/ticket-$2.md"
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
-    [ "$sub" = resume ] && reclaim "$2"
     return 0
 }
 
@@ -638,7 +640,12 @@ wait_() {
 # worker's report is a file on the agent branch and arrives with it.
 fetch() {
     locate --read "$1"; ticket_host "$1"
-    branch=ticket/$1
+    fetch_round "$1"
+}
+
+# Every ticket/<slug> branch of the run on `host`, brought here. The ticket is the one `read_tracker` read.
+fetch_round() { # <slug>
+    local branch=ticket/$1 names at name
     ticket_listed "$1"
     names=(code agent "${ticket_repos[@]}")
     if [ "$host" = local ]; then
@@ -754,12 +761,12 @@ covers() { # <page> <spec...>
     done <<< "$shown"
 }
 
-# What the merge of <slug>'s round gives its ticket, decided, written and committed by the tracker
-# (`tracker land --help`); with --dry-run, what it would write, and nothing written. `tracked` is the
-# ticket as the landing leaves it, and `written` the round's ranges, `<repo>@<range>` per branch of it
-# that committed something, merged or not.
-land() { # <slug> [--dry-run]
-    tracked=$(run "$tracker" land "$@") || exit 1
+# What <slug>'s round gives its ticket, decided, written and committed by the tracker's `land` or
+# `accept` (`tracker land --help`); with --dry-run, what it would write, and nothing written.
+# `tracked` is the ticket as the landing leaves it, and `written` the round's ranges,
+# `<repo>@<range>` per branch of it that committed something, merged or not.
+round_read() { # <land|accept> <slug> [--merge] [--dry-run]
+    tracked=$(run "$tracker" "$@") || exit 1
     mapfile -t written < <(jq -r '.round[].range // empty' <<< "$tracked")
 }
 
@@ -807,16 +814,22 @@ render_page() { # <slug> [<spec the page may show>...]
     fi
 }
 
-review() {
+review() { # <slug> [--merge]
+    case ${2:-} in
+        "" | --merge) ;;
+        *) die "review takes --merge after the slug, or nothing" ;;
+    esac
     locate --read "$1"
+    landed_round "$1" land "$1" ${2:+"$2"}
+}
+
+# A review's work, landing <slug>'s round with the tracker command given: `land` for a review, or
+# `accept` for a ticket ruled alone, which lands as `land --merge` does and refuses what leaves it
+# short of done.
+landed_round() { # <slug> <land|accept> <its arguments...>
     id=$1
+    landing=("${@:2}")
     branch=ticket/$id
-    # One round is a branch per repo, and a ticket's rounds are their ranges, written together:
-    # `code@<range>`, `agent@<range>`, and `<name>@<range>` in each listed repo its `repos:` names.
-    git -C "$repo_root" rev-parse --verify -q "$branch" > /dev/null ||
-        die "no branch $branch in $repo_root; fetch it from the worker host first"
-    agent_tip=$(git -C "$agent_top" rev-parse --verify -q "$branch") ||
-        die "no branch $branch in $agent_top; fetch it from the worker host first"
     rounds=$(rounds_of "$id")
     named=$(field "$id" repos)
     # The list is read only for a ticket that has a listed repo to read, so one repo on it that
@@ -826,42 +839,7 @@ review() {
     fi
     for name in $named; do
         [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
-        git -C "${listed_top[$name]}" rev-parse --verify -q "$branch" > /dev/null ||
-            echo "dispatch: no branch $branch in $name at ${listed_top[$name]}, so this round has nothing there" >&2
     done
-
-    # P7 where the orchestrator can see it, whatever else the round left: a ticket file written on
-    # a ticket branch is the second copy of one this ticket exists to remove, and the ticket this
-    # import writes is the tracker's.
-    wrote=$(git -C "$agent_top" diff --name-only \
-        "$(git -C "$agent_top" merge-base "$agent_base" "$agent_tip")" "$agent_tip" -- tickets | tr '\n' ' ')
-    [ -z "$wrote" ] || die "$branch writes a ticket file, which is nobody's to write on a ticket branch: $wrote"
-
-    # The worker's words, in one write: its closing comment, the questions its build raised, the
-    # assumptions the notes below are made of, and the flip to `review` with them. The report is a
-    # file on the agent branch, where the worker committed it. What is imported is
-    # the report this round wrote, which is the one whose blob differs from the last imported: a
-    # resumed round starts with the round before it still committed there, and bringing that in
-    # again would say everything it says twice.
-    reported=show/$id/report.md
-    status=$(field "$id" status)
-    blob=$(git -C "$agent_top" rev-parse -q --verify "$agent_tip:$reported")
-    imported=$state/imported/$id
-    if [ -z "$blob" ]; then
-        echo "dispatch: no $reported on $branch; the run left nothing to review" >&2
-    elif [ "$status" = claimed ] && [ "$blob" != "$(cat "$imported" 2>/dev/null)" ]; then
-        git -C "$agent_top" show "$agent_tip:$reported" |
-            run "$tracker" import "$id" - --called "$branch:$reported" || exit 1
-        mkdir -p "$(dirname "$imported")" && printf '%s\n' "$blob" > "$imported"
-        commit_ticket "$id" "$id for review"
-    elif [ "$status" = claimed ]; then
-        echo "dispatch: the report on $branch is the one $id already carries, so this round left none of its own to import" >&2
-    elif [ "$status" = open ] || [ "$status" = proposed ]; then
-        # `review` and `done` are the ticket saying the report has landed, which is what the second
-        # run of this after the merge finds; a ticket ruled back to open is a report with nowhere
-        # to go.
-        echo "dispatch: $id is $status, so the report on $branch was not imported; a report lands once, on the build that is claimed" >&2
-    fi
 
     # A listed repo's branch unmerged here may have landed through a pull request on GitHub, by a
     # squash or a rebase that leaves it unmerged for good: what landed is recorded in its place, and
@@ -874,16 +852,18 @@ review() {
         is_merged "$name" "$tip" || unmerged+=("$name")
     done
     if [ ${#unmerged[@]} -gt 0 ]; then
-        land "$id" --dry-run
+        # Without --merge, which a listed branch only GitHub can say has landed would refuse.
+        round_read land "$id" --dry-run
         page_specs "$id"
         shown=("${specs[@]}")
         land_on_github "$id" "${unmerged[@]}" || asked=1
     fi
 
-    # The status and the ranges follow the branches, decided and committed by the tracker. A round
-    # whose branches carry no commit at all built nothing: there is no range, nothing to render and
-    # nothing to rule on, which is a worker that stopped before its first commit.
-    land "$id"
+    # The worker's words, the agent merge, the status and the ranges follow the branches, decided
+    # and committed by the tracker. A round whose branches carry no commit at all built nothing:
+    # there is no range, nothing to render and nothing to rule on, which is a worker that stopped
+    # before its first commit.
+    round_read "${landing[@]}"
     [ ${#written[@]} -gt 0 ] || return 0
     up=$(field "$id" parent)
     retiring=$(jq -r 'select(.merged and .tickets[0].status == "done") | "yes"' <<< "$tracked")
@@ -1026,6 +1006,11 @@ retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its 
 accept() { # <slug>
     locate --read
     id=$1
+    # A ticket ruled alone lands as a review does, through its accept.
+    if [ -z "$(jq -r --arg p "$id" '.tickets[] | select(.parent == $p) | .slug' <<< "$tracked")" ]; then
+        landed_round "$id" accept "$id"
+        return
+    fi
     if [ -n "$(jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?' <<< "$tracked")" ]; then
         listed "$(field "$id" parent)"
         unmerged=()
@@ -1124,8 +1109,7 @@ record_landed() { # <slug> [append]
     done
     [ "${ranges[*]}" != "${rounds[*]}" ] || return 0
     joined=$(printf '%s, ' "${ranges[@]}")
-    run "$tracker" set "$1" "diff=[${joined%, }]" || exit 1
-    commit_ticket "$1" "$1: the ranges that landed on GitHub"
+    run "$tracker" set "$1" "diff=[${joined%, }]" --message "$1: the ranges that landed on GitHub" || exit 1
     changed=1
 }
 
