@@ -1,3 +1,7 @@
+## 1.0.85
+
+- feat(tracker): land takes a round whole, and every tracker write commits
+
 ## 1.0.84
 
 - feat(wrap): /mx:wrap checks a session for what is left, then cleans it up to close
