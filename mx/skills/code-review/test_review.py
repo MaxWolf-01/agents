@@ -2,7 +2,8 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest"]
 # ///
-"""Checks for `review`'s range lock, its reviewers' launch line and what `--spec` reads. Run: uv run test_review.py
+"""Checks for `review`'s range lock, its reviewers' launch line, what `--spec` reads and what a changed
+file hands a reviewer. Run: uv run test_review.py
 
 The seam is the script itself, run in a scratch repo with a stand-in `claude` on PATH that
 records its arguments, works for a set time and writes the report its prompt names. The oracles
@@ -404,6 +405,54 @@ def test_the_test_sources_go_to_whoever_reads_the_tests_when_no_tests_axis_runs(
         assert given[-2:] == ["TEST-SMELLS.md", "testing-jobs.md"]
     else:
         assert not {"TEST-SMELLS.md", "testing-jobs.md"} & set(given)
+
+
+# What `review` takes a changed file for, by the conventions of the languages this workflow meets
+# (pytest, Go, Rust, Jest, RSpec, JUnit) and of its own documents: a test, which hands the reader of
+# the diff the test sources; a process document, which hands it writing-for-agents; and a glossary
+# or an ADR, which hands it their formats.
+CLASSED = {
+    "test": ["test/lamp.sh", "tests/lamp.ts", "spec/lamp_helper.rb", "pkg/test_lamp.py", "pkg/conftest.py",
+             "pkg/lamp_test.py", "lamp_test.go", "src/lamp_test.rs", "web/lamp_test.ts", "web/lamp_test.js",
+             "web/lamp.test.tsx", "web/lamp.spec.js", "lib/lamp_spec.rb", "src/LampTest.java"],
+    "process": ["SKILL.md", "sub/AGENTS.md", "CLAUDE.md", "mx/skills/lamp/run.sh", ".claude/commands/lamp.md",
+                "claude/agents/lamp.md", "claude/output-styles/lamp.md", "worker-prompt.md"],
+    "format": ["GLOSSARY.md", "docs/GLOSSARY-MAP.md", "decisions/0001-lamp.md"],
+}
+HANDS = {"test": "TEST-SMELLS.md", "process": "writing-for-agents", "format": "GLOSSARY-FORMAT.md"}
+# Files whose names come near those without being any, all in one diff: it hands the reader none.
+NEAR_MISSES = ["src/latest.py", "contest.py", "contests/lamp.py", "inspec/lamp.md", "pkg/attest_lamp.py",
+               "docs/testing.md", "lamp_test.md", "README.md", "claude/settings.json", "my-decisions.md",
+               "GLOSSARY.txt", "MYGLOSSARY.md", "my-decisions/lamp.md", "NOTSKILL.md", "myskills/lamp.sh",
+               "myclaude/agents/lamp.md", "docs/prompt.txt", "prompts/lamp.sh", "prompts/lamp.md"]
+
+
+def handed(repo: Path) -> str:
+    """The standards a lone standards reviewer of the last commit is handed, as one text."""
+    done = run(repo, "--axes", "standards")
+    assert done.returncode == 0, done.stderr
+    return "\n".join(map(str, sources(review_dir(repo) / "prompts" / "standards.md")))
+
+
+@pytest.mark.parametrize(("kind", "path"), [(kind, path) for kind, paths in CLASSED.items() for path in paths])
+def test_a_changed_file_hands_the_reviewer_the_standards_of_its_kind(repo, kind, path):
+    commit(repo, path, "changed\n")
+
+    given = handed(repo)
+
+    assert [k for k, source in HANDS.items() if source in given] == [kind]
+
+
+def test_a_changed_file_of_no_kind_hands_the_reviewer_none_of_their_standards(repo):
+    for path in NEAR_MISSES:
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text("changed\n")
+    git(repo, "add", "-A")
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "near misses")
+
+    given = handed(repo)
+
+    assert not [source for source in HANDS.values() if source in given], given
 
 
 def test_a_spec_given_as_a_file_is_read_as_the_file(repo):

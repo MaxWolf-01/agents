@@ -1,3 +1,8 @@
+## 1.0.86
+
+- docs(dispatch): each comment in the dispatch scripts says what its code does
+- test(dispatch): the scripts' text functions, remote failures and the zsh quoting under test
+
 ## 1.0.85
 
 - feat(tracker): land takes a round whole, and every tracker write commits
