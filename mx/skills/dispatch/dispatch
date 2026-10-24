@@ -14,13 +14,12 @@
 # ctl [--host <host>] [--account <name>] [--needs <capability>]...
 #     [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`).
-#                 With no --host, a spawn picks the least loaded host (per
-#                 thread) on --account (personal) having each --needs, and
-#                 waits for a free slot, as resume does; later commands
-#                 find it by slug. `probe` with no --host first
-#                 retires the run of each ticket done or out of the tracker
-#                 whose work merged, then asks every host this branch has a
-#                 run on.
+#                 With no --host, a spawn picks the least loaded host per
+#                 thread on --account (personal) with each --needs; spawn and
+#                 resume wait for a free slot; later commands find its host.
+#                 `probe` with no --host first retires the run of each
+#                 ticket done or out of the tracker whose work merged, then
+#                 asks every host this branch has a run on.
 #                 --setup-cmd replaces the line each new worktree there runs
 #                 first (default `make install`, under `nix develop -c` with a
 #                 flake.nix). `resume` fetches the round and imports its report
@@ -60,10 +59,9 @@
 #                 the last lines of a worker's pane, 100 by default.
 # <worker> is a slug or a session name; one held twice lists the forms to type.
 #
-# Env: DISPATCH_PERMISSION_MODE (bypassPermissions on an isolated host) and
-# DISPATCH_EFFORT reach the worker; DISPATCH_RUNNER
-# is a runner file here that a spawn or resume runs the worker on (`dispatch ctl
-# --help`).
+# Env: DISPATCH_PERMISSION_MODE (unset, bypassPermissions on an isolated host)
+# and DISPATCH_EFFORT reach the worker; DISPATCH_RUNNER is a runner file here
+# that a spawn or resume runs the worker on (`dispatch ctl --help`).
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -251,7 +249,7 @@ hosts_used() { # every host this branch has a run on
 # Sets `host` and `scratch` from <slug>'s run.
 ticket_host() { # <slug>
     host=$(host_of "$1")
-    [ -n "$host" ] || die "no run of $1 recorded here; spawn it: dispatch ctl --host <user@host|local> spawn $1 <model>"
+    [ -n "$host" ] || die "no run of $1 recorded here; spawn it, and wait on it once the spawn has returned: dispatch ctl spawn $1 <model>"
     scratch=$(scratch_dir "$host")
 }
 
@@ -452,12 +450,12 @@ ctl() {
     case ${1:-} in -h|--help|"") exec bash "$skill/dispatch-ctl" --help ;; esac
     # Absolute before locate moves to the worktree root.
     [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
-    host= setup_cmd= account=personal needs=()
+    host= setup_cmd= account=personal needs=() asked=
     while :; do
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;
-            --account)   account=${2:-}; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
-            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a record's has: names"; needs+=("$2"); shift 2 ;;
+            --account)   account=${2:-} asked=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
+            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a record's has: names"; needs+=("$2") asked=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
             *) break ;;
         esac
@@ -487,6 +485,7 @@ ctl() {
     # Before anything is staged or recorded, so a mistyped path leaves the host as it was.
     [ -z "$carries" ] || [ -z "${DISPATCH_RUNNER:-}" ] || [ -f "$DISPATCH_RUNNER" ] ||
         die "DISPATCH_RUNNER=$DISPATCH_RUNNER is not a file"
+    given=$host
     [ -n "$host" ] || [ -z "$name" ] || host=$(host_of "$name")
     placing=
     if [ -z "$host" ]; then
@@ -500,9 +499,17 @@ ctl() {
     readings=
     if [ "$sub" = spawn ] || [ "$sub" = resume ]; then
         read_hosts
+        [ -z "$placing" ] || [ -n "$registered" ] ||
+            die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
         [ -z "$placing" ] || placeable "$account" "${needs[@]}" <<< "$readings" ||
             die "no worker host could ever take this: none on account $account with a slot count${needs:+ and has: ${needs[*]}} (\`worker-hosts --readings\`)"
         [ -z "$placing" ] || { echo "dispatch: placing $name from these readings:"; show_readings <<< "$readings"; } >&2
+        # A run recorded earlier keeps its host, which holds its worktree; one that cannot take
+        # what this spawn asks for is said, rather than silently used.
+        if [ -n "$asked" ] && [ "$sub" = spawn ] && [ -z "$given" ] && [ -z "$placing" ] &&
+            ! reading_of "$host" | placeable "$account" "${needs[@]}"; then
+            die "$name's earlier run is on $host, which is not on account $account${needs:+ or lacks has: ${needs[*]}}; \`dispatch ctl cleanup $name\` first to place it afresh"
+        fi
     fi
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
@@ -517,12 +524,13 @@ ctl() {
     fi
     [ "$sub" = spawn ] || [ "$sub" = resume ] || { ctl_on "$host" "$@"; return; }
     # Exit 3 from a host is its machine full: the next candidate is tried, and once every one is,
-    # the hosts are read again after DISPATCH_SLOT_WAIT seconds, 60 unless set.
+    # the hosts are read again after DISPATCH_SLOT_WAIT seconds, 60 unless set: a seam for the
+    # checks, which wait a second, rather than a dispatcher's setting.
     while :; do
         if [ -n "$placing" ]; then mapfile -t candidates < <(place "$account" "${needs[@]}" <<< "$readings")
         else candidates=("$host"); fi
         for candidate in "${candidates[@]}"; do
-            [ "$candidate" != "$(id -un)@$(uname -n)" ] || candidate=local
+            [ "$candidate" != "$self" ] || candidate=local
             [ -z "$placing" ] || echo "dispatch: placing $name on $candidate" >&2
             ctl_on "$candidate" "$@"
             rc=$?
@@ -538,17 +546,19 @@ ctl() {
     done
 }
 
-# Sets `readings` to `worker-hosts --readings`, nothing where this machine has no `worker-hosts`: a
-# host is then bounded by no slot count, and nothing can be placed.
+# Sets `readings` to `worker-hosts --readings`, and `registered` where this machine has a
+# `worker-hosts` at all; without one nothing can be placed.
 read_hosts() {
-    readings=
+    readings= registered=
+    self=$(id -un)@$(uname -n)
     command -v worker-hosts > /dev/null 2>&1 || return 0
-    readings=$(worker-hosts --readings) || die "\`worker-hosts --readings\` failed, so no machine's slots could be read"
+    registered=1
+    readings=$(worker-hosts --readings) || die "\`worker-hosts --readings\` failed, so no host's reading could be read"
 }
 
-# The fields of a `worker-hosts --readings` line, by number.
-#   1 user@host  2 machine  3 account  4 slots  5 the machine's users  6 has  7 isolated  8 state
-#   9 this user's claude  10 the machine's claude  11 threads  12 5-minute load
+# A `worker-hosts --readings` line's fields, by number, as `worker-hosts --help` lists them:
+#   1 user@host  2 machine  3 account  4 slots  5 slots held  6 has  7 isolated  8 state
+#   9 this user's claude  10 threads  11 5-minute load
 
 # The placer: of the readings on stdin, the user@host a spawn on <account> needing every <need> may
 # start on, best first. One qualifies when it is up, on that account, has every need in its has:,
@@ -558,47 +568,44 @@ place() { # <account> [<need>...]
     local account=$1; shift
     awk -F'\t' -v account="$account" -v needs="$*" '
         BEGIN { n = split(needs, need, " ") }
-        $3 != account || $8 != "up" || $4 !~ /^[0-9]+$/ || $10 !~ /^[0-9]+$/ || $10 + 0 >= $4 + 0 { next }
-        $11 !~ /^[0-9]+$/ || $11 == 0 || $12 !~ /^[0-9.]+$/ { next }
+        $3 != account || $8 != "up" || $4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/ || $5 + 0 >= $4 + 0 { next }
+        $10 !~ /^[0-9]+$/ || $10 == 0 || $11 !~ /^[0-9.]+$/ { next }
         {
             split($6, listed, ","); split("", has)
             for (i in listed) has[listed[i]] = 1
             for (i = 1; i <= n; i++) if (!(need[i] in has)) next
-            printf "%.6f\t%d\t%s\n", $12 / $11, $10, $1
+            printf "%.6f\t%d\t%s\n", $11 / $10, $5, $1
         }' | sort -t $'\t' -k1,1n -k2,2n -k3,3 | cut -f3
 }
 
 # Whether any reading on stdin could take the spawn once its machine is up and has a slot free.
 placeable() { # <account> [<need>...]
-    awk -F'\t' -v OFS='\t' '{ $8 = "up"; $10 = 0; $11 = 1; $12 = 0 } 1' | place "$@" | grep -q .
+    awk -F'\t' -v OFS='\t' '{ $8 = "up"; $5 = 0; $10 = 1; $11 = 0 } 1' | place "$@" | grep -q .
 }
 
-# The readings on stdin, as a person reads them.
+# The readings on stdin, as a person reads them; a load the placer could not divide shows as -.
 show_readings() {
     awk -F'\t' '{
-        load = $11 ~ /^[0-9]+$/ && $11 > 0 && $12 ~ /^[0-9.]+$/ ? sprintf("%.2f per thread", $12 / $11) : "load -"
-        printf "  %-18s %-11s %-11s %s of %s slots on %s   %s   has %s\n", $1, $3, $8, $10, $4, $2, load, $6
+        load = $10 ~ /^[1-9][0-9]*$/ && $11 ~ /^[0-9.]+$/ ? sprintf("%.2f", $11 / $10) : "-"
+        printf "  %-18s %-11s %-11s %s of %s slots held on %s   load %s per thread   has %s\n", $1, $3, $8, $5, $4, $2, load, $6
     }' >&2
 }
 
 # The reading of <host>, `local` being this machine's user@host; nothing where none is read.
 reading_of() { # <host>
     local target=$1
-    [ "$target" != local ] || target=$(id -un)@$(uname -n)
+    [ "$target" != local ] || target=$self
     awk -F'\t' -v t="$target" '$1 == t' <<< "$readings"
 }
 
-# The rest of ctl for one host: the command run on it, through `dispatch-ctl`, with its machine's
-# slots where its reading has a count. Exit 3 is that machine full.
+# The rest of ctl for one host: the command run on it, through `dispatch-ctl`. Exit 3 is its
+# machine with every slot held. A host whose record says isolated: true is the boundary around its
+# worker, so the worker bypasses permissions there unless DISPATCH_PERMISSION_MODE says otherwise.
 ctl_on() { # <host> <dispatch-ctl args...>
     host=$1; shift
-    local reading slots=() mode=${DISPATCH_PERMISSION_MODE:-}
-    reading=$(reading_of "$host")
-    if [ -n "$reading" ]; then
-        IFS=$'\t' read -r -a f <<< "$reading"
-        [[ ${f[3]} =~ ^[0-9]+$ ]] && slots=(--slots "${f[3]}" "${f[4]}")
-        [ -n "$mode" ] || [ "${f[6]}" != true ] || mode=bypassPermissions
-    fi
+    local mode=${DISPATCH_PERMISSION_MODE:-} isolated
+    isolated=$(reading_of "$host" | cut -f7)
+    [ -n "$mode" ] || [ "$isolated" != true ] || mode=bypassPermissions
     scratch=$(scratch_dir "$host")
     [ -z "$stages" ] || [ "$sub" = resume ] || stage "$host" "$setup_cmd"
     # A spawn cuts from this branch's current tip, pushed to a remote host.
@@ -626,7 +633,7 @@ ctl_on() { # <host> <dispatch-ctl args...>
         env+=("DISPATCH_RUNNER=runner-$2")
     fi
     [ "$sub" != spawn ] || set -- "$@" "${listed_args[@]}"
-    run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" "${slots[@]}" || return
+    run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -z "$carries" ] || mv "$state/prompts/$base/round/ticket-$2.next" "$state/prompts/$base/round/ticket-$2.md"
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
     return 0

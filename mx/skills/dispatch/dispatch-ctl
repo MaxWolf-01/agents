@@ -13,7 +13,8 @@
 #                 --repo sits at <place> inside the worktree, or beside it as
 #                 <name>-<slug> when <place> is empty. Exit 1: no mx plugin
 #                 here, the setup failed (its tail printed), the run is still
-#                 running, or a listed repo this spawn drops carries work.
+#                 running, or a listed repo this spawn drops carries work; 3:
+#                 all of HOST.md's slots: held.
 # wait <slug> [--stall SECS] [--deadline SECS]
 #                 prints the run's probe line once it ends. Exit 0 exited, 1
 #                 gone, 2 worklog silent for --stall, 5 --deadline passed; the
@@ -21,8 +22,8 @@
 # stop <slug>     ends the run, resumably: worktrees and branches stay.
 # resume <slug> <model> [--effort <level>]
 #                 the run's conversation again, on the guidance `dispatch
-#                 prompt` wrote; --effort as at a spawn. Exit 1: still
-#                 running, or gone with no session id (spawn afresh).
+#                 prompt` wrote; --effort and exit 3 as at a spawn. Exit 1:
+#                 still running, or gone with no session id (spawn afresh).
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the status line (attempts, exit code, report=,
 #                 session id, models), or `gone`: the runner died with no
@@ -275,17 +276,13 @@ set_up() {
     return 1
 }
 
-# Splits --effort, --slots and --repo groups (into `repos_given`) from the `positional` arguments.
-# An empty <place> puts the repo beside the worktree; an empty <git-dir> is its `bare` repo.
-# `--slots <count> <users>`, which `dispatch ctl` adds to a spawn or resume on a machine whose
-# record gives a slot count, makes the spawn take one of them first (`take_slot`), or exit 3.
+# Splits --effort and --repo groups (into `repos_given`) from the `positional` arguments. An empty
+# <place> puts the repo beside the worktree; an empty <git-dir> is its `bare` repo.
 take_options() {
     positional=() repos_given=()
     while [ $# -gt 0 ]; do
         case $1 in
             --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
-            --slots)  [ $# -ge 3 ] && [ "$2" -ge 0 ] 2> /dev/null || die "--slots takes <count> <users>"
-                      slots=$2 slot_users=$3; shift 3 ;;
             --repo)   [ $# -ge 5 ] || die "--repo takes <name> <base> <place> <git-dir>"
                       repos_given+=("$2" "$3" "$4" "$5"); shift 5 ;;
             *) positional+=("$1"); shift ;;
@@ -305,7 +302,7 @@ spawn() {
     if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
     fi
-    [ -z "$slots" ] || take_slot
+    take_slot
     # Before the checkout, so a host with no mx fails with nothing to unwind.
     find_plugin
     [ -n "${resuming:-}" ] || relist
@@ -336,56 +333,61 @@ spawn() {
     fi
 
     ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
-    [ -z "$slots" ] || worker_started
+    hand_slot
     echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version  mx=${plugin_dir##*/}"
 }
 
-# A machine's worker slots are shared by every worker user on it, so their lock and the spawns still
-# starting live in one directory every user can write: a file per starting spawn, named after the
-# process that holds it, which counts while that process lives. `/tmp`, so a reboot, which ends every
-# worker, frees every slot too.
-slot_dir=/tmp/dispatch-slots
-slots= slot_users= reservation=
+# A machine runs at most the `slots:` its HOST.md gives, whichever of its worker users runs them. The
+# slots live in one directory every user can write, under `/tmp`, so the reboot that ends every worker
+# frees them too (DISPATCH_SLOT_DIR moves it, for the checks): a file per slot held,
+# <user>.<pid>, held while that process lives and its command line carries the word the file
+# holds. A spawn holds its slot until its runner starts, and the runner holds it from then until the
+# run ends, across its retries and whatever harness it runs. `worker-hosts` counts the same files.
+slot_dir=${DISPATCH_SLOT_DIR:-/tmp/dispatch-slots}
+slots= held=
 
-# Takes one of the machine's `slots`, or exits 3. Locked, so two spawns that both read the last slot
-# free cannot both take it. The reservation stands for this worker until its claude is counted.
+# Takes one of the machine's slots for this spawn, or exits 3 with none free. Locked, so two spawns
+# that both read the last slot free cannot both take it. A host whose HOST.md gives no count takes
+# none.
 take_slot() {
-    local used starting=0 held
-    mkdir -p -m 1777 "$slot_dir" 2> /dev/null
-    # Read-only and world-writable both, so the lock opens for every user whoever made it first.
+    local holder pid used=0
+    slots=$(sed -n '2,/^---$/s/^slots: *//p' "$HOME/HOST.md" 2> /dev/null | head -1)
+    [ -n "$slots" ] || return 0
+    mkdir -p -m 1777 "$slot_dir" || die "cannot make $slot_dir"
+    # World-writable and opened read-only, so the lock opens for every user whoever made it first.
     [ -e "$slot_dir/lock" ] || ( umask 0; : >> "$slot_dir/lock" )
     exec 8< "$slot_dir/lock" || die "cannot open $slot_dir/lock"
     flock 8
-    used=$(pgrep -c -x claude -u "$slot_users")
-    [ -n "$used" ] || die "cannot count the claude processes of $slot_users here"
-    # One whose spawn died without removing it is removed here; the process's command line is read
-    # too, since its pid may since belong to something else.
-    for held in "$slot_dir"/starting-*; do
-        [ -e "$held" ] || continue
-        if grep -qs dispatch-ctl "/proc/${held##*-}/cmdline"; then starting=$((starting + 1)); else rm -f "$held" 2> /dev/null; fi
+    for holder in "$slot_dir"/*.*; do
+        [ -e "$holder" ] || continue
+        pid=${holder##*.}
+        if tr '\0' ' ' < "/proc/$pid/cmdline" 2> /dev/null | grep -qF -- "$(cat "$holder")"; then
+            used=$((used + 1))
+        else
+            # Its process is gone, or the pid is another's now; another user's file stays, unremovable.
+            rm -f "$holder" 2> /dev/null
+        fi
     done
-    if [ $((used + starting)) -ge "$slots" ]; then
+    if [ "$used" -ge "$slots" ]; then
         exec 8<&-
-        echo "dispatch-ctl: no slot free on $(uname -n): $used claude running and $starting starting, of $slots" >&2
+        echo "dispatch-ctl: no slot free on $(uname -n): $used of $slots held" >&2
         exit 3
     fi
-    reservation=$slot_dir/starting-$(id -un)-$name-$$
-    : > "$reservation"
-    trap 'rm -f "$reservation"' EXIT
+    held=$slot_dir/$(id -un).$$
+    printf 'dispatch-ctl\n' > "$held"
+    trap 'rm -f "$held"' EXIT
     exec 8<&-
-    echo "dispatch-ctl: slot $((used + starting + 1)) of $slots taken on $(uname -n)" >&2
+    echo "dispatch-ctl: slot $((used + 1)) of $slots taken on $(uname -n)" >&2
 }
 
-# Waits for the worker's claude, the process whose working directory is the worktree, so its slot is
-# counted from the processes once the reservation goes; 30s, as a runner on another harness starts none.
-worker_started() {
+# Hands this spawn's slot to the runner it started, named by its run id, before the spawn's own
+# file goes with it.
+hand_slot() {
     local pid
-    for _ in $(seq 60); do
-        for pid in $(pgrep -x claude -u "$(id -un)"); do
-            [ "$(readlink "/proc/$pid/cwd")" = "$(realpath -m "$worktree")" ] && return 0
-        done
-        sleep 0.5
-    done
+    [ -n "$held" ] || return 0
+    pid=$(runner_pid "$run_id" "$runner" | head -1)
+    [ -n "$pid" ] || return 0
+    printf '%s\n' "$run_id" > "$slot_dir/$(id -un).$pid"
 }
 
 # Updates claude on every spawn, since a stale one resolves a model alias to an older model and
