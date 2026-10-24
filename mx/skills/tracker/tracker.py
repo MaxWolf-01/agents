@@ -1552,9 +1552,9 @@ def sync_checkouts(here: bool = False) -> int:
     pushed by whoever merges into it, and a ticket branch never is. A remote that does not answer
     leaves the commits waiting for the next sync. A conflict, the two machines having changed the
     same lines, leaves the merge stopped for whoever resolves it; committing the resolution pushes
-    it. The tracker refuses no write meanwhile, but
-    git takes no commit of single files during a merge, so a ticket commit, the tracker's or
-    dispatch's, fails until the resolution is committed, and what it wrote goes in with that.
+    it. The tracker refuses no write meanwhile: git takes no commit of single files during a
+    merge, so a ticket write, the tracker's or dispatch's, is staged and goes in with the
+    resolution.
     Exit 1: a conflict, a merge or rebase underway, or a remote that refused the push; the line says
     which file or why.
 
