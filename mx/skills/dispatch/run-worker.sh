@@ -79,6 +79,10 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
+# pytest-xdist's `-n auto` starts this many test processes rather than one per core: a machine holds
+# several workers, each of whose suites, and the browsers its full-path checks start, would
+# otherwise claim the whole of it.
+export PYTEST_XDIST_AUTO_NUM_WORKERS=4
 # The run every browser the worker's checks launch is tagged with, so `browsers kill` takes this
 # run's and leaves another run's on the same host.
 export MX_RUN=$run_id

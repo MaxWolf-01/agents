@@ -16,8 +16,8 @@ ranges are read back through the tracker module, as `tracker data` prints them (
 read is the oracle's, not the seam's, and in process it costs no tracker launch per check.
 
 A second seam is `dispatch`'s own functions, the script sourced, for those whose input and output
-are text: the run record (`host_of`, `runs_on`, `hosts_used`, `forget_run`), `scratch_dir` and
-`remote_line`, each held to the comment above it.
+are text: the run record (`host_of`, `runs_on`, `hosts_used`, `forget_run`), `scratch_dir`,
+`remote_line` and the placer (`place`), each held to the comment above it.
 """
 
 import hashlib
@@ -255,6 +255,11 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     if not (bin_dir / "board").exists():
         (bin_dir / "board").write_text(f'#!/bin/sh\necho "$*" >> "{bin_dir / "board.calls"}"\n')
         (bin_dir / "board").chmod(0o755)
+    # A register that publishes no host, so no check reads the machine's own, unless the check put
+    # one there (`readings`).
+    if not (bin_dir / "worker-hosts").exists():
+        (bin_dir / "worker-hosts").write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / "worker-hosts").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     plugin = mx(toy.parent)
     tmux_dir(toy).mkdir(exist_ok=True)
@@ -3047,6 +3052,193 @@ def test_a_remote_line_reaches_the_command_as_the_words_sent(shell: str, words: 
     flags = ["-f", "-c"] if shell == "zsh" else ["-c"]
     read = subprocess.run([login, *flags, f"printf '%s\\0' {line.stdout}"], capture_output=True, timeout=30)
     assert read.stdout == b"".join(word.encode() + b"\0" for word in words), read.stderr.decode()
+
+
+def reading(target: str, account: str = "personal", slots: str = "6", has: str = "-", state: str = "up",
+            used: int = 0, threads: int = 12, load: float = 1.0) -> str:
+    """A `worker-hosts --readings` line for <user>@<machine>, whose users are `agent` alone."""
+    fields = [target, target.split("@")[1], account, slots, "agent", has, "true", state, str(used), str(used),
+              str(threads), str(load)]
+    return "\t".join(fields)
+
+
+# Each case: the readings, the spawn's account and needs, and the user@hosts it may start on, best first.
+PLACEMENTS = {
+    # Per thread, not raw: pc's load of 6 is half its 12 threads, xmg19's 4 the whole of its 4.
+    "the lowest load per thread first": (
+        [reading("agent@xmg19", load=4, threads=4), reading("agent@pc", load=6, threads=12)], "personal", [],
+        ["agent@pc", "agent@xmg19"]),
+    "a machine with no slot free is passed over": (
+        [reading("agent@pc", used=6, load=0.1), reading("agent@xmg19", slots="8", used=7, load=3)], "personal", [],
+        ["agent@xmg19"]),
+    "an unreachable or locked machine is passed over": (
+        [reading("agent@pc", state="unreachable", load=0), reading("agent@xmg19", state="locked", load=0),
+         reading("agent@laptop", load=9)], "personal", [], ["agent@laptop"]),
+    "only the spawn's account": (
+        [reading("agent@pc", load=0.1), reading("agent-hl@pc", account="helferline", load=5)], "helferline", [],
+        ["agent-hl@pc"]),
+    "only a machine with every capability the spawn needs": (
+        [reading("agent@pc", has="docker", load=0.1), reading("agent@xmg19", has="gpu,docker", load=5),
+         reading("agent@laptop", has="gpu", load=1)], "personal", ["gpu", "docker"], ["agent@xmg19"]),
+    "a machine with no slot count is never placed on": (
+        [reading("max@zephylux", slots="-", load=0), reading("agent@pc", load=11)], "personal", [], ["agent@pc"]),
+    "at one load per thread, the machine running fewer workers first": (
+        [reading("agent@pc", used=3, load=2), reading("agent@xmg19", used=1, load=2)], "personal", [],
+        ["agent@xmg19", "agent@pc"]),
+    "nothing where every machine is full": (
+        [reading("agent@pc", used=6), reading("agent@xmg19", slots="2", used=2)], "personal", [], []),
+}
+
+
+@pytest.mark.parametrize("case", PLACEMENTS)
+def test_the_placer_chooses_from_each_machines_reading(case: str) -> None:
+    """`place`, P2: a spawn without --host lands on a reachable machine with a free slot and every
+    capability it names, and among those on the one with the lowest load per thread."""
+    readings, account, needs, expected = PLACEMENTS[case]
+    placed = subprocess.run(["bash", "-c", f'source "{DISPATCH}" && place "$@"', "check", account, *needs],
+                            input="\n".join(readings) + "\n", capture_output=True, text=True, timeout=30)
+    assert placed.returncode == 0, placed.stderr
+    assert placed.stdout.splitlines() == expected
+
+
+def readings(toy: Path, *lines: str) -> None:
+    """A `worker-hosts --readings` that says `lines`, and a `pgrep` that sees only the claude processes
+    started under the check's directory, so a slot is filled by this check's workers and by no claude
+    of the machine's. `self` in a line is this machine's user@host."""
+    bin_dir = toy.parent / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    me = subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip()
+    self = f"{me}@{os.uname().nodename}"
+    said = toy.parent / "readings"
+    said.write_text("".join(line.replace("self", self).replace("USER", me) + "\n" for line in lines))
+    (bin_dir / "worker-hosts").write_text(f'#!/bin/sh\ncat "{said}"\n')
+    (bin_dir / "worker-hosts").chmod(0o755)
+    (bin_dir / "pgrep").write_text(f"""#!/usr/bin/env bash
+case " $* " in *" -x claude "*) ;; *) exec {shutil.which("pgrep")} "$@" ;; esac
+count=; [ "$1" = -c ] && {{ count=1; shift; }}
+mine=()
+for pid in $({shutil.which("pgrep")} "$@"); do
+    case $(readlink /proc/$pid/cwd) in {toy.parent}/*) mine+=("$pid") ;; esac
+done
+if [ -n "$count" ]; then echo ${{#mine[@]}}; else printf '%s\\n' "${{mine[@]}}"; fi
+""")
+    (bin_dir / "pgrep").chmod(0o755)
+
+
+def slot_runner(toy: Path) -> Path:
+    """A runner whose worker is a process named claude, running in the worktree until the file
+    `released/<worktree>` exists; it writes `started <worktree>` and `ended <worktree>` to `workers`."""
+    claude_dir = toy.parent / "worker"
+    claude_dir.mkdir()
+    (toy.parent / "released").mkdir()
+    workers = toy.parent / "workers"
+    (claude_dir / "claude").write_text(f"""#!/bin/sh
+echo "started ${{PWD##*/}}" >> {workers}
+while [ ! -e "{toy.parent}/released/${{PWD##*/}}" ]; do sleep 0.1; done
+echo "ended ${{PWD##*/}}" >> {workers}
+""")
+    (claude_dir / "claude").chmod(0o755)
+    runner = toy.parent / "slot-runner"
+    runner.write_text(f"""#!/usr/bin/env bash
+run_id=$4
+state=$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)
+echo "slot runner: started" >> "$state/$run_id.log"
+{claude_dir / "claude"}
+printf 'attempts=1 exit=0 report=no session=stub\\n' > "$state/$run_id.status"
+""")
+    return runner
+
+
+def test_two_spawns_racing_for_one_slot_start_one_worker_and_the_other_waits(toy: Path, staged: Path) -> None:
+    """P1 and P3: a machine never runs more workers than its slot count, however many orchestrators
+    spawn onto it at once, and a spawn that names its host counts against that machine's slots too.
+    The one that finds no slot waits, and starts its worker once the slot frees."""
+    ticket(toy / "agent" / "tickets", "cool-preset", parent="lamp-ui", brief="One preset, cool.")
+    git(toy / "agent", "add", "-A")
+    git(toy / "agent", "commit", "-q", "-m", "a second preset")
+    readings(toy, "\t".join(["self", "this", "personal", "1", "USER", "-", "false", "up", "0", "0", "12", "0.5"]))
+    env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)), DISPATCH_SLOT_WAIT="1")
+    for slug in ("warm-preset", "cool-preset"):
+        subprocess.run([str(staged), "prompt", slug], cwd=toy, input=f"Work {slug}.\n", text=True, check=True, env=env)
+    # Staged once first, so the two race for the slot and not for the scratch dir's first set-up.
+    subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "probe"], cwd=toy, env=env,
+                   capture_output=True, timeout=60)
+    logs = {slug: (toy.parent / f"{slug}.err").open("w+") for slug in ("warm-preset", "cool-preset")}
+    spawns = {slug: subprocess.Popen([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", slug,
+                                      "sonnet"], cwd=toy, env=env, stdout=subprocess.DEVNULL, stderr=logs[slug])
+              for slug in logs}
+    workers = toy.parent / "workers"
+    try:
+        def until(what, said: str) -> None:
+            for _ in range(600):
+                if what():
+                    return
+                time.sleep(0.1)
+            raise AssertionError(said + "".join(f"\n{slug}: " + (toy.parent / f"{slug}.err").read_text()
+                                                for slug in logs))
+
+        until(lambda: any(spawn.poll() is not None for spawn in spawns.values()), "neither spawn returned")
+        (first,) = [slug for slug, spawn in spawns.items() if spawn.poll() is not None]
+        (second,) = [slug for slug in spawns if slug != first]
+        assert spawns[first].returncode == 0, (toy.parent / f"{first}.err").read_text()
+        # The waiting one has looked and found the machine full at least twice since.
+        until(lambda: (toy.parent / f"{second}.err").read_text().count("no slot free") >= 2,
+              f"{second} never said it waits")
+        assert spawns[second].poll() is None
+        assert workers.read_text().splitlines() == [f"started lamp-{first}"]
+
+        (toy.parent / "released" / f"lamp-{first}").touch()
+        assert spawns[second].wait(timeout=60) == 0, (toy.parent / f"{second}.err").read_text()
+        assert workers.read_text().splitlines()[:2] == [f"started lamp-{first}", f"ended lamp-{first}"]
+        assert workers.read_text().splitlines()[2:] == [f"started lamp-{second}"]
+    finally:
+        for slug in logs:
+            (toy.parent / "released" / f"lamp-{slug}").touch()
+        for spawn in spawns.values():
+            spawn.kill() if spawn.poll() is None else None
+
+
+def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(toy: Path, staged: Path) -> None:
+    """P2 through `dispatch ctl spawn`: of this machine and a busier one, the spawn starts here, and
+    says what it read of both."""
+    readings(toy, "\t".join(["agent@far", "far", "personal", "8", "agent", "gpu", "true", "up", "0", "0", "12", "11"]),
+             "\t".join(["self", "this", "personal", "4", "USER", "-", "false", "up", "0", "0", "12", "1.2"]))
+    env = environment(toy)
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+
+    spawned = subprocess.run([str(staged), "ctl", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+                             cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+
+    assert spawned.returncode == 0, spawned.stderr
+    assert "placing warm-preset on local" in spawned.stderr
+    table = spawned.stderr.split("from these readings:\n")[1]
+    assert re.search(r"agent@far +personal +up +0 of 8 slots on far +0\.92 per thread +has gpu", table), table
+    assert re.search(r"0 of 4 slots on this +0\.10 per thread", table), table
+    waited(toy)
+    assert run(toy, "ctl", "probe").stdout.startswith("local  dispatch-lamp-warm-preset exited")
+
+
+def test_a_spawn_no_host_could_ever_take_is_refused_at_once(toy: Path, staged: Path) -> None:
+    """A spawn needing a capability no machine's record names would wait for ever, so it is refused."""
+    readings(toy, "\t".join(["agent@far", "far", "personal", "8", "agent", "docker", "true", "up", "0", "0", "12", "1"]))
+    env = environment(toy)
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+
+    spawned = subprocess.run([str(staged), "ctl", "--needs", "gpu", "spawn", "warm-preset", "sonnet"],
+                             cwd=toy, capture_output=True, text=True, env=env, timeout=60)
+
+    assert spawned.returncode == 1
+    assert "none on account personal with a slot count and has: gpu" in spawned.stderr, spawned.stderr
+
+
+def test_a_workers_test_runs_start_a_fixed_number_of_processes(tmp_path: Path, runner: Path) -> None:
+    """D2: pytest-xdist's `-n auto` reads PYTEST_XDIST_AUTO_NUM_WORKERS, so every suite a worker runs
+    starts that many processes, whatever the machine's core count."""
+    seen = tmp_path / "xdist"
+
+    run_worker(runner, claude=f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$PYTEST_XDIST_AUTO_NUM_WORKERS" >> {seen}\n')
+
+    assert seen.read_text().splitlines() == ["4"]
 
 
 if __name__ == "__main__":
