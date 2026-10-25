@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro"]
 # ///
-"""Write the opening paragraph of a pull request, or of a merge commit's body, from a unified diff on stdin.
+"""Write one paragraph describing a set of changes, from a unified diff on stdin.
 
 A model reads the diff and nothing else, and says in one plain-English paragraph what behaviour changes and why it matters. It runs `claude -p` in an empty directory with no user settings, plugins, hooks, MCP servers, tools, slash commands or session file. Its prose rules are the rules tagged `artifact` or `both` in writing-for-humans/CATALOGUE.md, read from the plugin at run time.
 
@@ -30,7 +30,7 @@ CATALOGUE = Path(__file__).resolve().parents[1] / "writing-for-humans/CATALOGUE.
 RUN_LOG = Path(__file__).resolve().parents[1] / "run-log/run-log"  # every call goes through it, one line each in the run log
 TARGET, STATED, CAP = 60, 100, 150  # Opus overshoots the length it is asked for by about half, so the prompt asks for less than the cap the tool enforces
 
-INSTRUCTION = f"""You write the opening paragraph of a pull request description or of a merge commit's body, from the unified diff you are given and nothing else.
+INSTRUCTION = f"""You write one paragraph describing a set of changes, from the unified diff you are given and nothing else.
 
 The reader is a colleague who has not seen this codebase and was not there when the change was made. They read this paragraph and may stop. Tell them what changes in behaviour, for whoever uses or runs the thing, and why that matters. Give the why only as far as the diff shows it; do not invent motives. Leave out the tests and code comments that come with the change unless they are the change.
 
