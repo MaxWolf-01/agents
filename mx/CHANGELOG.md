@@ -1,3 +1,10 @@
+## 1.0.87
+
+- feat(workflow): merges into the trunk open with change-summary's paragraph, and /mx:changelog writes from it
+  Merges into the trunk open their body with a paragraph on what the whole branch changed, drafted by `change-summary` from the three-dot diff and corrected by the agent. `/mx:changelog` reads the trunk's first-parent history and writes each branch's entries from that paragraph, reading a branch's own commits only where the paragraph leaves a change unclear. `change-summary`'s prompt describes a set of changes rather than assuming a pull request.
+- Agent sessions from any device: session records outside every checkout, two main checkouts kept in step
+  The agents side of the dotfiles tree agent-sessions-from-any-device. A running session's page records live under the account (~/.claude*/session-pages/<id>/) and are committed into the agent repo as the session ends, so a checkout synced between two machines never carries another session's half-written files. `tracker sync` and the hooks `tracker hook` installs push the agent repo's main checkout after every commit, merging what the other machine pushed first; a tracker write during a stopped merge is staged and goes in with its resolution. The Stop hook finds the container hub on its unix socket.
+
 ## 1.0.86
 
 - docs(dispatch): each comment in the dispatch scripts says what its code does
