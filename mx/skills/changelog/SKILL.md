@@ -11,17 +11,13 @@ Update the repository changelog with changes between the last release and the cu
 
 If no baseline version is provided, use the most recent git tag. You can find it with `git describe --tags --abbrev=0`.
 
-### 2. Find the commits from git
-
-Use the following commands to gather commit information:
+### 2. Read what landed
 
 ```
-# Get the baseline version (if not provided)
-git describe --tags --abbrev=0
-
-# Get all commits since the baseline version
-git log <baseline-version>..HEAD
+git log --first-parent --format='%h %s%n%b' <baseline-version>..HEAD
 ```
+
+The first-parent line holds one commit per merged branch, plus any commit made straight on the trunk. A merge's body opens with a paragraph on what the whole branch changed: write that branch's entries from it, and read the branch's own commits (`git log <merge>^1..<merge>^2`) only where the paragraph leaves a notable change unclear.
 
 ### 3. Update the changelog
 
