@@ -15,8 +15,9 @@
 #     [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`).
 #                 With no --host, a spawn picks the least loaded host per
-#                 thread on --account (personal) with each --needs; spawn and
-#                 resume wait for a free slot; later commands find its host.
+#                 thread on --account (DISPATCH_ACCOUNT, else personal)
+#                 with each --needs; spawn and resume wait for a free slot;
+#                 later commands find it.
 #                 `probe` with no --host first retires the run of each
 #                 ticket done or out of the tracker whose work merged, then
 #                 asks every host this branch has a run on.
@@ -450,7 +451,7 @@ ctl() {
     case ${1:-} in -h|--help|"") exec bash "$skill/dispatch-ctl" --help ;; esac
     # Absolute before locate moves to the worktree root.
     [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
-    host= setup_cmd= account=personal needs=() asked=
+    host= setup_cmd= account=${DISPATCH_ACCOUNT:-personal} needs=() asked=${DISPATCH_ACCOUNT:+1}
     while :; do
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;

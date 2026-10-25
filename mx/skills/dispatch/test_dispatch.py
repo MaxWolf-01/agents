@@ -271,6 +271,8 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
     env.pop("DISPATCH_EFFORT", None)
+    # A project's .envrc sets it, and every placement check here but one reads the personal account.
+    "DISPATCH_ACCOUNT" in extra or env.pop("DISPATCH_ACCOUNT", None)
     env.pop("TMUX", None)  # names the server of the pane pytest runs in, which beats TMUX_TMPDIR
     return env
 
@@ -3241,6 +3243,21 @@ def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(
     assert all(word in far.split() for word in ("0", "8", "0.92", "gpu")), far
     waited(toy)
     assert run(toy, "ctl", "probe").stdout.startswith("local  dispatch-lamp-warm-preset exited")
+
+
+def test_a_placed_spawn_takes_its_account_from_the_environment(toy: Path, staged: Path) -> None:
+    """D4: with no --account, DISPATCH_ACCOUNT names the account, as a project's .envrc sets it. A
+    personal machine with less load is passed over for the one on that account."""
+    readings(toy, reading("agent@far", load=0.1), reading("self", account="helferline", load=1.2))
+    env = environment(toy, DISPATCH_ACCOUNT="helferline")
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+
+    spawned = subprocess.run([str(staged), "ctl", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+                             cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+
+    assert spawned.returncode == 0, spawned.stderr
+    assert "placing warm-preset on local" in spawned.stderr
+    waited(toy)
 
 
 def test_a_placed_spawn_its_best_machine_turns_away_goes_to_the_next(toy: Path, staged: Path) -> None:
