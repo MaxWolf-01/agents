@@ -31,7 +31,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "opus",
   "skillOverrides": {
     "loop": "off",
     "security-review": "user-invocable-only",
@@ -109,14 +109,17 @@
   "verbose": true,
   "preferredNotifChannel": "ghostty",
   "autoCompactEnabled": false,
+  "precomputeCompactionEnabled": false,
+  "idleCompaction": false,
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "autoScrollEnabled": true,
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
+  "remoteControlAtStartup": false,
+  "crossSessionInbound": "accept",
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "crossSessionInbound": "accept",
   "autoMode": {
     "allow": [
       "$defaults",
