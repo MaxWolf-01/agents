@@ -1,3 +1,8 @@
+## 1.0.88
+
+- feat(retro,triage): read max's TODO files as context
+  The retro and triage skills now read the TODO files at the root of each repo, where max jots quick thoughts and which are mostly untracked by git. A retro run copies every file named TODO or todos (any case, any extension) as it stands at collect time. Its stages treat these as context: they steer which code the lens pass reads and get quoted as his notes, but never count as his verdict on a finding. Triage uses them as context and never files tickets from them. It puts stale lines to the user as one call before cutting any, because a cut in an untracked file cannot be undone.
+
 ## 1.0.87
 
 - feat(workflow): merges into the trunk open with change-summary's paragraph, and /mx:changelog writes from it
