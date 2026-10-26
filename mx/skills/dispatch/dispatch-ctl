@@ -2,15 +2,15 @@
 # Runs on a worker host, through `dispatch ctl`, from the scratch dir of <base>,
 # the branch ticket branches cut from. A ticket's worktree holds ticket/<slug>
 # of the code repo, of the agent repo at `agent/` inside it, and of each listed
-# repo its spawn names. It reads no ticket file and never commits, merges or pushes.
+# repo its spawn names. It reads no ticket file, and never commits, merges or pushes.
 #
 # spawn <slug> <model> [session-id] [--effort <level>] [--cpu-weight <n>]
 #       [--repo <name> <base> <place> <git-dir>]...
-#                 cuts the ticket's branches and worktrees where missing, sets
-#                 a new worktree up, updates claude, and starts the worker in
-#                 the tmux session dispatch-<repo>-<slug> on the message
-#                 `dispatch prompt` wrote. --effort overrides DISPATCH_EFFORT;
-#                 --cpu-weight, 100 unless set, is the worker's share of a
+#                 cuts the ticket's missing branches and worktrees, sets a new
+#                 worktree up, updates claude, and starts the worker in the
+#                 tmux session dispatch-<repo>-<slug> on `dispatch prompt`'s
+#                 message. --effort overrides DISPATCH_EFFORT;
+#                 --cpu-weight, 100 to 10000, is the worker's share of a
 #                 busy machine. A --repo sits at <place> inside the worktree,
 #                 or beside it as <name>-<slug> when <place> is empty. Exit 1:
 #                 no mx plugin here, the setup failed (its tail printed), the
@@ -22,12 +22,12 @@
 #                 worker runs on.
 # stop <slug>     ends the run, resumably: worktrees and branches stay.
 # resume <slug> <model> [--effort <level>] [--cpu-weight <n>]
-#                 the run's conversation again, on `dispatch prompt`'s
-#                 guidance; options and exit 3 as at a spawn. Exit 1: still
-#                 running, or gone with no session id.
+#                 the run's conversation on `dispatch prompt`'s guidance;
+#                 options and exit 3 as at a spawn. Exit 1: still running,
+#                 or gone with no session id.
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the runner's status line, or `gone`: the
-#                 runner died with no status line (a killed pane, a reboot).
+#                 runner died without one (a killed pane, a reboot).
 #                 report=yes: this round committed a new report.
 # log <slug> [lines]
 #                 the status line and the worklog's last lines, 20 by default.
@@ -37,17 +37,18 @@
 #                 touched: the worktree holds a repo no spawn cut or an
 #                 uncommitted change; --force deletes them.
 # init, bare      staging, which `dispatch` runs.
-# A host needs git, tmux and jq; init also curl and claude, logged in for spawn.
+# A host needs git, tmux and jq; init also curl, and spawn a logged-in claude.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto;
 #                             bypassPermissions where ~/HOST.md is isolated)
 #   DISPATCH_EFFORT           the worker's effort (default high)
-#   DISPATCH_PLUGIN_DIR       the mx install a worker loads, in place of the
+#   DISPATCH_PLUGIN_DIR       the mx install a worker loads, else the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
-#   DISPATCH_RUNNER           the pane script, run-worker.sh unless set,
-#                             whose header is a replacement's contract
+#   DISPATCH_RUNNER           the pane script, the one place a harness is named:
+#                             run-worker.sh unless set, whose header is the
+#                             contract a replacement owes
 set -u
 
 # State is plain text in this scratch dir: config (init), setup (--setup-cmd), stamp (the staged
@@ -283,8 +284,8 @@ set_up() {
 }
 
 # Splits --effort, --cpu-weight and --repo groups (into `repos_given`) from the `positional`
-# arguments. An empty
-# <place> puts the repo beside the worktree; an empty <git-dir> is its `bare` repo.
+# arguments. An empty <place> puts the repo beside the worktree; an empty <git-dir> is its `bare`
+# repo.
 take_options() {
     positional=() repos_given=()
     while [ $# -gt 0 ]; do
@@ -292,8 +293,8 @@ take_options() {
             --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
             --cpu-weight)
                 cpu_weight=${2:-}
-                [[ $cpu_weight =~ ^[1-9][0-9]*$ ]] && [ "$cpu_weight" -le 10000 ] ||
-                    die "--cpu-weight takes a weight from 1 to 10000"
+                [[ $cpu_weight =~ ^[1-9][0-9]*$ ]] && [ "$cpu_weight" -ge 100 ] && [ "$cpu_weight" -le 10000 ] ||
+                    die "--cpu-weight takes a weight from 100, an equal share, to 10000"
                 shift 2 ;;
             --repo)   [ $# -ge 5 ] || die "--repo takes <name> <base> <place> <git-dir>"
                       repos_given+=("$2" "$3" "$4" "$5"); shift 5 ;;

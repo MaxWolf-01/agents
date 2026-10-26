@@ -456,7 +456,7 @@ ctl() {
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;
             --account)   account=${2:-} asked=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
-            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") asked=1; shift 2 ;;
+            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=("$2") asked=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
             *) break ;;
         esac
@@ -504,9 +504,7 @@ ctl() {
     if [ -n "$asked" ] && [ "$sub" = spawn ] && [ -z "$given" ] && [ -z "$placing" ]; then
         on=$host
         [ "$on" != local ] || on=$self
-        worker-hosts --place "$account" "${needs[@]}" --on "$on" > /dev/null 2>&1
-        [ $? -ne 1 ] ||
-            die "$name's earlier run is on $host, where no spawn on account $account${needs:+ with ${needs[*]}} may go; \`dispatch ctl cleanup $name\` first to place it afresh"
+        place_spawn "$name's earlier run is on $host, where no spawn on account $account${needs[0]:+ needing ${needs[*]}} may go; \`dispatch ctl cleanup $name\` first to place it afresh" --on "$on" > /dev/null
     fi
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
@@ -525,15 +523,7 @@ ctl() {
     # the checks, which wait a second, rather than a dispatcher's setting.
     while :; do
         candidates=("$host")
-        if [ -n "$placing" ]; then
-            placed=$(worker-hosts --place "$account" "${needs[@]}")
-            case $? in
-                0) mapfile -t candidates < <(cut -f1 <<< "$placed") ;;
-                3) candidates=() ;;
-                1) die "no worker host could ever take $name; \`worker-hosts --place\` says why above" ;;
-                *) die "\`worker-hosts --place\` failed, so no host was chosen for $name" ;;
-            esac
-        fi
+        [ -z "$placing" ] || place_spawn "no worker host could ever take $name; \`worker-hosts --place\` says why above"
         for candidate in "${candidates[@]}"; do
             [ "$candidate" != "$self" ] || candidate=local
             [ -z "$placing" ] || echo "dispatch: placing $name on $candidate" >&2
@@ -550,11 +540,26 @@ ctl() {
     done
 }
 
+# Sets `candidates` to the user@hosts `worker-hosts --place` names for this spawn, best first, of
+# the one host --on names where given; none while each is full or down. Where none ever could take
+# it, the spawn ends with <refusal>.
+place_spawn() { # <refusal> [--on <user@host>]
+    local refusal=$1 placed need args=()
+    shift
+    for need in "${needs[@]}"; do args+=(--needs "$need"); done
+    placed=$(worker-hosts --place "$account" "${args[@]}" "$@")
+    case $? in
+        0) mapfile -t candidates < <(cut -f1 <<< "$placed") ;;
+        3) candidates=() ;;
+        1) die "$refusal" ;;
+        *) die "\`worker-hosts --place\` failed, so no host was chosen for $name" ;;
+    esac
+}
+
 # The rest of ctl for one host: the command run on it, through `dispatch-ctl`. Exit 3 is its
 # machine with every slot held.
 ctl_on() { # <host> <dispatch-ctl args...>
     host=$1; shift
-    local mode=${DISPATCH_PERMISSION_MODE:-}
     scratch=$(scratch_dir "$host")
     [ -z "$stages" ] || [ "$sub" = resume ] || stage "$host" "$setup_cmd"
     # A spawn cuts from this branch's current tip, pushed to a remote host.
@@ -571,7 +576,7 @@ ctl_on() { # <host> <dispatch-ctl args...>
     fi
     # Only what is set here travels; unset, the host's default holds.
     env=()
-    [ -n "$mode" ] && env+=("DISPATCH_PERMISSION_MODE=$mode")
+    [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
     [ -n "${DISPATCH_EFFORT:-}" ] && env+=("DISPATCH_EFFORT=$DISPATCH_EFFORT")
     # Copied as runner-<slug>, so it can replace no scratch-dir file (the manifest, say) and no
     # other ticket's runner; dispatch-ctl gets the name and finds it beside itself.
