@@ -113,7 +113,7 @@ Makefiles carry the standard commands in max's projects: read the Makefile befor
 - Type check with `make check` where the Makefile has it, else `uvx ty@latest check .`.
 - Python CLIs use tyro, never argparse/click/fire, and **`/mx:tyro-cli` is loaded before writing one** -- it carries gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong. Reach for a CLI for anything you might run more than once or want to ablate flags on: proper infrastructure for investigations, visualizations and experiments saves time and attention.
 
-- !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
+- Read any website that isn't paywalled or gated as clean markdown with `curl defuddle.md/<url>`.
 - Prefer it over raw curl or the webfetch tool for anything you read yourself: webfetch summarizes the page instead of giving it to you, which suits a very long noisy page and almost nothing else.
 
 Chrome extension (live browser driving) is off by default, for context cost, and cannot be turned on mid-session: when a task would genuinely benefit from it (interaction-heavy UI testing, or driving a running app to debug it), say so and ask max to resume the session with `--chrome`. For static renders, stick with the headless-chromium screenshot loop.

@@ -77,7 +77,7 @@ The Makefile carries the project's standard commands: read it before running tes
 
 `uv` is the only tool you need for a Python project, and dependencies change only through `uv add` / `uv remove`. Python CLIs use tyro, and `/mx:tyro-cli` is loaded before writing one.
 
-- !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
+- Read any website that isn't paywalled or gated as clean markdown with `curl defuddle.md/<url>`.
 - Prefer it over raw curl or the webfetch tool for anything you read yourself: webfetch summarizes the page instead of giving it to you, which suits a very long noisy page and almost nothing else.
 
 </tools>
