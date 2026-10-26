@@ -67,7 +67,8 @@ export function sessionTools(config: SessionConfig, work: Background): ToolDefin
 		defineTool({
 			name: "tell_session",
 			label: "Tell session",
-			description: "Send a session a message. It arrives as a cross-session message from the hypervisor.",
+			description:
+				"Send a running session a message: an orchestrator you started, or any session look lists. It arrives as a cross-session message from the hypervisor, with a line telling it how to report back to you with hv tell. Returns once the message is delivered, not when the session answers: its report waits in your inbox, and a ping from it starts a turn. Fails when the session has no inbox socket. To start work that has no session yet, use start_session or delegate.",
 			parameters: Type.Object({ session, message: Type.String({ description: "The message, as the session should read it." }) }),
 			execute: async (_id, params) => answer(await tell(config, params)),
 		}),
