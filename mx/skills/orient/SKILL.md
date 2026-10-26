@@ -95,6 +95,6 @@ A **phase** is a chunk of work inside a session (the grilling, the implementatio
 - **`/mx:codex`**: a second opinion from another model family.
 - **`/mx:review-pr`**: a review of a PR on GitHub, where `/mx:code-review` takes a local branch.
 - **`/mx:recap`**: where the work in flight stands, when its thread is lost.
-- **`/mx:wrap`**: when the user asks whether the session is done and can be closed.
+- **`/mx:wrap`**: whether the session is done and can be closed. It is typed by the user, so a session that hears them ask names it to them.
 - **`/mx:writing-for-agents`**: the rules for what an agent reads.
 - **`/mx:writing-for-humans`**: the rules for what a person reads cold, and the cheap standalone de-slop pass on a file (`/mx:code-review` carries its rules on every diff).
