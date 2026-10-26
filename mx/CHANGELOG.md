@@ -1,3 +1,10 @@
+## 1.0.90
+
+- The effort-forwarding check can fail again now that workers default to medium
+  The remote-host check for DISPATCH_EFFORT forwarding sent medium, which became the worker default in b21459f1, so it could no longer tell a forwarded level from the host's fallback; it sends low now.
+- Prompt audit against Opus 5.5: plain-volume instructions, workers at medium effort
+  Workers that dispatch spawns now run at medium effort by default instead of high, steered by --effort alone (low for trivial tickets, high for hard reasoning or extra rigour), with no Sonnet tier; the models index in CLAUDE.md says the same. CLAUDE.md's "How you work" block, the amend rule and the defuddle line say what they said at normal volume, once, and "bd" asks for a re-derivation via /mx:sharpen instead of "think harder". Orient now says /mx:wrap is typed by the user, writing-for-agents fixes a weak word by naming what it must cover rather than by a louder one, the hypervisor's prompt stops restating its tool list, tell_session describes what happens after delivery, and the board briefing loses its 150-word cap.
+
 ## 1.0.89
 
 - fix(tests): dispatch's tmux checks pass from a shell started before the last Home Manager switch
