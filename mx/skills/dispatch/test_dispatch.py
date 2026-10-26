@@ -47,9 +47,13 @@ DISPATCH = SKILL / "dispatch"
 # it: a hook or a setting of whoever runs the checks would write into the toy's history, which the board reads.
 HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "false"}
-# Read before any check moves HOME: uv keeps its cache under HOME unless told otherwise, and a
-# fresh cache puts a full dependency install in front of every tracker and board a check runs.
+# Read before any check moves HOME: uv keeps its cache and its Pythons under HOME unless told
+# otherwise. A fresh cache puts a full dependency install in front of every tracker and board a
+# check runs; and where uv may use only its own Pythons (UV_PYTHON_PREFERENCE=only-managed), each
+# home gets a Python of its own, and checks running at once rebuild the one environment the cache
+# keeps for the tracker under each other's feet.
 UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
+UV_PYTHONS = subprocess.run(["uv", "python", "dir"], capture_output=True, text=True, check=True).stdout.strip()
 
 # A worker as dispatch-ctl leaves the seam for one: argv and the log-then-status contract are the
 # real runner's, and it keeps the prompt it was sent and the context file its worker would read, so
@@ -281,6 +285,7 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     plugin = mx(toy.parent)
     tmux_dir(toy).mkdir(exist_ok=True)
     env = {**HERMETIC_GIT, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE,
+           "UV_PYTHON_INSTALL_DIR": UV_PYTHONS,
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}",
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
