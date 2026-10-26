@@ -13,6 +13,8 @@
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
 #   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
+#   DISPATCH_CPU_WEIGHT       the CPUWeight of each attempt's scope; 100, every worker's
+#                             equal share, unless set
 #   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
 #                             `dispatch-ctl` resolves it on the host
 #   DISPATCH_CONTEXT          the file the worker reads its ticket's context and this round's
@@ -33,6 +35,7 @@ run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 effort=${DISPATCH_EFFORT:-high}
+cpu_weight=${DISPATCH_CPU_WEIGHT:-100}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
@@ -79,10 +82,6 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
-# pytest-xdist's `-n auto` starts this many test processes rather than one per core: a machine holds
-# several workers, each of whose suites, and the browsers its full-path checks start, would
-# otherwise claim the whole of it.
-export PYTEST_XDIST_AUTO_NUM_WORKERS=4
 # The run every browser the worker's checks launch is tagged with, so `browsers kill` takes this
 # run's and leaves another run's on the same host.
 export MX_RUN=$run_id
@@ -146,10 +145,16 @@ $asking_rule"
 
 # Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the
 # attempt ends: whatever the worker started and left running (a load generator whose shell was
-# killed before its `kill` line, a process that detached itself) goes with it. A host with no user
-# systemd manager runs the attempt as it is, and the worklog says those processes outlive it.
+# killed before its `kill` line, a process that detached itself) goes with it. The scope's
+# CPUWeight shares the machine between workers only while they compete for it: a worker alone uses
+# every core, and under contention each gets its weight's share however many processes it starts.
+# A host with no user systemd manager runs the attempt as it is, and the worklog says those
+# processes outlive it.
 if systemd-run --user --scope --quiet --collect -- true 2> /dev/null; then
-    scoped() { local unit=$1; shift; systemd-run --user --scope --quiet --collect --unit="$unit" -- "$@"; }
+    scoped() {
+        local unit=$1; shift
+        systemd-run --user --scope --quiet --collect --unit="$unit" --property=CPUWeight="$cpu_weight" -- "$@"
+    }
     unscope() { systemctl --user stop "$1.scope" 2> /dev/null; }
 else
     scoped() { shift; "$@"; }
