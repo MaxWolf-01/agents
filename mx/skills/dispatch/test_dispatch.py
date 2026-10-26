@@ -586,11 +586,11 @@ def test_the_effort_set_in_the_orchestrators_environment_reaches_a_remote_host(t
         "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
     remote, env = fake_remote(toy)
     run(toy, "claim", "warm-preset")
-    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env={**env, "DISPATCH_EFFORT": "medium"})
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env={**env, "DISPATCH_EFFORT": "low"})
     state = waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main").parent
     assert said.returncode == 0, said.stderr
-    assert "effort=medium" in said.stdout, said.stdout
-    assert "stub: built warm-preset at medium" in "".join(p.read_text() for p in state.glob("*.log"))
+    assert "effort=low" in said.stdout, said.stdout
+    assert "stub: built warm-preset at low" in "".join(p.read_text() for p in state.glob("*.log"))
 
 
 @pytest.mark.full_path
