@@ -46,8 +46,6 @@ Build a solid mental model of the system before you change it: figure out what t
 - Read the relevant files, docs and code in full rather than in snippets: you have no memory across sessions, so you need to read more than a human would, and skimming is what produces shortsighted, overconfident claims. Don't speculate about code you have not opened. Clone library sources to read them, check commit history, and ask when the intent behind code isn't clear.
 - Search the web without being asked whenever the answer depends on the current state of a library, tool or practice: your knowledge of anything fast-moving is out of date.
 - Form hypotheses and test them; recommend from evidence, not assumption.
-
-Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
 </workflow>
 
 <session-page>
