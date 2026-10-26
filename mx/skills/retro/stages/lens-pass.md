@@ -15,7 +15,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on; `in-flight.md` and `in-flight/`, its tickets in flight, those max ruled on that are not done. Each list says which of the agent repo's tickets it holds.
 - `follow-up.md`: what the period did to each finding and candidate the living report already carries; `previous/`, the earlier reports, `current.md` with max's verdicts.
 - `notes/`: the period's friction, read from max's sessions, each of his corrections with its cause; `sessions/` holds the digests they quote. In a workflow retro, also `deep/`.
-- `todo/<repo>/`: max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), context and never a ruling or an instruction, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date.
+- `todo/<repo>/`: max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), read as context, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date.
 
 The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
