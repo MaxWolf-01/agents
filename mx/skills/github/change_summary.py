@@ -81,7 +81,9 @@ def ask(model: str, effort: str, system: str, prompt: str) -> str:
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
                 input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
-                env={**os.environ, "CLAUDECODE": ""},
+                # FORCE_PROMPT_CACHING_5M (undocumented in Claude Code 2.1.309) writes the cache at the
+                # 5-minute rate, 1.25x input instead of the 1-hour 2x; one call, so nothing reads it later.
+                env={**os.environ, "CLAUDECODE": "", "FORCE_PROMPT_CACHING_5M": "1"},
             )
         except (OSError, subprocess.TimeoutExpired) as e:
             raise Failure(f"claude did not run: {e}") from e

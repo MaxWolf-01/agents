@@ -36,6 +36,7 @@ FAKE_CLAUDE = r"""#!/usr/bin/env bash
 prompt=$(cat)
 report=$(printf '%s' "$prompt" | grep -o '/[^ `]*/mx/reviews/[^ `]*\.md' | grep -v '/prompts/' | head -1)
 printf '%s\n' "$@" > "$FAKE_ARGV"
+printf '%s\n' "${FORCE_PROMPT_CACHING_5M:-}" > "$FAKE_ARGV.cache"
 [ -z "${FAKE_STARTED:-}" ] || echo > "$FAKE_STARTED"
 sleep "${FAKE_REVIEW_SECS:-0}"
 if [ -n "${FAKE_DIES:-}" ] && [[ $report == */$FAKE_DIES.md ]]; then
@@ -263,6 +264,7 @@ def test_a_reviewer_starts_from_none_of_the_callers_setup(repo):
 def test_every_reviewer_runs_opus_at_medium_effort_unless_told_otherwise(repo):
     assert run(repo, "--light").returncode == 0
     assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "medium")
+    assert Path(f"{argv_file(repo)}.cache").read_text() == "1\n", "a reviewer writes its cache at the 5-minute rate"
     # `run-log`: one line per axis, naming the axis and the spec's ticket where one was given
     (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["axis"], logged["ticket"], logged["model"], logged["effort"]) == \

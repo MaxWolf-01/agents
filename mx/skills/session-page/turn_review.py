@@ -16,6 +16,7 @@ reviewed; the hooks log their own decisions there too.
 
 import contextlib
 import json
+import os
 import re
 import subprocess
 import time
@@ -151,6 +152,9 @@ def review(system: str, prompt: str) -> list[dict]:
          "claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config",
          "--model", MODEL, "--effort", EFFORT, "--system-prompt", system, "--json-schema", json.dumps(SCHEMA)],
         input=prompt, capture_output=True, text=True, timeout=WRAPPER_TIMEOUT_S,
+        # FORCE_PROMPT_CACHING_5M (undocumented in Claude Code 2.1.309) writes the cache at the
+        # 5-minute rate, 1.25x input instead of the 1-hour 2x; one call, so nothing reads it later.
+        env={**os.environ, "FORCE_PROMPT_CACHING_5M": "1"},
     )
     if proc.returncode != 0:
         ended = f"ran past {REVIEWER_TIMEOUT_S}s" if proc.returncode == 124 else f"exited {proc.returncode}"

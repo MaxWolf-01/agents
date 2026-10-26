@@ -14,8 +14,8 @@ Everything you read and write is in the run directory, `{{run}}`, your working d
 
 ## Steps
 
-1. Read `batches.json`. Spawn one subagent per batch and one for `git/`, in parallel, each given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
-2. When they return, check that every batch and `git/` has its notes file and that each holds a section per digest. Spawn a fresh subagent for any that is missing or cut short.
+1. Read `batches.json`. Spawn one subagent per batch and one for `git/`, in parallel, each at medium effort and given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
+2. When they return, check that every batch and `git/` has its notes file and that each holds a section per digest. Spawn a fresh one, at the same effort, for any that is missing or cut short.
 
 The stage is done when `notes/` holds a file for every batch in `batches.json` and one for `git/`.
 
