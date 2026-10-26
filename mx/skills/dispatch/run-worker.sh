@@ -12,7 +12,7 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
-#   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
+#   DISPATCH_EFFORT           claude --effort for every attempt; `medium` unless set
 #   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
 #                             `dispatch-ctl` resolves it on the host
 #   DISPATCH_CONTEXT          the file the worker reads its ticket's context and this round's
@@ -32,7 +32,7 @@ model=$3
 run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
-effort=${DISPATCH_EFFORT:-high}
+effort=${DISPATCH_EFFORT:-medium}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md

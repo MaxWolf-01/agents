@@ -40,7 +40,7 @@
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto)
-#   DISPATCH_EFFORT           the worker's effort (default high)
+#   DISPATCH_EFFORT           the worker's effort (default medium)
 #   DISPATCH_PLUGIN_DIR       the mx install a worker loads, in place of the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
@@ -57,7 +57,7 @@ manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
 case $runner in /*) ;; *) runner=$here/$runner ;; esac
 mode=${DISPATCH_PERMISSION_MODE:-auto}
-effort=${DISPATCH_EFFORT:-high}
+effort=${DISPATCH_EFFORT:-medium}
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
 # Echoes a command that changes something before running it, so a step can be redone by hand.
