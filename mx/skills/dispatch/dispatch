@@ -451,14 +451,12 @@ ctl() {
     case ${1:-} in -h|--help|"") exec bash "$skill/dispatch-ctl" --help ;; esac
     # Absolute before locate moves to the worktree root.
     [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
-    # `constrained`: the spawn names an account or a need, by a flag or by the project's
-    # DISPATCH_ACCOUNT; `flagged`: by a flag.
-    host= setup_cmd= account=${DISPATCH_ACCOUNT:-personal} needs=() constrained=${DISPATCH_ACCOUNT:+1} flagged=
+    host= setup_cmd= account=${DISPATCH_ACCOUNT:-personal} needs=() flagged=
     while :; do
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;
-            --account)   account=${2:-} constrained=1 flagged=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
-            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") constrained=1 flagged=1; shift 2 ;;
+            --account)   account=${2:-} flagged=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
+            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
             *) break ;;
         esac
@@ -488,9 +486,6 @@ ctl() {
     # Before anything is staged or recorded, so a mistyped path leaves the host as it was.
     [ -z "$carries" ] || [ -z "${DISPATCH_RUNNER:-}" ] || [ -f "$DISPATCH_RUNNER" ] ||
         die "DISPATCH_RUNNER=$DISPATCH_RUNNER is not a file"
-    [ -z "$flagged" ] || { [ "$sub" = spawn ] && [ -z "$host" ]; } ||
-        die "--account and --needs place a spawn, which --host does instead: pass one or the other, before \`spawn\`"
-    given=$host
     [ -n "$host" ] || [ -z "$name" ] || host=$(host_of "$name")
     placing=
     if [ -z "$host" ]; then
@@ -500,16 +495,11 @@ ctl() {
             *)          die "no run of ${name:-$sub} recorded here; --host names the host to run this on" ;;
         esac
     fi
+    [ -z "$flagged" ] || [ -n "$placing" ] ||
+        die "--account and --needs place a spawn, and ${name:-$sub} goes to $host: pass them to a spawn with no run recorded and no --host"
+    [ -z "$placing" ] || command -v worker-hosts > /dev/null 2>&1 ||
+        die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
     self=$(id -un)@$(uname -n)
-    if [ -n "$placing" ]; then
-        command -v worker-hosts > /dev/null 2>&1 ||
-            die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
-        # An isolated host gives its worker bypassPermissions itself; one placed on a host that
-        # isolates nothing must never carry it there.
-        [ "${DISPATCH_PERMISSION_MODE:-}" != bypassPermissions ] ||
-            die "a placed spawn takes its permission mode from the host it lands on; unset DISPATCH_PERMISSION_MODE, or name the host with --host"
-    fi
-    [ -z "$constrained" ] || [ "$sub" != spawn ] || [ -n "$given" ] || [ -n "$placing" ] || earlier_host_fits
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
     if [ "$sub" = resume ]; then
@@ -554,24 +544,6 @@ place_spawn() {
         3) candidates=() ;;
         1) die "no worker host could ever take $name; \`worker-hosts --place\` says why above" ;;
         *) die "\`worker-hosts --place\` failed, so no host was chosen for $name" ;;
-    esac
-}
-
-# A run recorded earlier keeps its host, which holds its worktree. Where no spawn on this account
-# with these needs may go there, the spawn is refused rather than sent; where the records cannot
-# answer for that host, the run goes back to it unchecked, as with no account asked.
-earlier_host_fits() {
-    local on=$host
-    [ "$on" != local ] || on=$self
-    if ! command -v worker-hosts > /dev/null 2>&1; then
-        echo "dispatch: no \`worker-hosts\` here to check $host against this spawn, so $name goes back there unchecked" >&2
-        return 0
-    fi
-    worker-hosts --place "$account" "${needs[@]}" --on "$on" > /dev/null
-    case $? in
-        0|3) ;;
-        1) die "$name's earlier run is on $host, where no spawn on account $account${needs[1]:+ with ${needs[*]}} may go: \`dispatch ctl --host $host spawn $name <model>\` keeps it there, and \`dispatch ctl cleanup $name\` first places it afresh" ;;
-        *) echo "dispatch: \`worker-hosts\` could not check $host against this spawn, so $name goes back there unchecked" >&2 ;;
     esac
 }
 
