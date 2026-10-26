@@ -29,7 +29,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -126,8 +126,21 @@ if command -v zsh > /dev/null && ! cmp -s <(words bash -c) <(words zsh -f -c); t
 fi
 cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec bash -c "$*"
 """
-HOST_SLOTS = r"""#!/bin/sh
+FAKE_SCP = """#!/usr/bin/env bash
+files=(); for a; do [[ $a == -* ]] || files+=("$a"); done
+dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
+cp "${files[@]:0:${#files[@]}-1}" "$dest"
+"""
+
+# `host-slots` as a spawn meets it: every slot held while the file `slots-full` is in the home, a
+# failure while `slots-broken` is, and otherwise the slot is taken or handed. Each call goes to
+# `host-slots.calls`, saying whether the pid it names carries the word it gives.
+FAKE_HOST_SLOTS = r"""#!/bin/sh
 case $1 in take) pid=$2 word=$3 ;; hand) pid=$3 word=$4 ;; *) echo "0 1"; exit 0 ;; esac
+if [ "$1" = take ] && [ -e "$HOME/slots-broken" ]; then
+    echo "host-slots: cannot open /run/host-slots/lock" >&2
+    exit 2
+fi
 if [ "$1" = take ] && [ -e "$HOME/slots-full" ]; then
     echo "take full" >> "$HOME/host-slots.calls"
     echo "host-slots: no slot free on this machine: 1 of 1 held" >&2
@@ -135,11 +148,6 @@ if [ "$1" = take ] && [ -e "$HOME/slots-full" ]; then
 fi
 tr '\0' ' ' < "/proc/$pid/cmdline" | grep -qF -- "$word" && how=carried || how="lacks $word"
 echo "$1 $how" >> "$HOME/host-slots.calls"
-"""
-FAKE_SCP = """#!/usr/bin/env bash
-files=(); for a; do [[ $a == -* ]] || files+=("$a"); done
-dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
-cp "${files[@]:0:${#files[@]}-1}" "$dest"
 """
 
 # The host's claude as a spawn meets it: it records what it was asked, starts on 2.1.243 and its
@@ -279,7 +287,7 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     # The machine's slots are the check's own, never this machine's: a take is refused while
     # $HOME/slots-full exists, and each call is kept in $HOME/host-slots.calls with whether the
     # process it names carries its word, which is how the real one tells a live holder.
-    (bin_dir / "host-slots").write_text(HOST_SLOTS)
+    (bin_dir / "host-slots").write_text(FAKE_HOST_SLOTS)
     (bin_dir / "host-slots").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     plugin = mx(toy.parent)
@@ -294,8 +302,9 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
     env.pop("DISPATCH_EFFORT", None)
-    # A project's .envrc sets it, and every placement check here but one reads the personal account.
-    "DISPATCH_ACCOUNT" in extra or env.pop("DISPATCH_ACCOUNT", None)
+    # The dispatcher's own .envrc may set it; a check that wants an account passes one.
+    if "DISPATCH_ACCOUNT" not in extra:
+        env.pop("DISPATCH_ACCOUNT", None)
     env.pop("TMUX", None)  # names the server of the pane pytest runs in, which beats TMUX_TMPDIR
     return env
 
@@ -426,12 +435,16 @@ def skill_copy(toy: Path) -> Path:
     return skill / "dispatch" / "dispatch"
 
 
-def spawn(toy: Path, staged: Path, slug: str, message: str, host: str = "local",
-          env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess:
+def spawn(toy: Path, staged: Path, slug: str, message: str, host: str | None = "local",
+          env: dict[str, str] | None = None, cwd: Path | None = None, ctl_args: Sequence[str] = (),
+          spawn_args: Sequence[str] = (), sub: str = "spawn") -> subprocess.CompletedProcess:
+    """`dispatch ctl ... spawn` on `message`; with no `host` the spawn is placed. `ctl_args` go
+    before the subcommand, `spawn_args` after its model."""
     env = env or environment(toy)
     subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=env)
-    return subprocess.run([str(staged), "ctl", "--host", host, "--setup-cmd", "true", "spawn", slug, "sonnet"],
-                          cwd=cwd or toy, capture_output=True, text=True, env=env, timeout=180)
+    where = ["--host", host] if host else []
+    return subprocess.run([str(staged), "ctl", *where, *ctl_args, "--setup-cmd", "true", sub, slug, "sonnet",
+                           *spawn_args], cwd=cwd or toy, capture_output=True, text=True, env=env, timeout=180)
 
 
 def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
@@ -3156,7 +3169,7 @@ printf 'attempts=1 exit=0 report=no session=stub\\n' > "$state/$run_id.status"
     return runner
 
 
-def until(what, said) -> None:
+def until(what: Callable[[], bool], said: Callable[[], str]) -> None:
     """Returns once `what()` holds; fails with `said()` after a minute."""
     for _ in range(600):
         if what():
@@ -3165,44 +3178,99 @@ def until(what, said) -> None:
     raise AssertionError(said())
 
 
+def in_background(toy: Path, staged: Path, slug: str, message: str, env: dict[str, str], *args: str,
+                  ) -> tuple[subprocess.Popen, Path]:
+    """`dispatch ctl <args>` started on `message` in a session of its own, so `stopped` ends its
+    `sleep` too, and the file its stderr goes to."""
+    subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=env)
+    err = toy.parent / "ctl.err"
+    started = subprocess.Popen([str(staged), "ctl", *args], cwd=toy, env=env, stdout=subprocess.DEVNULL,
+                               stderr=err.open("w"), start_new_session=True)
+    return started, err
+
+
+def stopped(started: subprocess.Popen) -> None:
+    if started.poll() is None:
+        os.killpg(started.pid, 9)
+        started.wait(timeout=30)
+
+
+def slots_said(toy: Path) -> list[str]:
+    return (toy.parent / "home" / "host-slots.calls").read_text().splitlines()
+
+
+@pytest.mark.full_path
 def test_a_spawn_on_a_full_machine_waits_and_its_runner_holds_the_slot_it_takes(toy: Path, staged: Path) -> None:
-    """P1 and P3 at the host: a spawn that names its host is held to that machine's slots too. While
-    `host-slots` says every slot is held the spawn waits, and once one frees it takes it for its own
-    process and hands it to the worker's runner, by a word on each one's command line, so the slot
-    stays held after the spawn returns, for as long as the run lasts."""
+    """dispatch-places-workers#P1 and #P3 at the host: a spawn that names its host is held to that
+    machine's slots too. While `host-slots` says every slot is held the spawn waits, and once one
+    frees it takes it for its own process and hands it to the worker's runner, by a word on each
+    one's command line, so the slot stays held after the spawn returns, for as long as the run lasts."""
     full = toy.parent / "home" / "slots-full"
     full.parent.mkdir(exist_ok=True)
     full.touch()
     env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)), DISPATCH_SLOT_WAIT="1")
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
-    err = toy.parent / "spawn.err"
-    spawning = subprocess.Popen([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset",
-                                 "sonnet"], cwd=toy, env=env, stdout=subprocess.DEVNULL, stderr=err.open("w"))
+    spawning, err = in_background(toy, staged, "warm-preset", "Work it.\n", env,
+                                  "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet")
     try:
-        until(lambda: err.read_text().count("no slot free") >= 2, err.read_text)
+        until(lambda: err.read_text().count("no slot free on the machine of local") >= 2, err.read_text)
         assert spawning.poll() is None, err.read_text()
         assert not (toy.parent / "workers").exists()
 
         full.unlink()
         assert spawning.wait(timeout=60) == 0, err.read_text()
         until(lambda: (toy.parent / "workers").exists(), err.read_text)
-        calls = (toy.parent / "home" / "host-slots.calls").read_text().splitlines()
-        assert calls[-2:] == ["take carried", "hand carried"], calls
-        assert calls[:-2] and set(calls[:-2]) == {"take full"}, calls
+        assert slots_said(toy)[-2:] == ["take carried", "hand carried"], slots_said(toy)
+        assert slots_said(toy)[:-2] and set(slots_said(toy)[:-2]) == {"take full"}, slots_said(toy)
     finally:
         (toy.parent / "released" / "lamp-warm-preset").touch()
-        spawning.kill()
+        stopped(spawning)
 
 
+@pytest.mark.full_path
+def test_a_resume_on_a_full_machine_waits_and_takes_a_slot_as_a_spawn_does(toy: Path, staged: Path) -> None:
+    """dispatch-places-workers#P1 for a sent-back ticket: its resume is held to the machine's slots
+    as its spawn was, waiting while every slot is held and taking one, handed to its runner, once
+    one frees."""
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    full = toy.parent / "home" / "slots-full"
+    full.touch()
+    env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)), DISPATCH_SLOT_WAIT="1")
+    resuming, err = in_background(toy, staged, "warm-preset", "Again.\n", env, "resume", "warm-preset", "sonnet")
+    try:
+        until(lambda: err.read_text().count("no slot free on the machine of local") >= 2, err.read_text)
+        assert resuming.poll() is None, err.read_text()
+
+        full.unlink()
+        assert resuming.wait(timeout=60) == 0, err.read_text()
+        assert slots_said(toy)[-2:] == ["take carried", "hand carried"], slots_said(toy)
+    finally:
+        (toy.parent / "released" / "lamp-warm-preset").touch()
+        stopped(resuming)
+
+
+def test_a_spawn_whose_slot_cannot_be_taken_starts_no_worker(toy: Path, staged: Path) -> None:
+    """dispatch-places-workers#P1: a `host-slots` that fails says nothing about how full the machine
+    is, so the spawn stops rather than start a worker no slot counts."""
+    (toy.parent / "home").mkdir(exist_ok=True)
+    (toy.parent / "home" / "slots-broken").touch()
+    env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)))
+
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", env=env)
+
+    assert spawned.returncode == 1
+    assert "`host-slots take` failed, so no slot was taken" in spawned.stderr, spawned.stderr
+    assert not (toy.parent / "workers").exists()
+
+
+@pytest.mark.full_path
 def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(toy: Path, staged: Path) -> None:
-    """P2 through `dispatch ctl spawn`: the spawn starts on the first host `worker-hosts --place`
-    names, on the personal account unless told otherwise, and shows what the placer read."""
+    """dispatch-places-workers#P2 through `dispatch ctl spawn`: the spawn starts on the first host
+    `worker-hosts --place` names, on the personal account unless told otherwise, and shows what the
+    placer read."""
     placer(toy, "self\tisolated", "agent@far\tisolated")
-    env = environment(toy)
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
 
-    spawned = subprocess.run([str(staged), "ctl", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
-                             cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None)
 
     assert spawned.returncode == 0, spawned.stderr
     assert "placing warm-preset on local" in spawned.stderr
@@ -3212,31 +3280,33 @@ def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(
     assert run(toy, "ctl", "probe").stdout.startswith("local  dispatch-lamp-warm-preset exited")
 
 
-def test_a_placed_spawn_takes_its_account_from_the_environment(toy: Path, staged: Path) -> None:
-    """D4: with no --account, DISPATCH_ACCOUNT names the account, as a project's .envrc sets it."""
+@pytest.mark.full_path
+@pytest.mark.parametrize(("flags", "account"), [([], "helferline"), (["--account", "other"], "other")])
+def test_a_placed_spawn_takes_its_account_from_the_flag_else_the_environment(toy: Path, staged: Path,
+                                                                             flags: list[str], account: str) -> None:
+    """dispatch-places-workers#D4: DISPATCH_ACCOUNT names the account, as a project's .envrc sets it,
+    and --account overrides it."""
     placer(toy, "self\tisolated")
-    env = environment(toy, DISPATCH_ACCOUNT="helferline")
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
 
-    spawned = subprocess.run([str(staged), "ctl", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
-                             cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None, ctl_args=flags,
+                    env=environment(toy, DISPATCH_ACCOUNT="helferline"))
 
     assert spawned.returncode == 0, spawned.stderr
-    assert placer_calls(toy) == ["--place helferline"]
+    assert placer_calls(toy) == [f"--place {account}"]
     waited(toy)
 
 
+@pytest.mark.full_path
 def test_a_placed_spawn_its_best_machine_turns_away_goes_to_the_next(toy: Path, staged: Path) -> None:
-    """P1 over P2: a reading is a moment old, so the best machine may have filled since. Its spawn is
-    turned away, and the worker starts on the next machine, which the run record then names."""
+    """dispatch-places-workers#P1 over #P2: a reading is a moment old, so the best machine may have
+    filled since. Its spawn is turned away, and the worker starts on the next machine, which the run
+    record then names."""
     remote, env = fake_remote(toy)
     placer(toy, "self\tisolated", "agent@far\tisolated")
     (toy.parent / "home").mkdir(exist_ok=True)
     (toy.parent / "home" / "slots-full").touch()
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
 
-    spawned = subprocess.run([str(staged), "ctl", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
-                             cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None, env=env)
 
     assert spawned.returncode == 0, spawned.stderr
     assert "no slot free on" in spawned.stderr
@@ -3246,6 +3316,36 @@ def test_a_placed_spawn_its_best_machine_turns_away_goes_to_the_next(toy: Path, 
         "agent@far  dispatch-lamp-warm-preset exited")
 
 
+def test_a_placed_spawn_every_machine_turned_away_leaves_no_run_recorded(toy: Path, staged: Path) -> None:
+    """A machine that turned a placed spawn away started nothing, so a spawn stopped while it waits
+    leaves no run that a later command would be sent to."""
+    placer(toy, "self\tisolated")
+    (toy.parent / "home").mkdir(exist_ok=True)
+    (toy.parent / "home" / "slots-full").touch()
+    spawning, err = in_background(toy, staged, "warm-preset", "Work it.\n", environment(toy, DISPATCH_SLOT_WAIT="30"),
+                                  "--setup-cmd", "true", "spawn", "warm-preset", "sonnet")
+    try:
+        until(lambda: "no slot free on any machine warm-preset may go to" in err.read_text(), err.read_text)
+    finally:
+        stopped(spawning)
+
+    assert "no run of warm-preset recorded here" in run(toy, "ctl", "log", "warm-preset").stderr
+
+
+def test_a_placed_spawn_carries_no_permission_bypass_to_the_host_it_lands_on(toy: Path, staged: Path) -> None:
+    """A placed spawn cannot know whether its host isolates its worker, which an isolated host's
+    record says for itself, so a bypass set by the dispatcher is refused rather than carried."""
+    placer(toy, "agent@far\tnot isolated")
+    env = {**environment(toy), "DISPATCH_PERMISSION_MODE": "bypassPermissions"}
+
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None, env=env)
+
+    assert spawned.returncode == 1
+    assert "a placed spawn takes its permission mode from the host it lands on" in spawned.stderr, spawned.stderr
+    assert not (toy.parent / "placer.calls").exists()
+
+
+@pytest.mark.full_path
 @pytest.mark.parametrize(("isolated", "given", "mode"), [
     ("true", None, "bypassPermissions"), ("true", "auto", "auto"), ("false", None, "auto"), (None, None, "auto")])
 def test_a_worker_on_an_isolated_host_bypasses_permissions_unless_told_otherwise(
@@ -3267,50 +3367,86 @@ def test_a_worker_on_an_isolated_host_bypasses_permissions_unless_told_otherwise
     assert (toy.parent / "modes").read_text().split() == [mode]
 
 
-def test_a_spawn_no_host_could_ever_take_is_refused_at_once(toy: Path, staged: Path) -> None:
-    """A spawn needing a capability no machine offers would wait for ever, so it is refused."""
-    placer(toy, rc=1)
-    env = environment(toy)
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+@pytest.mark.parametrize(("rc", "said"), [
+    (1, "no worker host could ever take warm-preset"), (2, "`worker-hosts --place` failed, so no host was chosen")])
+def test_a_spawn_the_placer_finds_no_host_for_is_refused_at_once(toy: Path, staged: Path, rc: int, said: str) -> None:
+    """A spawn needing a capability no machine offers would wait for ever, and so would one whose
+    placer cannot answer, so both are refused."""
+    placer(toy, rc=rc)
 
-    spawned = subprocess.run([str(staged), "ctl", "--needs", "gpu", "spawn", "warm-preset", "sonnet"],
-                             cwd=toy, capture_output=True, text=True, env=env, timeout=60)
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None, ctl_args=["--needs", "gpu"])
 
     assert spawned.returncode == 1
-    assert "no worker host could ever take warm-preset" in spawned.stderr, spawned.stderr
+    assert said in spawned.stderr, spawned.stderr
     assert placer_calls(toy) == ["--place personal --needs gpu"]
 
 
-@pytest.mark.parametrize("rc", [1, 3])
-def test_a_ticket_whose_earlier_run_is_on_a_host_it_may_not_go_to_is_refused(toy: Path, staged: Path, rc: int) -> None:
-    """A run recorded earlier keeps its host, which holds its worktree; a spawn asking for what that
-    host could never give is refused, rather than sent there, and one that host can give once a slot
-    frees goes there."""
+def test_a_spawn_naming_its_host_and_what_placement_reads_is_refused(toy: Path, staged: Path) -> None:
+    """--host names a host the records are not asked about, so a --needs beside it would go unchecked."""
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", ctl_args=["--needs", "gpu"])
+
+    assert spawned.returncode == 1
+    assert "--account and --needs place a spawn, which --host does instead" in spawned.stderr, spawned.stderr
+
+
+def test_a_spawn_option_dispatch_ctl_does_not_take_is_refused(toy: Path, staged: Path) -> None:
+    """A placement flag typed after the subcommand reaches dispatch-ctl, which refuses it rather than
+    read it as the session to resume."""
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", spawn_args=["--needs", "gpu"])
+
+    assert spawned.returncode == 1
+    assert "--needs is no option of dispatch-ctl" in spawned.stderr, spawned.stderr
+
+
+@pytest.mark.full_path
+@pytest.mark.parametrize(("flags", "account", "asked"), [
+    (["--needs", "gpu"], None, "--place personal --needs gpu"), ([], "helferline", "--place helferline")])
+def test_a_ticket_whose_earlier_run_is_on_a_host_it_may_not_go_to_is_refused(
+        toy: Path, staged: Path, flags: list[str], account: str | None, asked: str) -> None:
+    """dispatch-places-workers A7: a run recorded earlier keeps its host, which holds its worktree; a
+    spawn asking, by a flag or by the project's account, for what that host could never give is
+    refused rather than sent there, and told how to keep it there or place it afresh."""
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
     waited(toy)
-    me = placer(toy, rc=rc)
-    env = environment(toy)
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Again.\n", text=True, check=True, env=env)
+    me = placer(toy, rc=1)
+    env = environment(toy, **({"DISPATCH_ACCOUNT": account} if account else {}))
 
-    spawned = subprocess.run([str(staged), "ctl", "--needs", "gpu", "--setup-cmd", "true", "spawn", "warm-preset",
-                              "sonnet"], cwd=toy, capture_output=True, text=True, env=env, timeout=60)
+    spawned = spawn(toy, staged, "warm-preset", "Again.\n", host=None, ctl_args=flags, env=env)
 
-    refusal = "earlier run is on local, where no spawn on account personal needing gpu may go"
-    assert (spawned.returncode, refusal in spawned.stderr) == ((1, True) if rc == 1 else (0, False)), spawned.stderr
-    assert placer_calls(toy) == [f"--place personal --needs gpu --on {me}"]
+    assert spawned.returncode == 1
+    assert "earlier run is on local, where no spawn on account" in spawned.stderr, spawned.stderr
+    assert "`dispatch ctl --host local spawn warm-preset <model>` keeps it there" in spawned.stderr
+    assert placer_calls(toy) == [f"{asked} --on {me}"]
 
 
+@pytest.mark.full_path
+@pytest.mark.parametrize(("rc", "unchecked"), [(3, False), (2, True)])
+def test_a_ticket_whose_earlier_run_is_on_a_host_that_may_take_it_goes_back_there(
+        toy: Path, staged: Path, rc: int, unchecked: bool) -> None:
+    """dispatch-places-workers A7: a host that may take the spawn once a slot frees gets it, and so
+    does one the records cannot answer for, as it would with nothing asked."""
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    placer(toy, rc=rc)
+
+    spawned = spawn(toy, staged, "warm-preset", "Again.\n", host=None, ctl_args=["--needs", "gpu"])
+
+    assert spawned.returncode == 0, spawned.stderr
+    said = "`worker-hosts` could not check local against this spawn, so warm-preset goes back there unchecked"
+    assert (said in spawned.stderr) is unchecked, spawned.stderr
+    assert "placing warm-preset on" not in spawned.stderr
+    assert run(toy, "ctl", "probe").stdout.startswith("local  dispatch-lamp-warm-preset")
+
+
+@pytest.mark.full_path
 def test_a_placed_spawn_waits_while_no_machine_can_take_it(toy: Path, staged: Path) -> None:
-    """With every machine it may go to full, a placed spawn asks again after a while, and starts its
-    worker once the placer names a machine."""
+    """dispatch-places-workers#D5: with every machine it may go to full, a placed spawn asks again
+    after a while, and starts its worker once the placer names a machine."""
     full = toy.parent / "place-full"
     full.touch()
     placer(toy, "self\tisolated")
-    env = environment(toy, DISPATCH_SLOT_WAIT="1")
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
-    err = toy.parent / "spawn.err"
-    spawning = subprocess.Popen([str(staged), "ctl", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
-                                cwd=toy, env=env, stdout=subprocess.DEVNULL, stderr=err.open("w"))
+    spawning, err = in_background(toy, staged, "warm-preset", "Work it.\n", environment(toy, DISPATCH_SLOT_WAIT="1"),
+                                  "--setup-cmd", "true", "spawn", "warm-preset", "sonnet")
     try:
         until(lambda: err.read_text().count("no slot free on any machine warm-preset may go to") >= 2, err.read_text)
         assert spawning.poll() is None, err.read_text()
@@ -3321,9 +3457,10 @@ def test_a_placed_spawn_waits_while_no_machine_can_take_it(toy: Path, staged: Pa
         assert set(placer_calls(toy)) == {"--place personal"} and len(placer_calls(toy)) >= 3
         waited(toy)
     finally:
-        spawning.kill()
+        stopped(spawning)
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize(("given", "weights"), [([], ["100"]), (["--cpu-weight", "400"], ["400"])])
 def test_a_spawn_gives_its_worker_the_cpu_weight_it_asks_for(toy: Path, staged: Path, given: list[str],
                                                             weights: list[str]) -> None:
@@ -3331,29 +3468,22 @@ def test_a_spawn_gives_its_worker_the_cpu_weight_it_asks_for(toy: Path, staged: 
     given that weight; any other spawn's runner gets the equal share."""
     env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)))
     (toy.parent / "released" / "lamp-warm-preset").touch()
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
 
-    spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset",
-                              "sonnet", *given], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", env=env, spawn_args=given)
 
     assert spawned.returncode == 0, spawned.stderr
     until(lambda: (toy.parent / "weights").exists(), lambda: "the runner never started")
     assert (toy.parent / "weights").read_text().split() == weights
 
 
-def test_a_spawn_asking_less_than_an_equal_share_is_refused(toy: Path, staged: Path) -> None:
-    """--cpu-weight raises a worker's share; nothing asked for one below the equal share of 100."""
-    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", env=environment(toy))
-    assert spawned.returncode == 0, spawned.stderr
-    waited(toy)
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Again.\n", text=True, check=True,
-                   env=environment(toy))
+@pytest.mark.parametrize("weight", ["50", "10001", "abc"])
+def test_a_spawn_asking_a_weight_outside_100_to_10000_is_refused(toy: Path, staged: Path, weight: str) -> None:
+    """--cpu-weight only raises a worker's share: a weight below 100, the equal share, is refused, as
+    is one above the 10000 systemd takes."""
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", spawn_args=["--cpu-weight", weight])
 
-    resumed = subprocess.run([str(staged), "ctl", "resume", "warm-preset", "sonnet", "--cpu-weight", "50"],
-                             cwd=toy, capture_output=True, text=True, env=environment(toy), timeout=180)
-
-    assert resumed.returncode == 1
-    assert "--cpu-weight takes a weight from 100" in resumed.stderr, resumed.stderr
+    assert spawned.returncode == 1
+    assert "--cpu-weight takes a weight from 100" in spawned.stderr, spawned.stderr
 
 
 @pytest.mark.parametrize(("weight", "expected"), [(None, "100"), ("400", "400")])

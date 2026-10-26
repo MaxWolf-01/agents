@@ -146,8 +146,10 @@ $asking_rule"
 # Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the
 # attempt ends: whatever the worker started and left running (a load generator whose shell was
 # killed before its `kill` line, a process that detached itself) goes with it. The scope's
-# CPUWeight shares the machine between workers only while they compete for it: a worker alone uses
+# CPUWeight shares the CPU between workers only while they compete for it: a worker alone uses
 # every core, and under contention each gets its weight's share however many processes it starts.
+# The scope sits under its user's systemd, so the weight counts only against that user's other
+# workers; the machine is first split evenly between its users.
 # A host with no user systemd manager runs the attempt as it is, and the worklog says those
 # processes outlive it.
 if systemd-run --user --scope --quiet --collect -- true 2> /dev/null; then
