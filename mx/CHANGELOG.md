@@ -1,3 +1,10 @@
+## 1.0.89
+
+- fix(tests): dispatch's tmux checks pass from a shell started before the last Home Manager switch
+  Dispatch's two tmux checks that failed on zephylux now pass whatever environment runs them: the shells a check starts read no zsh config of the user's, which could put back the user's PATH and tmux socket directory and send the checks to the real claude and the user's own tmux server. All 127 full-path checks of the dispatch, session-page and board files pass.
+- perf(workflow): run-log counts each run once; short claude -p runs and mechanical subagents cost less
+  Resumed worker sessions are no longer counted more than once in the run log's cost reports. A resumed Claude run reports the session's running total, so the log now records each run's own cost and API time, keeps the totals alongside, and reads older lines the same way when reporting; on the real log workers fall from $11,281 to $6,069 for Sep 27 - Oct 23, which matches their transcripts. The code reviewers, the change summarizer and the turn reviewer now write their prompt cache at the 5-minute rate, 1.25x input instead of 2x: a reviewer's calls come seconds apart and every one of these runs ends within minutes. The retro's readers, its report builder and the /mx:show artifact builders now run at medium effort instead of inheriting the session's high.
+
 ## 1.0.88
 
 - feat(retro,triage): read max's TODO files as context
