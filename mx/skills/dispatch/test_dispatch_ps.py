@@ -59,12 +59,19 @@ def tmux(tmp_path: Path) -> Iterator[dict[str, str]]:
     $TMUX names the server of the pane the checks run in, and beats TMUX_TMPDIR, so it goes. The
     socket directory is short and under /tmp, since a socket path over about a hundred bytes is
     refused.
+
+    ZDOTDIR is an empty directory: tmux runs a pane's command, and the fake ssh its remote one,
+    through `$SHELL -c`, and a zsh reading the user's own config can put that user's PATH and
+    TMUX_TMPDIR back (Home Manager's session variables do, in a shell started before the last
+    switch), so the pane runs the real claude and talks to the user's tmux server.
     """
     sockets = Path("/tmp") / f"dispatch-ps-check-{hashlib.sha1(str(tmp_path).encode()).hexdigest()[:12]}"
     sockets.mkdir()
     env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
     env["TMUX_TMPDIR"] = str(sockets)
     env["JOB_STATE_DIR"] = str(tmp_path / "jobs")
+    (tmp_path / "zdotdir").mkdir()
+    env["ZDOTDIR"] = str(tmp_path / "zdotdir")
     yield env
     subprocess.run(["tmux", "-S", str(sockets / f"tmux-{os.getuid()}" / "default"), "kill-server"],
                    capture_output=True)

@@ -261,6 +261,9 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     env = {**HERMETIC_GIT, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE,
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           # zsh reads its config from ZDOTDIR before HOME, so the toy home holds it, empty
+           # (test_dispatch_ps.py's tmux fixture says what the user's own config does to a check)
+           "ZDOTDIR": str(toy.parent / "home"),
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
     env.pop("DISPATCH_EFFORT", None)
