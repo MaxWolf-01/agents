@@ -5,7 +5,7 @@ description: "Triage the proposed tickets: group the pile by shared cause, decid
 
 # Triage
 
-The pile is every proposed ticket: `tracker data | jq -r '.tickets[] | select(.status == "proposed") | .slug'`, each read with `tracker context`. The project's retro report, `retro/report.md` in its agent repo, is one more input where it exists, since it may already group the pile by cause.
+The pile is every proposed ticket: `tracker data | jq -r '.tickets[] | select(.status == "proposed") | .slug'`, each read with `tracker context`. The project's retro report, `retro/report.md` in its agent repo, is one more input where it exists, since it may already group the pile by cause. So are max's TODO files, where he jots quick thoughts and ideas, mostly gitignored: each file at the root of a repo the tracker plans named `TODO` or `todos`, in any case and with or without an extension. What he wrote there may add to a proposed ticket, settle a call on it, or name the cause a group shares.
 
 Group the pile by shared cause, then sort each group into one of two kinds of call. The test: would the user, seeing the result, find the product doing something different or built a different way than they chose?
 

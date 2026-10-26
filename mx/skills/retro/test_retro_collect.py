@@ -330,6 +330,28 @@ def test_git_holds_a_commit_of_the_period_beneath_one_dated_before_it(tmp_path: 
     assert "DATED-BEFORE-IT" not in record
 
 
+def test_todo_holds_each_repos_todo_files_as_they_stand_and_no_other_file(tmp_path: Path) -> None:
+    repos = [tmp_path / "proj", tmp_path / "other" / "proj"]
+    for r in repos:
+        r.mkdir(parents=True)
+        git(r, "init", "-q", "-b", "main")
+    (repos[0] / "TODO").write_text("IDEA: debloat before review\n")
+    (repos[0] / "todos.md").write_text("SECOND\n")
+    for other in ("TODO-old", "notes.md", "TODOS.bak.txt"):
+        (repos[0] / other).write_text("NOT A TODO\n")
+    (repos[0] / "todo.d").mkdir()
+    (repos[1] / "Todo.txt").write_text("OF THE SECOND PROJ\n")
+
+    todo = collect(tmp_path, repos) / "todo"
+
+    assert (todo / "proj" / "TODO").read_text() == "IDEA: debloat before review\n"
+    assert sorted(p.name for p in (todo / "proj").iterdir()) == ["TODO", "todos.md"]
+    assert (todo / "proj-2" / "Todo.txt").read_text() == "OF THE SECOND PROJ\n"
+
+    (repos[0] / "todos.md").unlink()
+    assert sorted(p.name for p in (collect(tmp_path, repos) / "todo" / "proj").iterdir()) == ["TODO"]
+
+
 def test_permissions_hold_each_profiles_rules_and_its_auto_mode_config(tmp_path: Path, projects: Path) -> None:
     profile = projects.parent
     profile.mkdir(parents=True)

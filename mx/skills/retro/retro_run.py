@@ -18,7 +18,8 @@ gets a repo retro: it reads the commits, tickets and code of the project's repo 
 its `agent/repos.toml` lists but one with `retro = false` and one with an agent repo of its own,
 which its own tracker's retro reads, and the sessions of every profile that worked in those repos
 (`retro_collect.Worked`); it runs read-fresh, follow-up, the lens pass and synthesize. A run's
-stages log in as the profile `CLAUDE_CONFIG_DIR` names, as every `claude` does.
+stages log in as the profile `CLAUDE_CONFIG_DIR` names, as every `claude` does. Both kinds also read
+max's TODO files at the root of each repo whose git they read, as `retro_collect.py`'s docstring says.
 
 A run's period starts where the last run committed to the report ended, or at --since; a
 repo retro's first run, given no --since, takes the eight weeks before it (--first-weeks). Everything a run writes
