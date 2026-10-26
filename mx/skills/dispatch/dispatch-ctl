@@ -10,8 +10,8 @@
 #                 worktree up, updates claude, and starts the worker in the
 #                 tmux session dispatch-<repo>-<slug> on `dispatch prompt`'s
 #                 message. --effort overrides DISPATCH_EFFORT;
-#                 --cpu-weight, 100 to 10000, is the worker's share of a
-#                 busy machine. A --repo sits at <place> inside the worktree,
+#                 --cpu-weight, 100 to 10000, weighs the worker among its
+#                 user's workers. A --repo sits at <place> inside the worktree,
 #                 or beside it as <name>-<slug> when <place> is empty. Exit 1:
 #                 no mx plugin here, the setup failed (its tail printed), the
 #                 run is still running, or a listed repo this spawn drops
@@ -298,6 +298,7 @@ take_options() {
                 shift 2 ;;
             --repo)   [ $# -ge 5 ] || die "--repo takes <name> <base> <place> <git-dir>"
                       repos_given+=("$2" "$3" "$4" "$5"); shift 5 ;;
+            -*) die "$1 is no option of dispatch-ctl; --account and --needs go before the subcommand, to \`dispatch ctl\`" ;;
             *) positional+=("$1"); shift ;;
         esac
     done
@@ -358,7 +359,10 @@ slotted=
 
 # Takes one of the machine's slots for this spawn, or exits 3 with none free.
 take_slot() {
-    command -v host-slots > /dev/null 2>&1 || return 0
+    if ! command -v host-slots > /dev/null 2>&1; then
+        echo "dispatch-ctl: no \`host-slots\` on $(uname -n), so this run takes no slot and goes uncounted" >&2
+        return 0
+    fi
     host-slots take $$ dispatch-ctl
     case $? in
         0) slotted=1 ;;
@@ -372,8 +376,8 @@ hand_slot() {
     local pid
     [ -n "$slotted" ] || return 0
     pid=$(runner_pid "$run_id" "$runner" | head -1)
-    [ -n "$pid" ] || return 0
-    host-slots hand $$ "$pid" "$run_id" || echo "dispatch-ctl: the slot did not pass to $run_id's runner, so its run goes uncounted" >&2
+    [ -n "$pid" ] && host-slots hand $$ "$pid" "$run_id" ||
+        echo "dispatch-ctl: the slot did not pass to $run_id's runner, so its run goes uncounted" >&2
 }
 
 # Updates claude on every spawn, since a stale one resolves a model alias to an older model and
