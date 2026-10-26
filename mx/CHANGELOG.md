@@ -1,3 +1,27 @@
+## 1.0.89
+
+- fix(tests): dispatch's tmux checks pass from a shell started before the last Home Manager switch
+  Dispatch's two tmux checks that failed on zephylux now pass whatever environment runs them: the shells a check starts read no zsh config of the user's, which could put back the user's PATH and tmux socket directory and send the checks to the real claude and the user's own tmux server. All 127 full-path checks of the dispatch, session-page and board files pass.
+- perf(workflow): run-log counts each run once; short claude -p runs and mechanical subagents cost less
+  Resumed worker sessions are no longer counted more than once in the run log's cost reports. A resumed Claude run reports the session's running total, so the log now records each run's own cost and API time, keeps the totals alongside, and reads older lines the same way when reporting; on the real log workers fall from $11,281 to $6,069 for Sep 27 - Oct 23, which matches their transcripts. The code reviewers, the change summarizer and the turn reviewer now write their prompt cache at the 5-minute rate, 1.25x input instead of 2x: a reviewer's calls come seconds apart and every one of these runs ends within minutes. The retro's readers, its report builder and the /mx:show artifact builders now run at medium effort instead of inheriting the session's high.
+
+## 1.0.88
+
+- feat(retro,triage): read max's TODO files as context
+  The retro and triage skills now read the TODO files at the root of each repo, where max jots quick thoughts and which are mostly untracked by git. A retro run copies every file named TODO or todos (any case, any extension) as it stands at collect time. Its stages treat these as context: they steer which code the lens pass reads and get quoted as his notes, but never count as his verdict on a finding. Triage uses them as context and never files tickets from them. It puts stale lines to the user as one call before cutting any, because a cut in an untracked file cannot be undone.
+
+## 1.0.87
+
+- feat(workflow): merges into the trunk open with change-summary's paragraph, and /mx:changelog writes from it
+  Merges into the trunk open their body with a paragraph on what the whole branch changed, drafted by `change-summary` from the three-dot diff and corrected by the agent. `/mx:changelog` reads the trunk's first-parent history and writes each branch's entries from that paragraph, reading a branch's own commits only where the paragraph leaves a change unclear. `change-summary`'s prompt describes a set of changes rather than assuming a pull request.
+- Agent sessions from any device: session records outside every checkout, two main checkouts kept in step
+  The agents side of the dotfiles tree agent-sessions-from-any-device. A running session's page records live under the account (~/.claude*/session-pages/<id>/) and are committed into the agent repo as the session ends, so a checkout synced between two machines never carries another session's half-written files. `tracker sync` and the hooks `tracker hook` installs push the agent repo's main checkout after every commit, merging what the other machine pushed first; a tracker write during a stopped merge is staged and goes in with its resolution. The Stop hook finds the container hub on its unix socket.
+
+## 1.0.86
+
+- docs(dispatch): each comment in the dispatch scripts says what its code does
+- test(dispatch): the scripts' text functions, remote failures and the zsh quoting under test
+
 ## 1.0.85
 
 - feat(tracker): land takes a round whole, and every tracker write commits

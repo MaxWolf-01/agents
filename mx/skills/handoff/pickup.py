@@ -35,7 +35,9 @@ import tyro
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "session-page"))
-from session_page import PAGE, PREVIOUS, RecordError, left_alone, page, read_session, session_directory  # noqa: E402
+from session_page import (  # noqa: E402
+    PAGE, PAGES, PREVIOUS, RecordError, account, left_alone, located, make_session_directory, page, read_session,
+)
 
 
 @dataclass
@@ -76,13 +78,12 @@ def link(text: str) -> str:
         return f"nothing: a {unread} has no page"
     if not own:
         return "nothing: no session id, so no session directory (run it inside a Claude Code session)"
-    if (directory := session_directory(Path.cwd(), own)) is None:
+    if (directory := make_session_directory(Path.cwd(), own)) is None:
         return f"nothing: {Path.cwd()} is in no project with an agent repo"
     if (directory / PREVIOUS).exists():
         return f"nothing: {directory / PREVIOUS} already names {(directory / PREVIOUS).read_text().strip()}"
-    directory.mkdir(parents=True, exist_ok=True)
     (directory / PREVIOUS).write_text(before + "\n")
-    return f"{directory / PREVIOUS} names {before}; its page: {render(directory.parent / before)}"
+    return f"{directory / PREVIOUS} names {before}; its page: {render(located(directory, before))}"
 
 
 def continues(text: str) -> str:
@@ -99,12 +100,13 @@ def continues(text: str) -> str:
     return session if isinstance(session, str) and re.fullmatch(r"[\w-]+", session) else ""
 
 
-def render(directory: Path) -> str:
+def render(directory: Path | None) -> str:
     """Render the page of the session whose directory is `directory` again, from its transcript
-    under Claude Code's projects directory, and say what came of that."""
-    if not directory.is_dir():
-        return "no session directory, so no page to link forward"
-    projects = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    under Claude Code's projects directory, the one of the account the directory sits under, else
+    this session's, and say what came of that."""
+    if directory is None:
+        return "no session directory with a page, so no page to link forward"
+    projects = (directory.parents[1] if directory.parent.name == PAGES else account()) / "projects"
     if (theirs := next(projects.glob(f"*/{directory.name}.jsonl"), None)) is None:
         return f"no transcript under {projects}: it links forward from its next render"
     try:

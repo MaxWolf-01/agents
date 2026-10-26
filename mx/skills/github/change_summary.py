@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro"]
 # ///
-"""Write the opening paragraph of a pull request from a unified diff on stdin.
+"""Write one paragraph describing a set of changes, from a unified diff on stdin.
 
 A model reads the diff and nothing else, and says in one plain-English paragraph what behaviour changes and why it matters. It runs `claude -p` in an empty directory with no user settings, plugins, hooks, MCP servers, tools, slash commands or session file. Its prose rules are the rules tagged `artifact` or `both` in writing-for-humans/CATALOGUE.md, read from the plugin at run time.
 
@@ -30,7 +30,7 @@ CATALOGUE = Path(__file__).resolve().parents[1] / "writing-for-humans/CATALOGUE.
 RUN_LOG = Path(__file__).resolve().parents[1] / "run-log/run-log"  # every call goes through it, one line each in the run log
 TARGET, STATED, CAP = 60, 100, 150  # Opus overshoots the length it is asked for by about half, so the prompt asks for less than the cap the tool enforces
 
-INSTRUCTION = f"""You write the opening paragraph of a pull request description, from the unified diff you are given and nothing else.
+INSTRUCTION = f"""You write one paragraph describing a set of changes, from the unified diff you are given and nothing else.
 
 The reader is a colleague who has not seen this codebase and was not there when the change was made. They read this paragraph and may stop. Tell them what changes in behaviour, for whoever uses or runs the thing, and why that matters. Give the why only as far as the diff shows it; do not invent motives. Leave out the tests and code comments that come with the change unless they are the change.
 
@@ -81,7 +81,9 @@ def ask(model: str, effort: str, system: str, prompt: str) -> str:
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
                 input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
-                env={**os.environ, "CLAUDECODE": ""},
+                # FORCE_PROMPT_CACHING_5M (undocumented in Claude Code 2.1.309) writes the cache at the
+                # 5-minute rate, 1.25x input instead of the 1-hour 2x; one call, so nothing reads it later.
+                env={**os.environ, "CLAUDECODE": "", "FORCE_PROMPT_CACHING_5M": "1"},
             )
         except (OSError, subprocess.TimeoutExpired) as e:
             raise Failure(f"claude did not run: {e}") from e

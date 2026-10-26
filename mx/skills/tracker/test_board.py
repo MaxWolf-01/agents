@@ -1531,6 +1531,19 @@ def test_a_session_with_a_page_carries_it_and_one_without_carries_none(worked: t
     assert pages == {HERE: repo / "agent" / "sessions" / HERE / "index.html", NAMED: None, NEW: None}
 
 
+def test_a_session_carries_the_page_its_account_keeps_over_one_an_earlier_mx_left_in_the_agent_repo(
+    worked: tuple[Path, Path],
+) -> None:
+    """session-records-outside-the-checkout, "the page renders from them": the Stop hook writes the page under the account whose
+    transcripts the board reads, outside every checkout, so that one is linked; a session's page an
+    earlier mx left in the agent repo is linked only where the account has none."""
+    root, repo = worked
+    kept = board.TRANSCRIPTS.parent / "session-pages" / HERE / "index.html"
+    put(kept, "<!doctype html>\n<title>Ledger imports</title>\n")
+    pages = {s.id: s.page for s in ticket_sessions(root / "map-columns.md", repo)}
+    assert pages == {HERE: kept, NAMED: None, NEW: None}
+
+
 def test_a_session_whose_worktree_is_gone_carries_the_page_its_ticket_s_project_keeps(worked: tuple[Path, Path]) -> None:
     """The page outlives the worktree dispatch removed: it sits in the agent repo of the project
     the ticket is in, which the session's gone directory no longer names."""

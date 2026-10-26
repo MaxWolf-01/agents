@@ -288,6 +288,9 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
            "UV_PYTHON_INSTALL_DIR": UV_PYTHONS,
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           # zsh reads its config from ZDOTDIR before HOME, so the toy home holds it, empty
+           # (test_dispatch_ps.py's tmux fixture says what the user's own config does to a check)
+           "ZDOTDIR": str(toy.parent / "home"),
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
     env.pop("DISPATCH_EFFORT", None)
@@ -415,7 +418,7 @@ def skill_copy(toy: Path) -> Path:
     (skill / "tracker").mkdir()
     for name in ("dispatch", "dispatch-ctl", "worker-prompt.md"):
         shutil.copy(SKILL / name, skill / "dispatch" / name)
-    for name in ("tracker.py", "pre-commit"):
+    for name in ("tracker.py", "in_step.py", "pre-commit"):
         shutil.copy(SKILL.parent / "tracker" / name, skill / "tracker" / name)
     (skill / "run-log").mkdir()
     shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")
@@ -1704,6 +1707,35 @@ def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_a
     assert status_of(toy, "warm-preset") == "done"
     assert ranges_of(toy, "warm-preset") == ranges
     assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
+
+
+def test_a_claim_in_a_project_kept_on_two_machines_is_pushed_and_its_integration_branch_is_not(toy: Path) -> None:
+    """`two-main-checkouts-synced-by-git` in the dotfiles tracker: every commit in the agent repo
+    goes to its upstream at once, and an integration branch is pushed by whoever merges into it,
+    never by dispatch."""
+    agent = toy / "agent"
+    origin = toy.parent / "origin"
+    for repo, at in (("code", toy), ("agent", agent)):
+        git(toy.parent, "init", "-q", "--bare", "-b", "main", str(origin / f"{repo}.git"))
+        git(at, "remote", "add", "origin", str(origin / f"{repo}.git"))
+        git(at, "push", "-q", "-u", "origin", "main")
+    hooked = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "hook"], cwd=agent,
+                            capture_output=True, text=True, env=environment(toy))
+    assert hooked.returncode == 0, hooked.stderr
+
+    assert run(toy, "claim", "warm-preset").returncode == 0
+    assert git(origin / "agent.git", "rev-parse", "main") == git(agent, "rev-parse", "main"), "the claim went at once"
+    built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    built_on(agent, "ticket/warm-preset", "main", "warm.md")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert git(origin / "agent.git", "rev-parse", "main") == git(agent, "rev-parse", "main"), "the review went at once"
+    before = git(origin / "code.git", "rev-parse", "main")
+    merged_in(toy, "main", "ticket/warm-preset")  # the user's accept: the code merged by hand
+    accepted = run(toy, "accept", "warm-preset")
+    assert accepted.returncode == 0, accepted.stderr
+    assert git(origin / "agent.git", "rev-parse", "main") == git(agent, "rev-parse", "main"), "the accept went at once"
+    assert git(origin / "code.git", "rev-parse", "main") == before
 
 
 def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_section(toy: Path) -> None:

@@ -77,6 +77,7 @@ Commit, merge, and push -- when and how:
 Commit messages:
   - Conventional -- unless a repo clearly follows another convention -- `type(scope): imperative summary (the what)`, the body carries the why (and optionally details on the what).
   - A merge commit's subject states what the branch as a whole delivered, with no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
+  - A merge into the trunk opens its body with one paragraph on what the branch changed: draft it with `git diff <trunk>...<branch> | change-summary`, then correct what it gets wrong and add what the diff cannot show. Rulings and what was left follow it.
   - Include a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 
 Miscl hygiene:
@@ -135,7 +136,7 @@ NEVER use subagents to read source code files, documentation, or knowledge files
 You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself unless forced by the scale, complexity or uncertainty of the task.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 When a subagent's output matters, tell it where to write its report and read that file; the return channel is not reliable, and `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage. A subagent that goes idle without handing back a report has NOT stalled: read its report file, or failing that its transcript under `~/.claude/projects/<project>/<session-id>/subagents/` (hundreds of KB; extract the last assistant text block, never read it whole), before redoing any of the work yourself.
-Subagents default to opus, whatever the session model is, and run at the session's effort, which an Agent call cannot change.
+Subagents default to opus, whatever the session model is, and run at the session's effort unless the spawn names one, which it does where a skill or this file asks for it; a fork always runs at the session's.
 An in-harness subagent is for read-only work that ends in a file you read: research, a drill-down, a lookup across many files. Work that edits a repo goes through `/mx:dispatch`, where model, effort and isolation are explicit and the run is logged.
 
 Models in use (Anthropic's effort and prompting docs, 2026-09):

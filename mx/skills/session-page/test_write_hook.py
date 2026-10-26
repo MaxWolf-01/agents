@@ -26,11 +26,11 @@ import session_page
 import stop_hook
 import turn_review
 import write_hook
-from session_page import PAGE, SESSIONS
+from session_page import PAGE
 from stop_hook import RECAP
 from session_checks import (
-    CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SPOKEN_AFTER, TICKET_QUESTION_UNPARSEABLE, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
-    unreachable, with_write,
+    CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SESSION, SPOKEN_AFTER, TICKET_QUESTION_UNPARSEABLE, TURN_STARTS,
+    UNATTENDED, UNPARSEABLE, appended, logged, project_of, unreachable, with_write,
 )
 from session_checks import payload as stopped
 from write_hook import decide
@@ -57,7 +57,7 @@ def wrote(record: Path, transcript: Path, tool: str = "Write") -> dict:
     directory = record.parent.parent if record.parent.name == "turns" else record.parent
     return {
         "session_id": directory.name,
-        "cwd": str(directory.parents[len(SESSIONS.parts)]),
+        "cwd": str(project_of(directory)),
         "transcript_path": str(transcript),
         "hook_event_name": "PostToolUse",
         "tool_name": tool,
@@ -284,6 +284,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert turn_review.record_shape(turn_review.RULES.read_text()) in system
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
+    assert (claude / "cache").read_text() == "1", "the reviewer writes its cache at the 5-minute rate"
 
 
 # ---- P2: a write that breaks the records goes back at once ------------------
@@ -429,7 +430,7 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     business of this one, broken records or not."""
     (worked_example / "turns" / "04.md").write_text("no frontmatter\n")
     monkeypatch.setattr(turn_review, "review", unreachable)
-    code = worked_example.parents[2] / "src" / "ledger.py"
+    code = project_of(worked_example) / "src" / "ledger.py"
     code.parent.mkdir()
     code.write_text("")
     other = worked_example.parent / "8e0f1c22-0000-0000-0000-000000000000" / "turns" / "01.md"
@@ -441,6 +442,26 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     for path in (code, other, inside):
         assert run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(path)}}) == ""
     assert [entry["why"] for entry in logged(attended, "verb")] == ["no record of this session"], "only the path in its directory is read past the path"
+
+
+# What a session writes first in each place: a turn record, and the session record.
+WRITTEN = {"turns/05.md": "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n",
+           "session.md": f"---\nsession: {SESSION}\nrepo: /srv/ledger\n---\n\n# Ledger: the second bank\n"}
+
+
+@pytest.mark.parametrize("record, content", WRITTEN.items(), ids=WRITTEN)
+def test_a_record_written_in_the_agent_repos_sessions_goes_back_naming_the_sessions_directory(
+    record: str, content: str, worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session that read its directory from `session-page` while records still went in the agent
+    repo has that directory in its context: a record written there is one the page never reads, so
+    the agent hears where to write it."""
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    old = project_of(worked_example) / "agent" / "sessions" / worked_example.name / record
+    old.parent.mkdir(parents=True)
+    old.write_text(content)
+    said = run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(old), "content": content}})
+    assert str(old) in said and str(worked_example) in said
 
 
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
@@ -494,6 +515,7 @@ def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: dict | 
     (where / "claude").write_text(
         "#!/usr/bin/env bash\n"
         f'printf "%s\\0" "$@" > "{where}/argv"\n'
+        f'printf "%s" "${{FORCE_PROMPT_CACHING_5M:-}}" > "{where}/cache"\n'
         f'cat > "{where}/stdin"\n'
         + (f"echo {json.dumps(json.dumps(result))}\n" if result else "echo 'API Error: overloaded'\n")
         + f"{then}\n")

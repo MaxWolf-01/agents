@@ -15,6 +15,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on; `in-flight.md` and `in-flight/`, its tickets in flight, those max ruled on that are not done. Each list says which of the agent repo's tickets it holds.
 - `follow-up.md`: what the period did to each finding and candidate the living report already carries; `previous/`, the earlier reports, `current.md` with max's verdicts.
 - `notes/`: the period's friction, read from max's sessions, each of his corrections with its cause; `sessions/` holds the digests they quote. In a workflow retro, also `deep/`.
+- `todo/<repo>/`: max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), read as context, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date.
 
 The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
@@ -23,7 +24,7 @@ The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may re
 ## Steps
 
 1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; `notes/` too, and in a workflow retro `deep/`. Then list the tickets in flight that `in-flight.md` names, each by its slug and a line on what it changes, read from `in-flight/`.
-2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, and the code and commands the period's friction and max's corrections concern. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
+2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, the code his TODO files name, and the code and commands the period's friction and max's corrections concern. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
 3. Spawn one subagent per code lens, in parallel, each given the prompt below, its code lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
 4. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
