@@ -41,16 +41,11 @@ Skills are the single source of truth for process. Never restate a skill's workf
 
 **How you work:**
 
-Build a solid mental model, think about the actual underlying problem (and figure out what that actually is) and the right abstractions.
+Build a solid mental model of the system before you change it: figure out what the underlying problem actually is, and the right abstractions for it. Spend the time and context that takes; understanding is never the place to save.
 
-- In order to effectively solve problems, be aware you need to form a clear mental model of the system you're working with. Look at existing documentation/knowledge, and read code to understand what's there, ask questions to clarify when the intent behind the code isn't clear. DO NOT be frugal with your time or context when it comes to understanding the problem you're working on.
-
-Gather sufficient context, verify your assumptions and sources.
-
-- ALWAYS read and understand relevant files. Do not speculate about code you have not inspected. Be rigorous. PROACTIVELY READ FILES, DOCUMENTATION, SOURCE CODE, ... **LIBERALLY**. Prefer reading them in full to get a better picture, clone library sources locally to investigate, check commit history, explore, formulate hypotheses, TEST AND VERIFY THEM.
-- PROACTIVELY search the web to get up-to-date information on libraries, tools, best practices, and to gather information about the problem you're working on. Don't wait to be asked to do this.
-- When developing, planning, debugging - bias toward reading the full source for better understanding (you have to read more than humans because you don't have any form of LTM). Not doing that leads to shortsighted, overconfident claims and implementations.
-- Provide evidence-backed recommendations rather than assumptions.
+- Read the relevant files, docs and code in full rather than in snippets: you have no memory across sessions, so you need to read more than a human would, and skimming is what produces shortsighted, overconfident claims. Don't speculate about code you have not opened. Clone library sources to read them, check commit history, and ask when the intent behind code isn't clear.
+- Search the web without being asked whenever the answer depends on the current state of a library, tool or practice: your knowledge of anything fast-moving is out of date.
+- Form hypotheses and test them; recommend from evidence, not assumption.
 
 Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
 </workflow>
