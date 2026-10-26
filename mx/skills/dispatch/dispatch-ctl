@@ -359,10 +359,7 @@ slotted=
 
 # Takes one of the machine's slots for this spawn, or exits 3 with none free.
 take_slot() {
-    if ! command -v host-slots > /dev/null 2>&1; then
-        echo "dispatch-ctl: no \`host-slots\` on $(uname -n), so this run takes no slot and goes uncounted" >&2
-        return 0
-    fi
+    command -v host-slots > /dev/null 2>&1 || return 0
     host-slots take $$ dispatch-ctl
     case $? in
         0) slotted=1 ;;
