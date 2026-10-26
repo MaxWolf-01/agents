@@ -74,7 +74,8 @@
       "source": {
         "source": "github",
         "repo": "MaxWolf-01/agents"
-      }
+      },
+      "autoUpdate": true
     }
   },
   "outputStyle": "max",
