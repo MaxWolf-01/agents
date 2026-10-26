@@ -21,6 +21,9 @@ every git work tree. `retro_run.py` runs it as a run's collect stage; its subcom
 - `sessions.jsonl`: one row per digest above: id, profile, project, start, end, max's messages,
   and which of the two it is in.
 - `git/<repo>.md` and `versions.md`, as `git` writes the first.
+- `todo/<repo>/<file>`: each repo's TODO files, where max jots quick thoughts, ideas and
+  priorities, mostly gitignored, as they stand at collect time: every file at the repo's root
+  named `TODO` or `todos`, in any case and with or without an extension.
 - `proposed.md` and `in-flight.md`, given an agent repo: its commit at collect time and the slugs
   of the tickets proposed, and of those in flight (open, claimed or review), at that commit, each
   as it stood in `proposed/<slug>.md` and `in-flight/<slug>.md`.
@@ -53,6 +56,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -78,6 +82,7 @@ CLASSIFIER_ALLOWED = "[classifier allowed]"  # a digest's mark on a call auto mo
 # command or of a file's text.
 NAMED_PATH = re.compile(r"(?<![\w.~/$-])~?/[^\s\"'`;|&<>(){}\[\],]*")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
+TODO_FILE = re.compile(r"todos?(\.\w+)?", re.I)  # a file name of max's TODO files at a repo's root
 IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
 
 
@@ -99,6 +104,7 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
              and kept(d, d.start, d.end)]
     write_digests(run, since, period, weighted_sample(older, SAMPLE_SIZE, random.Random(sample_seed)))
     collect_git(since, run, repos, until)
+    collect_todos(run, repos)
     (run / "versions.md").write_text(versions(since, until, period, repos))
     if agent:
         collect_tickets(run, agent)
@@ -147,13 +153,28 @@ def latest_commit(repos: list[Path], since: datetime) -> str:
 def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None) -> None:
     """`git/<repo>.md` for each repo: its commits since `since`, and its agent repo's tickets."""
     (run / "git").mkdir(parents=True, exist_ok=True)
-    names = Counter()
+    for repo, name in zip(repos, repo_names(repos)):
+        (run / "git" / f"{name}.md").write_text(git_record(repo, since, until))
+
+
+def collect_todos(run: Path, repos: list[Path]) -> None:
+    """`todo/<repo>/<file>`: a copy of each TODO file at each repo's root."""
+    shutil.rmtree(run / "todo", ignore_errors=True)  # a run again into the same directory takes them as they are now
+    for repo, name in zip(repos, repo_names(repos)):
+        for todo in sorted(p for p in repo.iterdir() if TODO_FILE.fullmatch(p.name) and p.is_file()):
+            (run / "todo" / name).mkdir(parents=True, exist_ok=True)
+            shutil.copy(todo, run / "todo" / name / todo.name)
+
+
+def repo_names(repos: list[Path]) -> list[str]:
+    """Each repo's name in the run directory: its directory's, without a leading dot, numbered from
+    the second repo of that name on."""
+    names, out = Counter(), []
     for repo in repos:
         name = repo.resolve().name.lstrip(".")
         names[name] += 1
-        if names[name] > 1:
-            name = f"{name}-{names[name]}"
-        (run / "git" / f"{name}.md").write_text(git_record(repo, since, until))
+        out.append(name if names[name] == 1 else f"{name}-{names[name]}")
+    return out
 
 
 def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
@@ -751,14 +772,14 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
 
 @dataclass
 class Sessions:
-    """What a workflow retro collects but `touched.md`: the period's session digests, the older sample, git across the repos, the versions, the tickets and the permissions."""
+    """What a workflow retro collects but `touched.md`: the period's session digests, the older sample, git across the repos, their TODO files, the versions, the tickets and the permissions."""
 
     since: str
     """The period's start, an ISO date or time; UTC where it names no offset."""
     run: Path
     """The run directory, written into; outside every git work tree."""
     repos: list[Path] = field(default_factory=list)
-    """The repos whose commits and tickets are collected, and whose agent repos hold session pages."""
+    """The repos whose commits, tickets and TODO files are collected, and whose agent repos hold session pages."""
     projects: list[Path] = field(default_factory=profiles)
     """Each profile's directory of transcripts; by default every `~/.claude*/projects`."""
     cache: Path | None = None

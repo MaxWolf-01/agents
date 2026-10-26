@@ -10,6 +10,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `previous/`: `current.md`, the report as it stands now with max's verdicts since the last run; `<date>.md`, the last runs' reports; `seed/`, where it exists, the reports a first run takes as its previous ones, with max's verdicts on them;
 - `follow-up.md`, what the period did to each standing finding, candidate and Watched line; `lens-pass/`, the candidates of every code lens; `proposed.md`;
 - `notes/`, stage 2's fresh reading of the period, max's corrections with their causes among it, and in `notes/sample-*.md` of the older sample, from before it;
+- `todo/<repo>/`, max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), read as context, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date. A finding or candidate an item there already names quotes it as his note;
 - in a workflow retro, also `deep/`, the deep-dives, the leading words' search (`leading-words.md`) and the permissions' reading (`permissions.md`) and the critique of the auto mode entries it proposes (`critique.md`); and `versions.md`.
 
 `git/`, and the digests in `sessions/` and `sample/`, are there to check a quote against.
