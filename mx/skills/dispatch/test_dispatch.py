@@ -548,8 +548,8 @@ def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, stage
 
 
 @pytest.mark.full_path
-def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path, staged: Path) -> None:
-    """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `high`
+def test_the_effort_a_spawn_names_reaches_the_runner_medium_unless_given(toy: Path, staged: Path) -> None:
+    """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `medium`
     when the orchestrator says nothing, and it reaches the runner with the permission mode."""
     state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     def logs() -> str:
@@ -564,8 +564,8 @@ def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     waited(toy)
     assert said.returncode == 0, said.stderr
-    assert "model=sonnet  effort=high" in said.stdout, said.stdout
-    assert "stub: built warm-preset at high" in logs()
+    assert "model=sonnet  effort=medium" in said.stdout, said.stdout
+    assert "stub: built warm-preset at medium" in logs()
 
     said = subprocess.run([str(staged), "ctl", "spawn", "warm-preset", "sonnet", "--effort", "low"],
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
@@ -1048,18 +1048,18 @@ def test_a_worker_that_stops_early_is_resumed_until_it_reports(tmp_path: Path, r
 
 
 @pytest.mark.parametrize("given", ["", "low"])
-def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, runner: Path, given: str) -> None:
+def test_the_runner_passes_an_effort_to_every_attempt_medium_unless_told(tmp_path: Path, runner: Path, given: str) -> None:
     """`model-effort-defaults`: every `claude` a worker runs on names its effort, so no worker runs
     at whatever the host's settings say; DISPATCH_EFFORT is how the spawn sets it."""
     run_worker(runner, DISPATCH_EFFORT=given or None)
 
     attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
-    assert attempts and all(f"--model opus --effort {given or 'high'} " in line for line in attempts), attempts
-    assert f"on opus at {given or 'high'} effort" in (runner / "run-1.log").read_text().splitlines()[0]
+    assert attempts and all(f"--model opus --effort {given or 'medium'} " in line for line in attempts), attempts
+    assert f"on opus at {given or 'medium'} effort" in (runner / "run-1.log").read_text().splitlines()[0]
     # `run-log`: the attempt left its line, in the log this HOME defaults to
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
-        ("worker", "warm-preset", 1, "opus", given or "high")
+        ("worker", "warm-preset", 1, "opus", given or "medium")
 
 
 def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path, runner: Path) -> None:
@@ -1158,7 +1158,7 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, runn
     run_worker(runner, *([session] if resumed else []), claude=claude, CLAUDE_CONFIG_DIR=str(tmp_path / "profile"))
     status = (runner / "run-1.status").read_text()
     assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
-    assert "on opus at high effort with claude 2.1.283" in (runner / "run-1.log").read_text().splitlines()[0]
+    assert "on opus at medium effort with claude 2.1.283" in (runner / "run-1.log").read_text().splitlines()[0]
 
 
 def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path, runner: Path) -> None:

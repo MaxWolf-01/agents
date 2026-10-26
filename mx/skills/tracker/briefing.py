@@ -43,7 +43,7 @@ SILENT = ""  # what the last run that answered nothing said, for the page to say
 
 SYSTEM = """You write the briefing at the head of one person's ticket board, for the tracker of the repo you are in.
 
-Your reader is that person, back after a week away, reading a narrow column beside their tickets. Write markdown, under 150 words, opening with the words themselves rather than a title:
+Your reader is that person, back after a week away, reading a narrow column beside their tickets. Write markdown that reads at a glance in that column, opening with the words themselves rather than a title:
 
 - Two or three sentences on where things stand, in plain words. No em dashes, no marketing.
 - Then `## next` and three picks, one line each: the ticket, and why it is a pick. Say which of them can run at the same time, in those words, so dispatching a wave is one decision.
