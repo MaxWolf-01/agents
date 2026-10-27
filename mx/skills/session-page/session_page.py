@@ -1210,11 +1210,11 @@ def assemble(v: View, now: datetime) -> str:
     </section>""" if v.waiting else ""
     body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
-    name = (f'<span class="sep">·</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
+    name = (f'<span class="sep">|</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
     turns = len(v.rows)
     held = account_name(session.directory)
-    account = (f'<span class="sep">·</span><span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span>'
+    account = (f'<span class="sep">|</span><span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span>'
                if held else "")
     return f"""<!doctype html>
 <html lang="en">
