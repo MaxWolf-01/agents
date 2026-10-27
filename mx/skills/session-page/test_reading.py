@@ -517,3 +517,71 @@ def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_exampl
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+def did(at: str, *blocks: dict) -> str:
+    """An assistant entry at `at` holding `blocks`, as a transcript line."""
+    return json.dumps({"type": "assistant", "timestamp": at, "message": {"role": "assistant", "content": list(blocks)}})
+
+
+def call(name: str, id: str, **input: object) -> dict:
+    return {"type": "tool_use", "id": id, "name": name, "input": input}
+
+
+def came_back(at: str, id: str, content: object, error: bool = False) -> str:
+    """The user entry carrying a tool call's result, as a transcript line."""
+    result = {"type": "tool_result", "tool_use_id": id, "content": content, "is_error": error}
+    return json.dumps({"type": "user", "timestamp": at, "message": {"role": "user", "content": [result]}})
+
+
+def with_work(transcript: Path, out: Path, *lines: str) -> Path:
+    out.write_text(transcript.read_text() + "".join(line + "\n" for line in lines))
+    return out
+
+
+def test_a_turns_tool_calls_run_from_its_first_message_to_the_next_turns(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """show-a-turns-tool-calls-on-demand: a call belongs to the turn whose messages it follows, as the
+    page pairs them, up to the next turn's first message. A call after record 01 was written and
+    before turn 02's first prompt (21:25:49) is still turn 01's work; one before every prompt is the
+    first turn's too. Each comes with its result and how it ended. The worked example's own calls
+    are the Write of each record."""
+    worked = with_work(
+        transcript, tmp_path / "t.jsonl",
+        did("2026-09-22T20:30:00Z", call("Read", "r0", file_path="/repo/AGENTS.md")),
+        did("2026-09-22T21:10:00Z", call("Bash", "b1", command="make test", description="Run the suite")),
+        came_back("2026-09-22T21:10:30Z", "b1", "2 failed", error=True),
+        did("2026-09-22T21:30:00Z", call("Agent", "a2", description="Build the grid figure", prompt="...")),
+        came_back("2026-09-22T21:35:00Z", "a2", [{"type": "text", "text": "the figure is at show/grid.html"}]),
+        did("2026-09-23T01:25:00Z", call("Edit", "e4", file_path="/repo/page.css", old_string="a", new_string="b")),
+    )
+    log = session_page.read_session(worked_example, worked).log
+    assert {key: [s.tool for s in steps] for key, steps in log.items()} == {
+        "t01": ["Read", "Write", "Bash"], "t02": ["Agent", "Write"], "t03": ["Write"], "t04": ["Edit", "Write"]}
+    bash = log["t01"][2]
+    assert (bash.output, bash.failed, bash.done) == ("2 failed", True, datetime(2026, 9, 22, 21, 10, 30, tzinfo=UTC))
+    assert log["t02"][0].output == "the figure is at show/grid.html"
+    assert log["t04"][0].done is None, "a call whose result never came back"
+
+
+def test_thinking_is_a_step_only_where_the_transcript_kept_its_text(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """Claude Code stores thinking redacted: a block with no text is no step, one with text is."""
+    worked = with_work(
+        transcript, tmp_path / "t.jsonl",
+        did("2026-09-22T22:05:00Z", {"type": "thinking", "thinking": "", "signature": "x"}),
+        did("2026-09-22T22:06:00Z", {"type": "thinking", "thinking": "The grid wants a leading word.", "signature": "x"}),
+    )
+    [thought, _] = session_page.read_session(worked_example, worked).log["t03"]  # and the Write of record 03
+    assert (thought.tool, thought.output) == ("", "The grid wants a leading word.")
+
+
+@pytest.mark.parametrize(("tool", "input", "line"), [
+    ("Bash", {"command": "make test\nmake check", "description": "Run the suite"}, ("ran", "Run the suite")),
+    ("Bash", {"command": "make test\nmake check"}, ("ran", "make test")),
+    ("Read", {"file_path": "/repo/page.js", "offset": 10}, ("read", "/repo/page.js")),
+    ("Agent", {"description": "Build the figure", "prompt": "A long brief"}, ("subagent", "Build the figure")),
+    ("mcp__browser__navigate", {"url": "https://example.org"}, ("navigate", "https://example.org")),
+])
+def test_a_steps_line_names_what_it_acted_on(tool: str, input: dict, line: tuple[str, str]) -> None:
+    """The ticket's one-line summary: a Bash call's description or command, a file's path, a
+    subagent's description."""
+    assert session_page.summary(session_page.Step(datetime(2026, 9, 22, tzinfo=UTC), tool, input)) == line

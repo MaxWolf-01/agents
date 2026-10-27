@@ -56,6 +56,9 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 import qualified  # noqa: E402  what a ticket's qualified tag names, which the page shows its questions by and links
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
+# The turns' tool calls, beside the page as a script setting `window.toolCalls`, which the page
+# loads only once its log is first opened, so the page's own size never grows with them.
+LOG = "tool-calls.js"
 # In a session's directory, the id of the session whose continuation handoff it picked up, which the
 # handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
 # it, not written.
@@ -197,6 +200,13 @@ def render_session(directory: Path, transcript: Path, now: datetime | None = Non
     return page(read_session(directory, transcript), now or datetime.now())
 
 
+def write_page(session: "Session", now: datetime) -> None:
+    """Write the session's page and its tool-call log (`LOG`) into its directory, the log first, so
+    a page the hub reloads as it is written finds the log rendered with it."""
+    (session.directory / LOG).write_text(log_script(session))
+    (session.directory / PAGE).write_text(page(session, now))
+
+
 def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = ()) -> "Session":
     """The session `directory` holds, with each turn's messages read from `transcript`. `pending`
     is entries the transcript does not hold yet, read as though it ended on them: Claude Code writes
@@ -227,6 +237,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     timeline = in_order(turns, chats)
     times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
+    work = worked_for(timeline, bucket([(when, when) for when, _ in spoken], times), steps_of(entries))
     paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
               for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front.get("session", directory.name))
@@ -249,6 +260,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         following=tuple(sorted(s for s in others if s != previous)),
         titles={other: title_of(d) for other, d in others.items()},
         others=others,
+        log=work,
     )
 
 
@@ -515,6 +527,7 @@ class Session:
     following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
     titles: dict[str, str] = field(default_factory=dict)  # those sessions' titles, by id, where their session.md has one
     others: dict[str, Path] = field(default_factory=dict)  # those sessions' directories, by id, which hold their pages
+    log: dict[str, tuple["Step", ...]] = field(default_factory=dict)  # each turn's steps, by the id of its block (`worked_for`)
 
 
 # ---- reading the records ----------------------------------------------------
@@ -1057,6 +1070,122 @@ def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -
     return out
 
 
+# ---- what a turn did: its tool calls and the thinking the transcript kept ----
+
+
+@dataclass(frozen=True)
+class Step:
+    """One thing a turn did on the way to what it delivered: a tool call with its result, or a
+    thinking block that kept its text. Claude Code stores thinking redacted, so few blocks do."""
+
+    at: datetime
+    tool: str  # the tool's name; empty for thinking
+    input: dict = field(default_factory=dict)
+    output: str = ""  # the call's result as text, or the thinking's text
+    failed: bool = False  # the result is an error
+    done: datetime | None = None  # when the result came back; None for thinking, or a call with no result yet
+
+
+def steps_of(entries: list[dict]) -> list[Step]:
+    """Every tool call and every thinking block with text, oldest first, each call with its result.
+    A subagent's own steps are its transcript's, not this one's."""
+    results: dict[str, tuple[datetime, str, bool]] = {}
+    for entry in entries:
+        content = (entry.get("message") or {}).get("content")
+        if entry.get("type") == "user" and isinstance(content, list) and "timestamp" in entry:
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    results[str(b.get("tool_use_id"))] = (datetime.fromisoformat(entry["timestamp"]), result_text(b.get("content")), bool(b.get("is_error")))
+    steps = []
+    for entry in entries:
+        content = (entry.get("message") or {}).get("content")
+        if entry.get("type") != "assistant" or entry.get("isSidechain") or not isinstance(content, list) or "timestamp" not in entry:
+            continue
+        at = datetime.fromisoformat(entry["timestamp"])
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "thinking" and str(b.get("thinking") or "").strip():
+                steps.append(Step(at, "", output=b["thinking"]))
+            elif b.get("type") == "tool_use":
+                done, output, failed = results.get(str(b.get("id")), (None, "", False))
+                steps.append(Step(at, str(b.get("name", "")), b.get("input") if isinstance(b.get("input"), dict) else {}, output, failed, done))
+    return sorted(steps, key=lambda s: s.at)
+
+
+def result_text(content: object) -> str:
+    """A tool result as text: its text blocks, and a line standing in for each image."""
+    if not isinstance(content, list):
+        return content if isinstance(content, str) else ""
+    return "\n".join(b.get("text", "") if b.get("type") == "text" else f"[{b.get('type')}]" for b in content if isinstance(b, dict))
+
+
+def worked_for(timeline: list["Turn | Chat"], spoken: list[list[datetime]], steps: list[Step]) -> dict[str, tuple[Step, ...]]:
+    """Each turn's steps, by the id of its block: the steps from its first message, as the page
+    pairs messages with it (`spoken`, the times of each turn's), to the next turn's first. A turn
+    with no message of the user's starts where the turn before it was written; a step before every
+    turn's start belongs to the first."""
+    starts, before = [], None
+    for t, said_for in zip(timeline, spoken):
+        starts.append(said_for[0] if said_for else before)
+        before = t.written or before
+    owned: dict[str, list[Step]] = {block_id(t): [] for t in timeline}
+    for step in steps:
+        owner = next((t for t, start in reversed(list(zip(timeline, starts))) if start is not None and start <= step.at), timeline[0] if timeline else None)
+        if owner is not None:
+            owned[block_id(owner)].append(step)
+    return {key: tuple(found) for key, found in owned.items()}
+
+
+def block_id(t: "Turn | Chat") -> str:
+    """The id of a turn's block on the page."""
+    return f"t{t.key}" if isinstance(t, Turn) else t.key
+
+
+# The words a step's line opens with, by its tool, and the input field it names what it acted on by.
+SUMMARIES = {
+    "Bash": ("ran", ("description", "command")),
+    "Read": ("read", ("file_path",)),
+    "Write": ("wrote", ("file_path",)),
+    "Edit": ("edited", ("file_path",)),
+    "MultiEdit": ("edited", ("file_path",)),
+    "NotebookEdit": ("edited", ("notebook_path",)),
+    "Agent": ("subagent", ("description", "prompt")),
+    "Task": ("subagent", ("description", "prompt")),
+    "Skill": ("skill", ("skill",)),
+    "Grep": ("searched", ("pattern",)),
+    "Glob": ("listed", ("pattern",)),
+    "WebSearch": ("searched the web", ("query",)),
+    "WebFetch": ("fetched", ("url",)),
+    "ToolSearch": ("tools", ("query",)),
+}
+# What kind of step a tool's call is, which picks the icon its line shows.
+KINDS = {"Bash": "command", "Read": "read", "Grep": "read", "Glob": "read", "Write": "write", "Edit": "write",
+         "MultiEdit": "write", "NotebookEdit": "write", "Agent": "subagent", "Task": "subagent", "WebSearch": "web", "WebFetch": "web"}
+
+
+def summary(step: Step) -> tuple[str, str]:
+    """A step's line: the words it opens with, and the first line of what it acted on."""
+    if not step.tool:
+        return "thought", step.output.strip().splitlines()[0]
+    verb, fields = SUMMARIES.get(step.tool, (step.tool.removeprefix("mcp__").split("__")[-1], ()))
+    values = [step.input.get(f) for f in fields] or list(step.input.values())
+    subject = next((str(v) for v in values if isinstance(v, (str, int, float)) and str(v).strip()), "")
+    return verb, subject.strip().splitlines()[0] if subject.strip() else ""
+
+
+def log_script(session: "Session") -> str:
+    """The tool-call log as the script the page loads: each turn's steps by its block's id, each
+    with its line and its request and result whole, the page cutting a long one short."""
+    def shown(step: Step) -> dict:
+        verb, subject = summary(step)
+        return {"kind": KINDS.get(step.tool, "other") if step.tool else "thinking", "tool": step.tool, "verb": verb,
+                "subject": subject, "input": step.input, "output": step.output, "failed": step.failed,
+                "at": step.at.isoformat(), "done": step.done.isoformat() if step.done else None}
+    return f"window.toolCalls = {json.dumps({key: [shown(s) for s in steps] for key, steps in session.log.items()}, ensure_ascii=False)}\n"
+
+
+
 # ---- the page ---------------------------------------------------------------
 
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
@@ -1076,6 +1205,7 @@ KEYS = [
     ("[ ]", "previous, next question"),
     ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
+    ("l", "show or close the focused turn's tool calls, the newest turn's where none is picked"),
     ("y", "copy the turn's markdown, the newest turn's where none is picked"),
     ("Y", "copy the whole session's markdown"),
     ("R", "copy the resume command"),
@@ -1225,13 +1355,14 @@ def assemble(v: View, now: datetime) -> str:
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<style>{TOKENS.read_text()}{(HERE / "page.css").read_text()}</style>
+<style>{TOKENS.read_text()}{(HERE / "page.css").read_text()}{(HERE / "log.css").read_text()}</style>
 <script>{THEME}</script>
 </head>
 <body>
 <header class="bar">
   <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
+  <button class="log-toggle v-meta" id="log-toggle" aria-controls="log" aria-expanded="false" aria-keyshortcuts="l" data-src="{LOG}?{now:%Y%m%d%H%M%S%f}" title="the focused turn's tool calls">log <kbd>l</kbd></button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
     <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -1255,6 +1386,7 @@ def assemble(v: View, now: datetime) -> str:
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script type="application/json" id="sources">{sources(v)}</script>
 <script>{(HERE / "page.js").read_text()}</script>
+<script>{(HERE / "log.js").read_text()}</script>
 </body>
 </html>
 """
@@ -1264,7 +1396,7 @@ def sources(v: View) -> str:
     """What the copy keys and buttons copy, as JSON: each turn's record as written, by the id of its block, and under
     `session` its session.md and every record, oldest first. Every `<` is escaped, so nothing a record quotes ends the
     script element the JSON sits in, `</script>` or a comment's opening before a `<script>`."""
-    turns = {(f"t{r.key}" if isinstance(r.turn, Turn) else r.key): r.turn.path.read_text() for r in reversed(v.rows)}
+    turns = {block_id(r.turn): r.turn.path.read_text() for r in reversed(v.rows)}
     described = v.session.directory / "session.md"
     whole = ([described.read_text()] if described.is_file() else []) + list(turns.values())
     return json.dumps({**turns, "session": "\n\n".join(t.strip() for t in whole) + "\n"}).replace("<", "\\u003c")

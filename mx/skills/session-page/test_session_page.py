@@ -35,8 +35,8 @@ from session_checks import (
     DRAWN, SESSION, TURN_ANCHOR, anchors, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_tickets,
 )
 from session_page import (
-    AGENT_REPO, ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path, chat_record, inline, pages_directory,
-    render_session,
+    AGENT_REPO, ARTEFACT, COLUMN, LOG, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path, chat_record, inline,
+    pages_directory, read_session, render_session, write_page,
 )
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -681,3 +681,27 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+def test_the_page_carries_no_tool_call_and_its_log_beside_it_carries_each(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """show-a-turns-tool-calls-on-demand: the page's size does not grow with its tool calls. Its
+    one control for them names the log file beside it, which holds each call's request and its
+    result whole, under the id of the turn's block on the page."""
+    output = "the whole of a large read " * 2000
+    call = {"type": "tool_use", "id": "b1", "name": "Bash", "input": {"command": "cat docs/very-distinct-name.md", "description": "Read the distinct doc"}}
+    result = {"type": "tool_result", "tool_use_id": "b1", "content": output}
+    worked = tmp_path / "t.jsonl"
+    worked.write_text(transcript.read_text()
+                      + json.dumps({"type": "assistant", "timestamp": "2026-09-23T01:25:00Z", "message": {"content": [call]}}) + "\n"
+                      + json.dumps({"type": "user", "timestamp": "2026-09-23T01:25:01Z", "message": {"content": [result]}}) + "\n")
+    write_page(read_session(worked_example, worked), NOW)
+    page = (worked_example / PAGE).read_text()
+    assert "very-distinct-name" not in page and "large read" not in page
+    [control] = re.findall(r'<button[^>]*aria-keyshortcuts="l"[^>]*>', page)
+    assert f'data-src="{LOG}?' in control
+    script = (worked_example / LOG).read_text()
+    assert script.startswith("window.toolCalls = ")
+    log = json.loads(script.removeprefix("window.toolCalls = "))
+    bash = [s for s in log["t04"] if s["tool"] == "Bash"]
+    assert [(s["subject"], s["input"]["command"], s["output"]) for s in bash] == [("Read the distinct doc", "cat docs/very-distinct-name.md", output)]
+    assert set(log) == {"t01", "t02", "t03", "t04"}
