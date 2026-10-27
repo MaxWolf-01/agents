@@ -1,0 +1,48 @@
+/* The tool-call log (log.js): a drawer on the right, over the timeline column. */
+.bar .log-toggle { display: inline-flex; align-items: center; gap: 0.35em; padding: 0.15rem 0.35rem; border: none; background: none; color: var(--muted); font: 400 0.78rem var(--font-mono); cursor: pointer; }
+.bar .log-toggle:hover, .bar .log-toggle[aria-expanded="true"] { color: var(--accent); }
+
+.log { position: fixed; z-index: 40; top: var(--bar); right: 0; bottom: 0; width: min(38rem, 94vw); display: none; flex-direction: column; box-sizing: border-box;
+  background: var(--ground); color: var(--body); border-left: 1px solid var(--edge); box-shadow: -10px 0 30px rgb(0 0 0 / 0.08);
+  font: 400 0.78rem/1.45 var(--font-mono); }
+.log.open { display: flex; }
+.log-head { flex: none; display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--edge); }
+.log-head .which { flex: 1; min-width: 0; color: var(--strong); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-head .which .hl { color: var(--muted); font-weight: 400; }
+.log-head .tally { flex: none; display: inline-flex; align-items: center; gap: 0.6rem; color: var(--muted); }
+.log-head .tally span { display: inline-flex; align-items: center; gap: 0.15rem; }
+.log-head button { border: none; background: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0.1rem 0.3rem; }
+.log-head button:hover { color: var(--accent); }
+.log-steps { flex: 1; min-height: 0; overflow-y: auto; padding: 0.2rem 0; }
+.log-empty { padding: 1rem 0.9rem; color: var(--muted); }
+.log .step { border-bottom: 1px solid color-mix(in srgb, var(--edge) 55%, transparent); }
+.log .step > button { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; padding: 0.32rem 0.9rem; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.log .step > button:hover { background: var(--wash-ink); }
+.log .step .verb { flex: none; color: var(--muted); }
+.log .step .subject { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--body); }
+.log .step .took { flex: none; color: var(--muted); opacity: 0.7; }
+.log .step .failed { flex: none; color: light-dark(#9c3d22, #d98a6c); }
+.log .step.thinking .subject { font-family: var(--font-body); font-style: italic; font-size: 0.86rem; white-space: normal;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.log .step.thinking.open .subject { display: block; }
+.log .ico { flex: none; width: 13px; height: 13px; transform: translateY(2px); color: var(--muted); }
+.log .detail { padding: 0 0.9rem 0.6rem 2.3rem; }
+.log .detail .label { color: var(--muted); font-size: 0.7rem; margin: 0.4rem 0 0.15rem; }
+.log .detail .path { color: var(--muted); font-size: 0.72rem; margin: 0.35rem 0 0.2rem; overflow-wrap: anywhere; }
+.log .detail pre.code { margin: 0 0 0.25rem; padding: 0.45rem 0.6rem; max-height: 24rem; overflow: auto; background: var(--ground-2); border-radius: var(--radius);
+  white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 0.72rem; line-height: 1.5; border-left: 2px solid transparent; }
+.log .detail pre.del { background: light-dark(rgb(160 60 40 / 0.09), rgb(217 138 108 / 0.10)); border-left-color: light-dark(#a4523a, #c97a5c); }
+.log .detail pre.add { background: light-dark(rgb(66 103 36 / 0.09), rgb(117 162 82 / 0.11)); border-left-color: var(--accent); }
+.log .detail .more { margin: 0 0 0.3rem; border: none; background: none; color: var(--accent); font: inherit; font-size: 0.72rem; cursor: pointer; padding: 0; }
+
+/* highlight.js tokens in the house palette: brown ink on parchment by day, sand on charcoal by night */
+.log .hljs-keyword, .log .hljs-selector-tag, .log .hljs-built_in, .log .hljs-meta .hljs-keyword { color: var(--accent); }
+.log .hljs-string, .log .hljs-regexp, .log .hljs-symbol, .log .hljs-attr + .hljs-string { color: light-dark(#8a5a1c, #d4b06a); }
+.log .hljs-number, .log .hljs-literal, .log .hljs-variable, .log .hljs-template-variable { color: light-dark(#7a3f5a, #d49ab4); }
+.log .hljs-attr, .log .hljs-attribute, .log .hljs-property, .log .hljs-name, .log .hljs-tag { color: light-dark(#4b5d7a, #9fb2cf); }
+.log .hljs-title, .log .hljs-title.function_, .log .hljs-section, .log .hljs-type, .log .hljs-class .hljs-title { color: var(--strong); font-weight: 500; }
+.log .hljs-comment, .log .hljs-quote, .log .hljs-meta { color: var(--muted); font-style: italic; }
+.log .hljs-params, .log .hljs-punctuation, .log .hljs-operator { color: var(--body); }
+.log .hljs-addition { color: var(--accent); }
+.log .hljs-deletion { color: light-dark(#9c3d22, #d98a6c); }
+.log .detail pre.failed { border-left-color: light-dark(#a4523a, #c97a5c); }

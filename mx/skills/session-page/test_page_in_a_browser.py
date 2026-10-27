@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 from session_checks import SESSION
-from session_page import PAGE, chat_path, chat_record, render_session
+from session_page import PAGE, chat_path, chat_record, read_session, render_session, write_page
 
 # Every check here starts a browser.
 pytestmark = pytest.mark.full_path
@@ -339,6 +339,37 @@ with sync_playwright() as pw:
             return cell.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) > 1.5 * parseFloat(s.lineHeight) }
           return {turn: box(turn), text: box(prose.querySelector("p")), pane: box(document.getElementById("turns-pane")),
                   tables: [...prose.querySelectorAll(":scope > table")].map((t) => ({...box(t), wraps: [...t.querySelectorAll("th, td")].some(wraps)}))} })()'''))
+    elif scenario == "log":
+        # the drawer as the reader sees it: open or not, the turn it names, each step's line
+        context, page = open_page(1280, 800)
+        SHOWN = '''(() => { const log = document.getElementById("log")
+          return {open: !!log && log.checkVisibility(), which: log?.querySelector(".which")?.textContent ?? null,
+                  steps: [...(log?.querySelectorAll(".step") ?? [])].map((s) => s.classList.contains("thinking")
+                    ? ["thinking", s.querySelector(".subject").textContent] : [s.querySelector(".verb").textContent, s.querySelector(".subject").textContent])} })()'''
+        LOADED = "'toolCalls' in window"
+        STEP = '''(verb) => [...document.querySelectorAll("#log .step")].find((s) => s.querySelector(".verb")?.textContent === verb)'''
+        out["closed"] = page.evaluate(SHOWN) | {"loaded": page.evaluate(LOADED)}
+        page.keyboard.press("l")
+        page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
+        out["newest"] = page.evaluate(SHOWN) | {"loaded": page.evaluate(LOADED)}
+        page.keyboard.press("j")
+        page.keyboard.press("j")
+        out["after_jj"] = page.evaluate(SHOWN)
+        page.keyboard.press("k")
+
+        def opened(verb):
+            page.evaluate(f"(verb) => ({STEP})(verb).querySelector('button').click()", verb)
+            return page.evaluate(f'''(verb) => [...({STEP})(verb).querySelectorAll(".detail pre")].map((p) => ({{lang: p.dataset.lang,
+                cls: p.className, text: p.textContent, lit: !!p.querySelector("[class^=hljs-]"), more: !!p.nextElementSibling?.matches(".more")}}))''', verb)
+        out["bash"], out["edit"], out["read"] = opened("ran"), opened("edited"), opened("read")
+        out["read_whole"] = page.evaluate(f'''(() => {{ const s = ({STEP})("read"); s.querySelector(".more").click()
+            return s.querySelector(".detail pre").textContent.length }})()''')
+        page.keyboard.press("Escape")
+        out["escaped"] = page.evaluate(SHOWN)["open"]
+        page.click("#log-toggle")
+        out["clicked"] = page.evaluate(SHOWN)["open"]
+        page.keyboard.press("l")
+        out["closed_again"] = page.evaluate(SHOWN)["open"]
     browser.close()
 print(json.dumps(out))
 """
@@ -481,7 +512,7 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["resume_inline"], "the resume control is not on the title's meta line"
     resume = f"cd /home/max/repos/github/MaxWolf-01/agents && claude --resume {SESSION}"
     assert (seen["resume_clicked"], seen["resume_keyed"]) == (resume, resume)
-    for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R"):
+    for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R", "l"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
 
 
@@ -669,6 +700,62 @@ def test_a_wide_table_spreads_past_the_text_and_stays_in_its_turn(tabled: Path, 
     if width == WIDTHS[0]:
         assert not wide["wraps"] and wide["left"] < text["left"] - 1, f"the table did not spread past the text: {seen}"
     assert abs(narrow["left"] - text["left"]) <= 1, f"the narrow table left the text's start: {seen}"
+
+
+READ_LINES = [f"def line_{n}(): return {n}\n" for n in range(1, 400)]  # far more than a step shows before "show all"
+
+
+def worked(transcript: Path, out: Path) -> Path:
+    """The worked example's transcript with turn 04's work: a Bash call, an Edit of a CSS file and a
+    long Read of a Python file; and in turn 03 a thinking block that kept its text and one that did not."""
+    def did(at: str, *blocks: dict) -> str:
+        return json.dumps({"type": "assistant", "timestamp": at, "message": {"content": list(blocks)}})
+
+    def came_back(at: str, id: str, text: str) -> str:
+        return json.dumps({"type": "user", "timestamp": at, "message": {"content": [{"type": "tool_result", "tool_use_id": id, "content": text}]}})
+
+    edit = {"file_path": "/repo/page.css", "old_string": ".bar { color: red; }", "new_string": ".bar { color: green; }"}
+    lines = [
+        did("2026-09-22T22:05:00Z", {"type": "thinking", "thinking": "", "signature": "x"}),
+        did("2026-09-22T22:06:00Z", {"type": "thinking", "thinking": "The grid wants a leading word.", "signature": "x"}),
+        did("2026-09-23T01:21:00Z", {"type": "tool_use", "id": "b", "name": "Bash", "input": {"command": "make test BASE=master", "description": "Run the suite"}}),
+        came_back("2026-09-23T01:21:09Z", "b", "321 passed"),
+        did("2026-09-23T01:22:00Z", {"type": "tool_use", "id": "e", "name": "Edit", "input": edit}),
+        came_back("2026-09-23T01:22:01Z", "e", "The file /repo/page.css has been updated."),
+        did("2026-09-23T01:23:00Z", {"type": "tool_use", "id": "r", "name": "Read", "input": {"file_path": "/repo/lines.py"}}),
+        came_back("2026-09-23T01:23:01Z", "r", "".join(f"{n:6}→{line}" for n, line in enumerate(READ_LINES, start=1))),
+    ]
+    out.write_text(transcript.read_text() + "".join(line + "\n" for line in lines))
+    return out
+
+
+def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple[Path, Path], transcript: Path, tmp_path: Path) -> None:
+    """show-a-turns-tool-calls-on-demand: closed, the page shows no log and has loaded none of it. l
+    opens the newest turn's calls in order, one line each, and the log follows j and k. A Bash call
+    shows its command highlighted as shell, an Edit its old and new text as a diff highlighted by
+    the file's extension, a long Read is cut short, its line numbers dropped, and shows whole on
+    demand. Thinking shows where the transcript kept its text. Esc closes it, the control opens it,
+    l closes it."""
+    page, _ = rendered
+    write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
+    seen = probe(page, "log")
+    assert seen["closed"] == {"open": False, "which": None, "steps": [], "loaded": False}
+    newest = seen["newest"]
+    assert newest["open"] and newest["loaded"] and newest["which"].startswith("turn 04 · "), newest
+    assert newest["steps"][:3] == [["ran", "Run the suite"], ["edited", "/repo/page.css"], ["read", "/repo/lines.py"]]
+    assert [verb for verb, _ in newest["steps"][3:]] == ["wrote"], "the Write of record 04 comes last"
+    assert seen["after_jj"]["which"].startswith("turn 03 · ")
+    assert [s for s in seen["after_jj"]["steps"] if s[0] == "thinking"] == [["thinking", "The grid wants a leading word."]]
+    bash, ran = seen["bash"]
+    assert (bash["lang"], bash["text"], bash["lit"], ran["text"]) == ("bash", "make test BASE=master", True, "321 passed")
+    old, new, _ = seen["edit"]
+    assert (old["cls"], old["lang"], old["text"], old["lit"]) == ("code del", "css", ".bar { color: red; }", True)
+    assert (new["cls"], new["lang"], new["text"], new["lit"]) == ("code add", "css", ".bar { color: green; }", True)
+    [read] = seen["read"]
+    assert (read["lang"], read["more"]) == ("python", True) and read["text"].startswith(READ_LINES[0])
+    assert len(read["text"]) < len("".join(READ_LINES)) / 2
+    assert seen["read_whole"] == len("".join(READ_LINES))
+    assert (seen["escaped"], seen["clicked"], seen["closed_again"]) == (False, True, False)
 
 
 if __name__ == "__main__":

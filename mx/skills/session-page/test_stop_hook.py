@@ -44,7 +44,7 @@ from session_checks import (
     view_of, with_write, write_tickets,
 )
 from session_checks import record as drawn_record
-from session_page import AGENT_REPO, PAGE, PREVIOUS, SESSIONS, pages_directory
+from session_page import AGENT_REPO, LOG, PAGE, PREVIOUS, SESSIONS, pages_directory
 from stop_hook import decide
 
 
@@ -217,7 +217,7 @@ def test_a_sessions_first_turn_that_ends_on_a_reply_starts_its_page_with_that_re
     assert capsys.readouterr().out == ""
     [chat] = chats(directory)
     assert chat.read_text().split("---\n", 2)[2].strip() == reply
-    assert sorted(p.name for p in directory.iterdir()) == [AGENT_REPO, PAGE, "turns"]
+    assert sorted(p.name for p in directory.iterdir()) == [AGENT_REPO, PAGE, LOG, "turns"]
     page = (directory / PAGE).read_text()
     assert rows(page) == [chat.stem]
     assert "<title>Helferline handoff continued · session page</title>" in page
@@ -294,7 +294,7 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
     hook = payload(worked_example, transcript)
     (worked_example / PAGE).write_text(stale_page)
     run(hook)
-    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "session.md", "turns"]
+    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "session.md", "tool-calls.js", "turns"]
     assert (worked_example / "index.html").read_text() != stale_page
 
 

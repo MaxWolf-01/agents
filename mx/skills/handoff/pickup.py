@@ -36,7 +36,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "session-page"))
 from session_page import (  # noqa: E402
-    PAGE, PAGES, PREVIOUS, RecordError, account, left_alone, located, make_session_directory, page, read_session,
+    PAGE, PAGES, PREVIOUS, RecordError, account, left_alone, located, make_session_directory, read_session, write_page,
 )
 
 
@@ -110,7 +110,7 @@ def render(directory: Path | None) -> str:
     if (theirs := next(projects.glob(f"*/{directory.name}.jsonl"), None)) is None:
         return f"no transcript under {projects}: it links forward from its next render"
     try:
-        (directory / PAGE).write_text(page(read_session(directory, theirs), datetime.now()))
+        write_page(read_session(directory, theirs), datetime.now())
     except (RecordError, OSError) as e:
         return f"not rendered: {e}"
     return f"rendered again, linking forward: {directory / PAGE}"
