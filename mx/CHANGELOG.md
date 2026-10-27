@@ -1,3 +1,8 @@
+## 1.0.91
+
+- session-page: the Stop hook leaves the session page to the hub, and claude-browser puts pages on the hub
+  Where a container hub answers, the Stop hook no longer hands the session page to claude-browser at a turn's end: the hub finds the page on disk and reloads it once rewritten, and nothing opens a hub tab any more. Without a hub the first render still opens it as a tab. The global CLAUDE.md and the session page RULES now say claude-browser puts a page on the hub rather than opening it in max's browser.
+
 ## 1.0.90
 
 - The effort-forwarding check can fail again now that workers default to medium
