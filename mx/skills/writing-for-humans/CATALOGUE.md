@@ -8,8 +8,6 @@ Each rule is one block: a bullet carrying its id, its scope tag and its name, pl
 awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
 ```
 
-Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop) (MIT), and [Wikipedia:Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing).
-
 ## Content
 
 - `3` `both` **Superficial -ing phrases.** "highlighting...", "ensuring...", "reflecting...", "showcasing...", "fostering...": a present participle bolted onto a fact to append analysis it has not earned. End the sentence at the fact. Analysis that matters gets its own sentence with its own sources.
