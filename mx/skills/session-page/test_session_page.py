@@ -622,8 +622,8 @@ def test_the_bar_names_the_account_a_sessions_directory_sits_under(directory: st
     assert account_name(Path(directory)) == named
 
 
-def test_the_bar_shows_the_account_first(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
-    """The account the session runs under heads the bar, so a glance says which one it is; a
+def test_the_bar_names_the_account(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """The bar names the account the session runs under, so a glance says which one it is; a
     directory under no account shows none."""
     assert "session-account" not in elements(render_session(worked_example, transcript, now=NOW), "session-account")
     moved = pages_directory(tmp_path / ".claude-helferline", SESSION)

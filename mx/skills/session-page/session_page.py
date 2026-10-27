@@ -1214,7 +1214,7 @@ def assemble(v: View, now: datetime) -> str:
             if session.name else "")
     turns = len(v.rows)
     held = account_name(session.directory)
-    account = (f'<span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span><span class="sep">·</span>'
+    account = (f'<span class="sep">·</span><span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span>'
                if held else "")
     return f"""<!doctype html>
 <html lang="en">
@@ -1230,7 +1230,7 @@ def assemble(v: View, now: datetime) -> str:
 </head>
 <body>
 <header class="bar">
-  <span class="v-meta where">{account}<span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.rows)}
+  <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">

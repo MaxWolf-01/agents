@@ -35,7 +35,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .bar .where { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar .where .sep { margin: 0 0.45em; opacity: 0.55; }
 .bar .where .name { color: var(--body); }
-.bar .where .account { padding: 0.1em 0.5em; border-radius: var(--radius); background: var(--wash); color: var(--accent); }
+.bar .where .account { color: var(--accent); }
 .icon { display: inline-flex; align-items: center; padding: 0.3rem; border: 0; background: none; color: var(--muted); cursor: pointer; transition: color 150ms; }
 .icon:hover { color: var(--accent); }
 .icon kbd { font-size: 0.78rem; }
