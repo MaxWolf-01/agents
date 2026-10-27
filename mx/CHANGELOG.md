@@ -1,3 +1,8 @@
+## 1.0.92
+
+- session-page: the bar names the account the session runs under
+  The session page's bar now ends its left part with the Claude Code account the session runs under (personal for ~/.claude, <x> for ~/.claude-<x>), in accent text, so a glance at the page, alone or in the hub's sidebar, tells a work session from a personal one. It is read off where the session's directory sits; a directory under no account shows none. The bar's separators before the short name and the account are vertical bars.
+
 ## 1.0.91
 
 - session-page: the Stop hook leaves the session page to the hub, and claude-browser puts pages on the hub
