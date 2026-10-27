@@ -16,10 +16,9 @@ CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
 A render opens each artefact that this turn's record links with `claude-browser`, where the host
 has one, and tells it the session through MX_ORIGIN_SESSION. A ticket file is not an artefact, so
-it never opens. Where the container hub answers, every render opens the page too: the hub lands
-each page in the session's unit and turns a repeat into a reload. Where none does, only the render
-that writes the page first opens it, since a repeat would be another tab. Each open is a line of
-the log saying what came of it.
+it never opens. The page itself opens only where no container hub answers, and only on the render
+that writes it first, since a repeat would be another tab: the hub finds a session's page on disk
+and reloads it once it is written anew. Each open is a line of the log saying what came of it.
 
 The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
 whose turn wrote a record shows the user a message of the hook's own under it, as a
@@ -237,7 +236,8 @@ def main() -> None:
             decision.chat[0].write_text(decision.chat[1])
         (directory / PAGE).write_text(page(read_session(directory, Path(hook["transcript_path"])), datetime.now()))
         unit = hub_unit(session_id)
-        opened = open_in_browser(str(directory / PAGE), session_id) if unit or first else "not reopened: no hub answers"
+        opened = ("not opened: the hub shows it" if unit
+                  else open_in_browser(str(directory / PAGE), session_id) if first else "not reopened: no hub answers")
         turn_review.log(session_id, opened=opened, page=str(directory / PAGE))
         for artefact in decision.artefacts:
             turn_review.log(session_id, opened=open_in_browser(artefact, session_id), artefact=artefact)
