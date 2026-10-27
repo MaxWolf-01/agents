@@ -1,3 +1,8 @@
+## 1.0.93
+
+- feat(dispatch): the spawn places its worker, and each machine caps and shares its workers
+  Starting a worker no longer requires naming a machine. Without a host, the spawn goes to the machine under least CPU pressure that has a free slot and offers what the ticket needs; the orchestrator passes those needs, and the account to run on (DISPATCH_ACCOUNT from a project's .envrc, else personal), as flags. Each machine caps how many workers it runs: a spawn or resume tries the next machine, or waits and retries every minute while all are full. A time-critical ticket can ask for a larger CPU share with --cpu-weight. Workers on hosts marked isolated bypass permissions by default. Placement and slots live in dotfiles' worker-hosts --place and host-slots; the pytest process cap is gone.
+
 ## 1.0.92
 
 - session-page: the bar names the account the session runs under
