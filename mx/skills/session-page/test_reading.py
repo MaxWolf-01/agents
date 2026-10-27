@@ -27,7 +27,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 
 import session_page
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
-from session_checks import SESSION, followed, messages_of, project_of, rows_of, sections_of, text_of, view_of
+from session_checks import SESSION, SPOKEN_AFTER, followed, messages_of, project_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -515,10 +515,6 @@ def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_exampl
     assert re.search(r'<aside class="column"[^>]*>\s*<div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>', page)
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
 def did(at: str, *blocks: dict) -> str:
     """An assistant entry at `at` holding `blocks`, as a transcript line."""
     return json.dumps({"type": "assistant", "timestamp": at, "message": {"role": "assistant", "content": list(blocks)}})
@@ -574,6 +570,18 @@ def test_thinking_is_a_step_only_where_the_transcript_kept_its_text(worked_examp
     assert (thought.tool, thought.output) == ("", "The grid wants a leading word.")
 
 
+def test_work_after_a_message_no_record_answers_yet_is_on_no_turn(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """As the message said after the newest record is on no turn until a later record is written,
+    so is the work done for it: turn 04 keeps what it did before that message and nothing after."""
+    worked = with_work(
+        transcript, tmp_path / "t.jsonl",
+        did("2026-09-23T01:31:00Z", call("Bash", "b4", command="git status")),
+        json.dumps(SPOKEN_AFTER),
+        did("2026-09-23T01:40:00Z", call("Bash", "b5", command="make test")),
+    )
+    assert [s.input.get("command") for s in session_page.read_session(worked_example, worked).log["t04"] if s.tool == "Bash"] == ["git status"]
+
+
 @pytest.mark.parametrize(("tool", "input", "line"), [
     ("Bash", {"command": "make test\nmake check", "description": "Run the suite"}, ("ran", "Run the suite")),
     ("Bash", {"command": "make test\nmake check"}, ("ran", "make test")),
@@ -585,3 +593,7 @@ def test_a_steps_line_names_what_it_acted_on(tool: str, input: dict, line: tuple
     """The ticket's one-line summary: a Bash call's description or command, a file's path, a
     subagent's description."""
     assert session_page.summary(session_page.Step(datetime(2026, 9, 22, tzinfo=UTC), tool, input)) == line
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

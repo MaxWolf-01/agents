@@ -679,10 +679,6 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
     assert marked(rendered) == targets, "a ticket file carries the attribute the hub marks by"
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
 def test_the_page_carries_no_tool_call_and_its_log_beside_it_carries_each(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
     """show-a-turns-tool-calls-on-demand: the page's size does not grow with its tool calls. Its
     one control for them names the log file beside it, which holds each call's request and its
@@ -705,3 +701,7 @@ def test_the_page_carries_no_tool_call_and_its_log_beside_it_carries_each(worked
     bash = [s for s in log["t04"] if s["tool"] == "Bash"]
     assert [(s["subject"], s["input"]["command"], s["output"]) for s in bash] == [("Read the distinct doc", "cat docs/very-distinct-name.md", output)]
     assert set(log) == {"t01", "t02", "t03", "t04"}
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

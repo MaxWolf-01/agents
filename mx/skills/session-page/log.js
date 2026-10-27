@@ -1,11 +1,10 @@
 // The tool-call log: a drawer on the right, over the timeline, showing what the focused turn did
 // (page.js marks that turn's block .cur), else the newest turn's. `log l` in the bar or l opens and
 // closes it, and Esc closes it. The steps live beside the page in tool-calls.js, which the first
-// opening loads, with the highlighter; until then the page holds none of them.
+// opening loads, with the highlighter; until then the page holds none of them. It runs after
+// page.js in the same page, and uses its `pane`, `blocks` and `typing`.
 (() => {
   const toggleButton = document.getElementById("log-toggle")
-  const pane = document.getElementById("turns-pane")
-  const blocks = [...pane.querySelectorAll("[data-block]")]
   const HLJS = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"
   const HLJS_SRI = "sha384-RH2xi4eIQ/gjtbs9fUXM68sLSi99C7ZWBRX1vDrVv6GQXRibxXLbwO2NGZB74MbU"
   const CUT = 1500  // the characters of a request or a result a step shows until "show all"
@@ -154,7 +153,6 @@
   const isOpen = () => panel.classList.contains("open")
   async function toggle(open = !isOpen()) {
     toggleButton.setAttribute("aria-expanded", String(open))
-    document.body.classList.toggle("log-open", open)
     if (!open) return panel.classList.remove("open")
     if (!window.toolCalls) { panel.innerHTML = '<p class="log-empty">loading the tool calls…</p>'; panel.classList.add("open"); await load() }
     if (toggleButton.getAttribute("aria-expanded") !== "true") return  // closed while it loaded
@@ -163,7 +161,7 @@
   }
   toggleButton.addEventListener("click", () => toggle())
   document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || (e.target.matches && e.target.matches("input, textarea, select, [contenteditable]"))) return
+    if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return
     if (e.key === "l") { toggle(); e.preventDefault() }
     else if (e.key === "Escape" && isOpen()) toggle(false)
   })

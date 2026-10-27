@@ -702,8 +702,7 @@ def test_a_wide_table_spreads_past_the_text_and_stays_in_its_turn(tabled: Path, 
     assert abs(narrow["left"] - text["left"]) <= 1, f"the narrow table left the text's start: {seen}"
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+READ_LINES = [f"def line_{n}(): return {n}\n" for n in range(1, 400)]  # far more than a step shows before "show all"
 
 
 def worked(transcript: Path, out: Path) -> Path:
@@ -728,9 +727,6 @@ def worked(transcript: Path, out: Path) -> Path:
     ]
     out.write_text(transcript.read_text() + "".join(line + "\n" for line in lines))
     return out
-
-
-READ_LINES = [f"def line_{n}(): return {n}\n" for n in range(1, 400)]  # far more than a step shows before "show all"
 
 
 def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple[Path, Path], transcript: Path, tmp_path: Path) -> None:
@@ -760,3 +756,7 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert len(read["text"]) < len("".join(READ_LINES)) / 2
     assert seen["read_whole"] == len("".join(READ_LINES))
     assert (seen["escaped"], seen["clicked"], seen["closed_again"]) == (False, True, False)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

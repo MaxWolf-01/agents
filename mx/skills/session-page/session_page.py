@@ -238,7 +238,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     timeline = in_order(turns, chats)
     times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
-    work = worked_for(timeline, bucket([(when, when) for when, _ in spoken], times), steps_of(entries))
+    work = worked_for(timeline, [when for when, _ in spoken], steps_of(entries))
     paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
               for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front.get("session", directory.name))
@@ -1121,17 +1121,23 @@ def result_text(content: object) -> str:
     return "\n".join(b.get("text", "") if b.get("type") == "text" else f"[{b.get('type')}]" for b in content if isinstance(b, dict))
 
 
-def worked_for(timeline: list["Turn | Chat"], spoken: list[list[datetime]], steps: list[Step]) -> dict[str, tuple[Step, ...]]:
+def worked_for(timeline: list["Turn | Chat"], said_at: list[datetime], steps: list[Step]) -> dict[str, tuple[Step, ...]]:
     """Each turn's steps, by the id of its block: the steps from its first message, as the page
-    pairs messages with it (`spoken`, the times of each turn's), to the next turn's first. A turn
-    with no message of the user's starts where the turn before it was written; a step before every
-    turn's start belongs to the first."""
+    pairs messages with it (`bucket`, over `said_at`, when the user said each), to the next turn's
+    first. A turn with no message of the user's starts where the turn before it was written; a step
+    before every turn's start belongs to the first. A message said after the newest record is on no
+    turn yet, and neither is the work from it on."""
+    times = [t.written for t in timeline]
     starts, before = [], None
-    for t, said_for in zip(timeline, spoken):
+    for t, said_for in zip(timeline, bucket([(when, when) for when in said_at], times)):
         starts.append(said_for[0] if said_for else before)
         before = t.written or before
+    newest = max((at for at in times if at is not None), default=None)
+    end = next((when for when in said_at if newest is not None and when > newest), None)
     owned: dict[str, list[Step]] = {block_id(t): [] for t in timeline}
     for step in steps:
+        if end is not None and step.at >= end:
+            continue
         owner = next((t for t, start in reversed(list(zip(timeline, starts))) if start is not None and start <= step.at), timeline[0] if timeline else None)
         if owner is not None:
             owned[block_id(owner)].append(step)
