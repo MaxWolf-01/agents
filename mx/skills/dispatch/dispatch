@@ -11,12 +11,16 @@
 #                 stores stdin as the message of the ticket's next spawn or
 #                 resume, staged under the ticket's context as it stands then;
 #                 a resume sends it alone, flagged when that context changed.
-# ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
-#                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
-#                 spawn names the host, user@host or `local`; later commands
-#                 find it from the slug. `probe` with no --host first retires
-#                 the run of each ticket done or out of the tracker whose work
-#                 merged, then asks every host this branch has a run on.
+# ctl [--host <host>] [--account <name>] [--needs <capability>]...
+#     [--setup-cmd <cmd>] <dispatch-ctl args>
+#                 runs dispatch-ctl on a worker host (`dispatch ctl --help`).
+#                 With no --host, a spawn goes where `worker-hosts --place`
+#                 puts it, on --account (DISPATCH_ACCOUNT, else personal)
+#                 with each --needs. Spawn and resume wait for a free slot.
+#                 Later commands find the host from the ticket's run.
+#                 `probe` with no --host first retires the run of each
+#                 ticket done or out of the tracker whose work merged, then
+#                 asks every host this branch has a run on.
 #                 --setup-cmd replaces the line each new worktree there runs
 #                 first (default `make install`, under `nix develop -c` with a
 #                 flake.nix). `resume` fetches the round and imports its report
@@ -56,9 +60,9 @@
 #                 the last lines of a worker's pane, 100 by default.
 # <worker> is a slug or a session name; one held twice lists the forms to type.
 #
-# Env: DISPATCH_PERMISSION_MODE and DISPATCH_EFFORT reach the worker; DISPATCH_RUNNER
-# is a runner file here that a spawn or resume runs the worker on (`dispatch ctl
-# --help`).
+# Env: DISPATCH_PERMISSION_MODE and DISPATCH_EFFORT reach the worker;
+# DISPATCH_RUNNER is a runner file here that a spawn or resume runs the worker
+# on (`dispatch ctl --help`).
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -246,7 +250,7 @@ hosts_used() { # every host this branch has a run on
 # Sets `host` and `scratch` from <slug>'s run.
 ticket_host() { # <slug>
     host=$(host_of "$1")
-    [ -n "$host" ] || die "no run of $1 recorded here; spawn it: dispatch ctl --host <user@host|local> spawn $1 <model>"
+    [ -n "$host" ] || die "no run of $1 recorded here; spawn it: dispatch ctl spawn $1 <model>"
     scratch=$(scratch_dir "$host")
 }
 
@@ -447,10 +451,12 @@ ctl() {
     case ${1:-} in -h|--help|"") exec bash "$skill/dispatch-ctl" --help ;; esac
     # Absolute before locate moves to the worktree root.
     [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
-    host= setup_cmd=
+    host= setup_cmd= account=${DISPATCH_ACCOUNT:-personal} needs=() flagged=
     while :; do
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;
+            --account)   account=${2:-} flagged=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
+            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
             *) break ;;
         esac
@@ -481,24 +487,72 @@ ctl() {
     [ -z "$carries" ] || [ -z "${DISPATCH_RUNNER:-}" ] || [ -f "$DISPATCH_RUNNER" ] ||
         die "DISPATCH_RUNNER=$DISPATCH_RUNNER is not a file"
     [ -n "$host" ] || [ -z "$name" ] || host=$(host_of "$name")
+    placing=
     if [ -z "$host" ]; then
         case $sub in
             probe)      probe_all; return ;;
-            spawn)      die "name the host: dispatch ctl --host <user@host|local> $*" ;;
+            spawn)      placing=1 ;;
             *)          die "no run of ${name:-$sub} recorded here; --host names the host to run this on" ;;
         esac
     fi
-    scratch=$(scratch_dir "$host")
-    [ -z "$stages" ] || stage "$host" "$setup_cmd"
+    [ -z "$flagged" ] || [ -n "$placing" ] ||
+        die "--account and --needs place a spawn, and ${name:-$sub} goes to $host: pass them to a spawn with no run recorded and no --host"
+    [ -z "$placing" ] || command -v worker-hosts > /dev/null 2>&1 ||
+        die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
+    self=$(id -un)@$(uname -n)
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
     if [ "$sub" = resume ]; then
+        scratch=$(scratch_dir "$host")
+        stage "$host" "$setup_cmd"
         fetch_round "$name" || die "fetching $name's round from $host failed, so it was not resumed"
         run "$tracker" import "$name" || die "the tracker refused $name's report, so it was not resumed; the lines above say why"
         # Before anything below can fail, so the ticket never reads as waiting in `review`.
         read_tracker "$name" || exit 1
         reclaim "$name"
     fi
+    [ "$sub" = spawn ] || [ "$sub" = resume ] || { ctl_on "$host" "$@"; return; }
+    # Exit 3 from a host is its machine full: the next candidate is tried, and once every one is,
+    # the hosts are placed from again after DISPATCH_SLOT_WAIT seconds, 60 unless set: a seam for
+    # the checks, which wait a second, rather than a dispatcher's setting.
+    while :; do
+        candidates=("$host")
+        [ -z "$placing" ] || place_spawn
+        for candidate in "${candidates[@]}"; do
+            [ "$candidate" != "$self" ] || candidate=local
+            [ -z "$placing" ] || echo "dispatch: placing $name on $candidate" >&2
+            ctl_on "$candidate" "$@"
+            rc=$?
+            [ "$rc" -eq 3 ] || return "$rc"
+            # Nothing started there, so the run's record must not send a later command to it.
+            [ -z "$placing" ] || forget_run "$name"
+        done
+        where="the machine of $host"
+        [ -z "$placing" ] || where="any machine $name may go to"
+        echo "dispatch: no slot free on $where; looking again in ${DISPATCH_SLOT_WAIT:-60}s" >&2
+        sleep "${DISPATCH_SLOT_WAIT:-60}"
+    done
+}
+
+# Sets `candidates` to the user@hosts `worker-hosts --place` names for this spawn, best first; none
+# while each is full or down.
+place_spawn() {
+    local placed
+    placed=$(worker-hosts --place "$account" "${needs[@]}")
+    case $? in
+        0) mapfile -t candidates < <(cut -f1 <<< "$placed") ;;
+        3) candidates=() ;;
+        1) die "no worker host could ever take $name; \`worker-hosts --place\` says why above" ;;
+        *) die "\`worker-hosts --place\` failed, so no host was chosen for $name" ;;
+    esac
+}
+
+# The rest of ctl for one host: the command run on it, through `dispatch-ctl`. Exit 3 is its
+# machine with every slot held.
+ctl_on() { # <host> <dispatch-ctl args...>
+    host=$1; shift
+    scratch=$(scratch_dir "$host")
+    [ -z "$stages" ] || [ "$sub" = resume ] || stage "$host" "$setup_cmd"
     # A spawn cuts from this branch's current tip, pushed to a remote host.
     if [ -n "$pushes" ]; then
         push_to "$host" || die "$host has no $base for $name to cut from"
@@ -518,8 +572,7 @@ ctl() {
     # Copied as runner-<slug>, so it can replace no scratch-dir file (the manifest, say) and no
     # other ticket's runner; dispatch-ctl gets the name and finds it beside itself.
     if [ -n "$carries" ] && [ -n "${DISPATCH_RUNNER:-}" ]; then
-        runner_dir=$(mktemp -d)
-        trap 'rm -rf "$runner_dir"' EXIT
+        [ -n "${runner_dir:-}" ] || { runner_dir=$(mktemp -d); trap 'rm -rf "$runner_dir"' EXIT; }
         cp "$DISPATCH_RUNNER" "$runner_dir/runner-$2"
         copy_to "$host" "$scratch" "$runner_dir/runner-$2" || die "copying the runner to $host failed"
         env+=("DISPATCH_RUNNER=runner-$2")

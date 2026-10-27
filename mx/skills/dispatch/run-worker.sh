@@ -13,6 +13,8 @@
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
 #   DISPATCH_EFFORT           claude --effort for every attempt; `medium` unless set
+#   DISPATCH_CPU_WEIGHT       the CPUWeight of each attempt's scope; 100, every worker's
+#                             equal share, unless set
 #   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
 #                             `dispatch-ctl` resolves it on the host
 #   DISPATCH_CONTEXT          the file the worker reads its ticket's context and this round's
@@ -33,6 +35,7 @@ run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 effort=${DISPATCH_EFFORT:-medium}
+cpu_weight=${DISPATCH_CPU_WEIGHT:-100}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
@@ -142,10 +145,15 @@ $asking_rule"
 
 # Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the
 # attempt ends: whatever the worker started and left running (a load generator whose shell was
-# killed before its `kill` line, a process that detached itself) goes with it. A host with no user
-# systemd manager runs the attempt as it is, and the worklog says those processes outlive it.
+# killed before its `kill` line, a process that detached itself) goes with it. The scope's
+# CPUWeight applies only while workers compete for the CPU, and only among this user's workers:
+# a worker alone uses every core. A host with no user systemd manager runs the attempt as it is,
+# and the worklog says those processes outlive it.
 if systemd-run --user --scope --quiet --collect -- true 2> /dev/null; then
-    scoped() { local unit=$1; shift; systemd-run --user --scope --quiet --collect --unit="$unit" -- "$@"; }
+    scoped() {
+        local unit=$1; shift
+        systemd-run --user --scope --quiet --collect --unit="$unit" --property=CPUWeight="$cpu_weight" -- "$@"
+    }
     unscope() { systemctl --user stop "$1.scope" 2> /dev/null; }
 else
     scoped() { shift; "$@"; }

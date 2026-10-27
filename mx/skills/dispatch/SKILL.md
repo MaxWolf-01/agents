@@ -56,13 +56,20 @@ File overlap is the mechanical test; **coherence** is the deeper one. Tickets th
 
 ### 4. Claim and spawn
 
-**Each ticket's host is picked here, as you spawn it.** Which machines are up and what a ticket needs are facts of this moment, so nothing records a host: `worker-hosts` lists the candidates with their live state, and `worker-hosts <user@host>` prints one's capability record (its toolchain, and what it cannot do at all); the machine you are on is `local`, and where a worker runs when nothing else is reachable. Workers belong on a machine that stays awake; a laptop that suspends kills every worker on it. Read each ticket against the records and place it: a ticket needing a capability no reachable host has is a question on that ticket, never a blocker a worker discovers on arrival. `isolated: true` in the record means the host is itself the boundary around a worker: spawn there with `DISPATCH_PERMISSION_MODE=bypassPermissions`. No record, no claims: default permission mode, and no capability assumed that you haven't verified. Report each ticket's host and its limits to the user.
+**The spawn places the worker; you name what the ticket needs.** `worker-hosts --help` says how it chooses. Read each ticket against the hosts' capability records (`worker-hosts <user@host>` prints one: its toolchain, and what it cannot do at all), and give the spawn:
+
+- `--needs <capability>` for each capability the ticket needs. A ticket needing one no host has is a question on that ticket, never a blocker a worker discovers on arrival.
+- The project's account where its work does not run on the personal one: `DISPATCH_ACCOUNT` from its `.envrc`, or `--account`.
+- `--cpu-weight` for a time-critical ticket: more than an equal share among its worker user's workers on a busy machine.
+- `--host` only when you know something the records don't. The machine you are on is `local`; a laptop that suspends kills every worker on it; on a host with no record, no capability is assumed that you haven't verified.
+
+Report each ticket's host and its limits to the user.
 
 For each ticket in the wave:
 
 1. `dispatch claim <slug>`.
 2. Write the ticket message (Worker contract) and hand it over: `dispatch prompt <slug> < <file>`.
-3. `dispatch ctl --host <host> spawn <slug> <model>` with the host's permission mode in the environment, then arm the watcher: `dispatch wait <slug> --deadline <secs>` as a background task, the deadline being the longest you are willing to go without checking on it. A worker on another harness (codex, a container) is a replacement runner, `DISPATCH_RUNNER` (help below). The worker's model and effort are explicit, never inherited from the orchestrator's own: Opus, never Fable unless the user names it explicitly for this run, steered by `--effort`. `medium`, the default, fits most tickets; `low` a trivial or mechanical one; `high` one that needs hard reasoning or extra rigour; `run-log report --site worker` shows what past workers cost and took at each model and effort. The judgment calls (wave planning, merges, verification) stay with you.
+3. `dispatch ctl [--account <name>] [--needs <capability>]... spawn <slug> <model> [--cpu-weight <n>]`, then, once it has returned, arm the watcher: `dispatch wait <slug> --deadline <secs>` as a background task, the deadline being the longest you are willing to go without checking on it. A spawn waits while every machine it may go to is full; when they are, run the two as one background task: `dispatch ctl spawn … && dispatch wait …`. A worker on another harness (codex, a container) is a replacement runner, `DISPATCH_RUNNER` (help below). The worker's model and effort are explicit, never inherited from the orchestrator's own: Opus, never Fable unless the user names it explicitly for this run, steered by `--effort`. `medium`, the default, fits most tickets; `low` a trivial or mechanical one; `high` one that needs hard reasoning or extra rigour; `run-log report --site worker` shows what past workers cost and took at each model and effort. The judgment calls (wave planning, merges, verification) stay with you.
 
 ### 5. Stop or sleep
 
