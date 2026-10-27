@@ -1,3 +1,15 @@
+## 1.0.91
+
+- session-page: the Stop hook leaves the session page to the hub, and claude-browser puts pages on the hub
+  Where a container hub answers, the Stop hook no longer hands the session page to claude-browser at a turn's end: the hub finds the page on disk and reloads it once rewritten, and nothing opens a hub tab any more. Without a hub the first render still opens it as a tab. The global CLAUDE.md and the session page RULES now say claude-browser puts a page on the hub rather than opening it in max's browser.
+
+## 1.0.90
+
+- The effort-forwarding check can fail again now that workers default to medium
+  The remote-host check for DISPATCH_EFFORT forwarding sent medium, which became the worker default in b21459f1, so it could no longer tell a forwarded level from the host's fallback; it sends low now.
+- Prompt audit against Opus 5.5: plain-volume instructions, workers at medium effort
+  Workers that dispatch spawns now run at medium effort by default instead of high, steered by --effort alone (low for trivial tickets, high for hard reasoning or extra rigour), with no Sonnet tier; the models index in CLAUDE.md says the same. CLAUDE.md's "How you work" block, the amend rule and the defuddle line say what they said at normal volume, once, and "bd" asks for a re-derivation via /mx:sharpen instead of "think harder". Orient now says /mx:wrap is typed by the user, writing-for-agents fixes a weak word by naming what it must cover rather than by a louder one, the hypervisor's prompt stops restating its tool list, tell_session describes what happens after delivery, and the board briefing loses its 150-word cap.
+
 ## 1.0.89
 
 - fix(tests): dispatch's tmux checks pass from a shell started before the last Home Manager switch

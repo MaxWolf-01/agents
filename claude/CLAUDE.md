@@ -22,7 +22,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 - "qq" (quick question) ... I want a concise answer (1-2 paragraphs max, maybe just a single sentence)
 - "nb" (nobrainer) ... obvious choice
 - "etc.( pp.)|y(g|k)wim" ... there are genuinely more examples and details, but I think you got the point and can infer what I mean -- do the work and infer the rest
-- "bd" (brain dead) ... you said something so stupid (or asked a stupid question during grilling) I'm not even gonna explain beyond maybe a pointer to what part; most likely not an intelligence limitation, just lazy thinking; think again, think harder, you should know the right answer or at least a much better answer than what you just said, suggested, or asked me, even if it's a question on "taste".
+- "bd" (brain dead) ... you said something so stupid (or asked a stupid question during grilling) I'm not even gonna explain beyond maybe a pointer to what part; most likely not an intelligence limitation, just lazy thinking; re-derive it (`/mx:sharpen`), you should know the right answer or at least a much better answer than what you just said, suggested, or asked me, even if it's a question on "taste".
 - "tldfr" (way too verbose) ... progressive disclosure -- answers, actionable items, detail "choose your own adventure" style, etc. pp. (give me the entrypoints tho -- ideally easily referable as detailX [DX]) -- also, don't assume I read any messages you sent in-between tool-calls and your last msg.
 - "idk|idfk" ... blank or fatigued -- give me options, show dont tell, prototype, help me make up my find, make it easy to understand, break it down, lead with a suggestion yourself, etc. pp. 
 - "ro" ... read only investigation. gather intel / answer the question and report back without taking action.
@@ -41,18 +41,11 @@ Skills are the single source of truth for process. Never restate a skill's workf
 
 **How you work:**
 
-Build a solid mental model, think about the actual underlying problem (and figure out what that actually is) and the right abstractions.
+Build a solid mental model of the system before you change it: figure out what the underlying problem actually is, and the right abstractions for it. Spend the time and context that takes; understanding is never the place to save.
 
-- In order to effectively solve problems, be aware you need to form a clear mental model of the system you're working with. Look at existing documentation/knowledge, and read code to understand what's there, ask questions to clarify when the intent behind the code isn't clear. DO NOT be frugal with your time or context when it comes to understanding the problem you're working on.
-
-Gather sufficient context, verify your assumptions and sources.
-
-- ALWAYS read and understand relevant files. Do not speculate about code you have not inspected. Be rigorous. PROACTIVELY READ FILES, DOCUMENTATION, SOURCE CODE, ... **LIBERALLY**. Prefer reading them in full to get a better picture, clone library sources locally to investigate, check commit history, explore, formulate hypotheses, TEST AND VERIFY THEM.
-- PROACTIVELY search the web to get up-to-date information on libraries, tools, best practices, and to gather information about the problem you're working on. Don't wait to be asked to do this.
-- When developing, planning, debugging - bias toward reading the full source for better understanding (you have to read more than humans because you don't have any form of LTM). Not doing that leads to shortsighted, overconfident claims and implementations.
-- Provide evidence-backed recommendations rather than assumptions.
-
-Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
+- Read the relevant files, docs and code in full rather than in snippets: you have no memory across sessions, so you need to read more than a human would, and skimming is what produces shortsighted, overconfident claims. Don't speculate about code you have not opened. Clone library sources to read them, check commit history, and ask when the intent behind code isn't clear.
+- Search the web without being asked whenever the answer depends on the current state of a library, tool or practice: your knowledge of anything fast-moving is out of date.
+- Form hypotheses and test them; recommend from evidence, not assumption.
 </workflow>
 
 <session-page>
@@ -65,8 +58,8 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
 - EVERY edit happens in a separate physical worktree on its own branch, mechanical one-liners included -- the invocation checkout is never an editing tree. Several agents are usually in flight; two "trivial" edits landing in the same tree is exactly the collision this prevents, so size is never a reason to skip it. Only max ("do it right here", "no wt", ...) or skill instructions override.
 - IFF you are NOT in a separate checkout / your own tree created for your task, you have to always assume potential parallel work -- the user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
   - Never `git commit -a`/`-am`, never `git add -u`/`-A`/`.`: they sweep in every tracked file someone else modified mid-flight. Explicit file lists.
-  - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
-  - Undo a commit with `git revert <sha>` (`-m 1` for a merge), never `git reset`: a revert adds a commit, so whatever landed on top of yours in the meantime survives. Before an amend or rebase, check the commit is unpushed and still the tip. NEVER AMEND WITHOUT CHECKING.
+  - Stage the right hunks of the right files, stop and ask when in doubt, and never undo or delete others' work to get your changes through.
+  - Undo a commit with `git revert <sha>` (`-m 1` for a merge), never `git reset`: a revert adds a commit, so whatever landed on top of yours in the meantime survives. Before an amend or rebase, check `git status` and that the commit is unpushed and still the tip.
 
 Commit, merge, and push -- when and how:
 - Commit as you go without asking. Once my yes for a merge into the trunk is in, merge `--no-ff` from the invocation checkout, which is already sitting on the trunk (the first-parent log is the per-ticket view; the detail history carries the trailers). The trunk is the branch the work branches from and merges into: usually the default branch, `dev` where that layer exists. A batch that went up as a GitHub PR **stack** (PRs based on each other, one merge box) merges on GitHub, never locally; `/mx:gh-stack` before touching a stack.
@@ -103,9 +96,9 @@ Installed here, each with a `--help` to read before guessing at flags: `tre` (gi
 
 `memex` is how to orient in a markdown vault (the Obsidian vault above all), where grep is for exact content terms: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there.
 
-`diffview` renders a diff as a review page in max's browser: the code's view of a change, and the deliverable whenever the user asks to see the code; prose recaps and bare links only accompany it. A change is shown, not only diffed (`/mx:show`). Reach for diffview unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, so one self-reloading tab is the review surface across every round; never `--no-auto-summary`. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes, and the one place the meta commentary belongs that must never reach the code: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Write them short, plain and few: a page of notes does not get read. Read `--help` for the source specs and the page's semantics.
+`diffview` renders a diff as a review page on the hub: the code's view of a change, and the deliverable whenever the user asks to see the code; prose recaps and bare links only accompany it. A change is shown, not only diffed (`/mx:show`). Reach for diffview unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, so one self-reloading tab is the review surface across every round; never `--no-auto-summary`. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes, and the one place the meta commentary belongs that must never reach the code: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Write them short, plain and few: a page of notes does not get read. Read `--help` for the source specs and the page's semantics.
 
-`claude-browser <path|url>` opens what an agent renders for max: review pages, boards, prototypes, figures. It can open files max's own browser cannot (firejail, home whitelist), it leaves max's browser closed, and it picks the profile `--chrome` needs for this session's account (`--help`). Where the container hub runs, a page lands beside the other pages of its work, and a page meant for agents (a worker's report) is not opened at all; the line it prints says which. `xdg-open` handles the rest: files a browser does not render, and pages max acts on as himself (approve, order, post, sign in).
+`claude-browser <path|url>` puts what an agent renders for max (review pages, boards, prototypes, figures) on the container hub, beside the other pages of its work, where max looks when he wants to; nothing opens in front of him. A page meant for agents (a worker's report) is not put there at all; the line it prints says which. Where no hub answers, it opens a plain tab in the Brave profile `--chrome` needs for this session's account (`--help`). `xdg-open` handles the rest: files a browser does not render, and pages max acts on as himself (approve, order, post, sign in).
 
 `gh-asset push <image>` turns a screenshot into a URL for a GitHub comment, PR body or issue, private repos included. Reach for it rather than asking max to drag an image in; a push cannot be withdrawn.
 
@@ -118,7 +111,7 @@ Makefiles carry the standard commands in max's projects: read the Makefile befor
 - Type check with `make check` where the Makefile has it, else `uvx ty@latest check .`.
 - Python CLIs use tyro, never argparse/click/fire, and **`/mx:tyro-cli` is loaded before writing one** -- it carries gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong. Reach for a CLI for anything you might run more than once or want to ablate flags on: proper infrastructure for investigations, visualizations and experiments saves time and attention.
 
-- !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
+- Read any website that isn't paywalled or gated as clean markdown with `curl defuddle.md/<url>`.
 - Prefer it over raw curl or the webfetch tool for anything you read yourself: webfetch summarizes the page instead of giving it to you, which suits a very long noisy page and almost nothing else.
 
 Chrome extension (live browser driving) is off by default, for context cost, and cannot be turned on mid-session: when a task would genuinely benefit from it (interaction-heavy UI testing, or driving a running app to debug it), say so and ask max to resume the session with `--chrome`. For static renders, stick with the headless-chromium screenshot loop.
@@ -140,7 +133,7 @@ Subagents default to opus, whatever the session model is, and run at the session
 An in-harness subagent is for read-only work that ends in a file you read: research, a drill-down, a lookup across many files. Work that edits a repo goes through `/mx:dispatch`, where model, effort and isolation are explicit and the run is logged.
 
 Models in use (Anthropic's effort and prompting docs, 2026-09):
-- Opus 5.5, the default. Thinking is always on and effort is its dial. `low` for mechanical or trivial work, and anything with no multi-step reasoning in it; `medium`, its own default, for most work (it matched Opus 5 at `high` on coding); `high` for long builds; `xhigh` only when the problem is exceptionally hard or the user asks for more thinking; never `max`. Lowering effort cuts thinking more reliably than a prompt asking for less.
+- Opus 5.5, the default. Thinking is always on and effort is its dial. `low` for mechanical or trivial work, and anything with no multi-step reasoning in it; `medium`, its own default, for most work, long builds included (it matched Opus 5 at `high` on coding); `high` for work that needs hard reasoning or extra rigour; `xhigh` only when the problem is exceptionally hard or the user asks for more thinking; never `max`. Lowering effort cuts thinking more reliably than a prompt asking for less.
 - Fable 5.1, for large, complex tasks that need multi-step reasoning and planning: planning, debugging, finding vulnerabilities, architecture improvements. Default `high`. Turning a settled plan into code rarely needs it; Opus 5.5 is plenty there.
 - Sonnet and Haiku: rare, low-stakes lookups.
 </subagents>

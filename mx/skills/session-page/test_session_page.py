@@ -35,7 +35,7 @@ from session_checks import (
     DRAWN, SESSION, TURN_ANCHOR, anchors, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_tickets,
 )
 from session_page import (
-    AGENT_REPO, ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, account, block, chat_path, chat_record, inline, pages_directory,
+    AGENT_REPO, ARTEFACT, COLUMN, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path, chat_record, inline, pages_directory,
     render_session,
 )
 
@@ -606,6 +606,30 @@ def test_the_session_id_copies_whole_from_the_meta_line(worked_example: Path, tr
     a button that copies the full id."""
     button = elements(render_session(worked_example, transcript, now=NOW), "session-id")["session-id"]
     assert f'data-copy="{SESSION}"' in button and button.endswith(f">{SESSION[:8]}</button>")
+
+
+# Each is a session directory, and the account the bar names for it.
+ACCOUNTS = {
+    "the personal account": ("/home/u/.claude/session-pages/s", "personal"),
+    "another account": ("/home/u/.claude-helferline/session-pages/s", "helferline"),
+    "an agent repo's sessions": ("/srv/project/agent/sessions/s", ""),
+    "a directory named like the pages under no account": ("/srv/copies/session-pages/s", ""),
+}
+
+
+@pytest.mark.parametrize("directory, named", ACCOUNTS.values(), ids=ACCOUNTS)
+def test_the_bar_names_the_account_a_sessions_directory_sits_under(directory: str, named: str) -> None:
+    assert account_name(Path(directory)) == named
+
+
+def test_the_bar_names_the_account(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """The bar names the account the session runs under, so a glance says which one it is; a
+    directory under no account shows none."""
+    assert "session-account" not in elements(render_session(worked_example, transcript, now=NOW), "session-account")
+    moved = pages_directory(tmp_path / ".claude-helferline", SESSION)
+    shutil.copytree(worked_example, moved)
+    shown = elements(render_session(moved, transcript, now=NOW), "session-account")["session-account"]
+    assert text_of(shown) == "helferline"
 
 
 def test_the_short_name_shows_beside_the_resume_button_where_the_registry_has_the_session(

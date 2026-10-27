@@ -318,19 +318,20 @@ def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
 # ---- what a turn's end opens ------------------------------------------------
 
 
-# Each is whether a hub answers, and how many of three renders open the page.
-PAGE_OPENS = {"a hub that answers": (True, 3), "no hub": (False, 1)}
+# Each is whether a hub answers, how many of three renders open the page, and what the log says of
+# each render that does not.
+PAGE_OPENS = {"a hub that answers": (True, 0, "not opened: the hub shows it"), "no hub": (False, 1, "not reopened: no hub answers")}
 
 
-@pytest.mark.parametrize("answers, opens", PAGE_OPENS.values(), ids=PAGE_OPENS)
-def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_where_none_does(
-    answers: bool, opens: int, worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None],
+@pytest.mark.parametrize("answers, opens, why", PAGE_OPENS.values(), ids=PAGE_OPENS)
+def test_the_page_opens_on_the_first_render_where_no_hub_answers_and_never_where_one_does(
+    answers: bool, opens: int, why: str, worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None],
     attended: Path, hub: Callable[..., None],
 ) -> None:
-    """stop-hook-opens-the-turns-artefacts and its D4: a render hands the page to `claude-browser`,
-    told the session it belongs to, every time where the hub turns a repeat into a reload, and only
-    the first time where no hub would, since a repeat would be another tab. The turns wrote no
-    record, so the links record 04 carries, from a turn before, open nothing."""
+    """A render hands the page to `claude-browser`, told the session it belongs to, only the first
+    time and only where no hub answers, since a repeat would be another tab. A hub finds the page on
+    disk and reloads it once it is written anew, so nothing hands it over. The turns wrote no record,
+    so the links record 04 carries, from a turn before, open nothing."""
     if answers:
         hub(200)
     for _ in range(3):
@@ -339,7 +340,7 @@ def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_whe
     assert opened(browser, opens) == [(worked_example.name, page)] * opens
     said = [(entry["page"], entry["opened"]) for entry in logged(attended, "opened")]
     assert [(where, what.startswith("started ")) for where, what in said[:opens]] == [(page, True)] * opens
-    assert said[opens:] == [(page, "not reopened: no hub answers")] * (3 - opens)
+    assert said[opens:] == [(page, why)] * (3 - opens)
 
 
 # Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed

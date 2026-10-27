@@ -42,7 +42,7 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto;
 #                             bypassPermissions where ~/HOST.md is isolated)
-#   DISPATCH_EFFORT           the worker's effort (default high)
+#   DISPATCH_EFFORT           the worker's effort (default medium)
 #   DISPATCH_PLUGIN_DIR       the mx install a worker loads, else the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
@@ -64,7 +64,7 @@ if [ -z "$mode" ]; then
     mode=auto
     [ "$(sed -n '2,/^---$/s/^isolated: *//p' "$HOME/HOST.md" 2> /dev/null | head -1)" != true ] || mode=bypassPermissions
 fi
-effort=${DISPATCH_EFFORT:-high}
+effort=${DISPATCH_EFFORT:-medium}
 cpu_weight=100
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
