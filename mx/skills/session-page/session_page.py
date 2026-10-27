@@ -23,7 +23,8 @@ transcript.
 The page is laid out in panes that each scroll on their own: the title and the questions above
 the turns, and beside them the timeline, every numbered turn newest first with the artefacts it
 links; a ticket file is no artefact there. Each turn's record, and the whole session's, copies as
-the markdown it was written in.
+the markdown it was written in. A turn's tool calls, and the thinking the transcript kept, open on
+demand in a drawer over the timeline, read from a file beside the page (`LOG`).
 
 Run as a command, it prints where a session's directory is, and where its next record goes.
 """

@@ -85,10 +85,11 @@
     }
     return out
   }
+  // the step's line names the file; a Read of part of one says which part
   const where = (s) => {
-    const i = s.input, path = i.file_path || i.notebook_path
-    if (!path || s.tool === "Bash") return ""
-    return `<p class="path">${esc(path)}${i.offset ? ` · from line ${i.offset}` : ""}${i.limit ? ` · ${i.limit} lines` : ""}</p>`
+    const i = s.input
+    if (s.tool !== "Read" || !(i.offset || i.limit)) return ""
+    return `<p class="path">${i.offset ? `from line ${i.offset}` : "from the top"}${i.limit ? ` · ${i.limit} lines` : ""}</p>`
   }
   const detail = (s, n) => where(s) + pieces(s).map(([label, code, lang, cls], k) =>
     (label === "result" ? `<p class="label">${s.failed ? "error" : "result"}</p>` : "") + block(code, lang, cls, `${n}.${k}`)).join("")
@@ -101,8 +102,9 @@
   const focused = () => blocks.find((b) => b.classList.contains("cur")) || blocks[0]
   const label = (b) => {
     if (!b) return "no turn yet"
-    if (b.matches("details.turn")) return `turn ${b.id.slice(1)} · ${b.querySelector(".hl").textContent}`
-    return `chat turn · ${b.querySelector(".date").textContent}`
+    const [name, about] = b.matches("details.turn") ? [`turn ${b.id.slice(1)}`, b.querySelector(".hl").textContent]
+      : ["chat turn", b.querySelector(".date").textContent]
+    return `${esc(name)} <span class="hl">· ${esc(about)}</span>`
   }
   let shownFor = null
 
@@ -123,7 +125,7 @@
       : "no tool calls for this turn"
     panel.innerHTML = `
       <div class="log-head">
-        <span class="which">${esc(label(shownFor))}</span>
+        <span class="which" title="${esc(shownFor ? shownFor.querySelector(".hl, .date").textContent : "")}">${label(shownFor)}</span>
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
         <button type="button" data-close title="close (Esc)" aria-label="close the tool calls">×</button>
       </div>
