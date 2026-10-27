@@ -1,3 +1,9 @@
+## 1.0.94
+
+- wrap opens on its verdict, so the hub shows whether a session can close
+  wrap's answer now opens the turn headline and the chat recap on a fixed verdict, Closable: <subject>, <what landed> or Open: <what keeps it open>, followed by three fixed Details lines (Landed, Stopped, Waits on you). The hub shows the newest headline as a session's status, so the verdict reads from a phone without opening the page. RULES.md names the headline as that status line and treats a skill-fixed opening as shape, so the turn review stops flagging it.
+- Merge branch 'ticket/show-a-turns-tool-calls-on-demand'
+
 ## 1.0.93
 
 - feat(dispatch): the spawn places its worker, and each machine caps and shares its workers
