@@ -133,6 +133,16 @@ def pages_directory(account: Path, session: str) -> Path:
     return account / PAGES / session
 
 
+def account_name(directory: Path) -> str:
+    """The account a session's directory sits under, as the bar names it: `personal` for
+    ~/.claude, `<x>` for ~/.claude-<x>. Empty for a directory under no account (a session's
+    directory still in its agent repo)."""
+    if directory.parent.name != PAGES:
+        return ""
+    held = directory.parent.parent.name
+    return "personal" if held == ".claude" else held.removeprefix(".claude-") if held.startswith(".claude-") else ""
+
+
 def make_session_directory(cwd: Path, session: str) -> Path | None:
     """The session's directory, made where it is not there yet and tied to the agent repo of the
     project `cwd` is in where it is not tied to one yet. None where it was not there and `cwd` is in
@@ -1203,6 +1213,9 @@ def assemble(v: View, now: datetime) -> str:
     name = (f'<span class="sep">·</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
     turns = len(v.rows)
+    held = account_name(session.directory)
+    account = (f'<span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span><span class="sep">·</span>'
+               if held else "")
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1217,7 +1230,7 @@ def assemble(v: View, now: datetime) -> str:
 </head>
 <body>
 <header class="bar">
-  <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.rows)}
+  <span class="v-meta where">{account}<span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.rows)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
