@@ -26,6 +26,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 import session_page
+import steps
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, read_turn, render_session
 from session_checks import SESSION, SPOKEN_AFTER, followed, messages_of, project_of, rows_of, sections_of, text_of, view_of
 
@@ -592,7 +593,7 @@ def test_work_after_a_message_no_record_answers_yet_is_on_no_turn(worked_example
 def test_a_steps_line_names_what_it_acted_on(tool: str, input: dict, line: tuple[str, str]) -> None:
     """The ticket's one-line summary: a Bash call's description or command, a file's path, a
     subagent's description."""
-    assert session_page.summary(session_page.Step(datetime(2026, 9, 22, tzinfo=UTC), tool, input)) == line
+    assert steps.summary(steps.Step(datetime(2026, 9, 22, tzinfo=UTC), tool, input)) == line
 
 
 if __name__ == "__main__":

@@ -7,6 +7,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py checkpoint",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/live_hook.py",
+            "async": true
           }
         ]
       }
@@ -35,6 +40,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/live_hook.py",
+            "async": true
           }
         ]
       }
@@ -87,6 +97,28 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/stop_hook.py",
             "timeout": 60,
             "statusMessage": "session page: rendering the turn"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/live_hook.py",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/live_hook.py",
+            "async": true
           }
         ]
       }
