@@ -1134,6 +1134,7 @@ KEYS = [
     ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's"),
+    ("Tab", "hand the keys to the open tool calls and back; there j k walk them, o Enter open one, O open or close all, g g G first, last"),
     ("y", "copy the turn's markdown, the newest turn's where none is picked"),
     ("Y", "copy the whole session's markdown"),
     ("R", "copy the resume command"),

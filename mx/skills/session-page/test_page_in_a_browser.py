@@ -371,6 +371,25 @@ with sync_playwright() as pw:
         out["clicked"] = page.evaluate(SHOWN)["open"]
         page.keyboard.press("l")
         out["closed_again"] = page.evaluate(SHOWN)["open"]
+    elif scenario == "log_keys":
+        # Tab hands the keys to the open log and back: the step they are on, which steps are open, the turn shown
+        context, page = open_page(1280, 800)
+        SHOWN = '''(() => { const log = document.getElementById("log"), steps = [...log.querySelectorAll(".step")]
+          return {which: log.querySelector(".which").textContent.split(" · ")[0], keyed: log.classList.contains("keyed"),
+                  cur: steps.findIndex((s) => s.classList.contains("cur")), open: steps.flatMap((s, n) => s.classList.contains("open") ? [n] : []),
+                  all: log.querySelector("[data-all]")?.textContent ?? null} })()'''
+        page.keyboard.press("l")
+        page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
+        out["opened"] = page.evaluate(SHOWN)
+        for name, keys in (("tab", "Tab"), ("jj", "j j"), ("o", "o"), ("k", "k"), ("O", "O"), ("OO", "O"), ("G", "G"), ("gg", "g g"),
+                           ("back", "Tab"), ("j_turns", "j j")):
+            for key in keys.split():
+                page.keyboard.press(key)
+            out[name] = page.evaluate(SHOWN)
+        page.click("#log .step:nth-child(2) > button")
+        out["clicked"] = page.evaluate(SHOWN)
+        page.click("#log [data-all]")
+        out["all_clicked"] = page.evaluate(SHOWN)
     elif scenario == "live":
         # the turn under way: shown with no turn picked, a call added while open, left for a turn and come back to
         context, page = open_page(1280, 800)
@@ -800,6 +819,29 @@ def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[P
     assert seen["turn"]["which"].startswith("turn ") and seen["turn"]["jump"]
     assert seen["back"] == seen["second"]
     assert not seen["ended"]["jump"]
+
+
+
+def test_the_log_takes_the_keys_to_walk_open_and_close_its_steps(rendered: tuple[Path, Path], transcript: Path, tmp_path: Path) -> None:
+    """Tab hands the keys to the open log: j and k walk its steps, o opens the one they are on, O
+    opens or closes them all, g g and G go to the first and last; Tab hands them back, and j moves
+    the turns again. A click on a step hands the keys over on that step; the head's control opens or
+    closes them all."""
+    page, _ = rendered
+    write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
+    seen = probe(page, "log_keys")
+    n = len(seen["O"]["open"])
+    assert n == 4 and seen["opened"] == {"which": "turn 04", "keyed": False, "cur": -1, "open": [], "all": "open all"}
+    assert (seen["tab"]["keyed"], seen["tab"]["cur"]) == (True, 0)
+    assert seen["jj"]["cur"] == 2 and seen["jj"]["which"] == "turn 04", "j walks the steps, not the turns"
+    assert seen["o"]["open"] == [2]
+    assert (seen["k"]["cur"], seen["k"]["open"]) == (1, [2])
+    assert seen["O"]["all"] == "close all" and seen["OO"] == {**seen["OO"], "open": [], "all": "open all"}
+    assert (seen["G"]["cur"], seen["gg"]["cur"]) == (n - 1, 0)
+    assert (seen["back"]["keyed"], seen["back"]["cur"], seen["back"]["which"]) == (False, -1, "turn 04")
+    assert seen["j_turns"]["which"] == "turn 03"
+    assert (seen["clicked"]["keyed"], seen["clicked"]["cur"], seen["clicked"]["open"]) == (True, 1, [1])
+    assert seen["all_clicked"]["all"] == "close all"
 
 
 if __name__ == "__main__":

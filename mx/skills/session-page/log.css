@@ -29,6 +29,9 @@
 @keyframes log-pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .log-head .pulse { animation: none; } }
 .log-head .to-live { color: var(--accent); }
+/* the step the keys are on, while the log holds them */
+.log.keyed .log-head { border-bottom-color: var(--accent); }
+.log .step.cur > button { box-shadow: inset 2px 0 0 var(--accent); background: var(--wash-ink); }
 .log .step.thinking .subject { font-family: var(--font-body); font-style: italic; font-size: 0.86rem; white-space: normal;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .log .step.thinking.open .subject { display: block; }
