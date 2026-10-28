@@ -141,10 +141,10 @@ def broken(system: str, prompt: str) -> list[dict]:
 
 
 def hung(system: str, prompt: str) -> list[dict]:
-    raise subprocess.TimeoutExpired(["run-log"], turn_review.WRAPPER_TIMEOUT_S)
+    raise subprocess.TimeoutExpired(["model-runs"], turn_review.WRAPPER_TIMEOUT_S)
 
 
-@pytest.mark.parametrize("failing", [broken, hung], ids=["a failing reviewer", "a hung run-log"])
+@pytest.mark.parametrize("failing", [broken, hung], ids=["a failing reviewer", "a hung model-runs"])
 def test_a_reviewer_that_fails_lets_the_record_through_and_logs_why(
     failing: Callable[[str, str], list[dict]], worked_example: Path, writing: Path, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch, attended: Path,
@@ -499,7 +499,7 @@ def test_each_decision_on_a_record_is_one_line_in_the_session_pages_log(
 
 REVIEW = turn_review.review  # the real one, which the autouse stub replaces
 
-# What claude's stream ends with, as ../run-log/test_run_log.py has it.
+# What claude's stream ends with, as ../model-runs/test_model_runs.py has it.
 RESULT = {"type": "result", "subtype": "success", "is_error": False, "session_id": "sess-1", "num_turns": 1,
           "duration_ms": 4200, "duration_api_ms": 3900, "total_cost_usd": 0.0123,
           "usage": {"input_tokens": 22, "output_tokens": 70, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
@@ -521,7 +521,7 @@ def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: dict | 
         + f"{then}\n")
     (where / "claude").chmod(0o755)
     monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("RUN_LOG", str(where / "runs.jsonl"))
+    monkeypatch.setenv("MODEL_RUNS_LOG", str(where / "runs.jsonl"))
     monkeypatch.setattr(turn_review, "review", REVIEW)
     return where
 

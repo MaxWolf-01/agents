@@ -11,7 +11,7 @@ def stage_runner(state: Path) -> None:
     """The shipped runner and what it reads beside itself, as `dispatch` stages them on a host."""
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    shutil.copy(SKILL.parent / "model-runs" / "model-runs", state / "model-runs")
 
 
 def mx(tmp_path: Path) -> Path:

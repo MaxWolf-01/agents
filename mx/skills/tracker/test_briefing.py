@@ -151,7 +151,7 @@ def test_the_schedule_and_the_launch_are_the_ones_the_spec_decides() -> None:
 
 
 def answered(said: str) -> str:
-    """What `claude -p --output-format stream-json` prints for an answer, which `run-log` reads."""
+    """What `claude -p --output-format stream-json` prints for an answer, which `model-runs` reads."""
     return "printf '%s\\n' " + shlex.quote(json.dumps(
         {"type": "result", "subtype": "success", "is_error": False, "session_id": "def-456", "result": said}))
 

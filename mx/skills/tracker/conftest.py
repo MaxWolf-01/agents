@@ -12,10 +12,10 @@ import board
 import briefing
 from demo_tracker import Demo, build
 
-RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"
-# What a check may still need: the repo, a script's own run, a browser, and what `run-log` wraps a
+MODEL_RUNS = Path(__file__).resolve().parents[1] / "model-runs" / "model-runs"
+# What a check may still need: the repo, a script's own run, a browser, and what `model-runs` wraps a
 # model run with, which it names itself.
-KEPT = tuple(dict.fromkeys(("git", "uv", "chromium", *subprocess.run([str(RUN_LOG), "needs"], capture_output=True, text=True, check=True).stdout.split())))
+KEPT = tuple(dict.fromkeys(("git", "uv", "chromium", *subprocess.run([str(MODEL_RUNS), "needs"], capture_output=True, text=True, check=True).stdout.split())))
 
 
 @pytest.fixture(scope="session")
@@ -38,7 +38,7 @@ def fresh_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     board.read_transcript.cache_clear()
     board.toplevel.cache_clear()
     briefing.SILENT = ""  # what the last run of the model said, which the page says once
-    monkeypatch.setenv("RUN_LOG", str(tmp_path / "runs.jsonl"))
+    monkeypatch.setenv("MODEL_RUNS_LOG", str(tmp_path / "runs.jsonl"))
 
 
 @pytest.fixture

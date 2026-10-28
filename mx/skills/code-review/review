@@ -60,7 +60,7 @@ templates=$skill/prompts
 # Every read of a ticket file goes through the one command that parses one.
 tracker=$skill/../tracker/tracker.py
 # Every reviewer runs through it, one line per axis in the run log.
-run_log=$skill/../run-log/run-log
+model_runs=$skill/../model-runs/model-runs
 # Reading history is every reviewer's, by the subcommand and never by the tool:
 # a wildcard on a program that can run code allows everything it can run.
 # Both forms of anything anyone types bare, since a trailing glob wants an
@@ -338,7 +338,7 @@ reviewer() { # <axis>
     # cache at the 5-minute rate, 1.25x input instead of the 1-hour 2x: a
     # reviewer's calls come seconds apart and it is done in minutes. A tool
     # call over 5 minutes makes the next call write its context again.
-    local cmd=(env FORCE_PROMPT_CACHING_5M=1 bash "$run_log" run --site review --ticket "$slug" --axis "$axis" --range "$range" --
+    local cmd=(env FORCE_PROMPT_CACHING_5M=1 bash "$model_runs" run --site review --ticket "$slug" --axis "$axis" --range "$range" --
                claude -p --model "$model" --effort "$effort"
                --setting-sources "" --strict-mcp-config --disable-slash-commands
                --settings '{"autoMemoryEnabled": false}'
