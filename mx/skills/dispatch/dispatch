@@ -1103,8 +1103,8 @@ fleet_hosts() {
     mapfile -t hosts < <(fleet "$published")
     rows=() missing=()
     if [ -n "$register_error" ]; then
-        missing+=(hosts)
-        rows+=("$(host_row hosts incomplete "$register_error")")
+        missing+=("hosts targets")
+        rows+=("$(host_row "hosts targets" incomplete "$register_error")")
     fi
     if [ ${#hosts[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"

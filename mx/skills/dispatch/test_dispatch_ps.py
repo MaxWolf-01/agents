@@ -474,7 +474,7 @@ def test_a_register_that_fails_is_a_row_beside_the_hosts_that_are_left(home: Pat
 
     out = dispatch(tmux, home, "ps", hosts="", register_exit=2)
     assert out.returncode != 0, "a table missing a host it should have asked is no clean reading"
-    (row,) = [line for line in out.stdout.splitlines() if line.startswith("hosts")]
+    (row,) = [line for line in out.stdout.splitlines() if line.startswith("hosts targets")]
     assert "incomplete" in row
     assert "hypofuzz-default" in out.stdout, "the host the repo's runs name is still read"
 
