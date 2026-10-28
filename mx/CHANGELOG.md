@@ -1,3 +1,6 @@
+## 1.0.98
+
+
 ## 1.0.97
 
 - The session page's log shows the turn under way's tool calls as they happen
