@@ -48,8 +48,8 @@ awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
 
 - `17` `both` **Title case headings.** Use sentence case.
 
-- `54` `both` **Headline titles.** A title or headline that reads like a news headline: it reports what the work did instead of naming what it is about ("two builds to land, one ticket grilled", "C2's build lands"), wraps a hook and a reveal around a colon ("What Jarvis knows after a clear: the memory block"), puts counts, bare ids or an unexplained "the" where names belong ("two builds", "C4", "the stage checks"), or turns figurative ("one way into max's life data"). Name the subject and the things in it, in words a cold reader would search for. A "subject: what about it" title is fine when both halves name things.
-  Before: "The session page's follow-ups: two builds to land, one ticket grilled". After: "Session page: sessions/ hidden from git status, links per checkout, when records are committed".
+- `54` `both` **Headline titles.** A title or headline that does not name its subject: it wraps a hook and a reveal around a colon ("What Jarvis knows after a clear: the memory block"), puts counts, bare ids or an unexplained "the" where names belong ("two builds", "C4", "the stage checks"), or turns figurative ("one way into max's life data"). Name the subject and the things in it, in words a cold reader would search for. What follows the subject depends on the headline's job. A title is there to be found, so it says what the thing is about, never what was done to it ("two builds to land, one ticket grilled", "C2's build lands"). A status line or a report's headline is there to say where things stand, so its verdict, finding or state is the point.
+  Before: "The session page's follow-ups: two builds to land, one ticket grilled". After: "Session page: sessions/ hidden from git status, links per checkout, when records are committed". A status that stands: "Upload retries: fix merged, the proxy timeout still open".
 
 - `18` `both` **Decorative emojis.** Remove from headings and bullets. A marker that a documented format gives a fixed meaning is not decoration.
 
