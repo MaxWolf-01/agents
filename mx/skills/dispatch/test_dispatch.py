@@ -1102,7 +1102,7 @@ def test_the_runner_passes_an_effort_to_every_attempt_medium_unless_told(tmp_pat
     attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     assert attempts and all(f"--model opus --effort {given or 'medium'} " in line for line in attempts), attempts
     assert f"on opus at {given or 'medium'} effort" in (runner / "run-1.log").read_text().splitlines()[0]
-    # `model-runs`: the attempt left its line, in the log this HOME defaults to
+    # `run-log`: the attempt left its line, in the log this HOME defaults to
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
         ("worker", "warm-preset", 1, "opus", given or "medium")
@@ -1253,7 +1253,7 @@ def test_a_runner_staged_without_model_runs_refuses_to_start(runner: Path) -> No
 
 @pytest.mark.full_path
 def test_a_hosts_model_runs_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
-    """`model-runs`: a worker host's lines reach this machine's log when its ticket is fetched or
+    """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
     cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
     machine's log itself."""
     remote, env = fake_remote(toy)
@@ -3387,6 +3387,19 @@ def test_a_spawn_the_placer_finds_no_host_for_is_refused_at_once(toy: Path, stag
     assert spawned.returncode == 1
     assert said in spawned.stderr, spawned.stderr
     assert placer_calls(toy) == ["place personal --needs gpu"]
+
+
+def test_a_spawn_with_no_placer_here_is_refused_and_told_to_name_its_host(toy: Path, staged: Path) -> None:
+    """Between an mx release and the dotfiles switch that brings `hosts`, a spawn left to placement
+    has no placer, and the way past is --host."""
+    env = environment(toy)
+    (toy.parent / "bin" / "hosts").unlink()
+    env["PATH"] = os.pathsep.join(d for d in env["PATH"].split(os.pathsep) if not os.access(Path(d) / "hosts", os.X_OK))
+
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None, env=env)
+
+    assert spawned.returncode == 1
+    assert "no `hosts` here to place warm-preset from; --host names the host" in spawned.stderr, spawned.stderr
 
 
 def test_a_spawn_naming_its_host_and_what_placement_reads_is_refused(toy: Path, staged: Path) -> None:

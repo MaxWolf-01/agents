@@ -70,7 +70,7 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 state_root=.local/state/dispatch
 # The only reader and writer of ticket files; it runs here, never on a host.
 tracker=$skill/../tracker/tracker.py
-# A fetch or a cleanup pulls the host's run log lines here (`model-runs --help`).
+# A fetch or a cleanup pulls the host's model-runs log lines here (`model-runs --help`).
 model_runs=$skill/../model-runs/model-runs
 # This machine, as the run record and the placer name a host. Commands for it run here rather than
 # over ssh, and its ticket branches are cut from the checkouts here rather than pushed to bare repos.
@@ -645,7 +645,7 @@ fetch_round() { # <slug>
 # Appends a remote host's new model-runs lines here; a run on this machine already writes its own.
 pull_runs() { # <host>
     is_here "$1" && return 0
-    run bash "$model_runs" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; model-runs pull $1 tries again" >&2
+    run bash "$model_runs" pull "$1" || echo "dispatch: the model-runs log on $1 could not be pulled; model-runs pull $1 tries again" >&2
 }
 
 # <repo> <tip> → each base it has merged into, of the one or two its repo has, one a line; nothing,
@@ -1091,22 +1091,22 @@ fleet() { # <published>
     } | grep -v '^$' | sort -u
 }
 
-# Sets `hosts`, every host the register publishes and this repo's runs name, and
+# Sets `fleet_targets`, every host the register publishes and this repo's runs name, and
 # starts `rows` and `missing` off with the register's failure, if it failed.
 fleet_hosts() {
     local published= register_error=
     # Here, not in fleet, whose captured output runs in a subshell that would lose the failure.
     if command -v hosts >/dev/null 2>&1; then
         published=$(hosts targets) ||
-            register_error="hosts targets failed (exit $?): the hosts listed are only the ones this repo has run on"
+            register_error="\`hosts targets\` failed (exit $?): the hosts listed are only the ones this repo has run on"
     fi
-    mapfile -t hosts < <(fleet "$published")
+    mapfile -t fleet_targets < <(fleet "$published")
     rows=() missing=()
     if [ -n "$register_error" ]; then
-        missing+=("hosts targets")
-        rows+=("$(host_row "hosts targets" incomplete "$register_error")")
+        missing+=("\`hosts targets\`")
+        rows+=("$(host_row "\`hosts targets\`" incomplete "$register_error")")
     fi
-    if [ ${#hosts[@]} -eq 0 ]; then
+    if [ ${#fleet_targets[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"
         die "no worker host: \`hosts targets\` publishes none and this repo has run on none"
     fi
@@ -1133,25 +1133,25 @@ gather() {
     # removed below too, since an attach execs the trap away.
     answers=$(mktemp -d) || die "no temp dir for the hosts' answers"
     trap 'rm -rf "${answers:-}"' EXIT
-    for i in "${!hosts[@]}"; do
+    for i in "${!fleet_targets[@]}"; do
         # The root travels relative, so the home it is under is the host's.
-        ( look "${hosts[$i]}" bash -s "$state_root" < "$skill/dispatch-ps" > "$answers/$i"
+        ( look "${fleet_targets[$i]}" bash -s "$state_root" < "$skill/dispatch-ps" > "$answers/$i"
           echo $? > "$answers/$i.rc" ) &
     done
     wait
-    for i in "${!hosts[@]}"; do
+    for i in "${!fleet_targets[@]}"; do
         # A missing status is a connection that never finished.
         rc=$(cat "$answers/$i.rc" 2>/dev/null)
         [[ $rc =~ ^[0-9]+$ ]] || rc=255
         if [ "$rc" -ne 0 ]; then
-            missing+=("${hosts[$i]}")
-            rows+=("$(unanswered "${hosts[$i]}" "$rc")")
+            missing+=("${fleet_targets[$i]}")
+            rows+=("$(unanswered "${fleet_targets[$i]}" "$rc")")
             continue
         fi
         [ -s "$answers/$i" ] &&
-            mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${hosts[$i]}" '{ print h "\t" $0 }' "$answers/$i")
+            mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${fleet_targets[$i]}" '{ print h "\t" $0 }' "$answers/$i")
         # An `unreadable` scratch dir on a host that answered.
-        mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${hosts[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
+        mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${fleet_targets[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
     done
     rm -rf "$answers"
 }
@@ -1290,8 +1290,8 @@ follow() {
     while :; do
         if [ $((SECONDS - asked)) -ge 30 ]; then
             # A subshell, so a failed read keeps the hosts there rather than ending the follow.
-            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}"); then
-                mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
+            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${fleet_targets[@]}" -- "${rows[@]}"); then
+                mapfile -t fleet_targets < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
                 mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
             fi
             follow_fleet
@@ -1300,7 +1300,7 @@ follow() {
         measure
         printf -v now '%(%s)T' -1
         drawing=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
-                    for h in "${hosts[@]}"; do
+                    for h in "${fleet_targets[@]}"; do
                         cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
                     done } |
             awk -F'\t' -v OFS='\t' -v now="$now" '
@@ -1315,20 +1315,20 @@ follow() {
     done
 }
 
-# Starts a follow_host for each host in `hosts` that has none, and stops the
+# Starts a follow_host for each host in `fleet_targets` that has none, and stops the
 # one of each host that left. A register that failed (its `incomplete` row is
 # in `rows`) has left no host.
 follow_fleet() {
     local h
     for h in "${!follower[@]}"; do
         [ ${#rows[@]} -eq 0 ] || break
-        printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
+        printf '%s\n' "${fleet_targets[@]}" | grep -qxF -- "$h" && continue
         kill "${follower[$h]}" 2>/dev/null
         wait "${follower[$h]}" 2>/dev/null
         unset 'follower[$h]'
         rm -f "$frames/$h.rows"
     done
-    for h in "${hosts[@]}"; do
+    for h in "${fleet_targets[@]}"; do
         [ -n "${follower[$h]:-}" ] && continue
         follow_host "$h" &
         follower[$h]=$!

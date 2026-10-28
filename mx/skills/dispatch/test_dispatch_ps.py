@@ -270,12 +270,17 @@ def dispatch(env: dict[str, str], home: Path, *args: str, hosts: str = SELF, reg
                           timeout=60, env=env)
 
 
+# The start of every register stand-in: it answers `hosts targets` alone, so a dispatch that asks
+# the register anything else reads a failed register.
+TARGETS_ONLY = '[ "$*" = targets ] || { echo "hosts: not a targets call: $*" >&2; exit 64; }\n'
+
+
 def adapters(env: dict[str, str], home: Path, hosts: str, ssh: str, register_exit: int = 0) -> dict[str, str]:
     """<env> as `dispatch` in <home> runs in it: a register that publishes <hosts> and exits
     <register_exit>, and the ssh script <ssh>, both in <home>/bin."""
     bin_dir = home / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    (bin_dir / "hosts").write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {hosts}\nexit {register_exit}\n")
+    (bin_dir / "hosts").write_text(f"#!/usr/bin/env bash\n{TARGETS_ONLY}printf '%s\\n' {hosts}\nexit {register_exit}\n")
     (bin_dir / "ssh").write_text(ssh)
     for f in ("hosts", "ssh"):
         (bin_dir / f).chmod(0o755)
@@ -474,7 +479,7 @@ def test_a_register_that_fails_is_a_row_beside_the_hosts_that_are_left(home: Pat
 
     out = dispatch(tmux, home, "ps", hosts="", register_exit=2)
     assert out.returncode != 0, "a table missing a host it should have asked is no clean reading"
-    (row,) = [line for line in out.stdout.splitlines() if line.startswith("hosts targets")]
+    (row,) = [line for line in out.stdout.splitlines() if line.startswith("`hosts targets`")]
     assert "incomplete" in row
     assert "hypofuzz-default" in out.stdout, "the host the repo's runs name is still read"
 
@@ -483,7 +488,7 @@ def test_a_register_that_fails_with_nothing_left_names_itself(home: Path, tmux: 
     """Dying with `publishes none` would blame the register for its own breakage."""
     out = dispatch(tmux, home, "ps", hosts="", register_exit=2)
     assert out.returncode != 0
-    assert "hosts targets failed" in out.stderr
+    assert "`hosts targets` failed" in out.stderr
 
 
 def test_a_run_recorded_on_local_is_listed_under_this_machines_name(home: Path, tmux: dict[str, str]):
@@ -552,7 +557,7 @@ def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
     fakes.mkdir(parents=True)
     (fakes / "ssh").write_text(LOGIN_SHELL_SSH)
     (fakes / "ssh").chmod(0o755)
-    (fakes / "hosts").write_text("#!/bin/sh\necho agent@far\n")
+    (fakes / "hosts").write_text(f"#!/bin/sh\n{TARGETS_ONLY}echo agent@far\n")
     (fakes / "hosts").chmod(0o755)
     real = shutil.which("tmux", path=tmux["PATH"])
     (fakes / "tmux").write_text(
@@ -896,7 +901,7 @@ def test_a_host_the_register_comes_to_publish_is_followed(tmp_path: Path, follow
     aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
     f = follow(home)
     assert "hypofuzz-default" in f.shows(lambda t: "hypofuzz-default" in t)
-    (home / "bin" / "hosts").write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {SELF} agent@far\n")
+    (home / "bin" / "hosts").write_text(f"#!/usr/bin/env bash\n{TARGETS_ONLY}printf '%s\\n' {SELF} agent@far\n")
     drawn, printed = f.matches_ps(within=45)
     assert "far-one" in drawn
     assert drawn == printed

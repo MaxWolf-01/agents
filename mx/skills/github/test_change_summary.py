@@ -114,7 +114,7 @@ def test_a_diff_gives_its_paragraph_on_stdout(claude: Claude) -> None:
     assert (done.returncode, done.stdout, claude.calls) == (0, "The greeting now names the world.\n", 1)
     assert claude.stdin() == DIFF
     (logged,) = [json.loads(l) for l in (claude.dir / "runs.jsonl").read_text().splitlines()]
-    assert (logged["site"], logged["model"], logged["end"]) == ("change-summary", "opus", "success"), "the call left no line in the run log"
+    assert (logged["site"], logged["model"], logged["end"]) == ("change-summary", "opus", "success"), "the call left no line in the model-runs log"
 
 
 def test_the_model_call_loads_no_settings_plugins_mcp_tools_commands_or_session(claude: Claude) -> None:
@@ -220,7 +220,7 @@ def test_no_claude_on_path_fails_with_its_reason(claude: Claude) -> None:
     tools = claude.dir.parent / "tools"
     tools.mkdir()
     needs = subprocess.run([str(MODEL_RUNS), "needs"], capture_output=True, text=True, check=True).stdout.split()
-    for tool in ("uv", "readlink", *needs):  # the shim's own, then model-runs's, and no claude
+    for tool in ("uv", "readlink", *needs):  # the shim's own, then those model-runs needs, and no claude
         (tools / tool).symlink_to(shutil.which(tool))
     claude.path = str(tools)
     done = run(claude)

@@ -59,7 +59,7 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 templates=$skill/prompts
 # Every read of a ticket file goes through the one command that parses one.
 tracker=$skill/../tracker/tracker.py
-# Every reviewer runs through it, one line per axis in the run log.
+# Every reviewer runs through it, one line per axis in its log.
 model_runs=$skill/../model-runs/model-runs
 # Reading history is every reviewer's, by the subcommand and never by the tool:
 # a wildcard on a program that can run code allows everything it can run.

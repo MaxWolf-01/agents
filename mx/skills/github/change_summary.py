@@ -27,7 +27,7 @@ from pathlib import Path
 import tyro
 
 CATALOGUE = Path(__file__).resolve().parents[1] / "writing-for-humans/CATALOGUE.md"
-MODEL_RUNS = Path(__file__).resolve().parents[1] / "model-runs/model-runs"  # every call goes through it, one line each in the run log
+MODEL_RUNS = Path(__file__).resolve().parents[1] / "model-runs/model-runs"  # every call goes through it, one line each in its log
 TARGET, STATED, CAP = 60, 100, 150  # Opus overshoots the length it is asked for by about half, so the prompt asks for less than the cap the tool enforces
 
 INSTRUCTION = f"""You write one paragraph describing a set of changes, from the unified diff you are given and nothing else.
