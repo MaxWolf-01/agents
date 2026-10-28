@@ -1,6 +1,8 @@
 // The tool-call log: a drawer on the right, over the timeline, showing what the focused turn did
 // (page.js marks that turn's block .cur); with none focused, the turn under way's, else the newest
-// turn's. `log l` in the bar or l opens and closes it, and Esc closes it. The steps live beside the
+// turn's. `log l` in the bar or l opens and closes it, and Esc closes it. Tab, or a click on a
+// step, hands the keys to the open log: j and k walk its steps, o and Enter open one, O opens or
+// closes them all, and Tab hands the keys back to the turns. The steps live beside the
 // page in tool-calls.js, which the first opening loads, with the highlighter; until then the page
 // holds none of them. The turn under way's are in live-calls.js, which the live hook rewrites as
 // each call starts and ends, and which the open log loads again every POLL. It runs after page.js
@@ -150,18 +152,60 @@
       <div class="log-head">
         <span class="which" title="${esc(shownFor === LIVE ? window.liveCalls.prompt || "" : shownFor ? shownFor.querySelector(".hl, .date").textContent : "")}">${label(shownFor)}</span>
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
+        ${steps.some((s) => s.kind !== "thinking") ? '<button type="button" class="all" data-all aria-keyshortcuts="O">open all</button>' : ""}
         ${jump}<button type="button" data-close title="close (Esc)" aria-label="close the tool calls">×</button>
       </div>
       <div class="log-steps">${steps.length ? steps.map(step).join("") : `<p class="log-empty">${empty}</p>`}</div>`
     const box = panel.querySelector(".log-steps")
     if (kept) {
-      kept.open.forEach((n) => box.querySelector(`.step[data-n="${n}"] > button`)?.click())
+      kept.open.forEach((n) => flip(box.querySelector(`.step[data-n="${n}"]`)))
       box.scrollTop = kept.end ? box.scrollHeight : kept.top
-    } else if (shownFor === LIVE) box.scrollTop = box.scrollHeight
+    } else {
+      at = -1
+      if (shownFor === LIVE) box.scrollTop = box.scrollHeight
+    }
+    nameAll()
+    point(at, false)
+  }
+
+  // a step opened shows what it asked for and what came back; a thought, its whole text
+  function flip(el, open = !el.classList.contains("open")) {
+    if (!el || el.classList.contains("open") === open) return
+    el.classList.toggle("open", open)
+    const s = shownSteps[+el.dataset.n]
+    if (s.kind === "thinking") return
+    if (!open) return el.querySelector(".detail")?.remove()
+    el.insertAdjacentHTML("beforeend", `<div class="detail">${detail(s, +el.dataset.n)}</div>`)
+  }
+  const stepEls = () => [...panel.querySelectorAll(".log-steps .step")]
+  const allOpen = () => stepEls().length > 0 && stepEls().every((el) => el.classList.contains("open"))
+  const nameAll = () => { const all = panel.querySelector("[data-all]"); if (all) all.textContent = `${allOpen() ? "close" : "open"} all` }
+  function flipAll() {
+    const open = !allOpen()
+    stepEls().forEach((el) => flip(el, open))
+    nameAll()
+    point(at)
+  }
+
+  // ---- the keys, while the log holds them: `at` is the step they are on, -1 none yet
+
+  let keyed = false, at = -1
+  function point(n, scroll = true) {
+    const els = stepEls()
+    at = els.length ? Math.max(-1, Math.min(n, els.length - 1)) : -1
+    els.forEach((el, k) => el.classList.toggle("cur", keyed && k === at))
+    if (scroll && els[at]) els[at].scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+  }
+  function steer(on) {
+    keyed = on
+    panel.classList.toggle("keyed", on)
+    if (on && at < 0) at = shownFor === LIVE ? stepEls().length - 1 : 0
+    point(at)
   }
 
   panel.addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) return toggle(false)
+    if (e.target.closest("[data-all]")) return flipAll()
     if (e.target.closest("[data-live]")) { toLive = true; return draw() }
     const more = e.target.closest(".more")
     if (more) {
@@ -172,13 +216,14 @@
     }
     const head = e.target.closest(".step > button")
     if (!head) return
-    const el = head.parentElement, s = shownSteps[+el.dataset.n]
-    el.classList.toggle("open")
-    if (s.kind === "thinking") return
-    const open = el.querySelector(".detail")
-    if (open) return open.remove()
-    el.insertAdjacentHTML("beforeend", `<div class="detail">${detail(s, +el.dataset.n)}</div>`)
+    const el = head.parentElement
+    flip(el)
+    nameAll()
+    at = stepEls().indexOf(el)
+    steer(true)
   })
+  // a click anywhere else hands the keys back to the turns
+  document.addEventListener("mousedown", (e) => { if (keyed && !panel.contains(e.target)) steer(false) })
 
   // while open, the turn under way's calls are loaded again every POLL; the log is drawn again where
   // they changed, and its running calls' times move on where they did not
@@ -195,7 +240,7 @@
   async function toggle(open = !isOpen()) {
     toggleButton.setAttribute("aria-expanded", String(open))
     clearInterval(polling)
-    if (!open) return panel.classList.remove("open")
+    if (!open) { steer(false); return panel.classList.remove("open") }
     if (!window.toolCalls) { panel.innerHTML = '<p class="log-empty">loading the tool calls…</p>'; panel.classList.add("open"); await load() }
     if (toggleButton.getAttribute("aria-expanded") !== "true") return  // closed while it loaded
     liveWas = JSON.stringify(window.liveCalls ?? null)
@@ -211,6 +256,22 @@
     if (e.key === "l") { toggle(); e.preventDefault() }
     else if (e.key === "Escape" && isOpen()) toggle(false)
   })
+  // ahead of page.js's keys, in the capture phase, so the log's j and k never also move the turns
+  let gArmed = 0
+  addEventListener("keydown", (e) => {
+    if (!isOpen() || e.ctrlKey || e.metaKey || e.altKey || typing(e)) return
+    if (e.key === "Tab" && !e.shiftKey) steer(!keyed)
+    else if (!keyed) return
+    else if (e.key === "j") point(at + 1)
+    else if (e.key === "k") point(Math.max(0, at - 1))
+    else if (e.key === "G") point(stepEls().length - 1)
+    else if (e.key === "g") { if (Date.now() - gArmed < 500) { point(0); gArmed = 0 } else gArmed = Date.now() }
+    else if (e.key === "o" || e.key === "Enter") { flip(stepEls()[at]); nameAll(); point(at) }
+    else if (e.key === "O") flipAll()
+    else return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+  }, true)
   // whatever moves the page's focus (j, k, a click, n, t) moves the open log with it, off the turn under way
   new MutationObserver(() => {
     if (cursor() !== cursorWas) { cursorWas = cursor(); toLive = false }
