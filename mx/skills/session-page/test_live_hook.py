@@ -84,13 +84,11 @@ def test_only_a_prompt_starts_the_file(directory: Path, run: Callable[..., None]
     assert live(directory) is None
 
 
-@pytest.mark.parametrize("why", ["subagent", "worker", "no directory"])
-def test_calls_nobody_reads_live_are_left_alone(why: str, registry: Path, run: Callable[..., None], monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("why", ["subagent", "no directory"])
+def test_calls_nobody_reads_live_are_left_alone(why: str, registry: Path, run: Callable[..., None]) -> None:
     directory = pages_directory(registry.parent, SESSION)
     if why != "no directory":
         directory.mkdir(parents=True)
-    if why == "worker":
-        monkeypatch.setenv("DISPATCH_WORKLOG", "/tmp/log")
     run("UserPromptSubmit", prompt="go", **({"agent_id": "agent-1"} if why == "subagent" else {}))
     assert live(directory) is None
     assert why != "no directory" or not directory.exists()

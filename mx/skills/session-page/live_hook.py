@@ -20,8 +20,8 @@ it absent: only a prompt or a call starts one. Two calls of one batch run their 
 each rewrite holds a lock on the session's directory, and a result that comes before its call's
 own event adds the call itself.
 
-It leaves alone a subagent's calls, a session nobody reads the page of (`session_page.left_alone`),
-and one with no directory yet.
+It leaves alone a subagent's calls, and a session with no directory: one whose first turn has not
+ended yet, or one nobody reads the page of (`session_page.left_alone`), which never gets one.
 """
 
 import fcntl
@@ -44,7 +44,7 @@ PAGES = "session-pages"  # session_page.PAGES, which this does not import: it co
 
 def main() -> None:
     hook = json.load(sys.stdin)
-    if hook.get("agent_id") or os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+    if hook.get("agent_id"):
         return
     account = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     directory = account / PAGES / hook["session_id"]
