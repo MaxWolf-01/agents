@@ -64,6 +64,7 @@ LOG = "tool-calls.js"
 # handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
 # it, not written.
 PREVIOUS = "previous"
+BASE_LOADER = getattr(yaml, "CBaseLoader", yaml.BaseLoader)  # libyaml's, where PyYAML was built with it: 8 times faster, the same data
 # In a session's directory, the agent repo its records are committed into, as a path, written once
 # as the directory is made. Its parent is the repo root a record's paths are from.
 AGENT_REPO = "agent-repo"
@@ -675,7 +676,7 @@ def read_frontmatter(path: Path, required: set[str], allowed: set[str]) -> tuple
     if not m:
         raise RecordError(path, 1, "no frontmatter: the file opens with --- and a YAML block closed by ---")
     try:
-        front = yaml.load(m.group(1) or "", Loader=yaml.BaseLoader) or {}  # every scalar as written: `no` stays "no"
+        front = yaml.load(m.group(1) or "", Loader=BASE_LOADER) or {}  # every scalar as written: `no` stays "no"
     except yaml.YAMLError as e:
         mark = getattr(e, "problem_mark", None)
         raise RecordError(path, mark.line + 2 if mark else 2, f"frontmatter is not YAML: {getattr(e, 'problem', None) or e}") from None
