@@ -1,3 +1,8 @@
+## 1.0.96
+
+- dispatch names the machine it runs on by user@host, as it names every host
+  dispatch called the machine it runs on `local`, in run records, messages and --host, while placement and every other host used user@host. One host had two names, and an `is_here` check against `id -un`@`uname -n` now stands where `= local` was compared. Run records that still say `local` are renamed the first time they are read, so runs in flight keep working. `--host local` is refused, and the message names the host to use instead.
+
 ## 1.0.95
 
 - Rule 54 says what a headline is for: a title names its subject, a status line states where things stand
