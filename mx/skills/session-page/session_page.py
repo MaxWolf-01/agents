@@ -70,9 +70,10 @@ PREVIOUS = "previous"
 # for its `previous`, so without it a process reading N sessions reads each of those files N times.
 PREVIOUS_READ: dict[str, tuple[tuple[int, ...], str]] = {}
 # A `previous` changed less than this long ago is read every time rather than remembered: a rewrite
-# within one tick of the filesystem's clock can leave its size and times as they were. A second
-# covers the coarsest clocks.
-SETTLED = 1_000_000_000  # ns
+# within one tick of the filesystem's clock can leave its size and times as they were. Two seconds
+# is FAT's tick, the coarsest a local filesystem keeps; a network filesystem whose server's clock
+# runs behind this host's by more can still hand back a stale read.
+SETTLED = 2_000_000_000  # ns
 BASE_LOADER = getattr(yaml, "CBaseLoader", yaml.BaseLoader)  # libyaml's, where PyYAML was built with it: 8 times faster, the same data
 # In a session's directory, the agent repo its records are committed into, as a path, written once
 # as the directory is made. Its parent is the repo root a record's paths are from.
@@ -304,7 +305,8 @@ def title_of(directory: Path) -> str:
 
 def predecessor(directory: str | os.PathLike) -> str:
     """The session `directory`'s `previous` names; empty where it names none. The file is read only
-    where it changed since this process last read it (`PREVIOUS_READ`)."""
+    where it changed since this process last read it (`PREVIOUS_READ`), or changed so recently that
+    a rewrite may not show (`SETTLED`)."""
     path = os.path.join(directory, PREVIOUS)
     try:
         seen = os.stat(path)

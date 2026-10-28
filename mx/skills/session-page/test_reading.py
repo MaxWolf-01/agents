@@ -668,32 +668,47 @@ def test_sessions_read_in_one_process_read_each_previous_once(
     assert set(reads.values()) == {1} and len(reads) == len(chain) - 1
 
 
-REWRITTEN = {"just after it was read": False, "long after it was read": True}
-
-
-@pytest.mark.parametrize("later", REWRITTEN.values(), ids=REWRITTEN)
-def test_a_previous_rewritten_in_place_moves_the_links_of_every_session_it_names(
-    later: bool, chain: dict[str, Path], tmp_path: Path, request: pytest.FixtureRequest,
-) -> None:
-    """session-successors-read-once#P1: a `previous` written over, keeping its file, names its new
-    session on every page read after, the one it named before included: within the second it was
-    read in, when its times may not have moved, or an hour on, when they have."""
-    said = tmp_path / "t.jsonl"
-    if later:
-        request.getfixturevalue("settled")
-    before = handoffs_of(chain, said)
+def rewritten(chain: dict[str, Path]) -> Path:
+    """The `previous` of `CHAIN[5]` written over in place, naming `CHAIN[1]` where it named
+    `CHAIN[4]`: the same file, the same length."""
     moved = chain[CHAIN[5]] / session_page.PREVIOUS
-    at = moved.stat().st_mtime_ns
-    with moved.open("r+") as f:  # the same length: one id for another
+    with moved.open("r+") as f:
         f.write(CHAIN[1])
-    if later:
-        os.utime(moved, ns=(at + 3600 * 10**9, at + 3600 * 10**9))
-    assert handoffs_of(chain, said) == before | {
-        CHAIN[1]: (CHAIN[0], (CHAIN[2], CHAIN[5])),
-        CHAIN[4]: (CHAIN[3], ()),
-        CHAIN[5]: (CHAIN[1], (CHAIN[6],)),
-    }
+    return moved
 
+
+def moved_on(before: dict[str, tuple[str, tuple[str, ...]]]) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """What the pages link once `rewritten` has moved `CHAIN[5]` on from `CHAIN[4]` to `CHAIN[1]`."""
+    return before | {CHAIN[1]: (CHAIN[0], (CHAIN[2], CHAIN[5])), CHAIN[4]: (CHAIN[3], ()), CHAIN[5]: (CHAIN[1], (CHAIN[6],))}
+
+
+def test_a_previous_rewritten_in_place_long_after_it_was_read_is_read_anew(
+    chain: dict[str, Path], tmp_path: Path, settled: None,
+) -> None:
+    """session-successors-read-once#P1: a `previous` written over an hour after the pages were read,
+    which moves its modification time, names its new session on every page read after, the one it
+    named before included."""
+    said = tmp_path / "t.jsonl"
+    before = handoffs_of(chain, said)
+    moved = rewritten(chain)
+    later = moved.stat().st_mtime_ns + 3600 * 10**9
+    os.utime(moved, ns=(later, later))
+    assert handoffs_of(chain, said) == moved_on(before)
+
+
+def test_a_previous_rewritten_in_place_within_its_filesystems_clock_tick_is_read_anew(
+    chain: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """session-successors-read-once#P1 where the rewrite leaves the file's size and times as they
+    were, as a filesystem whose clock ticks coarsely does within one tick: the pages read after it
+    still name the new session."""
+    said = tmp_path / "t.jsonl"
+    kept = (chain[CHAIN[5]] / session_page.PREVIOUS).stat()
+    monkeypatch.setattr(session_page, "time_ns", lambda: kept.st_ctime_ns + 5 * 10**6)  # 5 ms on
+    before = handoffs_of(chain, said)
+    moved, stat = rewritten(chain), os.stat
+    monkeypatch.setattr(os, "stat", lambda path, *a, **k: kept if os.fspath(path) == os.fspath(moved) else stat(path, *a, **k))
+    assert handoffs_of(chain, said) == moved_on(before)
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
