@@ -1,3 +1,8 @@
+## 1.0.99
+
+- The session page's tool-call log can be walked and opened from the keyboard
+  The session page's tool-call drawer, which lists the steps a turn took, can now be driven from the keyboard. With it open, Tab or a click on a step moves the keys into the drawer. There, j and k walk the steps, g g and G jump to the first and last, o or Enter opens one, and O opens or closes them all. A highlight marks the current step. Tab, or a click outside, hands the keys back to the turns, where j and k move between turns as before and the log follows. The drawer's header also gains an "open all" button. Esc still closes the log in one press.
+
 ## 1.0.98
 
 
