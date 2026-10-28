@@ -634,9 +634,9 @@ def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: d
 # Each check follows for seconds of wall clock, so all of them are full-path checks.
 
 
-# ssh to a host whose home is hosts/<host> beside it: the command runs there in bash, as a login
+# ssh to a host whose home is homes/<host> beside it: the command runs there in bash, as a login
 # shell runs it, and every call is recorded host first. A host with no home is off. Once
-# hosts/<host>.hung exists, the host's output stops arriving (it leaves hosts/<host>.silent when it
+# homes/<host>.hung exists, the host's output stops arriving (it leaves homes/<host>.silent when it
 # does) and the connection drops a third of ServerAliveInterval x ServerAliveCountMax seconds
 # later, as ssh's keepalive drops it; with no keepalive it never drops.
 FOLLOW_SSH = """#!/usr/bin/env bash
@@ -651,7 +651,7 @@ done
 host=$1; shift
 here=$(dirname "$0")
 printf '%s\\t%s\\n' "$host" "$*" >> "$here/ssh.calls"
-home=$here/hosts/$host
+home=$here/homes/$host
 [ -d "$home" ] || { echo "ssh: connect to host $host: No route to host" >&2; exit 255; }
 cd "$home" && HOME=$home bash -c "$*" | while IFS= read -r line; do
     [ -e "$home.hung" ] && { touch "$home.silent"; exit; }
@@ -744,7 +744,7 @@ def follow(tmux: dict[str, str]) -> Iterator:
 def remote(home: Path, name: str) -> Path:
     """The home of the host <name>, which FOLLOW_SSH reaches from <home>. Made before the follow
     starts, or its first connection finds a host that is off."""
-    there = home / "bin" / "hosts" / name
+    there = home / "bin" / "homes" / name
     there.mkdir(parents=True, exist_ok=True)
     return there
 
