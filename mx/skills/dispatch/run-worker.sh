@@ -19,7 +19,7 @@
 #                             `dispatch-ctl` resolves it on the host
 #   DISPATCH_CONTEXT          the file the worker reads its ticket's context and this round's
 #                             message from, which `dispatch-ctl` names; the worker inherits it
-#   RUN_LOG                   where each attempt's line goes (run-log, staged beside
+#   MODEL_RUNS_LOG            where each attempt's line goes (model-runs, staged beside
 #                             this script); its own default unless set
 # A replacement runner (DISPATCH_RUNNER, staged as runner-<slug>) owes dispatch-ctl the same: these
 # arguments and that environment; worker-prompt.md from its directory in the worker's system
@@ -46,10 +46,10 @@ if [ ! -f "$prompt_file" ]; then
     exit 1
 fi
 # Every attempt runs through it, so a run nobody logged cannot happen quietly.
-run_log=$here/run-log
-if [ ! -f "$run_log" ]; then
+model_runs=$here/model-runs
+if [ ! -f "$model_runs" ]; then
     printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
-        "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
+        "no model-runs beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 # The worker reads no user settings, so the mx plugin reaches it by path or not at all, and without
@@ -184,7 +184,7 @@ resume=continue
 early_stopped=
 for attempt in $(seq 1 $max_attempts); do
     unit=$run_id-a$attempt-$$
-    logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
+    logged=(bash "$model_runs" run --site worker --ticket "$slug" --attempt "$attempt" --)
     if [ "$attempt" -gt 1 ]; then
         scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" "$resume"
     elif [ -n "$resume_session" ]; then

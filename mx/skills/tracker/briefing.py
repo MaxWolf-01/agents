@@ -28,7 +28,7 @@ IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
-RUN_LOG = Path(__file__).resolve().parent.parent / "run-log" / "run-log"  # every run goes through it, one line each in the run log
+MODEL_RUNS = Path(__file__).resolve().parent.parent / "model-runs" / "model-runs"  # every run goes through it, one line each in the run log
 MODEL = "opus"  # the alias, so the newest Opus writes it; how hard it thinks is the spec's Decisions under "The board briefing"
 EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The run reads none of
@@ -36,7 +36,7 @@ EFFORT = "medium"
 # name besides.
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
 DENIED = "Write,Edit,NotebookEdit"
-RUN_LIMIT = 900  # seconds a run gets, which run-log enforces; one that has not answered by then is dropped and the next change tries again
+RUN_LIMIT = 900  # seconds a run gets, which model-runs enforces; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
 
 SILENT = ""  # what the last run that answered nothing said, for the page to say once (board.absences)
@@ -171,7 +171,7 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
 
 
 def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
-    """One `claude -p` run in `repo` on `prompt`, through `run-log`: what it answered and the session
+    """One `claude -p` run in `repo` on `prompt`, through `model-runs`: what it answered and the session
     it answered in, or None where it did not answer at all.
 
     The prompt goes on stdin: as an argument, one past 128 KiB (MAX_ARG_STRLEN) fails before claude starts.
@@ -189,12 +189,12 @@ def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
     # CLAUDE.md is a file it reads like any other.
     try:
         done = subprocess.run(
-            [str(RUN_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
+            [str(MODEL_RUNS), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
              COMMAND, "-p", *args, "--model", MODEL, "--effort", EFFORT,
              "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
              "--settings", '{"autoMemoryEnabled": false}',
              "--allowedTools", TOOLS, "--disallowedTools", DENIED],
-            input=prompt, cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # run-log's own limit ends the run and writes its line; this one is for a run-log that hangs
+            input=prompt, cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # model-runs's own limit ends the run and writes its line; this one is for a model-runs that hangs
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         quiet(str(e))

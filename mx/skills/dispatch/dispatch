@@ -70,8 +70,8 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 state_root=.local/state/dispatch
 # The only reader and writer of ticket files; it runs here, never on a host.
 tracker=$skill/../tracker/tracker.py
-# A fetch or a cleanup pulls the host's run log lines here (`run-log --help`).
-run_log=$skill/../run-log/run-log
+# A fetch or a cleanup pulls the host's run log lines here (`model-runs --help`).
+model_runs=$skill/../model-runs/model-runs
 # This machine, as the run record and the placer name a host. Commands for it run here rather than
 # over ssh, and its ticket branches are cut from the checkouts here rather than pushed to bare repos.
 self=$(id -un)@$(uname -n)
@@ -271,7 +271,7 @@ ticket_host() { # <slug>
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
-    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$run_log" "$skill/../tracker/pre-commit")
+    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$model_runs" "$skill/../tracker/pre-commit")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
     # Staged as `setup`, which every later spawn there runs until another --setup-cmd.
     if [ -n "$cmd" ]; then
@@ -642,10 +642,10 @@ fetch_round() { # <slug>
     pull_runs "$host"
 }
 
-# Appends a remote host's new run-log lines here; a run on this machine already writes its own.
+# Appends a remote host's new model-runs lines here; a run on this machine already writes its own.
 pull_runs() { # <host>
     is_here "$1" && return 0
-    run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
+    run bash "$model_runs" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; model-runs pull $1 tries again" >&2
 }
 
 # <repo> <tip> → each base it has merged into, of the one or two its repo has, one a line; nothing,
