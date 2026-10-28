@@ -28,7 +28,7 @@ IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
-MODEL_RUNS = Path(__file__).resolve().parent.parent / "model-runs" / "model-runs"  # every run goes through it, one line each in the run log
+MODEL_RUNS = Path(__file__).resolve().parent.parent / "model-runs" / "model-runs"  # every run goes through it, one line each in its log
 MODEL = "opus"  # the alias, so the newest Opus writes it; how hard it thinks is the spec's Decisions under "The board briefing"
 EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The run reads none of
@@ -194,7 +194,7 @@ def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
              "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
              "--settings", '{"autoMemoryEnabled": false}',
              "--allowedTools", TOOLS, "--disallowedTools", DENIED],
-            input=prompt, cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # model-runs's own limit ends the run and writes its line; this one is for a model-runs that hangs
+            input=prompt, cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # the limit model-runs sets ends the run and writes its line; this one is for a model-runs that hangs
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         quiet(str(e))

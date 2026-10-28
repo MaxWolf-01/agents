@@ -7,7 +7,7 @@ and the rollups `report` prints. Run: uv run test_model_runs.py
 
 The seam is the script itself, run with a stand-in `claude` on PATH that prints what
 `--output-format stream-json` prints, cut short where a test wants a run that died, and a stand-in
-`ssh` that answers with a remote log. The oracle is the `model-runs` ticket: one line per run, written
+`ssh` that answers with a remote log. The oracle is the `run-log` ticket: one line per run, written
 whether or not claude reported, carrying what the ticket lists; a host's lines come back once.
 """
 
