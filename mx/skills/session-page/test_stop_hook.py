@@ -41,8 +41,8 @@ import turn_review
 from live_hook import LIVE
 from session_checks import (
     BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
-    UNPARSEABLE, appended, asked_in_order, elements, logged, messages_of, payload, project_of, sessions, turns_on, unreachable,
-    view_of, with_write, write_tickets,
+    UNPARSEABLE, appended, asked_in_order, elements, logged, messages_of, payload, project_of, sessions, text_of, turns_on,
+    unreachable, view_of, with_write, write_tickets,
 )
 from session_checks import record as drawn_record
 from session_page import AGENT_REPO, LOG, PAGE, PREVIOUS, SESSIONS, pages_directory
@@ -573,6 +573,18 @@ def test_a_session_whose_records_sit_in_the_agent_repo_keeps_its_turns_on_its_ne
     assert {"t01", "t02", "t03", "t04"} <= set(rows((worked_example / PAGE).read_text()))
     assert sorted(p.name for p in (earlier / "turns").iterdir()) == ["01.md", "02.md", "03.md", "04.md"]
     assert (worked_example.name, str(worked_example / PAGE)) in opened(browser, 3), "its first render under the account opens it"
+
+
+def test_the_page_names_the_account_the_session_runs_on_as_its_turn_ends(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The page a turn's end renders names the account whatever started the session exported."""
+    monkeypatch.setenv(session_page.ACCOUNT_VARIABLE, "helferline")
+    run(payload(worked_example, transcript, reply="On the work account."))
+    capsys.readouterr()
+    shown = elements((worked_example / PAGE).read_text(), "session-account")
+    assert text_of(shown["session-account"]) == "helferline"
 
 
 def test_a_session_with_a_directory_keeps_it_tied_to_its_project_wherever_it_works_next(

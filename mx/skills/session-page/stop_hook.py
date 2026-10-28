@@ -48,7 +48,7 @@ import turn_review  # noqa: E402
 from live_hook import LIVE  # noqa: E402
 from session_page import (  # noqa: E402
     PAGE, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
-    read_session, write_page, make_session_directory, resolved, session_directory, strip_tags, written_this_turn,
+    read_session, write_page, make_session_directory, note_account, resolved, session_directory, strip_tags, written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -236,6 +236,7 @@ def main() -> None:
         if decision.chat:
             decision.chat[0].parent.mkdir(parents=True, exist_ok=True)
             decision.chat[0].write_text(decision.chat[1])
+        note_account(directory)
         write_page(read_session(directory, Path(hook["transcript_path"])), datetime.now())
         unit = hub_unit(session_id)
         opened = ("not opened: the hub shows it" if unit

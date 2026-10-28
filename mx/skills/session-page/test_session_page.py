@@ -35,8 +35,8 @@ from session_checks import (
     DRAWN, SESSION, TURN_ANCHOR, anchors, elements, record, rows_of, sections_of, sessions, text_of, turns_on, view_of, write_tickets,
 )
 from session_page import (
-    AGENT_REPO, ARTEFACT, COLUMN, LOG, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path, chat_record, inline,
-    pages_directory, read_session, render_session, write_page,
+    ACCOUNT_VARIABLE, AGENT_REPO, ARTEFACT, COLUMN, LOG, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path,
+    chat_record, inline, note_account, pages_directory, read_session, render_session, write_page,
 )
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -608,26 +608,55 @@ def test_the_session_id_copies_whole_from_the_meta_line(worked_example: Path, tr
     assert f'data-copy="{SESSION}"' in button and button.endswith(f">{SESSION[:8]}</button>")
 
 
-# Each is a session directory, and the account the bar names for it.
+# Each is a session directory, the account whatever started the session exported ($CLAUDE_ACCOUNT),
+# and the account the bar names for it.
 ACCOUNTS = {
-    "the personal account": ("/home/u/.claude/session-pages/s", "personal"),
-    "another account": ("/home/u/.claude-helferline/session-pages/s", "helferline"),
-    "an agent repo's sessions": ("/srv/project/agent/sessions/s", ""),
-    "a directory named like the pages under no account": ("/srv/copies/session-pages/s", ""),
+    "the personal account": ("home/u/.claude/session-pages/s", "", "personal"),
+    "another account": ("home/u/.claude-helferline/session-pages/s", "", "helferline"),
+    "an agent repo's sessions": ("srv/project/agent/sessions/s", "", ""),
+    "a directory named like the pages under no account": ("srv/copies/session-pages/s", "", ""),
+    "the personal profile switched to another account": ("home/u/.claude/session-pages/s", "helferline", "helferline"),
+    "another profile on the personal account's token": ("home/u/.claude-helferline/session-pages/s", "personal", "personal"),
 }
 
 
-@pytest.mark.parametrize("directory, named", ACCOUNTS.values(), ids=ACCOUNTS)
-def test_the_bar_names_the_account_a_sessions_directory_sits_under(directory: str, named: str) -> None:
-    assert account_name(Path(directory)) == named
+@pytest.mark.parametrize("directory, exported, named", ACCOUNTS.values(), ids=ACCOUNTS)
+def test_the_bar_names_the_account_a_session_runs_on(
+    directory: str, exported: str, named: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The account whatever started the session exported where it did, since a profile can run on
+    another account's token, else the one the session's directory sits under."""
+    (held := tmp_path / directory).mkdir(parents=True)
+    if exported:
+        monkeypatch.setenv(ACCOUNT_VARIABLE, exported)
+    note_account(held)
+    assert account_name(held) == named
 
 
-def test_the_bar_names_the_account(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
-    """The bar names the account the session runs under, so a glance says which one it is; a
-    directory under no account shows none."""
+def test_a_session_resumed_on_its_own_login_names_its_profiles_account_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    held = pages_directory(tmp_path / ".claude", SESSION)
+    held.mkdir(parents=True)
+    monkeypatch.setenv(ACCOUNT_VARIABLE, "helferline")
+    note_account(held)
+    monkeypatch.delenv(ACCOUNT_VARIABLE)
+    note_account(held)
+    assert account_name(held) == "personal"
+
+
+def test_the_bar_names_the_account(
+    worked_example: Path, transcript: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bar names the account the session runs on, so a glance says which one it is; a
+    directory under no account shows none. Rendered from another session, as a handoff's pickup
+    renders the session it picked up, it names the account the session ran on, not that one's."""
     assert "session-account" not in elements(render_session(worked_example, transcript, now=NOW), "session-account")
-    moved = pages_directory(tmp_path / ".claude-helferline", SESSION)
+    moved = pages_directory(tmp_path / ".claude", SESSION)
     shutil.copytree(worked_example, moved)
+    monkeypatch.setenv(ACCOUNT_VARIABLE, "helferline")
+    note_account(moved)
+    monkeypatch.setenv(ACCOUNT_VARIABLE, "personal")
     shown = elements(render_session(moved, transcript, now=NOW), "session-account")["session-account"]
     assert text_of(shown) == "helferline"
 
