@@ -5,7 +5,7 @@ disable-model-invocation: true
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/model-runs --help), Bash(model-runs report *), Bash(model-runs report), Bash(model-runs --help)
 ---
 
-# Run log
+# Model runs
 
 Every `claude -p` the workflow starts runs through `model-runs run`, which appends one line to the log. `model-runs --help`, below, is the reference.
 
