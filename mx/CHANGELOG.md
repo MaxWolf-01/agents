@@ -1,3 +1,10 @@
+## 1.0.97
+
+- The session page's log shows the turn under way's tool calls as they happen
+  The session page's tool-call log now shows the current turn's calls as they happen; before, it showed a turn only once that turn had ended. A new async hook (live_hook.py) records each prompt, call start, result and failure in live-calls.js beside the page, and the open log reloads that file every two seconds. With no turn picked, the log shows the running turn with a pulsing dot and ticking timers; from another turn, an "under way" button returns to it. When the turn ends, the stop hook deletes the file. Subagent calls and sessions without a page are ignored. The step helpers moved to a stdlib-only steps.py so the hook runs in ~40ms.
+- The session page reader parses frontmatter with libyaml, 8 times faster
+  The reader now loads every record's frontmatter with PyYAML's CBaseLoader, libyaml's, where PyYAML was built with it, and BaseLoader otherwise; both give every scalar as written. The same data on all 660 records under ~/.claude*/session-pages on zephylux, 8 times faster. The container hub reads every unit's session through this reader on its first read after a start: page_says there went 4.44 s -> 2.39 s on zephylux's 287 units.
+
 ## 1.0.96
 
 - dispatch names the machine it runs on by user@host, as it names every host
