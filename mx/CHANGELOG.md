@@ -1,3 +1,9 @@
+## 1.0.95
+
+- Rule 54 says what a headline is for: a title names its subject, a status line states where things stand
+  Rule 54 of the prose catalogue now splits headlines by their job. A title is there to be found, so it names what the thing is about, never what was done to it; a status line or a report's headline says where things stand, so its verdict, finding or state is the point. Hooks, counts or bare ids where names belong, and figurative wording fail either kind. The turn review, the code review's standards axis and /mx:writing-for-humans all read the rule.
+- pull references out of prompt
+
 ## 1.0.94
 
 - wrap opens on its verdict, so the hub shows whether a session can close
