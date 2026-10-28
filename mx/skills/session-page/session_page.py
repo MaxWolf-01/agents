@@ -11,9 +11,10 @@ stands in the way of a `git pull` there. It holds `session.md`, one `turns/NN.md
 recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
 shape RULES.md gives them; `previous`, which the handoff skill's `pickup.py` writes where the
 session picked up another's continuation handoff; `agent-repo`, the agent repo whose `sessions/`
-the SessionEnd hook commits the records into, from which a record's paths are read; and `account`,
-the account the session runs on, where whatever started claude named it (`note_account`). A directory
-inside an agent repo's `sessions/`, as that commit leaves it, reads the same without one. Any of
+the SessionEnd hook commits the records into, from which a record's paths are read; and `ACCOUNT`,
+a file naming the account the session runs on, where whatever started claude named it
+(`note_account`). A directory inside an agent repo's `sessions/`, as that commit leaves it, reads
+the same without `agent-repo`, and names no account. Any of
 the records may be missing: a session's first
 turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
 title, links to the pages of the sessions before and after it across a handoff, the resume
@@ -1296,7 +1297,7 @@ def assemble(v: View, now: datetime) -> str:
             if session.name else "")
     turns = len(v.rows)
     held = account_name(session.directory)
-    account = (f'<span class="sep">|</span><span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span>'
+    account = (f'<span class="sep">|</span><span class="account" id="session-account" title="the Claude Code account the session runs on">{esc(held)}</span>'
                if held else "")
     return f"""<!doctype html>
 <html lang="en">
