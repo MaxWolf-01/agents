@@ -72,6 +72,10 @@ state_root=.local/state/dispatch
 tracker=$skill/../tracker/tracker.py
 # A fetch or a cleanup pulls the host's run log lines here (`run-log --help`).
 run_log=$skill/../run-log/run-log
+# This machine, as the run record and the placer name a host. Commands for it run here rather than
+# over ssh, and its ticket branches are cut from the checkouts here rather than pushed to bare repos.
+self=$(id -un)@$(uname -n)
+is_here() { [ "$1" = "$self" ]; } # <host>
 
 # Echoes a command that changes something before running it, so a step can be redone by hand.
 run() { echo "+ $*" >&2; "$@"; }
@@ -170,23 +174,24 @@ locate() { # [--read [<slug>]]
     # The run record and the staged messages, beside the history.
     state=$gitdir/dispatch
     runs=$state/runs
+    adopt_local "$runs"
 }
 
 # One per repo and branch, so a dispatcher on another branch, maybe on another plugin version,
 # never replaces the scripts this one's workers run.
 scratch_dir() { # <host>
     d=$state_root/$repo-$base
-    [ "$1" = local ] && d=$HOME/$d
+    is_here "$1" && d=$HOME/$d
     echo "$d"
 }
 
-# A command on a worker host, or here for `local`. The keepalive drops a dead connection in ~30s,
+# A command on a worker host, run here for this machine. The keepalive drops a dead connection in ~30s,
 # so `wait` retries rather than hangs; BatchMode, since `ps` asks its hosts at once in the
 # background, where a passphrase prompt would have no terminal of its own.
 ssh_options=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 on_host() { # <host> <command...>
     h=$1; shift
-    if [ "$h" = local ]; then "$@"; else ssh "${ssh_options[@]}" "$h" "$(remote_line "$@")"; fi
+    if is_here "$h"; then "$@"; else ssh "${ssh_options[@]}" "$h" "$(remote_line "$@")"; fi
 }
 
 # Quotes each argument for the remote login shell, which ssh hands one joined line. `%q` quotes for
@@ -208,7 +213,7 @@ copy_to() { # <host> <dir> <file...>
     h=$1 dir=$2; shift 2
     staging=$dir/.staging.$$
     run on_host "$h" mkdir -p "$staging" || return 1
-    if [ "$h" = local ]; then run cp "$@" "$staging/"; else run scp -q "$@" "$h:$staging/"; fi || return 1
+    if is_here "$h"; then run cp "$@" "$staging/"; else run scp -q "$@" "$h:$staging/"; fi || return 1
     for f in "$@"; do
         run on_host "$h" mv "$staging/${f##*/}" "$dir/${f##*/}" || return 1
     done
@@ -221,6 +226,13 @@ copy_to() { # <host> <dir> <file...>
 record_run() { # <name> <host>
     mkdir -p "$state"
     ( flock 9; printf '%s\t%s\t%s\n' "$base" "$1" "$2" >> "$runs" ) 9>>"$runs.lock"
+}
+
+# Renames `local` in a run record to this machine's name, which it was recorded under before it was
+# named like any other host, so a run started then is still found. Exit 0 with no record.
+adopt_local() { # <run record>
+    [ -f "$1" ] && grep -q $'\tlocal$' "$1" || return 0
+    ( flock 9; sed -i "s/\tlocal\$/\t$self/" "$1" ) 9>>"$1.lock"
 }
 
 # Drops <name>'s lines for this branch, once its run is cleaned up.
@@ -270,7 +282,7 @@ stage() { # <host> [setup-command]
         files+=("$staged/setup")
     fi
     # Before the stamp check: the remotes are this machine's, the stamp the host's.
-    if [ "$h" != local ]; then
+    if ! is_here "$h"; then
         remote=$(remote_of code "$h")
         host_remote "$repo_root" "$remote" "$h:repos/dispatch/$repo.git" &&
             host_remote "$agent_top" "$remote" "$h:repos/dispatch/$repo-agent.git" ||
@@ -281,7 +293,7 @@ stage() { # <host> [setup-command]
         [ -z "$cmd" ] || copy_to "$h" "$scratch" "$staged/setup" || die "staging the setup command on $h failed"
         return 0
     fi
-    if [ "$h" = local ]; then
+    if is_here "$h"; then
         run mkdir -p "$scratch"
         copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
         run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" "$agent_top" "$agent_base" || die "init failed"
@@ -308,7 +320,7 @@ host_remote() { # <top> <remote> <url>
 }
 
 push_to() { # <host>
-    [ "$1" = local ] && return 0  # a local host cuts ticket branches from these checkouts
+    is_here "$1" && return 0  # this machine cuts ticket branches from these checkouts
     rc=0
     for at in agent code; do
         run git -C "$(repo_at "$at")" push -q "$(remote_of "$at" "$1")" "$(base_at "$at")" ||
@@ -319,7 +331,7 @@ push_to() { # <host>
 
 # Pushes each `ticket_repos` base to its bare repo on <host>, origin/<trunk> arriving as <trunk>.
 push_listed() { # <host>
-    [ "$1" = local ] && return 0
+    is_here "$1" && return 0
     local name top remote url rc=0
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} remote=$(remote_of "$name" "$1") url=$1:repos/dispatch/$repo-$name.git
@@ -351,7 +363,7 @@ stage_listed() { # <host> <slug>
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
         # The base by its name on the host, where origin/<trunk> is <trunk>.
-        if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
+        if is_here "$1"; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
         else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
             listed_prompt+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
@@ -359,7 +371,7 @@ stage_listed() { # <host> <slug>
             listed_prompt+=$'\n'"- $name: \`$(sibling_of "$name" "$2")\`, beside your worktree, from \`$from\`"
         fi
     done
-    [ "$1" = local ] && return 0
+    is_here "$1" && return 0
     run on_host "$1" bash "$(scratch_dir "$1")/dispatch-ctl" bare "${ticket_repos[@]}" || return 1
     push_listed "$1"
 }
@@ -454,7 +466,7 @@ ctl() {
     host= setup_cmd= account=${DISPATCH_ACCOUNT:-personal} needs=() flagged=
     while :; do
         case ${1:-} in
-            --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;
+            --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host"; shift 2 ;;
             --account)   account=${2:-} flagged=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
             --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
@@ -499,7 +511,7 @@ ctl() {
         die "--account and --needs place a spawn, and ${name:-$sub} goes to $host: pass them to a spawn with no run recorded and no --host"
     [ -z "$placing" ] || command -v worker-hosts > /dev/null 2>&1 ||
         die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
-    self=$(id -un)@$(uname -n)
+    [ "$host" != local ] || die "--host takes this machine by its name, $self, as it takes any other"
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
     if [ "$sub" = resume ]; then
@@ -519,7 +531,6 @@ ctl() {
         candidates=("$host")
         [ -z "$placing" ] || place_spawn
         for candidate in "${candidates[@]}"; do
-            [ "$candidate" != "$self" ] || candidate=local
             [ -z "$placing" ] || echo "dispatch: placing $name on $candidate" >&2
             ctl_on "$candidate" "$@"
             rc=$?
@@ -608,11 +619,11 @@ fetch_round() { # <slug>
     local branch=ticket/$1 names at name
     ticket_listed "$1"
     names=(code agent "${ticket_repos[@]}")
-    if [ "$host" = local ]; then
+    if is_here "$host"; then
         for at in "${names[@]}"; do
             git -C "$(repo_at "$at")" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $(repo_at "$at")"
         done
-        echo "local host: $branch is already here, in every repo"
+        echo "$host: $branch is already here, in every repo"
     else
         # Also each listed repo the host still holds for the ticket that its repos: no longer
         # names, whose branch the host's cleanup would delete.
@@ -631,9 +642,9 @@ fetch_round() { # <slug>
     pull_runs "$host"
 }
 
-# Appends a remote host's new run-log lines here; a local host already writes this machine's.
+# Appends a remote host's new run-log lines here; a run on this machine already writes its own.
 pull_runs() { # <host>
-    [ "$1" = local ] && return 0
+    is_here "$1" && return 0
     run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
 }
 
@@ -818,7 +829,7 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
             [ ${#listed_top[@]} -gt 0 ] || listed "$2"
             top=${listed_top[$name]-}
             if ! tip=$(git -C "${top:-/}" rev-parse -q --verify "refs/heads/ticket/$1" 2> /dev/null); then
-                [ "$h" = local ] && [ -n "$top" ] && continue  # cut in that checkout, and deleted from it since
+                is_here "$h" && [ -n "$top" ] && continue  # cut in that checkout, and deleted from it since
                 echo "dispatch: $1 is done, and ticket/$1 in $name, which $h holds, is not here, so its run stays; \`dispatch fetch $1\` brings it" >&2
                 return 1
             fi
@@ -830,7 +841,7 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
         pull_runs "$h"
         forget_run "$1"
     fi
-    # A local host's cleanup has deleted these already.
+    # A cleanup on this machine has deleted these already.
     for at in code agent; do
         tip=$(git -C "$(repo_at "$at")" rev-parse -q --verify "refs/heads/ticket/$1") || continue
         landed "$at" "$tip" ||
@@ -894,7 +905,7 @@ retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its 
         [ "$at" = code ] || [ "$at" = agent ] || [ ${#listed_top[@]} -gt 0 ] || listed "$3"
         top=$(repo_at "$at")
         [ -n "$top" ] || { echo "$2 holds its branch in $at, which \`tracker repos\` does not list"; return 1; }
-        if [ "$2" = local ]; then
+        if is_here "$2"; then
             tip=$(git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1")
         else
             tip=$(git -C "$top" ls-remote --heads "$(remote_of "$at" "$2")" "refs/heads/ticket/$1") ||
@@ -1069,28 +1080,21 @@ pr_landed() { # <ref>
 
 # ps, attach and peek; dispatch-ps is the part that runs on each host.
 
-# `local` for this machine under its register name (`self`), so it is read without ssh.
-via() { if [ "$1" = "$self" ]; then echo local; else echo "$1"; fi; } # <host> → what on_host takes
-
 # A command on a host, against its default tmux server, whichever server the caller is in.
-look() { ( unset TMUX; on_host "$(via "$1")" "${@:2}" ) } # <host> <command...>
+look() { ( unset TMUX; on_host "$@" ) } # <host> <command...>
 
-# Every host the register publishes and every host this repo's runs name, once
-# each; `local` gives way to this machine's own register entry.
+# Every host the register publishes and every host this repo's runs name, once each.
 fleet() { # <published>
     { printf '%s\n' "$1"
       common=$(git rev-parse --git-common-dir 2>/dev/null) && [ -f "$common/dispatch/runs" ] &&
-          awk -F'\t' '{ print $3 }' "$common/dispatch/runs"
-    } | grep -v '^$' | sort -u | awk -v self="$self" '
-        { host[NR] = $0; if ($0 == self) mine = 1 }
-        END { for (i = 1; i <= NR; i++) if (!(mine && host[i] == "local")) print host[i] }'
+          adopt_local "$common/dispatch/runs" && awk -F'\t' '{ print $3 }' "$common/dispatch/runs"
+    } | grep -v '^$' | sort -u
 }
 
 # Sets `hosts`, every host the register publishes and this repo's runs name, and
 # starts `rows` and `missing` off with the register's failure, if it failed.
 fleet_hosts() {
     local published= register_error=
-    self=$(id -un)@$(uname -n)
     # Here, not in fleet, whose captured output runs in a subshell that would lose the failure.
     if command -v worker-hosts >/dev/null 2>&1; then
         published=$(worker-hosts --targets) ||
@@ -1352,7 +1356,7 @@ follow_host() { # <host>
     trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null; exit 0' TERM
     unset TMUX
     # A plain command, so its pid is the connection's and the trap's kill reaches it.
-    if [ "$(via "$1")" = local ]; then
+    if is_here "$1"; then
         conn=(bash -s "$state_root" --follow)
     else
         conn=(ssh "${ssh_options[@]}" "$1" "$(remote_line bash -s "$state_root" --follow)")
@@ -1440,7 +1444,7 @@ attach() {
     else
         echo "detach with your prefix, then d" >&2
     fi
-    if [ "$(via "$r_host")" = local ]; then
+    if is_here "$r_host"; then
         unset TMUX
         exec tmux attach -t "=$r_session:"
     fi

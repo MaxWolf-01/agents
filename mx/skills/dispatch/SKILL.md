@@ -61,7 +61,7 @@ File overlap is the mechanical test; **coherence** is the deeper one. Tickets th
 - `--needs <capability>` for each capability the ticket needs. A ticket needing one no host has is a question on that ticket, never a blocker a worker discovers on arrival.
 - The project's account where its work does not run on the personal one: `DISPATCH_ACCOUNT` from its `.envrc`, or `--account`.
 - `--cpu-weight` for a time-critical ticket: more than an equal share among its worker user's workers on a busy machine.
-- `--host` only when you know something the records don't. The machine you are on is `local`; a laptop that suspends kills every worker on it; on a host with no record, no capability is assumed that you haven't verified.
+- `--host` only when you know something the records don't. The machine you are on is named like any other, `$(id -un)@$(uname -n)`; a laptop that suspends kills every worker on it; on a host with no record, no capability is assumed that you haven't verified.
 
 Report each ticket's host and its limits to the user.
 

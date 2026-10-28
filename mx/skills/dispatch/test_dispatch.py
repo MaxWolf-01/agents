@@ -25,6 +25,7 @@ stand-ins, and what is checked is what dispatch asks of them and does with their
 import hashlib
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -38,6 +39,9 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 import tracker
+
+# This machine as dispatch names it, `id -un`@`uname -n`, as it names every other host.
+HERE = f"{pwd.getpwuid(os.getuid()).pw_name}@{os.uname().nodename}"
 from dispatch_checks import mx, stage_runner
 
 SKILL = Path(__file__).parent
@@ -435,7 +439,7 @@ def skill_copy(toy: Path) -> Path:
     return skill / "dispatch" / "dispatch"
 
 
-def spawn(toy: Path, staged: Path, slug: str, message: str, host: str | None = "local",
+def spawn(toy: Path, staged: Path, slug: str, message: str, host: str | None = HERE,
           env: dict[str, str] | None = None, cwd: Path | None = None, ctl_args: Sequence[str] = (),
           spawn_args: Sequence[str] = ()) -> subprocess.CompletedProcess:
     """`dispatch ctl ... spawn` on `message`; with no `host` the spawn is placed. `ctl_args` go
@@ -602,7 +606,7 @@ def test_the_effort_a_spawn_names_reaches_the_runner_medium_unless_given(toy: Pa
     env = environment(toy)
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
 
-    said = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+    said = subprocess.run([str(staged), "ctl", "--host", HERE, "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     waited(toy)
     assert said.returncode == 0, said.stderr
@@ -791,7 +795,7 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
     def built(slug: str) -> None:
         assert run(worktree, "claim", slug).returncode == 0
         subprocess.run([str(staged), "prompt", slug], cwd=worktree, input=f"Work {slug}.\n", text=True, check=True, env=env)
-        spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", slug, "sonnet"],
+        spawned = subprocess.run([str(staged), "ctl", "--host", HERE, "--setup-cmd", "true", "spawn", slug, "sonnet"],
                                  cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
         assert spawned.returncode == 0, spawned.stderr
         assert run(worktree, "wait", slug, "--deadline", "60").returncode == 0
@@ -909,7 +913,7 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     # line a run writes.
     quiet = toy.parent / "quiet-runner.sh"
     quiet.write_text(RUNNER)
-    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet"],
+    resumed = subprocess.run([str(staged), "ctl", "--host", HERE, "resume", "warm-preset", "sonnet"],
                              cwd=toy, capture_output=True, text=True, timeout=180,
                              env=environment(toy, DISPATCH_RUNNER=str(quiet)))
     assert resumed.returncode == 0, resumed.stderr
@@ -1362,7 +1366,7 @@ def test_a_cleanup_refuses_over_work_no_spawn_put_in_the_worktree_and_force_dele
     env = environment(toy)
     run(toy, "claim", "warm-preset")
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
-    spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "echo built > built.txt; mkdir out; touch out/a; git init -q deps/dep",
+    spawned = subprocess.run([str(staged), "ctl", "--host", HERE, "--setup-cmd", "echo built > built.txt; mkdir out; touch out/a; git init -q deps/dep",
                               "spawn", "warm-preset", "sonnet"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert spawned.returncode == 0, spawned.stderr
     waited(toy)
@@ -1426,11 +1430,11 @@ def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fai
 
 
 def built_on_host(toy: Path, staged: Path, host: str) -> tuple[dict[str, str], Path]:
-    """warm-preset claimed, spawned on `host` (`local`, or `agent@far` behind the fake ssh) and
+    """warm-preset claimed, spawned on `host` (this machine, or `agent@far` behind the fake ssh) and
     built by a worker that reported: the environment that reaches the host, and the ticket's
     worktree there."""
     (staged.parent / "run-worker.sh").write_text(BUILDING)
-    if host == "local":
+    if host == HERE:
         env, worktree, state = environment(toy), toy.parent / "lamp-warm-preset", None
     else:
         remote, env = fake_remote(toy)
@@ -1449,7 +1453,7 @@ def tracker_writes(toy: Path, env: dict[str, str], *args: str) -> None:
 
 
 @pytest.mark.full_path
-@pytest.mark.parametrize("host", ["local", "agent@far"])
+@pytest.mark.parametrize("host", [HERE, "agent@far"])
 @pytest.mark.parametrize("left", ["done", "retired"])
 def test_a_run_whose_ticket_was_closed_outside_dispatch_leaves_its_host_at_the_next_probe(
         toy: Path, staged: Path, host: str, left: str) -> None:
@@ -1473,7 +1477,7 @@ def test_a_run_whose_ticket_was_closed_outside_dispatch_leaves_its_host_at_the_n
     probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert "no run recorded for main" in probed.stderr, probed.stderr
     assert not worktree.exists()
-    bare = [] if host == "local" else [worktree.parent / "lamp.git", worktree.parent / "lamp-agent.git"]
+    bare = [] if host == HERE else [worktree.parent / "lamp.git", worktree.parent / "lamp-agent.git"]
     for top in (toy, toy / "agent", *bare):
         assert not git(top, "branch", "--list", "ticket/warm-preset"), top
     sessions = subprocess.run(["tmux", "list-sessions", "-F", "#S"], capture_output=True, text=True, env=env).stdout
@@ -1482,7 +1486,7 @@ def test_a_run_whose_ticket_was_closed_outside_dispatch_leaves_its_host_at_the_n
 
 @pytest.mark.full_path
 @pytest.mark.parametrize("host, why", [
-    ("local", "ticket/warm-preset in code has not merged into main here"),
+    (HERE, "ticket/warm-preset in code has not merged into main here"),
     ("agent@far", "ticket/warm-preset in code holds commits this machine lacks"),
 ])
 def test_a_run_of_a_ticket_gone_from_the_tracker_with_its_work_merged_nowhere_stays_and_says_why(
@@ -1517,7 +1521,7 @@ def test_a_run_of_a_ticket_gone_from_the_tracker_whose_worker_is_running_stays(t
 
     probed = run(toy, "ctl", "probe")
     (state / "release").touch()
-    assert "warm-preset is gone from the tracker, and its run on local stays: its worker is still running" in probed.stderr, probed.stderr
+    assert f"warm-preset is gone from the tracker, and its run on {HERE} stays: its worker is still running" in probed.stderr, probed.stderr
     assert "dispatch-lamp-warm-preset running" in probed.stdout
     assert (toy.parent / "lamp-warm-preset").is_dir()
 
@@ -2068,7 +2072,7 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
     env = environment(toy)
 
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=worktree, input="Work it.\n", text=True, check=True, env=env)
-    said = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+    said = subprocess.run([str(staged), "ctl", "--host", HERE, "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
                           cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
     assert said.returncode == 0, said.stdout + said.stderr
     waited(toy, state)
@@ -2366,7 +2370,7 @@ def test_a_spawn_says_where_its_setup_came_from(
     env["PATH"] = f"{fakes}:{env['PATH']}"
     run(toy, "claim", "warm-preset")
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
-    said = subprocess.run([str(staged), "ctl", "--host", "local", *given, "spawn", "warm-preset", "sonnet"],
+    said = subprocess.run([str(staged), "ctl", "--host", HERE, *given, "spawn", "warm-preset", "sonnet"],
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     state = waited(toy).parent
     assert said.returncode == 0, said.stderr
@@ -2961,7 +2965,7 @@ def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path,
 
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="continue\n", text=True, check=True,
                    env=environment(toy))
-    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet", "--effort", "low"],
+    resumed = subprocess.run([str(staged), "ctl", "--host", HERE, "resume", "warm-preset", "sonnet", "--effort", "low"],
                              cwd=toy, capture_output=True, text=True, timeout=180, env=environment(toy))
     assert resumed.returncode == 0, resumed.stderr
     assert "effort=low" in resumed.stdout, resumed.stdout
@@ -3034,10 +3038,10 @@ def sourced(body: str, *args: str, **env: str) -> subprocess.CompletedProcess:
 # here first and on agent@far since, while another branch, lamp-ui, has runs of its own, one of them
 # of warm-preset too, on a host main has none on.
 RUN_RECORD = (
-    "main\twarm-preset\tlocal\n"
+    f"main\twarm-preset\t{HERE}\n"
     "lamp-ui\twarm-preset\tagent@near\n"
     "main\twarm-preset\tagent@far\n"
-    "main\tdim-preset\tlocal\n"
+    f"main\tdim-preset\t{HERE}\n"
     "lamp-ui\tcold-preset\tagent@near\n"
 )
 
@@ -3066,14 +3070,33 @@ def test_a_host_holds_the_runs_of_a_branch_that_last_went_there(tmp_path: Path) 
     def on(host: str) -> set[str]:
         return set(on_record(tmp_path, "main", f"runs_on {host}").stdout.split())
 
-    assert on("local") == {"dim-preset"}
+    assert on(HERE) == {"dim-preset"}
     assert on("agent@far") == {"warm-preset"}
     assert on("agent@near") == set(), "lamp-ui's runs are lamp-ui's"
 
 
 def test_the_hosts_a_branch_fans_out_over_are_each_host_it_has_a_run_on_once(tmp_path: Path) -> None:
     """`hosts_used`, which `push` and `probe` go over: every host this branch has a run on."""
-    assert sorted(on_record(tmp_path, "main", "hosts_used").stdout.split()) == ["agent@far", "local"]
+    assert sorted(on_record(tmp_path, "main", "hosts_used").stdout.split()) == sorted(["agent@far", HERE])
+
+
+def test_a_run_recorded_on_local_is_found_on_this_machine_by_its_name(tmp_path: Path) -> None:
+    """`adopt_local`: a run started while this machine was recorded as `local` is still followed to
+    it, under the name it has now, and every other line stays as it was."""
+    record = "main\twarm-preset\tlocal\nmain\tdim-preset\tagent@far\n"
+    adopted = on_record(tmp_path, "main", 'adopt_local "$runs" && host_of warm-preset', record=record)
+
+    assert adopted.stdout == f"{HERE}\n", adopted.stderr
+    assert (tmp_path / "runs").read_text() == f"main\twarm-preset\t{HERE}\nmain\tdim-preset\tagent@far\n"
+
+
+def test_a_spawn_naming_this_machine_local_is_refused_with_its_name(toy: Path, staged: Path) -> None:
+    """This machine is a host like any other, named `user@host`; `local` names none, so a spawn
+    sent there is refused with the name that would reach it."""
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host="local")
+
+    assert spawned.returncode == 1
+    assert f"--host takes this machine by its name, {HERE}" in spawned.stderr, spawned.stderr
 
 
 def test_a_forgotten_run_leaves_every_other_run_on_file(tmp_path: Path) -> None:
@@ -3084,7 +3107,7 @@ def test_a_forgotten_run_leaves_every_other_run_on_file(tmp_path: Path) -> None:
     assert forgot.returncode == 0, forgot.stderr
     assert (tmp_path / "runs").read_text() == (
         "lamp-ui\twarm-preset\tagent@near\n"
-        "main\tdim-preset\tlocal\n"
+        f"main\tdim-preset\t{HERE}\n"
         "lamp-ui\tcold-preset\tagent@near\n"
     )
     nothing = on_record(tmp_path / "nowhere", "main", "forget_run warm-preset", record=None)
@@ -3098,7 +3121,7 @@ def test_a_scratch_dir_is_the_repos_and_the_branchs_under_the_home_on_either_sid
         return sourced(f"repo=lamp base=lamp-ui && scratch_dir {host}", HOME=str(tmp_path)).stdout
 
     assert scratch("agent@far") == ".local/state/dispatch/lamp-lamp-ui\n"
-    assert scratch("local") == f"{tmp_path}/.local/state/dispatch/lamp-lamp-ui\n"
+    assert scratch(HERE) == f"{tmp_path}/.local/state/dispatch/lamp-lamp-ui\n"
 
 
 # A word as the shells read it: any text a C string holds, and the words the two read apart or treat
@@ -3133,9 +3156,8 @@ def placer(toy: Path, *lines: str, rc: int = 0) -> None:
     exists. Each call's arguments go to `placer.calls`."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
-    me = f"{subprocess.run(['id', '-un'], capture_output=True, text=True).stdout.strip()}@{os.uname().nodename}"
     said = toy.parent / "placed"
-    said.write_text("".join(line.replace("self", me) + "\n" for line in lines))
+    said.write_text("".join(line.replace("self", HERE) + "\n" for line in lines))
     (bin_dir / "worker-hosts").write_text(
         f'#!/bin/sh\necho "$*" >> "{toy.parent / "placer.calls"}"\n[ "$1" = --place ] || exit 0\n'
         'printf "worker-hosts: placing from these readings:\\n  agent@far  0 of 8 slots held\\n" >&2\n'
@@ -3209,9 +3231,9 @@ def test_a_spawn_on_a_full_machine_waits_and_its_runner_holds_the_slot_it_takes(
     full.touch()
     env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)), DISPATCH_SLOT_WAIT="1")
     spawning, err = in_background(toy, staged, "warm-preset", "Work it.\n", env,
-                                  "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet")
+                                  "--host", HERE, "--setup-cmd", "true", "spawn", "warm-preset", "sonnet")
     try:
-        until(lambda: err.read_text().count("no slot free on the machine of local") >= 2, err.read_text)
+        until(lambda: err.read_text().count(f"no slot free on the machine of {HERE}") >= 2, err.read_text)
         assert spawning.poll() is None, err.read_text()
         assert not (toy.parent / "workers").exists()
 
@@ -3237,7 +3259,7 @@ def test_a_resume_on_a_full_machine_waits_and_takes_a_slot_as_a_spawn_does(toy: 
     env = environment(toy, DISPATCH_RUNNER=str(slot_runner(toy)), DISPATCH_SLOT_WAIT="1")
     resuming, err = in_background(toy, staged, "warm-preset", "Again.\n", env, "resume", "warm-preset", "sonnet")
     try:
-        until(lambda: err.read_text().count("no slot free on the machine of local") >= 2, err.read_text)
+        until(lambda: err.read_text().count(f"no slot free on the machine of {HERE}") >= 2, err.read_text)
         assert resuming.poll() is None, err.read_text()
 
         full.unlink()
@@ -3272,11 +3294,11 @@ def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(
     spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None)
 
     assert spawned.returncode == 0, spawned.stderr
-    assert "placing warm-preset on local" in spawned.stderr
+    assert f"placing warm-preset on {HERE}" in spawned.stderr
     assert "placing from these readings:\n  agent@far  0 of 8 slots held" in spawned.stderr
     assert placer_calls(toy) == ["--place personal"]
     waited(toy)
-    assert run(toy, "ctl", "probe").stdout.startswith("local  dispatch-lamp-warm-preset exited")
+    assert run(toy, "ctl", "probe").stdout.startswith(f"{HERE}  dispatch-lamp-warm-preset exited")
 
 
 @pytest.mark.full_path
@@ -3372,7 +3394,7 @@ def test_a_spawn_naming_its_host_and_what_placement_reads_is_refused(toy: Path, 
     spawned = spawn(toy, staged, "warm-preset", "Work it.\n", ctl_args=["--needs", "gpu"])
 
     assert spawned.returncode == 1
-    assert "--account and --needs place a spawn, and warm-preset goes to local" in spawned.stderr, spawned.stderr
+    assert f"--account and --needs place a spawn, and warm-preset goes to {HERE}" in spawned.stderr, spawned.stderr
 
 
 def test_a_spawn_option_dispatch_ctl_does_not_take_is_refused(toy: Path, staged: Path) -> None:
@@ -3399,7 +3421,7 @@ def test_a_placed_spawn_waits_while_no_machine_can_take_it(toy: Path, staged: Pa
 
         full.unlink()
         assert spawning.wait(timeout=60) == 0, err.read_text()
-        assert "placing warm-preset on local" in err.read_text()
+        assert f"placing warm-preset on {HERE}" in err.read_text()
         assert set(placer_calls(toy)) == {"--place personal"} and len(placer_calls(toy)) >= 3
         waited(toy)
     finally:
