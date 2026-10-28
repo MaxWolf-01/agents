@@ -14,7 +14,7 @@
 # ctl [--host <host>] [--account <name>] [--needs <capability>]...
 #     [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`).
-#                 With no --host, a spawn goes where `worker-hosts --place`
+#                 With no --host, a spawn goes where `hosts place`
 #                 puts it, on --account (DISPATCH_ACCOUNT, else personal)
 #                 with each --needs. Spawn and resume wait for a free slot.
 #                 Later commands find the host from the ticket's run.
@@ -468,7 +468,7 @@ ctl() {
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host"; shift 2 ;;
             --account)   account=${2:-} flagged=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
-            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
+            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
             *) break ;;
         esac
@@ -509,8 +509,8 @@ ctl() {
     fi
     [ -z "$flagged" ] || [ -n "$placing" ] ||
         die "--account and --needs place a spawn, and ${name:-$sub} goes to $host: pass them to a spawn with no run recorded and no --host"
-    [ -z "$placing" ] || command -v worker-hosts > /dev/null 2>&1 ||
-        die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
+    [ -z "$placing" ] || command -v hosts > /dev/null 2>&1 ||
+        die "no \`hosts\` here to place $name from; --host names the host to run it on"
     [ "$host" != local ] || die "--host takes this machine by its name, $self, as it takes any other"
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
@@ -545,16 +545,16 @@ ctl() {
     done
 }
 
-# Sets `candidates` to the user@hosts `worker-hosts --place` names for this spawn, best first; none
+# Sets `candidates` to the user@hosts `hosts place` names for this spawn, best first; none
 # while each is full or down.
 place_spawn() {
     local placed
-    placed=$(worker-hosts --place "$account" "${needs[@]}")
+    placed=$(hosts place "$account" "${needs[@]}")
     case $? in
         0) mapfile -t candidates < <(cut -f1 <<< "$placed") ;;
         3) candidates=() ;;
-        1) die "no worker host could ever take $name; \`worker-hosts --place\` says why above" ;;
-        *) die "\`worker-hosts --place\` failed, so no host was chosen for $name" ;;
+        1) die "no worker host could ever take $name; \`hosts place\` says why above" ;;
+        *) die "\`hosts place\` failed, so no host was chosen for $name" ;;
     esac
 }
 
@@ -1096,19 +1096,19 @@ fleet() { # <published>
 fleet_hosts() {
     local published= register_error=
     # Here, not in fleet, whose captured output runs in a subshell that would lose the failure.
-    if command -v worker-hosts >/dev/null 2>&1; then
-        published=$(worker-hosts --targets) ||
-            register_error="worker-hosts --targets failed (exit $?): the hosts listed are only the ones this repo has run on"
+    if command -v hosts >/dev/null 2>&1; then
+        published=$(hosts targets) ||
+            register_error="hosts targets failed (exit $?): the hosts listed are only the ones this repo has run on"
     fi
     mapfile -t hosts < <(fleet "$published")
     rows=() missing=()
     if [ -n "$register_error" ]; then
-        missing+=(worker-hosts)
-        rows+=("$(host_row worker-hosts incomplete "$register_error")")
+        missing+=("hosts targets")
+        rows+=("$(host_row "hosts targets" incomplete "$register_error")")
     fi
     if [ ${#hosts[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"
-        die "no worker host: \`worker-hosts --targets\` publishes none and this repo has run on none"
+        die "no worker host: \`hosts targets\` publishes none and this repo has run on none"
     fi
 }
 

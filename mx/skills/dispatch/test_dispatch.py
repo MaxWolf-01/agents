@@ -18,7 +18,7 @@ read is the oracle's, not the seam's, and in process it costs no tracker launch 
 A second seam is `dispatch`'s own functions, the script sourced, for those whose input and output
 are text: the run record (`host_of`, `runs_on`, `hosts_used`, `forget_run`), `scratch_dir`,
 and `remote_line`, each held to the comment above it. The placer and the slots are the worker
-hosts' own (`worker-hosts --place`, `host-slots`, in the dotfiles), each tested there; here they are
+hosts' own (`hosts place`, `host-slots`, in the dotfiles), each tested there; here they are
 stand-ins, and what is checked is what dispatch asks of them and does with their answer.
 """
 
@@ -285,9 +285,9 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
         (bin_dir / "board").chmod(0o755)
     # A register that publishes no host, so no check reads the machine's own, unless the check put
     # one there (`placer`).
-    if not (bin_dir / "worker-hosts").exists():
-        (bin_dir / "worker-hosts").write_text("#!/bin/sh\nexit 0\n")
-        (bin_dir / "worker-hosts").chmod(0o755)
+    if not (bin_dir / "hosts").exists():
+        (bin_dir / "hosts").write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / "hosts").chmod(0o755)
     # The machine's slots are the check's own, never this machine's: a take is refused while
     # $HOME/slots-full exists, and each call is kept in $HOME/host-slots.calls with whether the
     # process it names carries its word, which is how the real one tells a live holder.
@@ -3151,22 +3151,22 @@ def test_a_remote_line_reaches_the_command_as_the_words_sent(shell: str, words: 
 
 
 def placer(toy: Path, *lines: str, rc: int = 0) -> None:
-    """A `worker-hosts` whose `--place` puts a spawn on `lines`, `self` in one being this machine's
+    """A `hosts` whose `place` puts a spawn on `lines`, `self` in one being this machine's
     user@host, after a line of readings on stderr, and exits `rc`, or 3 while the file `place-full`
     exists. Each call's arguments go to `placer.calls`."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     said = toy.parent / "placed"
     said.write_text("".join(line.replace("self", HERE) + "\n" for line in lines))
-    (bin_dir / "worker-hosts").write_text(
-        f'#!/bin/sh\necho "$*" >> "{toy.parent / "placer.calls"}"\n[ "$1" = --place ] || exit 0\n'
-        'printf "worker-hosts: placing from these readings:\\n  agent@far  0 of 8 slots held\\n" >&2\n'
+    (bin_dir / "hosts").write_text(
+        f'#!/bin/sh\necho "$*" >> "{toy.parent / "placer.calls"}"\n[ "$1" = place ] || exit 0\n'
+        'printf "hosts: placing from these readings:\\n  agent@far  0 of 8 slots held\\n" >&2\n'
         f'[ -e "{toy.parent / "place-full"}" ] && exit 3\ncat "{said}"\nexit {rc}\n')
-    (bin_dir / "worker-hosts").chmod(0o755)
+    (bin_dir / "hosts").chmod(0o755)
 
 
 def placer_calls(toy: Path) -> list[str]:
-    """The arguments each call to `placer`'s `worker-hosts` got, joined, in order."""
+    """The arguments each call to `placer`'s `hosts` got, joined, in order."""
     return (toy.parent / "placer.calls").read_text().splitlines()
 
 
@@ -3287,7 +3287,7 @@ def test_a_spawn_whose_slot_cannot_be_taken_starts_no_worker(toy: Path, staged: 
 @pytest.mark.full_path
 def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(toy: Path, staged: Path) -> None:
     """dispatch-places-workers#P2 through `dispatch ctl spawn`: the spawn starts on the first host
-    `worker-hosts --place` names, on the personal account unless told otherwise, and shows what the
+    `hosts place` names, on the personal account unless told otherwise, and shows what the
     placer read."""
     placer(toy, "self\tisolated", "agent@far\tisolated")
 
@@ -3296,7 +3296,7 @@ def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(
     assert spawned.returncode == 0, spawned.stderr
     assert f"placing warm-preset on {HERE}" in spawned.stderr
     assert "placing from these readings:\n  agent@far  0 of 8 slots held" in spawned.stderr
-    assert placer_calls(toy) == ["--place personal"]
+    assert placer_calls(toy) == ["place personal"]
     waited(toy)
     assert run(toy, "ctl", "probe").stdout.startswith(f"{HERE}  dispatch-lamp-warm-preset exited")
 
@@ -3313,7 +3313,7 @@ def test_a_placed_spawn_takes_its_account_from_the_flag_else_the_environment(toy
                     env=environment(toy, DISPATCH_ACCOUNT="helferline"))
 
     assert spawned.returncode == 0, spawned.stderr
-    assert placer_calls(toy) == [f"--place {account}"]
+    assert placer_calls(toy) == [f"place {account}"]
     waited(toy)
 
 
@@ -3376,7 +3376,7 @@ def test_a_worker_on_an_isolated_host_bypasses_permissions_unless_told_otherwise
 
 
 @pytest.mark.parametrize(("rc", "said"), [
-    (1, "no worker host could ever take warm-preset"), (2, "`worker-hosts --place` failed, so no host was chosen")])
+    (1, "no worker host could ever take warm-preset"), (2, "`hosts place` failed, so no host was chosen")])
 def test_a_spawn_the_placer_finds_no_host_for_is_refused_at_once(toy: Path, staged: Path, rc: int, said: str) -> None:
     """A spawn needing a capability no machine offers would wait for ever, and so would one whose
     placer cannot answer, so both are refused."""
@@ -3386,7 +3386,7 @@ def test_a_spawn_the_placer_finds_no_host_for_is_refused_at_once(toy: Path, stag
 
     assert spawned.returncode == 1
     assert said in spawned.stderr, spawned.stderr
-    assert placer_calls(toy) == ["--place personal --needs gpu"]
+    assert placer_calls(toy) == ["place personal --needs gpu"]
 
 
 def test_a_spawn_naming_its_host_and_what_placement_reads_is_refused(toy: Path, staged: Path) -> None:
@@ -3422,7 +3422,7 @@ def test_a_placed_spawn_waits_while_no_machine_can_take_it(toy: Path, staged: Pa
         full.unlink()
         assert spawning.wait(timeout=60) == 0, err.read_text()
         assert f"placing warm-preset on {HERE}" in err.read_text()
-        assert set(placer_calls(toy)) == {"--place personal"} and len(placer_calls(toy)) >= 3
+        assert set(placer_calls(toy)) == {"place personal"} and len(placer_calls(toy)) >= 3
         waited(toy)
     finally:
         stopped(spawning)

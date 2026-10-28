@@ -56,7 +56,7 @@ File overlap is the mechanical test; **coherence** is the deeper one. Tickets th
 
 ### 4. Claim and spawn
 
-**The spawn places the worker; you name what the ticket needs.** `worker-hosts --help` says how it chooses. Read each ticket against the hosts' capability records (`worker-hosts <user@host>` prints one: its toolchain, and what it cannot do at all), and give the spawn:
+**The spawn places the worker; you name what the ticket needs.** `hosts --help` says how it chooses. Read each ticket against the hosts' capability records (`hosts <user@host>` prints one: its toolchain, and what it cannot do at all), and give the spawn:
 
 - `--needs <capability>` for each capability the ticket needs. A ticket needing one no host has is a question on that ticket, never a blocker a worker discovers on arrival.
 - The project's account where its work does not run on the personal one: `DISPATCH_ACCOUNT` from its `.envrc`, or `--account`.
