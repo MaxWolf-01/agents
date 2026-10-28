@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from session_checks import SESSION
+from live_hook import LIVE, PREFIX
 from session_page import PAGE, chat_path, chat_record, read_session, render_session, write_page
 
 # Every check here starts a browser.
@@ -370,6 +371,28 @@ with sync_playwright() as pw:
         out["clicked"] = page.evaluate(SHOWN)["open"]
         page.keyboard.press("l")
         out["closed_again"] = page.evaluate(SHOWN)["open"]
+    elif scenario == "live":
+        # the turn under way: shown with no turn picked, a call added while open, left for a turn and come back to
+        context, page = open_page(1280, 800)
+        live = Path(args["live"])
+        SHOWN = '''(() => { const log = document.getElementById("log")
+          return {which: log.querySelector(".which").textContent, jump: !!log.querySelector(".to-live"),
+                  steps: [...log.querySelectorAll(".step")].map((s) => [s.querySelector(".verb").textContent,
+                    s.querySelector(".subject").textContent, s.querySelector(".took").classList.contains("running")])} })()'''
+        live.write_text(args["first"])
+        page.keyboard.press("l")
+        page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
+        out["first"] = page.evaluate(SHOWN)
+        live.write_text(args["second"])
+        page.wait_for_function("document.querySelectorAll('#log .step').length === 2", timeout=10000)
+        out["second"] = page.evaluate(SHOWN)
+        page.keyboard.press("j")
+        out["turn"] = page.evaluate(SHOWN)
+        page.click("#log .to-live")
+        out["back"] = page.evaluate(SHOWN)
+        live.unlink()
+        page.wait_for_function("!document.querySelector('#log .which').textContent.startsWith('under way')", timeout=10000)
+        out["ended"] = page.evaluate(SHOWN)
     browser.close()
 print(json.dumps(out))
 """
@@ -756,6 +779,27 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert len(read["text"]) < len("".join(READ_LINES)) / 2
     assert seen["read_whole"] == len("".join(READ_LINES))
     assert (seen["escaped"], seen["clicked"], seen["closed_again"]) == (False, True, False)
+
+def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[Path, Path], transcript: Path, tmp_path: Path) -> None:
+    """With no turn picked, the open log shows the turn under way's calls, a running one's time
+    still moving, and a call the live hook adds shows without a reload. A picked turn shows its own,
+    with the way back to the turn under way in the head; once the turn ends, the log falls back."""
+    page, _ = rendered
+    write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
+    at = datetime.now(UTC).isoformat()
+
+    def calls(*steps: tuple[str, str | None]) -> str:
+        return PREFIX + json.dumps({"prompt": "make the log live", "steps": [
+            {"kind": "command", "tool": "Bash", "verb": "ran", "subject": what, "input": {"command": what}, "output": "",
+             "failed": False, "at": at, "done": done, "id": what} for what, done in steps]}) + "\n"
+
+    seen = probe(page, "live", live=str(page.parent / LIVE), first=calls(("make test", at)),
+                 second=calls(("make test", at), ("make check", None)))
+    assert seen["first"] == {"which": "under way · make the log live", "jump": False, "steps": [["ran", "make test", False]]}
+    assert seen["second"]["steps"] == [["ran", "make test", False], ["ran", "make check", True]]
+    assert seen["turn"]["which"].startswith("turn ") and seen["turn"]["jump"]
+    assert seen["back"] == seen["second"]
+    assert not seen["ended"]["jump"]
 
 
 if __name__ == "__main__":

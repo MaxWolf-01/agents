@@ -38,6 +38,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 import session_page
 import stop_hook
 import turn_review
+from live_hook import LIVE
 from session_checks import (
     BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
     UNPARSEABLE, appended, asked_in_order, elements, logged, messages_of, payload, project_of, sessions, turns_on, unreachable,
@@ -284,6 +285,24 @@ def test_a_turn_record_that_does_not_parse_is_sent_back_and_never_rendered(
     run(hook)
     assert json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"] == decision.reason
     assert (worked_example / PAGE).read_text() == stale_page, "the page is what the last records that parsed rendered"
+
+
+def test_a_turn_that_ends_drops_its_live_calls_and_one_sent_back_keeps_them(
+    worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """The live file shows a turn while it runs: a turn sent back runs on, and one that ends is on
+    the page the hook just rendered."""
+    live = worked_example / LIVE
+    live.write_text('window.liveCalls = {"prompt": "", "steps": []}\n')
+    newest = worked_example / "turns" / "04.md"
+    record = newest.read_text()
+    newest.write_text(UNPARSEABLE["no headline"][1])
+    run(payload(worked_example, transcript))
+    assert "hookSpecificOutput" in json.loads(capsys.readouterr().out) and live.exists()
+    newest.write_text(record)
+    run(payload(worked_example, transcript))
+    shown(capsys)
+    assert not live.exists()
 
 
 def test_a_session_that_needed_a_page_has_one_beside_its_records(

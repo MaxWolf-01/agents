@@ -9,7 +9,8 @@ It reads the Stop hook JSON on stdin; `decide` answers with a Verb over the sess
 directory, and `main` applies it. A session's first turn that ends on a reply creates its
 directory, holding that reply as a chat turn, so every session someone sits at has a page from then
 on. The prose review of the turn's record ran when the agent wrote it (write_hook.py), so it is over
-by the time the turn ends.
+by the time the turn ends. A turn that ends, rather than being sent back, deletes the live file its
+calls showed in while it ran (`live_hook.LIVE`).
 
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
@@ -44,6 +45,7 @@ from typing import Literal
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
+from live_hook import LIVE  # noqa: E402
 from session_page import (  # noqa: E402
     PAGE, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
     read_session, write_page, make_session_directory, resolved, session_directory, strip_tags, written_this_turn,
@@ -246,6 +248,9 @@ def main() -> None:
             print(json.dumps({"systemMessage": "\n".join((line, *decision.waiting))}))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
+    # the turn is over, and the page just rendered holds its calls where it holds the turn
+    if decision.verb != "send back" and directory is not None:
+        (directory / LIVE).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -1,13 +1,16 @@
 // The tool-call log: a drawer on the right, over the timeline, showing what the focused turn did
-// (page.js marks that turn's block .cur), else the newest turn's. `log l` in the bar or l opens and
-// closes it, and Esc closes it. The steps live beside the page in tool-calls.js, which the first
-// opening loads, with the highlighter; until then the page holds none of them. It runs after
-// page.js in the same page, and uses its `pane`, `blocks` and `typing`.
+// (page.js marks that turn's block .cur); with none focused, the turn under way's, else the newest
+// turn's. `log l` in the bar or l opens and closes it, and Esc closes it. The steps live beside the
+// page in tool-calls.js, which the first opening loads, with the highlighter; until then the page
+// holds none of them. The turn under way's are in live-calls.js, which the live hook rewrites as
+// each call starts and ends, and which the open log loads again every POLL. It runs after page.js
+// in the same page, and uses its `pane`, `blocks` and `typing`.
 (() => {
   const toggleButton = document.getElementById("log-toggle")
   const HLJS = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"
   const HLJS_SRI = "sha384-RH2xi4eIQ/gjtbs9fUXM68sLSi99C7ZWBRX1vDrVv6GQXRibxXLbwO2NGZB74MbU"
   const CUT = 1500  // the characters of a request or a result a step shows until "show all"
+  const POLL = 2000  // ms between two loads of the turn under way's calls, while the log is open
 
   const ICON = {
     command: '<path d="M4 17l6-5-6-5M12 19h8"/>',
@@ -33,7 +36,13 @@
     document.head.append(s)
   })
   let loading = null
-  const load = () => (loading ||= Promise.allSettled([script(toggleButton.dataset.src), script(HLJS, HLJS_SRI)]))
+  const load = () => (loading ||= Promise.allSettled([script(toggleButton.dataset.src), script(HLJS, HLJS_SRI), loadLive()]))
+  // the turn under way's calls as the file has them now; no file is no turn under way
+  const loadLive = () => {
+    const src = `${toggleButton.dataset.live}?${Date.now()}`
+    return script(src).catch(() => (window.liveCalls = null))
+      .finally(() => document.querySelectorAll(`script[src="${src}"]`).forEach((s) => s.remove()))
+  }
 
   // ---- highlighting: a language by the file's extension, JSON pretty-printed
 
@@ -98,8 +107,14 @@
   const panel = Object.assign(document.createElement("aside"), { className: "log", id: "log" })
   panel.setAttribute("aria-label", "the focused turn's tool calls")
   document.body.append(panel)
-  const focused = () => blocks.find((b) => b.classList.contains("cur")) || blocks[0]
+  const cursor = () => blocks.find((b) => b.classList.contains("cur"))
+  const focused = () => cursor() || blocks[0]
+  // the turn under way shows where no turn is focused, or where the reader asked for it from the head
+  let toLive = false, cursorWas
+  const target = () => (window.liveCalls && (toLive || !cursor()) ? LIVE : focused())
+  const LIVE = "live"
   const label = (b) => {
+    if (b === LIVE) return `<span class="pulse" aria-hidden="true"></span>under way <span class="hl">· ${esc(window.liveCalls.prompt || "no prompt")}</span>`
     if (!b) return "no turn yet"
     const [name, about] = b.matches("details.turn") ? [`turn ${b.id.slice(1)}`, b.querySelector(".hl").textContent]
       : ["chat turn", b.querySelector(".date").textContent]
@@ -107,32 +122,47 @@
   }
   let shownFor = null
 
+  const running = (s) => `<span class="took running" data-at="${esc(s.at)}">${took(secs(s.at, new Date().toISOString()))}…</span>`
   const step = (s, n) => s.kind === "thinking"
     ? `<div class="step thinking" data-n="${n}"><button type="button">${icon("thinking")}<span class="subject">${esc(s.output)}</span></button></div>`
     : `<div class="step" data-n="${n}"><button type="button">${icon(s.kind)}<span class="verb">${esc(s.verb)}</span><span class="subject">${esc(s.subject)}</span>` +
-      `${s.failed ? '<span class="failed" title="failed">✕</span>' : ""}<span class="took">${took(secs(s.at, s.done))}</span></button></div>`
+      `${s.failed ? '<span class="failed" title="failed">✕</span>' : ""}${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}</button></div>`
 
+  // Drawn again over the same turn, as its calls come in, the log keeps the steps the reader opened
+  // and where they scrolled to, and follows the newest call where they were at the end.
   function draw() {
-    shownFor = focused()
-    const steps = (window.toolCalls && shownFor && window.toolCalls[shownFor.id]) || []
+    const was = panel.querySelector(".log-steps"), now = target()
+    const kept = now === shownFor && was && { open: [...was.querySelectorAll(".step.open")].map((el) => +el.dataset.n),
+      top: was.scrollTop, end: was.scrollTop + was.clientHeight >= was.scrollHeight - 4 }
+    shownFor = now
+    const steps = (shownFor === LIVE ? window.liveCalls.steps : window.toolCalls && shownFor && window.toolCalls[shownFor.id]) || []
     shownSteps = steps
     const tally = {}
     steps.forEach((s) => (tally[s.kind] = (tally[s.kind] || 0) + 1))
     const first = steps[0], last = steps[steps.length - 1]
     const span = first ? took(secs(first.at, last.done || last.at)) : ""
-    const empty = !window.toolCalls ? "the tool calls are not beside this page: the next turn's render writes them"
+    const empty = shownFor === LIVE ? "no tool calls yet"
+      : !window.toolCalls ? "the tool calls are not beside this page: the next turn's render writes them"
       : "no tool calls for this turn"
+    const jump = shownFor !== LIVE && window.liveCalls
+      ? '<button type="button" class="to-live" data-live title="the tool calls of the turn under way">under way</button>' : ""
     panel.innerHTML = `
       <div class="log-head">
-        <span class="which" title="${esc(shownFor ? shownFor.querySelector(".hl, .date").textContent : "")}">${label(shownFor)}</span>
+        <span class="which" title="${esc(shownFor === LIVE ? window.liveCalls.prompt || "" : shownFor ? shownFor.querySelector(".hl, .date").textContent : "")}">${label(shownFor)}</span>
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
-        <button type="button" data-close title="close (Esc)" aria-label="close the tool calls">×</button>
+        ${jump}<button type="button" data-close title="close (Esc)" aria-label="close the tool calls">×</button>
       </div>
       <div class="log-steps">${steps.length ? steps.map(step).join("") : `<p class="log-empty">${empty}</p>`}</div>`
+    const box = panel.querySelector(".log-steps")
+    if (kept) {
+      kept.open.forEach((n) => box.querySelector(`.step[data-n="${n}"] > button`)?.click())
+      box.scrollTop = kept.end ? box.scrollHeight : kept.top
+    } else if (shownFor === LIVE) box.scrollTop = box.scrollHeight
   }
 
   panel.addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) return toggle(false)
+    if (e.target.closest("[data-live]")) { toLive = true; return draw() }
     const more = e.target.closest(".more")
     if (more) {
       const pre = more.previousElementSibling, [n, k] = pre.dataset.whole.split(".").map(Number)
@@ -150,14 +180,30 @@
     el.insertAdjacentHTML("beforeend", `<div class="detail">${detail(s, +el.dataset.n)}</div>`)
   })
 
+  // while open, the turn under way's calls are loaded again every POLL; the log is drawn again where
+  // they changed, and its running calls' times move on where they did not
+  let polling = null, liveWas = null
+  const poll = async () => {
+    await loadLive()
+    const live = JSON.stringify(window.liveCalls ?? null)
+    if (live !== liveWas || target() !== shownFor) draw()
+    else panel.querySelectorAll(".took.running").forEach((el) => (el.textContent = `${took(secs(el.dataset.at, new Date().toISOString()))}…`))
+    liveWas = live
+  }
+
   const isOpen = () => panel.classList.contains("open")
   async function toggle(open = !isOpen()) {
     toggleButton.setAttribute("aria-expanded", String(open))
+    clearInterval(polling)
     if (!open) return panel.classList.remove("open")
     if (!window.toolCalls) { panel.innerHTML = '<p class="log-empty">loading the tool calls…</p>'; panel.classList.add("open"); await load() }
     if (toggleButton.getAttribute("aria-expanded") !== "true") return  // closed while it loaded
+    liveWas = JSON.stringify(window.liveCalls ?? null)
     draw()
     panel.classList.add("open")
+    // opened again, it shows what it last had at once, and the turn under way as of now a moment later
+    poll()
+    polling = setInterval(poll, POLL)
   }
   toggleButton.addEventListener("click", () => toggle())
   document.addEventListener("keydown", (e) => {
@@ -165,7 +211,10 @@
     if (e.key === "l") { toggle(); e.preventDefault() }
     else if (e.key === "Escape" && isOpen()) toggle(false)
   })
-  // whatever moves the page's focus (j, k, a click, n, t) moves the open log with it
-  new MutationObserver(() => { if (isOpen() && window.toolCalls && focused() !== shownFor) draw() })
+  // whatever moves the page's focus (j, k, a click, n, t) moves the open log with it, off the turn under way
+  new MutationObserver(() => {
+    if (cursor() !== cursorWas) { cursorWas = cursor(); toLive = false }
+    if (isOpen() && window.toolCalls && target() !== shownFor) draw()
+  })
     .observe(pane, { subtree: true, attributes: true, attributeFilter: ["class"] })
 })()
