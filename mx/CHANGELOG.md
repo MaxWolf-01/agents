@@ -1,3 +1,8 @@
+## 1.0.100
+
+- mx: model-runs, dispatch through hosts, and the session bar naming the account it runs on
+  The tool that logs each model run's cost and time is renamed from run-log to model-runs, and its log-path variable is now `MODEL_RUNS_LOG`, so it no longer shares a name with dotfiles' run-log, which shadowed it on max's PATH. Dispatch now places and lists workers through dotfiles' `hosts` command (`hosts place`, `hosts targets`) instead of worker-hosts; without it, a spawn asks for an explicit host. The auto-mode rule covers those `hosts` subcommands and its view, never `hosts unlock`. The session page names the account a session runs on, taken from `CLAUDE_ACCOUNT` where the wrapper exported one, since a profile can run on another account's token.
+
 ## 1.0.99
 
 - The session page's tool-call log can be walked and opened from the keyboard
