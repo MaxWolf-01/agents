@@ -1,3 +1,10 @@
+## 1.0.101
+
+- A secret only max can type runs as one --tty job he switches to
+  The tmux skill gains a section for a step that needs a password, a passphrase or a 2FA code: the whole task runs as one `job run --tty`, max switches to its pane to type only the secret, and the agent waits with a deadline and reads the pane through job, which now redacts secret-shaped tokens. claude/CLAUDE.md points at the skill in one line under "Don't ask me to do things that you could do yourself".
+- Merge branch 'ticket/session-successors-read-once' into session-page/c-yaml
+  When the session page tool builds a page, it finds which sessions continued from this one by reading the previous file in each neighbouring session. Reading N sessions in one process read each of those files N times; now each is read once per version of the file, checked by one stat. A file changed in the last two seconds is always read again, since a coarse filesystem clock can hide a rewrite. A network filesystem whose clock runs more than two seconds behind can still return a stale answer. 300 chained sessions: 2.96 s -> 0.57 s.
+
 ## 1.0.100
 
 - mx: model-runs, dispatch through hosts, and the session bar naming the account it runs on
