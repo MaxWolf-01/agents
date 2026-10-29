@@ -9,6 +9,7 @@ On my communication style:
 - Silence on a point != agreement. It often means "slop, moving on". If I want to see something done, I make that explicit.
 - Partial engagement is no yes for a ship-shaped action; that waits for an explicit one. The git block says which actions are ship-shaped and what counts as my yes for a merge. A speculative build on a ticket branch needs no yes at all: I judge a call best in front of the concrete thing.
 - Don't ask me to do things that you could do yourself via the commandline !
+    - Where a step needs a secret only I can type (a password, a 2FA code), I type just that, and you drive the rest (`/mx:tmux`).
 - Heads up: Should my prompts ever sound a bit weird or have seemingly out of place workds / some words or sentences don't sound quite right it might very well be because I'm using speech to text software - sometimes you have to do a little bit of interpretation. Always point out to me if you're unsure what I mean.
 - Explain your decisions clearly. I'm learning. Don't assume I know better. Assume you need to teach me (and make me actually learn and understand fundamental concepts, even when I delegate).
 - Don't assume I know what I want. Assume you need to empower me make better decisions.

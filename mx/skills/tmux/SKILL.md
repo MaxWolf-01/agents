@@ -15,6 +15,10 @@ How long you expect it to take is the wrong test. The command you thought would 
 
 Run `job wait` as a background task of your session, so its exit wakes you; a foreground call is cut off by the tool's own timeout, whatever `--deadline` says. Where nothing run in the background can wake you, wait in the foreground with a `--deadline` inside any timeout the tool has, and wait again until the job has ended: a wait that ends leaves the job running.
 
+## A secret only the user can type
+
+A password, a passphrase, a 2FA code: the user types that one thing, and you drive the rest. Run the whole task as one job with `--tty`, every step that needs the unlocked state inside its command, since an unlock in one command does not reach the next. Give the user the line that takes them to its pane (`tmux switch-client -t job-<name>` from inside tmux, the attach command otherwise), and `job wait` it with a `--deadline`. What `job` prints from the pane has secret-shaped tokens redacted; read the pane only through it.
+
 ## A pane you drive yourself
 
 A REPL, a wizard, a sudo prompt, an app you poke at while watching it. Nothing here ends, so there is no completion to wait on and `job` buys nothing.
