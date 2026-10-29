@@ -86,7 +86,7 @@ def argv_file(repo: Path) -> Path:
 def command(repo: Path, secs: int, args: tuple[str, ...], **extra: str) -> dict:
     env = {**os.environ, "PATH": f"{repo.parent / 'bin'}:{os.environ['PATH']}",
            "FAKE_REVIEW_SECS": str(secs), "FAKE_ARGV": str(argv_file(repo)),
-           "RUN_LOG": str(repo.parent / "runs.jsonl"), "XDG_STATE_HOME": str(repo.parent / "state"), **extra}
+           "MODEL_RUNS_LOG": str(repo.parent / "runs.jsonl"), "XDG_STATE_HOME": str(repo.parent / "state"), **extra}
     return {"args": [str(REVIEW), "main~1", *args], "cwd": repo, "env": env, "text": True}
 
 

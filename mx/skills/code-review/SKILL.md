@@ -40,7 +40,7 @@ The standards sources are the script's to gather, by what the diff touches, and 
 
 `review`, beside this file and on `PATH`, runs them. `review --help` is the manual: run it before your first review.
 
-It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). The judgment it leaves you is `--effort` and `--minutes`, higher for a large diff; `run-log report --site review` shows what past rounds cost and took per axis and effort. For a cross-model review, run the same prompts through `/mx:codex` instead.
+It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). The judgment it leaves you is `--effort` and `--minutes`, higher for a large diff; `model-runs report --site review` shows what past rounds cost and took per axis and effort. For a cross-model review, run the same prompts through `/mx:codex` instead.
 
 ### 5. Aggregate
 

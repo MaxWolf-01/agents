@@ -94,7 +94,7 @@ BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_WEEKS = 8  # how far back a repo retro's first run reads, given no --since; --first-weeks overrides it
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
 REPORT_PATH = f"{qualified.RETRO}/report.md"  # in the agent repo
-RUN_LOG = HERE.parent / "run-log" / "run-log"
+MODEL_RUNS = HERE.parent / "model-runs" / "model-runs"
 AUTO_MODE_CRITIQUE = HERE / "auto_mode_critique.py"
 # `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
 # path outside the work tree it diffs files from disk, `--no-index` or not, so it reads any file;
@@ -399,7 +399,7 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], within: Reach) ->
     (run / "prompts" / f"{stage.name}.md").write_text(prompt)
     with (run / f"{stage.name}.log").open("w") as out:
         # A session of its own, so a signal meant for the run (a closed terminal's HUP, a Ctrl-C) reaches
-        # the stage only through `end`, which `run-log` turns into the model run's end.
+        # the stage only through `end`, which `model-runs` turns into the model run's end.
         process = subprocess.Popen(launch(stage, run, within), cwd=run, stdin=subprocess.PIPE, stdout=out,
                                    stderr=subprocess.STDOUT, text=True, start_new_session=True,
                                    preexec_fn=dies_with(os.getpid()),
@@ -447,7 +447,7 @@ def on_stop(signum: int, _frame: object) -> None:
 
 def dies_with(parent: int) -> Callable[[], None]:
     """For a stage's process: TERM when the run's process dies, SIGKILL included, through Linux's
-    parent-death signal. `run-log` ends the model run on TERM, and `timeout`, which it runs the
+    parent-death signal. `model-runs` ends the model run on TERM, and `timeout`, which it runs the
     model under, passes the signal to every process the model started."""
     def arm() -> None:
         if LIBC is not None:
@@ -482,7 +482,7 @@ def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
         add = ["--add-dir", *map(str, within.read), "--disallowedTools", *denied]
         allowed += [f"Bash(git -C {d} {sub}{rest})" for d in within.git for sub in GIT_READS for rest in ("", " *")]
         allowed += [f"Bash({script} {run})" for script in stage.runs]
-    return ["bash", str(RUN_LOG), "run", "--site", f"retro-{stage.name}", "--timeout", str(STAGE_TIMEOUT), "--",
+    return ["bash", str(MODEL_RUNS), "run", "--site", f"retro-{stage.name}", "--timeout", str(STAGE_TIMEOUT), "--",
             "claude", "-p", "--model", stage.model, "--effort", stage.effort,
             "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
             "--settings", '{"autoMemoryEnabled": false}', "--restricted", *add, "--allowedTools", *allowed,

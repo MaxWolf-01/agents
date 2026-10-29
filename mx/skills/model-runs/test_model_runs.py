@@ -2,8 +2,8 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest"]
 # ///
-"""Checks for `run-log`: the line one model run leaves, the lines a host's log gives up to `pull`,
-and the rollups `report` prints. Run: uv run test_run_log.py
+"""Checks for `model-runs`: the line one model run leaves, the lines a host's log gives up to `pull`,
+and the rollups `report` prints. Run: uv run test_model_runs.py
 
 The seam is the script itself, run with a stand-in `claude` on PATH that prints what
 `--output-format stream-json` prints, cut short where a test wants a run that died, and a stand-in
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parent / "run-log"
+SCRIPT = Path(__file__).resolve().parent / "model-runs"
 
 INIT = {"type": "system", "subtype": "init", "session_id": "sess-1", "model": "claude-opus-5-5"}
 # One message streams as several lines that share its id; the tokens are the last line's.
@@ -58,10 +58,10 @@ def fake_claude(where: Path, prints: str, then: str = "exit 0") -> Path:
     return bin_dir
 
 
-def run_log(where: Path, *args: str, stdin: str = "", env: dict | None = None,
+def model_runs(where: Path, *args: str, stdin: str = "", env: dict | None = None,
             cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([str(SCRIPT), *args], cwd=cwd or where, input=stdin, capture_output=True, text=True, timeout=60,
-                          env={**os.environ, "RUN_LOG": str(where / "runs.jsonl"),
+                          env={**os.environ, "MODEL_RUNS_LOG": str(where / "runs.jsonl"),
                                "PATH": f"{where / 'bin'}:{os.environ['PATH']}", **(env or {})})
 
 
@@ -71,7 +71,7 @@ def lines(where: Path) -> list[dict]:
 
 def test_a_run_leaves_one_line_with_what_claude_reported_and_prints_the_answer(tmp_path: Path) -> None:
     fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, TURN_C, RESULT))
-    done = run_log(tmp_path, "run", "--site", "review", "--ticket", "warm-preset", "--axis", "tests", "--range", "a1b2c3d..e4f5a6b", "--",
+    done = model_runs(tmp_path, "run", "--site", "review", "--ticket", "warm-preset", "--axis", "tests", "--range", "a1b2c3d..e4f5a6b", "--",
                    "claude", "-p", "--model", "opus", "--effort", "medium", "--tools", "", stdin="the prompt")
     assert done.returncode == 0, done.stderr
     assert done.stdout == "The answer.\n", "the caller sees what the model answered"
@@ -93,7 +93,7 @@ def test_a_run_in_a_repo_names_the_repo_off_its_git_dir(tmp_path: Path) -> None:
     fake_claude(tmp_path, stream(INIT, RESULT))
     checkout = tmp_path / "lamp"
     subprocess.run(["git", "init", "-q", str(checkout)], check=True)
-    done = run_log(tmp_path, "run", "--site", "briefing", "--", "claude", "-p", cwd=checkout)
+    done = model_runs(tmp_path, "run", "--site", "briefing", "--", "claude", "-p", cwd=checkout)
     assert done.returncode == 0, done.stderr
     assert lines(tmp_path)[0]["repo"] == "lamp"
     bare = tmp_path / "lamp.git"
@@ -103,7 +103,7 @@ def test_a_run_in_a_repo_names_the_repo_off_its_git_dir(tmp_path: Path) -> None:
     subprocess.run(["git", "-C", str(bare), "fetch", "-q", str(checkout), "HEAD:refs/heads/main"], check=True)
     worktree = tmp_path / "lamp-warm-preset"
     subprocess.run(["git", "-C", str(bare), "worktree", "add", "-q", str(worktree), "main"], check=True)
-    done = run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p", cwd=worktree)
+    done = model_runs(tmp_path, "run", "--site", "worker", "--", "claude", "-p", cwd=worktree)
     assert done.returncode == 0, done.stderr
     assert lines(tmp_path)[1]["repo"] == "lamp"
 
@@ -114,7 +114,7 @@ def test_a_run_that_ends_without_a_result_still_gets_its_line(tmp_path: Path) ->
     id a resume needs. What claude printed goes through, since with no result it is the error."""
     synthetic = {"type": "assistant", "message": {"id": "m9", "model": "<synthetic>", "usage": {"input_tokens": 0, "output_tokens": 0}}}
     fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, synthetic) + "API Error: overloaded\n", then="exit 1")
-    done = run_log(tmp_path, "run", "--site", "worker", "--attempt", "2", "--range", "", "--", "claude", "-p", "--model", "opus")
+    done = model_runs(tmp_path, "run", "--site", "worker", "--attempt", "2", "--range", "", "--", "claude", "-p", "--model", "opus")
     assert done.returncode == 1
     assert done.stdout == "API Error: overloaded\n"
     (line,) = lines(tmp_path)
@@ -128,12 +128,12 @@ def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:
     # a claude that writes one more message on its way out, which the line has to carry
     (tmp_path / "late").write_text(stream({"type": "assistant", "message": {"id": "m7", "model": "claude-opus-5-5",
                                    "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1}}}))
-    # claude says it is ready on a pipe it inherits through run-log, once its own trap is set
+    # claude says it is ready on a pipe it inherits through model-runs, once its own trap is set
     ready, ready_w = os.pipe()
     fake_claude(tmp_path, stream(INIT, TURN_A),
                 then=f"trap 'sleep 0.5; cat {tmp_path}/late; exit 143' TERM\necho >&{ready_w}\nsleep 30 & wait $!")
     proc = subprocess.Popen([str(SCRIPT), "run", "--site", "worker", "--", "claude", "-p"], cwd=tmp_path,
-                            env={**os.environ, "RUN_LOG": str(tmp_path / "runs.jsonl"),
+                            env={**os.environ, "MODEL_RUNS_LOG": str(tmp_path / "runs.jsonl"),
                                  "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}"},
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, pass_fds=(ready_w,))
     os.close(ready_w)
@@ -149,20 +149,20 @@ def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:
 
 
 def test_a_timeout_ends_the_run_the_way_a_term_does_and_the_line_says_so(tmp_path: Path) -> None:
-    """The callers with a limit of their own (the briefing, change-summary) give it to run-log,
+    """The callers with a limit of their own (the briefing, change-summary) give it to model-runs,
     which is what can still write the line and stop claude; a kill from above would leave claude
     running and the line unwritten."""
     fake_claude(tmp_path, stream(INIT, TURN_A), then="trap 'exit 143' TERM\nsleep 30 & wait $!")
-    done = run_log(tmp_path, "run", "--site", "briefing", "--timeout", "1", "--", "claude", "-p")
+    done = model_runs(tmp_path, "run", "--site", "briefing", "--timeout", "1", "--", "claude", "-p")
     assert done.returncode == 124
     (line,) = lines(tmp_path)
     assert (line["exit"], line["end"], line["session"]) == ("timeout", "no result", "sess-1")
     assert line["duration_s"] < 10
     fake_claude(tmp_path, stream(INIT, RESULT))
-    done = run_log(tmp_path, "run", "--site", "briefing", "--timeout", "30", "--", "claude", "-p")
+    done = model_runs(tmp_path, "run", "--site", "briefing", "--timeout", "30", "--", "claude", "-p")
     assert done.returncode == 0 and done.stdout == "The answer.\n", "a run within its limit is untouched"
     assert lines(tmp_path)[1]["exit"] == 0
-    assert "whole number" in run_log(tmp_path, "run", "--site", "x", "--timeout", "soon", "--", "claude").stderr
+    assert "whole number" in model_runs(tmp_path, "run", "--site", "x", "--timeout", "soon", "--", "claude").stderr
 
 
 def test_a_resumed_runs_line_carries_its_own_cost_not_the_sessions_running_total(tmp_path: Path) -> None:
@@ -171,17 +171,17 @@ def test_a_resumed_runs_line_carries_its_own_cost_not_the_sessions_running_total
     leaves its share to the next run's line. The oracle: each line's cost is the reported total
     minus the total before it, and the lines add up to the session's final total."""
     fake_claude(tmp_path, stream(INIT, RESULT))
-    run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p")
+    model_runs(tmp_path, "run", "--site", "worker", "--", "claude", "-p")
     fake_claude(tmp_path, stream(INIT, TURN_A), then="exit 1")
-    run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p", "--resume", "sess-1")
+    model_runs(tmp_path, "run", "--site", "worker", "--", "claude", "-p", "--resume", "sess-1")
     fake_claude(tmp_path, stream(INIT, {**RESULT, "total_cost_usd": 0.5, "duration_api_ms": 10000}))
-    run_log(tmp_path, "run", "--site", "worker", "--", "claude", "-p", "--resume", "sess-1")
+    model_runs(tmp_path, "run", "--site", "worker", "--", "claude", "-p", "--resume", "sess-1")
     first, cut_off, resumed = lines(tmp_path)
     assert (first["cost_usd"], first["session_cost_usd"]) == (0.1234, 0.1234)
     assert (cut_off["cost_usd"], cut_off["session_cost_usd"]) == (None, None)
     assert (resumed["cost_usd"], resumed["api_s"]) == (0.3766, 6.1)
     assert (resumed["session_cost_usd"], resumed["session_api_s"]) == (0.5, 10.0)
-    rows = json.loads(run_log(tmp_path, "report", "--json").stdout)
+    rows = json.loads(model_runs(tmp_path, "report", "--json").stdout)
     assert rows["by_site"][0]["cost_usd"] == 0.5
 
 
@@ -197,9 +197,9 @@ def test_report_counts_a_line_from_before_the_fix_as_its_share_of_the_running_to
         line(session="s2", at="2026-10-01T13:00:00Z", cost_usd=0.25, ticket="lamp"),
         line(session="s1", at="2026-10-02T09:00:00Z", cost_usd=4.0),
     ))
-    rows = json.loads(run_log(tmp_path, "report", "--json").stdout)
+    rows = json.loads(model_runs(tmp_path, "report", "--json").stdout)
     assert {r["key"]: r["cost_usd"] for r in rows["by_ticket"]} == {"warm-preset": 4.0, "lamp": 0.25}
-    rows = json.loads(run_log(tmp_path, "report", "--json", "--since", "2026-10-02").stdout)
+    rows = json.loads(model_runs(tmp_path, "report", "--json", "--since", "2026-10-02").stdout)
     assert rows["by_site"][0]["cost_usd"] == 2.5, "--since keeps the last run's share, not the session's total"
 
 
@@ -207,19 +207,19 @@ def test_json_prints_the_result_object_for_a_caller_that_reads_it(tmp_path: Path
     """The last result where a stream carries several, in both forms."""
     first = {**RESULT, "session_id": "sess-0", "result": "An earlier answer.\n"}
     fake_claude(tmp_path, stream(INIT, first, RESULT))
-    done = run_log(tmp_path, "run", "--site", "briefing", "--json", "--", "claude", "-p")
+    done = model_runs(tmp_path, "run", "--site", "briefing", "--json", "--", "claude", "-p")
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == RESULT
-    done = run_log(tmp_path, "run", "--site", "briefing", "--", "claude", "-p")
+    done = model_runs(tmp_path, "run", "--site", "briefing", "--", "claude", "-p")
     assert done.stdout == "The answer.\n"
     assert [line["session"] for line in lines(tmp_path)] == ["sess-1", "sess-1"]
 
 
 def test_run_refuses_a_call_with_no_site_or_no_command(tmp_path: Path) -> None:
     fake_claude(tmp_path, "")
-    assert "--site" in run_log(tmp_path, "run", "--", "claude").stderr
-    assert "after --" in run_log(tmp_path, "run", "--site", "worker").stderr
-    done = run_log(tmp_path, "run", "--site", "worker", "--", "no-such-claude", "-p")
+    assert "--site" in model_runs(tmp_path, "run", "--", "claude").stderr
+    assert "after --" in model_runs(tmp_path, "run", "--site", "worker").stderr
+    done = model_runs(tmp_path, "run", "--site", "worker", "--", "no-such-claude", "-p")
     assert (done.returncode, done.stdout) == (127, "") and "not on PATH" in done.stderr
     assert not (tmp_path / "runs.jsonl").exists()
 
@@ -228,7 +228,7 @@ def test_needs_names_the_commands_the_script_runs_and_nothing_it_does_not(tmp_pa
     """What a host or a test's PATH has to hold: every external command the script runs is in the
     list, and everything in the list is on this machine."""
     fake_claude(tmp_path, "")
-    needs = run_log(tmp_path, "needs").stdout.split()
+    needs = model_runs(tmp_path, "needs").stdout.split()
     assert {"jq", "git", "ssh", "hostname", "column"} <= set(needs)
     for tool in needs:
         assert subprocess.run(["sh", "-c", f"command -v {tool}"], capture_output=True).returncode == 0, tool
@@ -248,13 +248,13 @@ def test_pull_appends_the_lines_a_host_has_that_this_log_lacks_and_no_line_twice
     (bin_dir / "ssh").write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{tmp_path}/ssh.calls"\ncat "{tmp_path}/remote.jsonl"\n')
     (bin_dir / "ssh").chmod(0o755)
     (tmp_path / "remote.jsonl").write_text(stream(*there))
-    done = run_log(tmp_path, "pull", "agent@far")
+    done = model_runs(tmp_path, "pull", "agent@far")
     assert done.returncode == 0, done.stderr
     assert "pulled 1 new run(s) from agent@far" in done.stdout
     assert [line["id"] for line in lines(tmp_path)] == ["a", "b"]
     call = (tmp_path / "ssh.calls").read_text()
-    assert "agent@far" in call and "RUN_LOG" in call and "logs/agent/runs.jsonl" in call, "the same path is read on the host"
-    done = run_log(tmp_path, "pull", "agent@far")
+    assert "agent@far" in call and "MODEL_RUNS_LOG" in call and "logs/agent/runs.jsonl" in call, "the same path is read on the host"
+    done = model_runs(tmp_path, "pull", "agent@far")
     assert "pulled 0 new run(s)" in done.stdout and [line["id"] for line in lines(tmp_path)] == ["a", "b"]
 
 
@@ -269,7 +269,7 @@ def test_report_rolls_cost_and_time_up_per_site_ticket_and_axis(tmp_path: Path) 
         line(site="review", ticket="warm-preset", axis="tests", cost_usd=None, end="no result", at="2026-09-20T10:00:00Z", model="opus", effort="high"),
         line(site="briefing", repo="lamp", model="opus", effort="medium"),
     ) + "{half a line\n")
-    done = run_log(tmp_path, "report", "--json")
+    done = model_runs(tmp_path, "report", "--json")
     assert done.returncode == 0, done.stderr
     assert "1 line(s)" in done.stderr and "could not be read" in done.stderr
     rows = json.loads(done.stdout)
@@ -278,16 +278,16 @@ def test_report_rolls_cost_and_time_up_per_site_ticket_and_axis(tmp_path: Path) 
     assert {r["key"]: (r["runs"], r["no_result"]) for r in rows["by_axis"]} == {"tests": (2, 1), "spec": (1, 0)}
     assert [r["key"] for r in rows["by_ticket"]] == ["warm-preset"]
     assert {r["key"]: r["runs"] for r in rows["by_effort"]} == {"worker opus high": 1, "review opus medium": 2, "review opus high": 1, "briefing opus medium": 1}
-    rows = json.loads(run_log(tmp_path, "report", "--json", "--since", "2026-09-25", "--repo", "agents").stdout)
+    rows = json.loads(model_runs(tmp_path, "report", "--json", "--since", "2026-09-25", "--repo", "agents").stdout)
     assert {r["key"]: r["runs"] for r in rows["by_site"]} == {"worker": 1, "review": 2}
-    rows = json.loads(run_log(tmp_path, "report", "--json", "--site", "review").stdout)
+    rows = json.loads(model_runs(tmp_path, "report", "--json", "--site", "review").stdout)
     assert [r["key"] for r in rows["by_site"]] == ["review"] and {r["key"] for r in rows["by_axis"]} == {"tests", "spec"}
-    table = run_log(tmp_path, "report").stdout
+    table = model_runs(tmp_path, "report").stdout
     assert "by_site" in table and "warm-preset" in table and "tests" in table and "review opus medium" in table
 
 
 def test_report_with_nothing_logged_says_so(tmp_path: Path) -> None:
-    done = run_log(tmp_path, "report")
+    done = model_runs(tmp_path, "report")
     assert done.returncode == 1 and "no runs logged" in done.stderr
 
 

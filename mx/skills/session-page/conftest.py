@@ -12,7 +12,7 @@ import pytest
 
 import turn_review
 from session_checks import BEFORE_IT, SESSION, SPOKEN_AFTER, UNATTENDED
-from session_page import AGENT_REPO, pages_directory
+from session_page import ACCOUNT_VARIABLE, AGENT_REPO, pages_directory
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -32,10 +32,12 @@ def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Claude Code's session registry, the check's own and empty until it writes an entry, so no
-    page reads a name from the sessions running on this machine. Handed back."""
+    page reads a name from the sessions running on this machine, nor an account from what started
+    it. Handed back."""
     config = tmp_path / "claude-config"
     (config / "sessions").mkdir(parents=True)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    monkeypatch.delenv(ACCOUNT_VARIABLE, raising=False)
     return config / "sessions"
 
 

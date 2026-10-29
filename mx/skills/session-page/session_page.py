@@ -5,16 +5,18 @@
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
-The directory is `session-pages/<session-id>/` under the directory of the Claude Code account the
-session runs under (`account`), outside every checkout: a copy of it pulled from another host never
-stands in the way of a `git pull` there. It holds `session.md`, one `turns/NN.md` per turn the agent
-recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
-shape RULES.md gives them; `previous`, which the handoff skill's `pickup.py` writes where the
-session picked up another's continuation handoff; and `agent-repo`, the agent repo whose `sessions/`
-the SessionEnd hook commits the records into, from which a record's paths are read. A directory
-inside an agent repo's `sessions/`, as that commit leaves it, reads the same without one. Any of
-the records may be missing: a session's first
-turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
+The directory is `session-pages/<session-id>/` under the Claude Code profile's directory, the one
+the session's claude reads its config from (`account()`), outside every checkout: a copy of it
+pulled from another host never stands in the way of a `git pull` there. It holds `session.md`, one
+`turns/NN.md` per turn the agent recorded and one `turns/chat-<time>.md` per turn the Stop hook
+recorded from a chat reply, in the shape RULES.md gives them; `previous`, which the handoff skill's
+`pickup.py` writes where the session picked up another's continuation handoff; `agent-repo`, the
+agent repo whose `sessions/` the SessionEnd hook commits the records into, from which a record's
+paths are read; and `account`, a file naming the account whose token the session runs on, where
+whatever started claude named it (`note_account`). A directory inside an agent repo's `sessions/`,
+as that commit leaves it, reads the same without `agent-repo`, and names no account. Any of the
+records may be missing: a session's first turns are often chat turns alone, and `session.md` comes
+with the first record. The page shows the
 title, links to the pages of the sessions before and after it across a handoff, the resume
 command, the questions no later turn answered or superseded and the tickets' questions a turn put
 to the user that their tickets hold open, then the turns newest first,
@@ -72,7 +74,14 @@ BASE_LOADER = getattr(yaml, "CBaseLoader", yaml.BaseLoader)  # libyaml's, where 
 # In a session's directory, the agent repo its records are committed into, as a path, written once
 # as the directory is made. Its parent is the repo root a record's paths are from.
 AGENT_REPO = "agent-repo"
-PAGES = "session-pages"  # where a session's directory sits, under the account's directory
+PAGES = "session-pages"  # where a session's directory sits, under the profile's directory
+# The account the session runs on, where whatever started claude says so in this variable: max's
+# `claude` wrapper, which can run a profile on another account's token. Without it, the account is
+# the one whose directory the session's sits under (`account_name`).
+ACCOUNT_VARIABLE = "CLAUDE_ACCOUNT"
+# In a session's directory, the account ACCOUNT_VARIABLE named as the Stop hook last rendered the
+# page, so that a render from another session (a handoff's pickup) names it too.
+ACCOUNT = "account"
 SESSIONS = Path("agent/sessions")  # where the SessionEnd hook commits its records, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
@@ -87,7 +96,7 @@ TOKENS = HERE.parent / "house-style" / "tokens.css"
 
 
 CLI = """Make the directory this session's records go in, where it is not there yet, and print it:
-`session-pages/<session-id>` under the Claude Code account's directory ($CLAUDE_CONFIG_DIR, or
+`session-pages/<session-id>` under the Claude Code profile's directory ($CLAUDE_CONFIG_DIR, or
 ~/.claude), the same from every directory the session works in, the id being
 $CLAUDE_CODE_SESSION_ID. A new one is tied to the agent repo of the project the working directory
 is in, where the records are committed as the session ends.
@@ -125,7 +134,7 @@ def where_next(directory: Path) -> str:
 
 
 def account() -> Path:
-    """The directory of the Claude Code account this process runs under."""
+    """The directory of the Claude Code profile this process reads its config from."""
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
 
 
@@ -138,14 +147,30 @@ def session_directory(cwd: Path, session: str) -> Path | None:
 
 
 def pages_directory(account: Path, session: str) -> Path:
-    """Where a session run under `account` keeps its records and page."""
+    """Where a session whose profile's directory is `account` keeps its records and page."""
     return account / PAGES / session
 
 
+def note_account(directory: Path) -> None:
+    """Record in the session's directory the account this process says the session runs on, or
+    that it says none, since a session resumed on its profile's own login no longer runs on the
+    account it named before."""
+    if held := os.environ.get(ACCOUNT_VARIABLE, ""):
+        (directory / ACCOUNT).write_text(f"{held}\n")
+    else:
+        (directory / ACCOUNT).unlink(missing_ok=True)
+
+
 def account_name(directory: Path) -> str:
-    """The account a session's directory sits under, as the bar names it: `personal` for
-    ~/.claude, `<x>` for ~/.claude-<x>. Empty for a directory under no account (a session's
-    directory still in its agent repo)."""
+    """The account `directory`'s session runs on, as the bar names it: the one
+    `note_account` recorded, else the one the directory sits under, `personal` for ~/.claude and
+    `<x>` for ~/.claude-<x>. Empty for a directory under neither (a session's directory still in
+    its agent repo)."""
+    try:
+        if held := (directory / ACCOUNT).read_text().strip():
+            return held
+    except FileNotFoundError:
+        pass
     if directory.parent.name != PAGES:
         return ""
     held = directory.parent.parent.name
@@ -1273,7 +1298,7 @@ def assemble(v: View, now: datetime) -> str:
             if session.name else "")
     turns = len(v.rows)
     held = account_name(session.directory)
-    account = (f'<span class="sep">|</span><span class="account" id="session-account" title="the Claude Code account the session runs under">{esc(held)}</span>'
+    account = (f'<span class="sep">|</span><span class="account" id="session-account" title="the Claude Code account the session runs on">{esc(held)}</span>'
                if held else "")
     return f"""<!doctype html>
 <html lang="en">

@@ -18,7 +18,7 @@ read is the oracle's, not the seam's, and in process it costs no tracker launch 
 A second seam is `dispatch`'s own functions, the script sourced, for those whose input and output
 are text: the run record (`host_of`, `runs_on`, `hosts_used`, `forget_run`), `scratch_dir`,
 and `remote_line`, each held to the comment above it. The placer and the slots are the worker
-hosts' own (`worker-hosts --place`, `host-slots`, in the dotfiles), each tested there; here they are
+hosts' own (`hosts place`, `host-slots`, in the dotfiles), each tested there; here they are
 stand-ins, and what is checked is what dispatch asks of them and does with their answer.
 """
 
@@ -285,9 +285,9 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
         (bin_dir / "board").chmod(0o755)
     # A register that publishes no host, so no check reads the machine's own, unless the check put
     # one there (`placer`).
-    if not (bin_dir / "worker-hosts").exists():
-        (bin_dir / "worker-hosts").write_text("#!/bin/sh\nexit 0\n")
-        (bin_dir / "worker-hosts").chmod(0o755)
+    if not (bin_dir / "hosts").exists():
+        (bin_dir / "hosts").write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / "hosts").chmod(0o755)
     # The machine's slots are the check's own, never this machine's: a take is refused while
     # $HOME/slots-full exists, and each call is kept in $HOME/host-slots.calls with whether the
     # process it names carries its word, which is how the real one tells a live holder.
@@ -433,8 +433,8 @@ def skill_copy(toy: Path) -> Path:
         shutil.copy(SKILL / name, skill / "dispatch" / name)
     for name in ("tracker.py", "in_step.py", "pre-commit"):
         shutil.copy(SKILL.parent / "tracker" / name, skill / "tracker" / name)
-    (skill / "run-log").mkdir()
-    shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")
+    (skill / "model-runs").mkdir()
+    shutil.copy(SKILL.parent / "model-runs" / "model-runs", skill / "model-runs" / "model-runs")
     (skill / "dispatch" / "run-worker.sh").write_text(RUNNER)
     return skill / "dispatch" / "dispatch"
 
@@ -1242,17 +1242,17 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(runner: Path) -> N
     assert "report=no" in (runner / "run-1.status").read_text()
 
 
-def test_a_runner_staged_without_run_log_refuses_to_start(runner: Path) -> None:
-    """Every attempt runs through run-log, so a staging that lacks it is said on the status line
+def test_a_runner_staged_without_model_runs_refuses_to_start(runner: Path) -> None:
+    """Every attempt runs through model-runs, so a staging that lacks it is said on the status line
     rather than run unlogged."""
-    (runner / "run-log").unlink()
+    (runner / "model-runs").unlink()
     done = run_worker(runner, model="sonnet")
     assert done.returncode == 1
-    assert (runner / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
+    assert (runner / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no model-runs beside run-worker.sh")
 
 
 @pytest.mark.full_path
-def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
+def test_a_hosts_model_runs_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
     """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
     cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
     machine's log itself."""
@@ -1283,7 +1283,7 @@ def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_ho
     theirs.mkdir()
     fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert fetched.returncode == 0, fetched.stderr
-    assert "could not be pulled; run-log pull agent@far tries again" in fetched.stderr
+    assert "could not be pulled; model-runs pull agent@far tries again" in fetched.stderr
     subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
 
 
@@ -3151,22 +3151,22 @@ def test_a_remote_line_reaches_the_command_as_the_words_sent(shell: str, words: 
 
 
 def placer(toy: Path, *lines: str, rc: int = 0) -> None:
-    """A `worker-hosts` whose `--place` puts a spawn on `lines`, `self` in one being this machine's
+    """A `hosts` whose `place` puts a spawn on `lines`, `self` in one being this machine's
     user@host, after a line of readings on stderr, and exits `rc`, or 3 while the file `place-full`
     exists. Each call's arguments go to `placer.calls`."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     said = toy.parent / "placed"
     said.write_text("".join(line.replace("self", HERE) + "\n" for line in lines))
-    (bin_dir / "worker-hosts").write_text(
-        f'#!/bin/sh\necho "$*" >> "{toy.parent / "placer.calls"}"\n[ "$1" = --place ] || exit 0\n'
-        'printf "worker-hosts: placing from these readings:\\n  agent@far  0 of 8 slots held\\n" >&2\n'
+    (bin_dir / "hosts").write_text(
+        f'#!/bin/sh\necho "$*" >> "{toy.parent / "placer.calls"}"\n[ "$1" = place ] || exit 0\n'
+        'printf "hosts: placing from these readings:\\n  agent@far  0 of 8 slots held\\n" >&2\n'
         f'[ -e "{toy.parent / "place-full"}" ] && exit 3\ncat "{said}"\nexit {rc}\n')
-    (bin_dir / "worker-hosts").chmod(0o755)
+    (bin_dir / "hosts").chmod(0o755)
 
 
 def placer_calls(toy: Path) -> list[str]:
-    """The arguments each call to `placer`'s `worker-hosts` got, joined, in order."""
+    """The arguments each call to `placer`'s `hosts` got, joined, in order."""
     return (toy.parent / "placer.calls").read_text().splitlines()
 
 
@@ -3287,7 +3287,7 @@ def test_a_spawn_whose_slot_cannot_be_taken_starts_no_worker(toy: Path, staged: 
 @pytest.mark.full_path
 def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(toy: Path, staged: Path) -> None:
     """dispatch-places-workers#P2 through `dispatch ctl spawn`: the spawn starts on the first host
-    `worker-hosts --place` names, on the personal account unless told otherwise, and shows what the
+    `hosts place` names, on the personal account unless told otherwise, and shows what the
     placer read."""
     placer(toy, "self\tisolated", "agent@far\tisolated")
 
@@ -3296,7 +3296,7 @@ def test_a_spawn_without_a_host_is_placed_and_prints_the_readings_it_chose_from(
     assert spawned.returncode == 0, spawned.stderr
     assert f"placing warm-preset on {HERE}" in spawned.stderr
     assert "placing from these readings:\n  agent@far  0 of 8 slots held" in spawned.stderr
-    assert placer_calls(toy) == ["--place personal"]
+    assert placer_calls(toy) == ["place personal"]
     waited(toy)
     assert run(toy, "ctl", "probe").stdout.startswith(f"{HERE}  dispatch-lamp-warm-preset exited")
 
@@ -3313,7 +3313,7 @@ def test_a_placed_spawn_takes_its_account_from_the_flag_else_the_environment(toy
                     env=environment(toy, DISPATCH_ACCOUNT="helferline"))
 
     assert spawned.returncode == 0, spawned.stderr
-    assert placer_calls(toy) == [f"--place {account}"]
+    assert placer_calls(toy) == [f"place {account}"]
     waited(toy)
 
 
@@ -3376,7 +3376,7 @@ def test_a_worker_on_an_isolated_host_bypasses_permissions_unless_told_otherwise
 
 
 @pytest.mark.parametrize(("rc", "said"), [
-    (1, "no worker host could ever take warm-preset"), (2, "`worker-hosts --place` failed, so no host was chosen")])
+    (1, "no worker host could ever take warm-preset"), (2, "`hosts place` failed, so no host was chosen")])
 def test_a_spawn_the_placer_finds_no_host_for_is_refused_at_once(toy: Path, staged: Path, rc: int, said: str) -> None:
     """A spawn needing a capability no machine offers would wait for ever, and so would one whose
     placer cannot answer, so both are refused."""
@@ -3386,7 +3386,20 @@ def test_a_spawn_the_placer_finds_no_host_for_is_refused_at_once(toy: Path, stag
 
     assert spawned.returncode == 1
     assert said in spawned.stderr, spawned.stderr
-    assert placer_calls(toy) == ["--place personal --needs gpu"]
+    assert placer_calls(toy) == ["place personal --needs gpu"]
+
+
+def test_a_spawn_with_no_placer_here_is_refused_and_told_to_name_its_host(toy: Path, staged: Path) -> None:
+    """Between an mx release and the dotfiles switch that brings `hosts`, a spawn left to placement
+    has no placer, and the way past is --host."""
+    env = environment(toy)
+    (toy.parent / "bin" / "hosts").unlink()
+    env["PATH"] = os.pathsep.join(d for d in env["PATH"].split(os.pathsep) if not os.access(Path(d) / "hosts", os.X_OK))
+
+    spawned = spawn(toy, staged, "warm-preset", "Work it.\n", host=None, env=env)
+
+    assert spawned.returncode == 1
+    assert "no `hosts` here to place warm-preset from; --host names the host" in spawned.stderr, spawned.stderr
 
 
 def test_a_spawn_naming_its_host_and_what_placement_reads_is_refused(toy: Path, staged: Path) -> None:
@@ -3422,7 +3435,7 @@ def test_a_placed_spawn_waits_while_no_machine_can_take_it(toy: Path, staged: Pa
         full.unlink()
         assert spawning.wait(timeout=60) == 0, err.read_text()
         assert f"placing warm-preset on {HERE}" in err.read_text()
-        assert set(placer_calls(toy)) == {"--place personal"} and len(placer_calls(toy)) >= 3
+        assert set(placer_calls(toy)) == {"place personal"} and len(placer_calls(toy)) >= 3
         waited(toy)
     finally:
         stopped(spawning)

@@ -80,7 +80,7 @@ def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for key, value in IDENTITY.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("STUB_LOG", str(log))
-    monkeypatch.setenv("RUN_LOG", str(tmp_path / "runs.jsonl"))
+    monkeypatch.setenv("MODEL_RUNS_LOG", str(tmp_path / "runs.jsonl"))
     return log
 
 

@@ -14,7 +14,7 @@
 # ctl [--host <host>] [--account <name>] [--needs <capability>]...
 #     [--setup-cmd <cmd>] <dispatch-ctl args>
 #                 runs dispatch-ctl on a worker host (`dispatch ctl --help`).
-#                 With no --host, a spawn goes where `worker-hosts --place`
+#                 With no --host, a spawn goes where `hosts place`
 #                 puts it, on --account (DISPATCH_ACCOUNT, else personal)
 #                 with each --needs. Spawn and resume wait for a free slot.
 #                 Later commands find the host from the ticket's run.
@@ -70,8 +70,8 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 state_root=.local/state/dispatch
 # The only reader and writer of ticket files; it runs here, never on a host.
 tracker=$skill/../tracker/tracker.py
-# A fetch or a cleanup pulls the host's run log lines here (`run-log --help`).
-run_log=$skill/../run-log/run-log
+# A fetch or a cleanup pulls the host's model-runs log lines here (`model-runs --help`).
+model_runs=$skill/../model-runs/model-runs
 # This machine, as the run record and the placer name a host. Commands for it run here rather than
 # over ssh, and its ticket branches are cut from the checkouts here rather than pushed to bare repos.
 self=$(id -un)@$(uname -n)
@@ -271,7 +271,7 @@ ticket_host() { # <slug>
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
-    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$run_log" "$skill/../tracker/pre-commit")
+    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$model_runs" "$skill/../tracker/pre-commit")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
     # Staged as `setup`, which every later spawn there runs until another --setup-cmd.
     if [ -n "$cmd" ]; then
@@ -468,7 +468,7 @@ ctl() {
         case ${1:-} in
             --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host"; shift 2 ;;
             --account)   account=${2:-} flagged=1; [ -n "$account" ] || die "--account takes the account a record names"; shift 2 ;;
-            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`worker-hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
+            --needs)     [ -n "${2:-}" ] || die "--needs takes a capability a host offers (\`hosts\`)"; needs+=(--needs "$2") flagged=1; shift 2 ;;
             --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
             *) break ;;
         esac
@@ -509,8 +509,8 @@ ctl() {
     fi
     [ -z "$flagged" ] || [ -n "$placing" ] ||
         die "--account and --needs place a spawn, and ${name:-$sub} goes to $host: pass them to a spawn with no run recorded and no --host"
-    [ -z "$placing" ] || command -v worker-hosts > /dev/null 2>&1 ||
-        die "no \`worker-hosts\` here to place $name from; --host names the host to run it on"
+    [ -z "$placing" ] || command -v hosts > /dev/null 2>&1 ||
+        die "no \`hosts\` here to place $name from; --host names the host to run it on"
     [ "$host" != local ] || die "--host takes this machine by its name, $self, as it takes any other"
     # The last round's report is imported before the worker can replace it, so the context
     # staged below carries it.
@@ -545,16 +545,16 @@ ctl() {
     done
 }
 
-# Sets `candidates` to the user@hosts `worker-hosts --place` names for this spawn, best first; none
+# Sets `candidates` to the user@hosts `hosts place` names for this spawn, best first; none
 # while each is full or down.
 place_spawn() {
     local placed
-    placed=$(worker-hosts --place "$account" "${needs[@]}")
+    placed=$(hosts place "$account" "${needs[@]}")
     case $? in
         0) mapfile -t candidates < <(cut -f1 <<< "$placed") ;;
         3) candidates=() ;;
-        1) die "no worker host could ever take $name; \`worker-hosts --place\` says why above" ;;
-        *) die "\`worker-hosts --place\` failed, so no host was chosen for $name" ;;
+        1) die "no worker host could ever take $name; \`hosts place\` says why above" ;;
+        *) die "\`hosts place\` failed, so no host was chosen for $name" ;;
     esac
 }
 
@@ -642,10 +642,10 @@ fetch_round() { # <slug>
     pull_runs "$host"
 }
 
-# Appends a remote host's new run-log lines here; a run on this machine already writes its own.
+# Appends a remote host's new model-runs lines here; a run on this machine already writes its own.
 pull_runs() { # <host>
     is_here "$1" && return 0
-    run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
+    run bash "$model_runs" pull "$1" || echo "dispatch: the model-runs log on $1 could not be pulled; model-runs pull $1 tries again" >&2
 }
 
 # <repo> <tip> → each base it has merged into, of the one or two its repo has, one a line; nothing,
@@ -1091,24 +1091,24 @@ fleet() { # <published>
     } | grep -v '^$' | sort -u
 }
 
-# Sets `hosts`, every host the register publishes and this repo's runs name, and
+# Sets `fleet_targets`, every host the register publishes and this repo's runs name, and
 # starts `rows` and `missing` off with the register's failure, if it failed.
 fleet_hosts() {
     local published= register_error=
     # Here, not in fleet, whose captured output runs in a subshell that would lose the failure.
-    if command -v worker-hosts >/dev/null 2>&1; then
-        published=$(worker-hosts --targets) ||
-            register_error="worker-hosts --targets failed (exit $?): the hosts listed are only the ones this repo has run on"
+    if command -v hosts >/dev/null 2>&1; then
+        published=$(hosts targets) ||
+            register_error="\`hosts targets\` failed (exit $?): the hosts listed are only the ones this repo has run on"
     fi
-    mapfile -t hosts < <(fleet "$published")
+    mapfile -t fleet_targets < <(fleet "$published")
     rows=() missing=()
     if [ -n "$register_error" ]; then
-        missing+=(worker-hosts)
-        rows+=("$(host_row worker-hosts incomplete "$register_error")")
+        missing+=("\`hosts targets\`")
+        rows+=("$(host_row "\`hosts targets\`" incomplete "$register_error")")
     fi
-    if [ ${#hosts[@]} -eq 0 ]; then
+    if [ ${#fleet_targets[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"
-        die "no worker host: \`worker-hosts --targets\` publishes none and this repo has run on none"
+        die "no worker host: \`hosts targets\` publishes none and this repo has run on none"
     fi
 }
 
@@ -1133,25 +1133,25 @@ gather() {
     # removed below too, since an attach execs the trap away.
     answers=$(mktemp -d) || die "no temp dir for the hosts' answers"
     trap 'rm -rf "${answers:-}"' EXIT
-    for i in "${!hosts[@]}"; do
+    for i in "${!fleet_targets[@]}"; do
         # The root travels relative, so the home it is under is the host's.
-        ( look "${hosts[$i]}" bash -s "$state_root" < "$skill/dispatch-ps" > "$answers/$i"
+        ( look "${fleet_targets[$i]}" bash -s "$state_root" < "$skill/dispatch-ps" > "$answers/$i"
           echo $? > "$answers/$i.rc" ) &
     done
     wait
-    for i in "${!hosts[@]}"; do
+    for i in "${!fleet_targets[@]}"; do
         # A missing status is a connection that never finished.
         rc=$(cat "$answers/$i.rc" 2>/dev/null)
         [[ $rc =~ ^[0-9]+$ ]] || rc=255
         if [ "$rc" -ne 0 ]; then
-            missing+=("${hosts[$i]}")
-            rows+=("$(unanswered "${hosts[$i]}" "$rc")")
+            missing+=("${fleet_targets[$i]}")
+            rows+=("$(unanswered "${fleet_targets[$i]}" "$rc")")
             continue
         fi
         [ -s "$answers/$i" ] &&
-            mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${hosts[$i]}" '{ print h "\t" $0 }' "$answers/$i")
+            mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${fleet_targets[$i]}" '{ print h "\t" $0 }' "$answers/$i")
         # An `unreadable` scratch dir on a host that answered.
-        mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${hosts[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
+        mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${fleet_targets[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
     done
     rm -rf "$answers"
 }
@@ -1290,8 +1290,8 @@ follow() {
     while :; do
         if [ $((SECONDS - asked)) -ge 30 ]; then
             # A subshell, so a failed read keeps the hosts there rather than ending the follow.
-            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}"); then
-                mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
+            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${fleet_targets[@]}" -- "${rows[@]}"); then
+                mapfile -t fleet_targets < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
                 mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
             fi
             follow_fleet
@@ -1300,7 +1300,7 @@ follow() {
         measure
         printf -v now '%(%s)T' -1
         drawing=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
-                    for h in "${hosts[@]}"; do
+                    for h in "${fleet_targets[@]}"; do
                         cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
                     done } |
             awk -F'\t' -v OFS='\t' -v now="$now" '
@@ -1315,20 +1315,20 @@ follow() {
     done
 }
 
-# Starts a follow_host for each host in `hosts` that has none, and stops the
+# Starts a follow_host for each host in `fleet_targets` that has none, and stops the
 # one of each host that left. A register that failed (its `incomplete` row is
 # in `rows`) has left no host.
 follow_fleet() {
     local h
     for h in "${!follower[@]}"; do
         [ ${#rows[@]} -eq 0 ] || break
-        printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
+        printf '%s\n' "${fleet_targets[@]}" | grep -qxF -- "$h" && continue
         kill "${follower[$h]}" 2>/dev/null
         wait "${follower[$h]}" 2>/dev/null
         unset 'follower[$h]'
         rm -f "$frames/$h.rows"
     done
-    for h in "${hosts[@]}"; do
+    for h in "${fleet_targets[@]}"; do
         [ -n "${follower[$h]:-}" ] && continue
         follow_host "$h" &
         follower[$h]=$!
