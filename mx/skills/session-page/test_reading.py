@@ -14,10 +14,12 @@ record, the messages that turn answered.
 
 import html
 import json
+import os
 import re
 import shutil
 import sys
 import time
+from collections import Counter
 from datetime import UTC, datetime
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -595,6 +597,119 @@ def test_a_steps_line_names_what_it_acted_on(tool: str, input: dict, line: tuple
     subagent's description."""
     assert steps.summary(steps.Step(datetime(2026, 9, 22, tzinfo=UTC), tool, input)) == line
 
+
+# ---- the sessions a handoff links ------------------------------------------
+
+# A chain of sessions, each picking up the one before's continuation handoff, and one more that
+# picked up the first's under another account: the first is continued twice, in two places.
+CHAIN = [f"00000000-0000-0000-0000-{n:012d}" for n in range(1, 25)]
+SPLIT = "0a0b0c0d-0000-0000-0000-000000000000"
+
+
+@pytest.fixture
+def chain(registry: Path, tmp_path: Path) -> dict[str, Path]:
+    """The directory of each session of `CHAIN` and `SPLIT`, each with a page and a `previous`
+    naming the session it continued, by id."""
+    directories = {s: session_page.pages_directory(registry.parent, s) for s in CHAIN}
+    directories[SPLIT] = session_page.pages_directory(tmp_path / ".claude-other", SPLIT)
+    for session, previous in [*zip(CHAIN, [None, *CHAIN]), (SPLIT, CHAIN[0])]:
+        directories[session].mkdir(parents=True)
+        (directories[session] / session_page.PAGE).write_text("<html></html>")
+        if previous:
+            (directories[session] / session_page.PREVIOUS).write_text(previous + "\n")
+    (tmp_path / "t.jsonl").write_text("")
+    return directories
+
+
+def handoffs_of(chain: dict[str, Path], transcript: Path) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """What each session's page links across a handoff: the session before it, and those after."""
+    return {s: (r.previous, r.following) for s, d in chain.items() for r in [session_page.read_session(d, transcript)]}
+
+
+@pytest.fixture
+def settled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A clock an hour on, so every file the check wrote reads as one written long before."""
+    later = time.time_ns() + 3600 * 10**9
+    monkeypatch.setattr(session_page, "time_ns", lambda: later)
+
+
+OPENED: list[str] | None = None  # the files opened while a check counts them (`opened`)
+HOOKED = False  # an audit hook, once added, stays for the life of the process
+
+
+def count_opens(event: str, args: tuple) -> None:
+    if OPENED is not None and event == "open" and isinstance(args[0], (str, os.PathLike)):
+        OPENED.append(os.fspath(args[0]))
+
+
+@pytest.fixture
+def opened() -> Iterator[list[str]]:
+    """Every file this process opens until the check ends, by path, however it opens it."""
+    global OPENED, HOOKED
+    if not HOOKED:
+        sys.addaudithook(count_opens)
+        HOOKED = True
+    OPENED = []
+    yield OPENED
+    OPENED = None
+
+
+def test_sessions_read_in_one_process_read_each_previous_once(
+    chain: dict[str, Path], tmp_path: Path, settled: None, opened: list[str],
+) -> None:
+    """session-successors-read-once#P2: reading every session of the chain finds each one's
+    continuations (P1) and opens each `previous` once, not once per session read."""
+    assert handoffs_of(chain, tmp_path / "t.jsonl") == {
+        CHAIN[0]: ("", tuple(sorted([CHAIN[1], SPLIT]))),
+        **{s: (before, (after,)) for before, s, after in zip(CHAIN, CHAIN[1:], CHAIN[2:])},
+        CHAIN[-1]: (CHAIN[-2], ()),
+        SPLIT: (CHAIN[0], ()),
+    }
+    reads = Counter(p for p in opened if p.endswith(f"/{session_page.PREVIOUS}"))
+    assert set(reads.values()) == {1} and len(reads) == len(chain) - 1
+
+
+def rewritten(chain: dict[str, Path]) -> Path:
+    """The `previous` of `CHAIN[5]` written over in place, naming `CHAIN[1]` where it named
+    `CHAIN[4]`: the same file, the same length."""
+    moved = chain[CHAIN[5]] / session_page.PREVIOUS
+    with moved.open("r+") as f:
+        f.write(CHAIN[1])
+    return moved
+
+
+def moved_on(before: dict[str, tuple[str, tuple[str, ...]]]) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """What the pages link once `rewritten` has moved `CHAIN[5]` on from `CHAIN[4]` to `CHAIN[1]`."""
+    return before | {CHAIN[1]: (CHAIN[0], (CHAIN[2], CHAIN[5])), CHAIN[4]: (CHAIN[3], ()), CHAIN[5]: (CHAIN[1], (CHAIN[6],))}
+
+
+def test_a_previous_rewritten_in_place_long_after_it_was_read_is_read_anew(
+    chain: dict[str, Path], tmp_path: Path, settled: None,
+) -> None:
+    """session-successors-read-once#P1: a `previous` written over an hour after the pages were read,
+    which moves its modification time, names its new session on every page read after, the one it
+    named before included."""
+    said = tmp_path / "t.jsonl"
+    before = handoffs_of(chain, said)
+    moved = rewritten(chain)
+    later = moved.stat().st_mtime_ns + 3600 * 10**9
+    os.utime(moved, ns=(later, later))
+    assert handoffs_of(chain, said) == moved_on(before)
+
+
+def test_a_previous_rewritten_in_place_within_its_filesystems_clock_tick_is_read_anew(
+    chain: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """session-successors-read-once#P1 where the rewrite leaves the file's size and times as they
+    were, as a filesystem whose clock ticks coarsely does within one tick: the pages read after it
+    still name the new session."""
+    said = tmp_path / "t.jsonl"
+    kept = (chain[CHAIN[5]] / session_page.PREVIOUS).stat()
+    monkeypatch.setattr(session_page, "time_ns", lambda: kept.st_ctime_ns + 5 * 10**6)  # 5 ms on
+    before = handoffs_of(chain, said)
+    moved, stat = rewritten(chain), os.stat
+    monkeypatch.setattr(os, "stat", lambda path, *a, **k: kept if os.fspath(path) == os.fspath(moved) else stat(path, *a, **k))
+    assert handoffs_of(chain, said) == moved_on(before)
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

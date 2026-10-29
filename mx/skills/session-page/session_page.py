@@ -46,6 +46,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from time import time_ns
 from typing import Literal, TypeVar
 
 import yaml
@@ -70,6 +71,15 @@ LOG = "tool-calls.js"
 # handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
 # it, not written.
 PREVIOUS = "previous"
+# Each `previous` this process has read, by path: the file's identity, size and change times as it
+# was read, and the session it named. `successors` asks every session beside the one being read
+# for its `previous`, so without it a process reading N sessions reads each of those files N times.
+PREVIOUS_READ: dict[str, tuple[tuple[int, ...], str]] = {}
+# A `previous` changed less than this long ago is read every time rather than remembered: a rewrite
+# within one tick of the filesystem's clock can leave its size and times as they were. Two seconds
+# is FAT's tick, the coarsest a local filesystem keeps; a network filesystem whose server's clock
+# runs behind this host's by more can still hand back a stale read.
+SETTLED = 2_000_000_000  # ns
 BASE_LOADER = getattr(yaml, "CBaseLoader", yaml.BaseLoader)  # libyaml's, where PyYAML was built with it: 8 times faster, the same data
 # In a session's directory, the agent repo its records are committed into, as a path, written once
 # as the directory is made. Its parent is the repo root a record's paths are from.
@@ -322,12 +332,23 @@ def title_of(directory: Path) -> str:
     return heading[1].strip() if heading else ""
 
 
-def predecessor(directory: Path) -> str:
-    """The session `directory`'s `previous` names; empty where it names none."""
+def predecessor(directory: str | os.PathLike) -> str:
+    """The session `directory`'s `previous` names; empty where it names none. The file is read only
+    where it changed since this process last read it (`PREVIOUS_READ`), or changed so recently that
+    a rewrite may not show (`SETTLED`)."""
+    path = os.path.join(directory, PREVIOUS)
     try:
-        return (directory / PREVIOUS).read_text().strip()
+        seen = os.stat(path)
+        version = (seen.st_dev, seen.st_ino, seen.st_size, seen.st_mtime_ns, seen.st_ctime_ns)
+        if (read := PREVIOUS_READ.get(path)) and read[0] == version:
+            return read[1]
+        with open(path) as f:
+            named = f.read().strip()
     except OSError:
         return ""
+    if time_ns() - seen.st_ctime_ns >= SETTLED:
+        PREVIOUS_READ[path] = (version, named)
+    return named
 
 
 def successors(directory: Path) -> dict[str, Path]:
@@ -337,7 +358,10 @@ def successors(directory: Path) -> dict[str, Path]:
     found = {}
     for place in reversed(neighbourhoods(directory)):  # the nearest place wins for a session found twice
         if place.is_dir():
-            found |= {d.name: d for d in place.iterdir() if d.name != directory.name and d.is_dir() and predecessor(d) == directory.name}
+            # by os's own calls on strings: this runs once for every session beside each one read
+            with os.scandir(place) as entries:
+                named = [e.name for e in entries if e.name != directory.name and e.is_dir() and predecessor(e.path) == directory.name]
+            found |= {name: place / name for name in named}
     return found
 
 
