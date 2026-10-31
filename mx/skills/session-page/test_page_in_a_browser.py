@@ -299,8 +299,8 @@ with sync_playwright() as pw:
           return {bar: box(".bar"), band: box("#open-questions"), pane: box("#turns-pane"), column: box("#artefacts"),
                   sheet: box("#sheet-toggle"), height: innerHeight, width: innerWidth,
                   firstTurnBorder: getComputedStyle(document.querySelector(".turns > .blk")).borderTopWidth,
-                  rows: [...document.querySelectorAll("#open-questions .q")].map((q) => ({id: q.id, folded: q.classList.contains("folded"),
-                    head: box(`#${q.id} h3`), pickline: q.querySelector(".pickline")?.checkVisibility() ?? false}))} })()'''
+                  cards: [...document.querySelectorAll("#open-questions .card")].map((c) => ({id: c.id, shown: !c.hidden,
+                    head: box(`#${c.id} h3`)})), ticks: document.querySelectorAll("#ticks .tk").length} })()'''
         out["top"] = page.evaluate(geometry)
         out["control_top"] = page.evaluate(CONTROL)
         for _ in range(3):
@@ -323,14 +323,79 @@ with sync_playwright() as pw:
         page.wait_for_timeout(400)
         out["sheet_open"] = page.evaluate(geometry)["column"]
     elif scenario == "crowded":
-        # the question ] opens in a band whose folded rows alone outgrow it, and how much of it shows
+        # the card ] goes to in a band with many items, each longer than the band, and how much of it shows
         context, page = open_page(args["width"], 800)
         for _ in range(args["presses"]):
             page.keyboard.press("]")
         out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom} }
-          const band = document.getElementById("open-questions"), q = band.querySelector(".q:not(.folded)"), body = q.querySelector(".q-body")
-          return {band: box(band), head: box(band.querySelector(".divider")), q: box(q), id: q.id, height: innerHeight,
-                  overflows: band.scrollHeight > band.clientHeight, body: body.clientHeight, whole: body.scrollHeight} })()'''))
+          const band = document.getElementById("open-questions"), card = band.querySelector(".card:not([hidden])")
+          return {band: box(band), head: box(band.querySelector(".divider")), title: box(card.querySelector("h3")), id: card.id,
+                  shown: band.querySelectorAll(".card:not([hidden])").length, focused: card.contains(document.activeElement),
+                  overflows: band.scrollHeight > band.clientHeight} })()'''))
+    elif scenario == "stage":
+        # work-through-what-waits-one-item-at-a-time: the keys stage an answer on each kind of card, a note stays on the
+        # card it was opened on, what is staged outlives a reload, and the review shows the batch, which Enter copies where
+        # no hub frames the page
+        context, page = open_page(1280, 900)
+        context.grant_permissions(["clipboard-read", "clipboard-write"])
+        STATE = '''(() => { const c = document.querySelector("#open-questions .card:not([hidden])")
+          return {card: c ? c.dataset.handle : null, staged: c ? c.querySelector(".staged").textContent : null,
+                  chosen: c ? [...c.querySelectorAll("tr.chosen")].map((r) => r.dataset.option) : [],
+                  ticks: [...document.querySelectorAll("#ticks .tk")].map((t) => t.className), where: document.querySelector("#ticks .where").textContent,
+                  tally: document.getElementById("tally").textContent, inBand: document.getElementById("open-questions").contains(document.activeElement),
+                  review: document.getElementById("review").hidden ? null : document.querySelector("#review pre")?.textContent ?? ""} })()'''
+        out["steps"] = []
+        def step(*keys):
+            for key in keys:
+                page.keyboard.type(key[5:]) if key.startswith("type:") else page.keyboard.press(key)
+            out["steps"].append([" ".join(keys), page.evaluate(STATE)])
+        step("]")                      # into the band, on the first card
+        step("b")                      # an option of the question's
+        step("Enter")                  # the agent's pick, over it
+        step("n", "type:only after Friday]", "Enter")  # a note, a ] typed in it moving nothing
+        step("]")                      # the to-do
+        step("x")                      # dismissed
+        step("d")                      # done, over it
+        step("]", "s")                 # the first artefact, seen and not staged
+        step("n", "type:read", "Escape")  # a note opened and dropped
+        page.reload()
+        page.evaluate("document.fonts.ready")
+        step("]")                      # the reload kept the batch
+        step("r")
+        page.evaluate("navigator.clipboard.writeText('')")
+        step("Enter")
+        page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
+        out["copied"] = page.evaluate("navigator.clipboard.readText()")
+        step("Escape", "Escape")       # back to the card, then out of the band
+        step("j")                      # the turns' key again
+    elif scenario == "framed":
+        # the page in a frame of a hub tab: what it staged comes from the hub, every change goes back to it, and the send
+        # is the hub's, after which the lines it sent leave the cards
+        import http.server, threading
+        root = Path(args["root"])
+        handler = lambda *a, **k: http.server.SimpleHTTPRequestHandler(*a, directory=str(root), **k)
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            context, page = open_page(1280, 900, f"http://127.0.0.1:{server.server_address[1]}/{args['tab']}")
+            # the frame's script runs as it parses; its load waits on fonts, which the page cache answers for the tab alone
+            page.wait_for_function("document.querySelector('iframe')?.contentDocument?.getElementById('open-questions')", timeout=10000)
+            inner = next(f for f in page.frames if f.url.endswith("/" + Path(page_url).name))
+            inner.wait_for_function("document.querySelector('#open-questions .card:not([hidden]) .staged').textContent !== ''", timeout=10000)
+            out["loaded"] = inner.evaluate("document.querySelector('#open-questions .card:not([hidden]) .staged').textContent")
+            inner.focus("#open-questions .card:not([hidden])")
+            page.keyboard.press("]")
+            page.keyboard.press("d")
+            page.keyboard.press("r")
+            out["review"] = inner.evaluate("document.querySelector('#review pre').textContent")
+            page.keyboard.press("Enter")
+            inner.wait_for_function("document.getElementById('tally').textContent.includes('sent')", timeout=10000)
+            out["sent"] = page.evaluate("window.sent")
+            out["saved"] = page.evaluate("window.saved.at(-1)")
+            out["after"] = inner.evaluate('''({tally: document.getElementById("tally").textContent,
+              ticks: document.querySelectorAll("#ticks .tk").length})''')
+        finally:
+            server.shutdown()
     elif scenario == "tables":
         # where turn 05's tables sit against its text, its edge and the pane, and which cells wrap
         context, page = open_page(args["width"], 800)
@@ -441,6 +506,49 @@ def filler(number: int, questions: str = "") -> str:
     details = "\n\n".join(f"Paragraph {n} of what turn {number} settled, long enough to wrap across the measure "
                           "once or twice at every width the hub shows the page at." for n in range(1, 7))
     return f"---\ndate: 2026-09-24\n---\n\n# Filler turn {number}: a turn that links nothing\n\n{questions}## Details\n\n{details}\n"
+
+
+# A session waiting on the user for one item of each kind: a question with an option table, a to-do,
+# and two artefacts, every turn's since the transcript holds no message.
+WAITING = (
+    "---\ndate: 2026-10-29\n---\n\n# Unity's lint baseline cleared\n\n"
+    "## Questions\n\n- [Q1] **Force-push devops #4 and #5 now?** nobody has reviewed them\n"
+    "  - (a) Push now *my pick*\n    - Gives: #4 and #5 carry the rule today\n    - Costs: their old SHAs stop resolving\n"
+    "  - (b) Wait for the first review\n\n"
+    "## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`\n\n"
+    "## Links\n\n- [The six PR texts](agent/show/lint/texts.html): Q1 leans on them\n"
+    "- [The stack's diff](agent/show/lint/diff.html): the six layers\n"
+)
+
+
+@pytest.fixture
+def waiting_page(tmp_path: Path) -> Path:
+    """WAITING's page, in a session directory of an agent repo, beside the artefacts it links."""
+    directory = tmp_path / "agent" / "sessions" / SESSION
+    (directory / "turns").mkdir(parents=True)
+    (directory / "turns" / "01.md").write_text(WAITING)
+    for name in ("texts", "diff"):
+        (tmp_path / "agent" / "show" / "lint").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "agent" / "show" / "lint" / f"{name}.html").write_text(f"<title>{name}</title>")
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("")
+    (directory / PAGE).write_text(render_session(directory, transcript))
+    return directory / PAGE
+
+
+# A hub tab as the page meets one: `hubWaiting` holding what the user staged earlier, keeping each change, and a send
+# that hands the page back the lines it sent, with the box's own words after them.
+HUB_TAB = """<!doctype html><meta charset="utf-8"><script>
+window.saved = []; window.sent = null;
+window.hubWaiting = {
+  holds: () => true,
+  load: async () => ({ staged: { Q1: { pick: "b", note: "kept by the hub" } }, seen: [], sent: {} }),
+  save: async (w, doc) => { window.saved.push(doc); return { ok: true } },
+  words: () => "and go on",
+  send: async (w) => { const batch = w.waitingBatch(); window.sent = batch + "\\n\\nand go on"; w.waitingSent(batch); return { ok: true } },
+};
+</script><iframe src="PAGE" style="width: 100%; height: 860px"></iframe>
+"""
 
 
 @pytest.fixture
@@ -687,9 +795,9 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
 @pytest.mark.parametrize("width", WIDTHS)
 def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: int) -> None:
     """P3, P7, P8 and the layout the ticket's Decisions bind, at each width the hub shows the page at: the
-    window never scrolls and no pane shows a scrollbar; the band of questions sits over the turns
-    with one rule between them, its first question open and every other one folded to its
-    headline and the recommended option's words, all in view however long the open one is; the
+    window never scrolls and no pane shows a scrollbar; the band of what waits sits over the turns
+    with one rule between them, a tick per item and the first item's card shown, its headline in
+    view however long the card is; the
     timeline runs full height right of the turns, or at the sidebar's width sits in a sheet behind
     the bar's button; the control to the newest turn is in view with the pane at either end."""
     page, _ = long_session
@@ -704,11 +812,10 @@ def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: i
         band, pane, column = at["band"], at["pane"], at["column"]
         assert band["bottom"] <= pane["top"] + 1 and pane["bottom"] >= at["height"] - 1, f"{moment}: {at}"
         assert at["firstTurnBorder"] == "0px", "the first turn draws a rule of its own under the band's"
-        rows = at["rows"]
-        assert [r["folded"] for r in rows] == [False, True, True], rows
-        assert all(r["pickline"] for r in rows if r["folded"]), "a folded row lacks the recommended option's words"
-        for r in rows:
-            assert band["top"] <= r["head"]["top"] and r["head"]["bottom"] <= band["bottom"] + 1, f"P8: {r['id']} out of the band: {at}"
+        cards = at["cards"]
+        assert [c["shown"] for c in cards] == [True] + [False] * (len(cards) - 1) and at["ticks"] == len(cards), cards
+        head = cards[0]["head"]
+        assert band["top"] <= head["top"] and head["bottom"] <= band["bottom"] + 1, f"P8: the card's headline is out of the band: {at}"
         if width > 704:
             assert column["left"] >= pane["right"] - 1 and column["top"] <= at["bar"]["bottom"] + 1, f"{moment}: {at}"
             assert column["bottom"] >= at["height"] - 1 and column["shown"] and not at["sheet"]["shown"], f"{moment}: {at}"
@@ -720,13 +827,13 @@ def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: i
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_the_open_question_keeps_its_room_in_a_crowded_band(crowded: Path, width: int) -> None:
-    """With more questions waiting than the band holds folded, the band scrolls, and the question
-    opened mid-list shows in full view, at least a fifth of the window high or all of it."""
+def test_the_card_gone_to_shows_alone_with_its_headline_in_view_in_a_crowded_band(crowded: Path, width: int) -> None:
+    """With fourteen questions waiting, each longer than the band, ] goes into the band on the
+    first card and on through them: the sixth shows alone, holding the keys, its headline under the
+    band's heading."""
     seen = probe(crowded, "crowded", width=width, presses=6)
-    assert seen["id"] == "q13" and seen["overflows"], seen
-    assert seen["head"]["bottom"] <= seen["q"]["top"] + 1 and seen["q"]["bottom"] <= seen["band"]["bottom"] + 1, f"out of view: {seen}"
-    assert seen["body"] >= min(seen["whole"], seen["height"] / 5), f"squeezed: {seen}"
+    assert (seen["id"], seen["shown"], seen["focused"]) == ("q12", 1, True), seen
+    assert seen["head"]["bottom"] <= seen["title"]["top"] + 1 and seen["title"]["bottom"] <= seen["band"]["bottom"] + 1, f"out of view: {seen}"
 
 
 @pytest.mark.parametrize("width", WIDTHS)
@@ -846,3 +953,38 @@ def test_the_log_takes_the_keys_to_walk_open_and_close_its_steps(rendered: tuple
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+def test_the_keys_stage_each_kind_of_item_and_the_review_shows_the_batch(waiting_page: Path) -> None:
+    """work-through-what-waits-one-item-at-a-time#P2, P4, P5 on a page no hub frames: ] goes into
+    the band, a letter picks, Enter takes the agent's pick, d and x a to-do's, s an artefact's seen
+    (which stages nothing), n a note that stays on the card it was opened on even with a ] typed in
+    it, Esc in a note drops the edit; a reload keeps it all; r reviews the batch and Enter copies it,
+    since no hub sends it; Esc leaves the review, then the band."""
+    seen = probe(waiting_page, "stage")
+    into, picked, pick, noted, todo, dismissed, done, looked, dropped, reloaded, review, sent, left, turns = (s for _, s in seen["steps"])
+    assert [s["card"] for s in (into, picked, pick, noted)] == ["Q1"] * 4 and into["inBand"], seen["steps"][:4]
+    assert picked["chosen"] == ["b"] and pick["chosen"] == ["a"], (picked, pick)
+    assert noted["staged"] == "staged → a · Push now · note: only after Friday]", noted
+    assert (todo["card"], dismissed["staged"], done["staged"]) == ("A1", "staged → dismissed", "staged → done")
+    assert looked["card"] == "agent/show/lint/texts.html" and looked["staged"] == "" and "seen" in looked["ticks"][2], looked
+    assert dropped["staged"] == "", "Esc kept the note it was to drop"
+    assert reloaded["tally"] == " · 2 staged" and [("st" in t, "seen" in t) for t in reloaded["ticks"]] == [
+        (True, False), (True, False), (False, True), (False, False)], reloaded
+    batch = "Q1: a, only after Friday]\nA1: done"
+    assert review["review"] == batch and seen["copied"] == batch, (review, seen["copied"])
+    assert not left["inBand"] and left["review"] is None and not turns["inBand"], (left, turns)
+
+
+def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_batch_off_the_cards(waiting_page: Path) -> None:
+    """P2, P3 at the page's seam with the hub tab: what the hub kept is staged on load, each change
+    goes back to it, the review shows the batch with the box's words below it, and once the hub
+    sent it the lines it sent leave the cards and nothing stays staged."""
+    tab = waiting_page.parent / "tab.html"
+    tab.write_text(HUB_TAB.replace("PAGE", waiting_page.name))
+    seen = probe(waiting_page, "framed", root=str(tab.parent), tab=tab.name)
+    assert seen["loaded"] == "staged → b · Wait for the first review · note: kept by the hub", seen
+    assert seen["review"] == "Q1: b, kept by the hub\nA1: done\n\nand go on", seen["review"]
+    assert seen["sent"] == "Q1: b, kept by the hub\nA1: done\n\nand go on", seen["sent"]
+    assert seen["saved"]["staged"] == {} and set(seen["saved"]["sent"]) == {"Q1", "A1"}, seen["saved"]
+    assert seen["after"] == {"tally": " · 2 sent", "ticks": 2}, seen["after"]

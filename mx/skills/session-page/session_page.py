@@ -1567,7 +1567,7 @@ def band(v: View) -> str:
       <div class="ticks" id="ticks" aria-label="every item, the ones staged filled"></div>
       <div class="cards">{"".join(cards)}
       </div>
-      <section class="review" id="review" aria-label="the batch, as the session gets it" hidden></section>
+      <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
     </section>"""
 
 

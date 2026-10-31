@@ -340,7 +340,7 @@ const bandKey = (key) => {
   const list = items(), c = list[at]
   if (key === "Escape") { leaveBand(); return true }
   if (key === "]" || key === "[") { showCard(Math.max(0, Math.min(list.length - 1, at + (key === "]" ? 1 : -1)))); return true }
-  if (key === "r") { reviewing = true; draw(); return true }
+  if (key === "r") { reviewing = true; draw(); review.focus({ preventScroll: true }); return true }  // the card it hid had the focus
   if (!c) return false
   const h = c.dataset.handle, kind = c.dataset.kind
   if ((key === "o" || (key === "Enter" && kind === "look")) && c.querySelector("a.open")) { c.querySelector("a.open").click(); return true }

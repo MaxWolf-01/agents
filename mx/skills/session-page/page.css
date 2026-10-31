@@ -196,6 +196,7 @@ button.id:hover { color: var(--accent); }
 .note-in { display: block; width: 100%; box-sizing: border-box; padding: 0.3rem 0.55rem; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--ground); color: var(--strong); font: inherit; }
 .note-in:focus { outline: none; }
 .review { flex: none; padding-left: 2.5rem; }
+.review:focus { outline: none; }
 .review h3 { margin-bottom: 0.5rem; font-size: 1.22rem; }
 .review pre { margin: 0.4rem 0 0; padding: 0.6rem 0.8rem; max-width: 60rem; background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); font: 12.5px/1.6 var(--font-mono); color: var(--strong); white-space: pre-wrap; }
 .review .empty, .review .left-out { margin-top: 0.7rem; color: var(--muted); max-width: 60rem; }
