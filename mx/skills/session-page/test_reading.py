@@ -264,6 +264,25 @@ def test_a_link_is_a_path_from_the_repo_root(worked_example: Path, transcript: P
     assert landed == re.findall(r"\]\(([^)]+)\)", "".join(p.read_text() for p in records))
 
 
+def test_a_path_under_show_is_the_sessions_own_artefact(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """Session work's artefacts sit in `show/` of the session's directory (/mx:show), which is in
+    no repo, so a record's `show/…` is from there, as a link, a link in prose and a path in code;
+    the repo root's own `show/` is reached by no such path."""
+    (worked_example / "show").mkdir()
+    (worked_example / "show" / "rule.html").touch()
+    (tmp_path / "show").mkdir()
+    (tmp_path / "show" / "rule.html").touch()
+    (worked_example / "turns" / "05.md").write_text(
+        "---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Links\n\n- [The rule](show/rule.html#ladder): its diff\n\n"
+        "## Details\n\nThe [rule](show/rule.html) is in `show/rule.html`.\n")
+    own = (worked_example / "show" / "rule.html").as_uri()
+    assert [link.href for link in rows_of(view_of(worked_example, transcript))["05"].links] == [own + "#ladder"]
+    section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
+    files = [href for href in re.findall(r'href="([^"]+)"', section) if href.startswith("file:")]
+    assert files and set(files) <= {own, own + "#ladder"}
+    assert f'<a class="path" href="{own}"' in section
+
+
 def test_a_link_to_an_artifact_in_another_repo_is_its_absolute_path(
     worked_example: Path, transcript: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

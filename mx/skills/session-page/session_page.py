@@ -93,6 +93,9 @@ ACCOUNT_VARIABLE = "CLAUDE_ACCOUNT"
 # page, so that a render from another session (a handoff's pickup) names it too.
 ACCOUNT = "account"
 SESSIONS = Path("agent/sessions")  # where the SessionEnd hook commits its records, from the repo root
+# Where in a session's directory its own work's artefacts go (/mx:show). A record's path under it
+# is from that directory, which the SessionEnd hook copies `show/` into the agent repo beside.
+ARTEFACTS = "show"
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
 # The timeline beside the turns, which lists every artefact of the session under its turn, and the
@@ -487,7 +490,7 @@ class Link:
     hands the artefacts to the container hub, where one runs (stop_hook.py)."""
 
     text: str
-    path: str  # from the repo root, which the renderer resolves, or absolute for one outside the repo
+    path: str  # from the repo root, which the renderer resolves, `show/…` from the session's directory, or absolute
     note: str
 
     @property
@@ -696,6 +699,20 @@ def check_references(path: Path) -> None:
                                        "[text](#t07) opens turn 07, [text](#q3) shows question Q3")
 
 
+def check_links(root: Path, directory: Path, turn: "Turn") -> None:
+    """Every file the turn's record lists under ## Links exists, since the turn waits for its
+    artefacts: a link to nothing is a path written wrong. Checked on the record the turn writes,
+    never as the page renders, since a later turn may move or delete what an older record linked."""
+    lines = turn.path.read_text().split("\n")
+    for link in turn.links:
+        if URL.match(link.path) or (file := local_file(file_part(link.path), root, directory)).exists():
+            continue
+        n = next((n for n, line in enumerate(lines, start=1) if f"]({link.path})" in line), None)
+        raise RecordError(turn.path, n, f"{link.path} is {file}, which does not exist. A link is a path from the repo root, "
+                                        f"{ARTEFACTS}/<file> for an artefact in the session's own {directory / ARTEFACTS}, "
+                                        "or an absolute one")
+
+
 def check_ticket_questions(root: Path, turn: "Turn") -> None:
     """Every ticket's question the turn's record puts to the user is one its ticket holds open.
     Checked on the record the turn writes, never on an older one or as the page renders, since a
@@ -892,7 +909,8 @@ def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
             continue
         if m := LINK_ITEM.fullmatch(line):
             if m.group(2).startswith("../"):
-                raise RecordError(path, n, f"{m.group(2)} is neither a path from the repo root, like agent/show/<work>/page.html, nor an absolute one")
+                raise RecordError(path, n, f"{m.group(2)} is neither a path from the repo root, like agent/show/<work>/page.html, "
+                                           f"one in the session's own {ARTEFACTS}/, nor an absolute one")
             links.append([m.group(1), m.group(2), m.group(3) or ""])
         elif line.startswith(" ") and links:
             links[-1][2] = f"{links[-1][2]} {line.strip()}".strip()
@@ -1273,7 +1291,7 @@ def view(session: Session) -> View:
     hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
     rows = tuple(
         Row(t, when(t), t is newest, "unwritten" if t.written is None else "unanswered" if hint else "",
-            shown_links(t, session.root) if isinstance(t, Turn) else ())
+            shown_links(t, session.root, session.directory) if isinstance(t, Turn) else ())
         for t, hint in zip(shown, hinted))
     dates = sorted({r.when[:10] for r in rows})
     return View(
@@ -1285,12 +1303,13 @@ def view(session: Session) -> View:
     )
 
 
-def shown_links(turn: Turn, root: Path) -> tuple[Shown, ...]:
-    """A turn's links, the artefacts among them keyed in order and resolved from `root`."""
+def shown_links(turn: Turn, root: Path, directory: Path) -> tuple[Shown, ...]:
+    """A turn's links, the artefacts among them keyed in order and resolved from `root`, or from the
+    session's `directory` for one under its `show/`."""
     shown, keys = [], itertools.count(1)
     for link in turn.links:
         key = None if link.ticket else next(keys)
-        shown.append(Shown(link, href(link.path, root), "" if link.ticket else resolved(link.path, root),
+        shown.append(Shown(link, href(link.path, root, directory), "" if link.ticket else resolved(link.path, root, directory),
                            key if key is not None and key <= 9 else None))
     return tuple(shown)
 
@@ -1881,23 +1900,32 @@ for rule in ("fence", "code_block"):
 URL = re.compile(r"[a-z][a-z0-9+.-]*:", re.I)
 
 
-def href(path: str, root: Path | None = None) -> str:
-    """A link from the page: a path, from the repo root (`root`, else the page's), absolute or under
-    `~`, is its file URL with its fragment or query kept, since the page sits outside the repo; a URL
-    stays as it is."""
+def href(path: str, root: Path | None = None, directory: Path | None = None) -> str:
+    """A link from the page: a path `resolved` finds, `root` and `directory` the page's where not
+    given, is its file URL with its fragment or query kept, since the page sits outside the repo; a
+    URL stays as it is."""
     if URL.match(path):
         return path
     file = file_part(path)
-    return Path(resolved(file, root or ROOT.get())).as_uri() + path[len(file):]
+    return Path(resolved(file, root or ROOT.get(), directory)).as_uri() + path[len(file):]
 
 
-def resolved(path: str, root: Path) -> str:
-    """The file a link opens on this machine, a fragment or query dropped: a path from the repo root
-    joined to `root`, an absolute or `~` path as it is; a URL as it is."""
+def resolved(path: str, root: Path, directory: Path | None = None) -> str:
+    """The file a link opens on this machine, a fragment or query dropped; a URL as it is."""
     if URL.match(path):
         return path
-    local = expanded(file_part(path))
-    return os.path.normpath(local if local.is_absolute() else root / local)
+    return os.path.normpath(local_file(file_part(path), root, directory))
+
+
+def local_file(path: str, root: Path, directory: Path | None = None) -> Path:
+    """Where a record's path points on this machine: one under `show/` in the session's directory
+    (`directory`, else the page's), where the session's own artefacts go; any other relative path
+    from the repo root, `root`; an absolute or `~` path as it is."""
+    local = expanded(path)
+    if local.is_absolute():
+        return local
+    directory = directory or DIRECTORY.get()
+    return (directory if directory is not None and local.parts[:1] == (ARTEFACTS,) else root) / local
 
 
 def file_part(path: str) -> str:
@@ -1914,16 +1942,15 @@ def expanded(path: str) -> Path:
 
 def path_target(text: str) -> str | None:
     """The link for a code span whose text is a path that exists on this machine: absolute, under
-    `~`, or from the repo root, a trailing `:line` or `:line:column` dropped. None for anything
-    else, so a command, a name or a path on another host stays code. A bare word is never a path,
+    `~`, in the session's `show/` or from the repo root, a trailing `:line` or `:line:column`
+    dropped. None for anything else, so a command, a name or a path on another host stays code. A bare word is never a path,
     even where the repo root holds a directory of that name."""
     root = ROOT.get()
     path = re.sub(r":\d+(?::\d+)?$", "", text.strip())
     if root is None or re.search(r"\s", path) or not ("/" in path or Path(path).suffix):
         return None
-    local = expanded(path)
     try:
-        found = (local if local.is_absolute() else root / local).exists()
+        found = local_file(path, root).exists()
     except OSError:  # a name too long for the filesystem
         return None
     return href(path) if found else None

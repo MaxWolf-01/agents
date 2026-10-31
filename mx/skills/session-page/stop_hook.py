@@ -192,7 +192,7 @@ def hub_unit(session_id: str) -> str:
 def linked(session: Session, turn: Turn) -> tuple[str, ...]:
     """What the turn's artefacts open, each file or URL once, resolved as the page's artefact column
     resolves a link: two links into sections of one page open it once."""
-    return tuple(dict.fromkeys(resolved(link.path, session.root) for link in turn.artefacts))
+    return tuple(dict.fromkeys(resolved(link.path, session.root, session.directory) for link in turn.artefacts))
 
 
 def written_outside_write(session: Session) -> Turn | None:

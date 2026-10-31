@@ -364,11 +364,13 @@ def test_the_page_opens_on_the_first_render_where_no_hub_answers_and_never_where
 
 # Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
 # for them, from the repo root the session's directory sits under: a path from the root joined to
-# it, an absolute or `~` path as it is, a URL as it is, and a fragment dropped, as the hub finds a
+# it, a path under `show/` joined to the session's directory, an absolute or `~` path as it is, a URL
+# as it is, and a fragment dropped, as the hub finds a
 # page by its file, so a page opens once however many of its sections are linked. A ticket file
 # is no artefact (session-pages-feed-the-hub#P2) and is handed none.
 RECORD_LINKS = {
     "a page from the repo root": (["- [The spec](agent/show/x/spec.html): this round's"], ["{root}/agent/show/x/spec.html"]),
+    "an artefact of the session's own": (["- [The rule](show/rule.html)"], ["{directory}/show/rule.html"]),
     "a section of a page": (["- [P1](agent/show/x/spec.html#p1)"], ["{root}/agent/show/x/spec.html"]),
     "two sections of one page": (["- [P1](agent/show/x/spec.html#p1)", "- [P2](agent/show/x/spec.html#p2)"],
                                  ["{root}/agent/show/x/spec.html"]),
@@ -399,7 +401,7 @@ def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_s
     run(payload(worked_example, unrecorded))
     assert shown(capsys)
     root = tmp_path  # the worked example's project
-    expected = [path.format(root=root, home=Path.home()) for path in handed]
+    expected = [path.format(root=root, home=Path.home(), directory=worked_example) for path in handed]
     calls = opened(browser, len(expected) + 1)
     assert sorted(calls) == sorted([(worked_example.name, str(worked_example / PAGE))] + [(worked_example.name, path) for path in expected])
     assert [(entry["artefact"], entry["opened"].startswith("started ")) for entry in logged(attended, "artefact")] == [

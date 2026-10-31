@@ -43,6 +43,16 @@ PIVOTAL_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe secon
 
 
 @pytest.fixture
+def worked_example(worked_example: Path, tmp_path: Path) -> Path:
+    """The worked example with the artefacts its records link in its project, since the hook sends
+    back a record whose links point at nothing."""
+    for link in (link for turn in session_page.read_turns(worked_example / "turns") for link in turn.links):
+        (tmp_path / link.path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / link.path).touch()
+    return worked_example
+
+
+@pytest.fixture
 def writing(transcript: Path, tmp_path: Path) -> Path:
     """The worked example's transcript as the write hook reads it while record 04 is being
     written: everything up to that Write call, and not the call."""
@@ -387,6 +397,31 @@ def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold
 
     monkeypatch.setattr(turn_review, "review", reviewer())
     record.write_text(text.replace(handle, "two-main-checkouts D1"))
+    assert run(wrote(record, writing, "Edit")) == ""
+
+
+def test_a_record_linking_a_file_that_does_not_exist_goes_back_until_the_link_finds_it(
+    worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The turn waits for its artefacts, so a link to nothing is a path written wrong: here an
+    artefact of the session's own work, which sits in its directory's `show/`, not the repo's. The
+    send-back names the line and the file the path came to; once the file is where `show/` points,
+    the record passes."""
+    record = worked_example / "turns" / "04.md"
+    text = record.read_text().replace("## Links\n\n", "## Links\n\n- [The rule's diff](show/rule.html): the polling rule\n", 1)
+    assert text != record.read_text(), "record 04 has links"
+    (worked_example.parents[2] / "show").mkdir()
+    (worked_example.parents[2] / "show" / "rule.html").touch()  # the repo root's, which a show/ path is not
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text)
+    answer = run(wrote(record, writing))
+    line = text.splitlines().index("- [The rule's diff](show/rule.html): the polling rule") + 1
+    assert answer.startswith(f"{record}:{line}: show/rule.html is {worked_example / 'show' / 'rule.html'}, which does not exist")
+    assert RECAP in answer
+
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    (worked_example / "show").mkdir()
+    (worked_example / "show" / "rule.html").touch()
     assert run(wrote(record, writing, "Edit")) == ""
 
 
