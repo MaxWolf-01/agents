@@ -26,6 +26,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 Then walk the codebase. Don't follow rigid heuristics; explore organically and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
+- Where do files of two modules keep changing in the same commits? Count it from the walk-back: for each pair of files, the commits that touched both. A seam most changes cross is in the wrong place; a module whose files never change together holds things that do not belong together (low **cohesion**). The counts go in the candidate's Problem.
 - Where are modules **shallow**, with an interface nearly as complex as the implementation?
 - Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
 - Where do tightly-coupled modules leak across their seams?
