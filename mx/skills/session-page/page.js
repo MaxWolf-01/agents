@@ -222,14 +222,15 @@ if (waiting) {
 // the hub tab's side: the batch its send puts above the box's own words, and the lines it sent, which leave the cards
 window.waitingBatch = () => (loaded ? batch() : "")
 window.waitingSent = (text) => {
-  const sent = new Set(text.split("\n")), now = Date.now()
+  const sent = new Set(text.split("\n")), now = Date.now(), keys = inBand()
   for (const c of items()) if (state.staged[c.dataset.handle] && sent.has(line(c))) {
     state.sent[c.dataset.handle] = now
     delete state.staged[c.dataset.handle]
   }
-  reviewing = false
   persist()
-  draw()
+  // back to the first item still waiting, the keys kept in the band where the review had them
+  if (keys) showCard(0)
+  else { reviewing = false; at = 0; draw(); waiting.scrollTop = 0 }
 }
 // a reload under a note being typed would take the field from under the reader's fingers
 window.reloadWouldLose = () => noting !== null
