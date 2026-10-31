@@ -1256,7 +1256,7 @@ KEYS = [
     ("o s", "on an artefact's card: open it, mark it seen; seen stays on the page"),
     ("n", "on a card: a note, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on a card: clear what is staged"),
-    ("r", "on a card: review the batch, where Enter sends it as one message and Esc goes back"),
+    ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back to the cards"),
     ("1 to 9", "open the turn's nth artefact"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's"),
     ("Tab", "hand the keys to the open tool calls and back; there j k walk them, o Enter open one, O open or close all, g g G first, last"),

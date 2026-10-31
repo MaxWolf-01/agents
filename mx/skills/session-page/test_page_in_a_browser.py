@@ -341,7 +341,8 @@ with sync_playwright() as pw:
                   chosen: c ? [...c.querySelectorAll("tr.chosen")].map((r) => r.dataset.option) : [],
                   ticks: [...document.querySelectorAll("#ticks .tk")].map((t) => t.className), where: document.querySelector("#ticks .where").textContent,
                   tally: document.getElementById("tally").textContent, inBand: document.getElementById("open-questions").contains(document.activeElement),
-                  review: document.getElementById("review").hidden ? null : document.querySelector("#review pre")?.textContent ?? ""} })()'''
+                  review: document.getElementById("review").hidden ? null : document.querySelector("#review pre")?.textContent ?? "",
+                  stays: document.querySelector("#review .left-out summary, #review p.left-out")?.textContent ?? null} })()'''
         out["steps"] = []
         def step(*keys):
             for key in keys:
@@ -365,6 +366,7 @@ with sync_playwright() as pw:
         out["steps"].append(["o", page.evaluate(STATE)])
         step("n", "type:the legend is wrong", "Enter")
         step("]", "n", "type:read", "Escape")  # the second artefact: a note opened and dropped
+        step("s")                      # and seen, which deals with it
         page.reload()
         page.evaluate("document.fonts.ready")
         step("]")                      # the reload kept the batch, and the card the reader was on
@@ -375,6 +377,14 @@ with sync_playwright() as pw:
         out["copied"] = page.evaluate("navigator.clipboard.readText()")
         step("Escape", "Escape")       # back to the card, then out of the band
         step("j")                      # the turns' key again
+        step("r")                      # the review, in one key from the turns
+    elif scenario == "options":
+        # where the first question's option words, gives and costs sit against each other, at a width
+        context, page = open_page(args["width"], 900)
+        out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right} }
+          const row = document.querySelector("#q1 tr.pick")
+          return {words: box(row.children[1]), gives: box(row.querySelector("td.g")), costs: box(row.querySelector("td.c")),
+                  card: box(document.querySelector("#q1 .card-main")), labelled: getComputedStyle(row.querySelector("td.g"), "::before").content} })()'''))
     elif scenario == "framed":
         # the page in a frame of a hub tab: what it staged comes from the hub, every change goes back to it, and the
         # send is the hub's, after which the lines it sent leave the cards
@@ -401,6 +411,7 @@ with sync_playwright() as pw:
                 for key in args["keys"]:
                     page.keyboard.press(key)
                 out["review"] = inner.evaluate("document.querySelector('#review pre').textContent")
+                out["stays"] = inner.evaluate("document.querySelector('#review .left-out summary').textContent")
                 out["before"] = page.evaluate("window.sent")
                 page.keyboard.press("Enter")
                 inner.wait_for_function("document.getElementById('tally').textContent.includes('sent')", timeout=10000)
@@ -981,10 +992,11 @@ def test_the_keys_stage_each_kind_of_item_and_the_review_shows_the_batch(waiting
     to-do's, u clears, s and o an artefact's seen (which stages nothing), n a note that stays on the
     card it was opened on even with a ] typed in it, Esc in a note drops the edit; a reload keeps it
     all and the card the reader was on; r reviews the batch, an artefact named by its record's path,
-    and Enter copies it, since no hub sends it; Esc leaves the review, then the band."""
+    a seen artefact counted as dealt with, and Enter copies it, since no hub sends it; Esc leaves the
+    review, then the band; and r from the turns opens the review in one key."""
     seen = probe(waiting_page, "stage")
     (into, picked, pick, unpicked, taken, noted, todo, dismissed, done, cleared, redone, looked, opened, looked_noted, dropped,
-     reloaded, review, copied, left, turns) = (s for _, s in seen["steps"])
+     seen_too, reloaded, review, copied, left, turns, reviewed) = (s for _, s in seen["steps"])
     assert [s["card"] for s in (into, picked, pick, unpicked, taken, noted)] == ["Q1"] * 6 and into["inBand"], seen["steps"][:6]
     assert (picked["chosen"], pick["chosen"], unpicked["chosen"], taken["chosen"]) == (["b"], ["a"], [], ["a"])
     assert noted["staged"] == "staged: a · Push now · note: only after Friday]", noted
@@ -995,10 +1007,12 @@ def test_the_keys_stage_each_kind_of_item_and_the_review_shows_the_batch(waiting
     assert looked_noted["staged"] == "staged: note: the legend is wrong", looked_noted
     assert dropped["card"] == "agent/show/lint/diff.html" and dropped["staged"] == "", "Esc kept the note it was to drop"
     assert reloaded["card"] == "agent/show/lint/diff.html" and reloaded["tally"] == " · 3 staged", reloaded
-    assert [("st" in t, "seen" in t) for t in reloaded["ticks"]] == [(True, False), (True, False), (True, True), (False, False)], reloaded
+    assert [("st" in t, "seen" in t) for t in reloaded["ticks"]] == [(True, False), (True, False), (True, True), (False, True)], reloaded
     batch = "Q1: a, only after Friday]\nA1: done\nagent/show/lint/texts.html: the legend is wrong"
     assert review["review"] == batch and seen["copied"] == batch, (review, seen["copied"])
+    assert review["stays"] == "Every item has an answer, or was seen.", review["stays"]
     assert not left["inBand"] and left["review"] is None and not turns["inBand"], (left, turns)
+    assert reviewed["review"] == batch and reviewed["inBand"], reviewed
 
 
 def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_sent_off_the_cards(waiting_page: Path) -> None:
@@ -1013,6 +1027,7 @@ def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_se
     assert seen["loaded"]["staged"] == "staged: b · Wait for the first review · note: kept by the hub", seen["loaded"]
     message = "Q1: b, kept by the hub\nA1: done\nagent/show/old/fig.html: the axis is off\n\nand go on"
     assert seen["review"] == message and seen["before"] is None, seen
+    assert seen["stays"] == "Not answered, so they stay: 2 to look at", seen["stays"]
     assert seen["sent"] == "Q1: b, kept by the hub\nagent/show/old/fig.html: the axis is off\n\nand go on", seen["sent"]
     assert seen["saved"]["staged"] == {"A1": {"act": "done"}} and set(seen["saved"]["sent"]) == {"Q1"}, seen["saved"]
     after = seen["after"]
@@ -1029,6 +1044,20 @@ def test_a_sent_item_comes_back_once_a_turn_ended_after_its_send(waiting_page: P
     tab = hub_tab(waiting_page, {"staged": {}, "seen": [], "sent": sent})
     loaded = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=tab)["loaded"]
     assert (loaded["card"], loaded["ticks"], loaded["tally"]) == ("Q1", 3, " · 1 sent"), loaded
+
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_questions_options_read_at_every_width(waiting_page: Path, width: int) -> None:
+    """At the hub sidebar's width an option's gives and costs, each named, stack under its words, which keep
+    the card's width; wider, they sit beside the words in columns of their own."""
+    seen = probe(waiting_page, "options", width=width)
+    words, gives, costs = seen["words"], seen["gives"], seen["costs"]
+    if width <= 900:
+        assert words["bottom"] <= gives["top"] + 1 and gives["bottom"] <= costs["top"] + 1, seen
+        assert words["right"] - words["left"] >= 0.8 * (seen["card"]["right"] - seen["card"]["left"]) and "gives" in seen["labelled"], seen
+    else:
+        assert abs(words["top"] - gives["top"]) < 2 and words["right"] <= gives["left"] + 1 <= costs["left"], seen
 
 
 if __name__ == "__main__":

@@ -233,10 +233,12 @@ const read = !waiting ? Promise.resolve()
         if (n >= 0) at = n
         pending = null
         draw()
+        if (hub) hub.restaged?.(window)
       })
 
 // the hub tab's side: the batch a send from the review carries, and the lines that went, which leave the cards
 window.waitingBatch = () => (loaded ? batch() : "")
+window.waitingStaged = () => (loaded ? items().filter((c) => state.staged[c.dataset.handle]).length + orphans().length : 0)
 window.waitingSent = (text) => read.then(() => {
   const sent = new Set(text.split("\n")), now = Date.now(), keys = inBand()
   for (const h of Object.keys(state.staged)) if (sent.has(line(h))) {
@@ -296,17 +298,32 @@ const draw = () => {
 }
 const drawReview = (list) => {
   const message = [batch(), words()].filter(Boolean).join("\n\n")
-  const left = list.filter((c) => !state.staged[c.dataset.handle]).map((c) => (c.dataset.kind === "look" ? c.querySelector(".rail").textContent : c.dataset.handle))
+  const left = list.filter((c) => !state.staged[c.dataset.handle] && !(c.dataset.kind === "look" && seenOf(c.dataset.handle)))
+  const kinds = [...new Set(left.map((c) => c.dataset.kindWord))]
+  const of = (word) => left.filter((c) => c.dataset.kindWord === word)
+  const named = (c) => (c.dataset.kind === "look" ? `${c.querySelector(".rail").textContent} ${c.querySelector("h3").textContent}` : c.dataset.handle)
+  const stays = !left.length ? `<p class="left-out v-small">Every item has an answer, or was seen.</p>`
+    : `<details class="left-out v-small"><summary>Not answered, so they stay: ${kinds.map((w) => `${of(w).length} to ${w}`).join(", ")}</summary>` +
+      kinds.map((w) => `<p><span class="v-meta">to ${w}</span> ${esc(of(w).map(named).join(", "))}</p>`).join("") + `</details>`
   const gone = orphans()
   review.innerHTML = `<h3 class="v-h2">The batch, as the session gets it</h3>` +
     (message ? `<pre>${esc(message)}</pre>` : `<p class="v-small empty">Nothing staged yet.</p>`) +
     (gone.length ? `<p class="left-out v-small">Staged on items this page no longer shows, and sent with the rest: ${esc(gone.join(", "))}.</p>` : "") +
-    `<p class="left-out v-small">${left.length ? `Not answered, so they stay: ${left.join(", ")}.` : "Every item has an answer."}</p>` +
+    stays +
     `<p class="keys-row v-meta"><button type="button" class="key" data-key="Enter"><kbd>↵</kbd> ${hub ? "send" : "copy it: no hub frames this page to send it"}</button>` +
     `<button type="button" class="key" data-key="Escape"><kbd>Esc</kbd> back to the items</button></p>`
 }
 
 const inBand = () => !!waiting && waiting.contains(document.activeElement)
+// the review takes the focus, the card it hides having had it, so its Enter and Esc are the band's
+const openReview = () => {
+  if (!waiting) return
+  reviewing = true
+  band(true)
+  draw()
+  review.focus({ preventScroll: true })
+  waiting.scrollTop = 0
+}
 const showCard = (n) => {
   if (!waiting) return
   reviewing = false
@@ -359,7 +376,7 @@ const bandKey = (key) => {
   const list = items(), c = list[at]
   if (key === "Escape") { leaveBand(); return true }
   if (key === "]" || key === "[") { showCard(Math.max(0, Math.min(list.length - 1, at + (key === "]" ? 1 : -1)))); return true }
-  if (key === "r") { reviewing = true; draw(); review.focus({ preventScroll: true }); return true }  // the card it hid had the focus
+  if (key === "r") { openReview(); return true }
   if (!c) return false
   const h = c.dataset.handle, kind = c.dataset.kind
   if ((key === "o" || (key === "Enter" && kind === "look")) && c.querySelector("a.open")) { c.querySelector("a.open").click(); return true }
@@ -623,6 +640,7 @@ document.addEventListener("keydown", (e) => {
     case "t": if (numbers.length) { typed = ""; say("turn …", true) } break
     case "[": case "]": if (items().length) showCard(at); break
     case "q": if (waiting) band(); break
+    case "r": if (waiting) openReview(); break
     case "o": case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "O": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
     case "R": copy(); break
