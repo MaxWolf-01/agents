@@ -734,3 +734,76 @@ def test_the_page_carries_no_tool_call_and_its_log_beside_it_carries_each(worked
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+# ---- what waits on the user beside the questions: to-dos and artefacts to look at -------------
+# The oracle is agent/tickets/work-through-what-waits-one-item-at-a-time.md: its P1 (a to-do stays at
+# the top until a later record clears it), its decision that to-dos live in the turn record, and B's
+# floor (D3), a question's options as a table of what each gives and costs.
+
+TODO_TURNS = (
+    "---\ndate: 2026-10-29\n---\n\n# Unity's lint baseline cleared\n\n"
+    "## Questions\n\n- [Q1] **Force-push devops #4 and #5 now?** nobody has reviewed them\n"
+    "  - (a) Push now *my pick*\n    - Gives: #4 and #5 carry the rule today\n    - Costs: their old SHAs stop resolving\n"
+    "  - (b) Wait for the first review\n    - Gives: a reviewer sees one history\n\n"
+    "## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`\n- [A2] **Post the first #coding message** once\n  FeedbackFlow#62 is merged\n\n"
+    "## Links\n\n- [The six PR texts](agent/show/lint/texts.html): Q1 leans on them\n",
+    "---\ndate: 2026-10-29\nanswered:\n  A1: done\nsuperseded:\n  A2: A3\n---\n\n# devops #3 reviewed; the #coding message changed\n\n"
+    "## To do\n\n- [A3] **Post one #coding message** for both changes\n\n"
+    "## Links\n\n- [devops#2](https://github.com/HELFERLINE/devops/issues/2): the collection issue\n",
+)
+
+
+def todo_session(root: Path, transcript_turns: bool) -> tuple[Path, Path]:
+    """A session of TODO_TURNS' two records; with `transcript_turns`, a transcript with a prompt
+    before each, else one where the user said nothing."""
+    directory, transcript = write_session(root / SESSIONS / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}] * 2)
+    for n, text in enumerate(TODO_TURNS, start=1):
+        (directory / "turns" / f"{n:02d}.md").write_text(text)
+    if not transcript_turns:
+        transcript.write_text("")
+    return directory, transcript
+
+
+def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path) -> None:
+    """P1: A1, answered done, and A2, superseded by A3, leave the top; A3 waits there, with the
+    question beside it, and the turn that listed the two shows how each left."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    v = view_of(directory, transcript)
+    assert [d.handle for _, d in v.todos] == ["A3"] and waiting(v) == ["Q1"]
+    page = render_session(directory, transcript, now=NOW)
+    top = text_of(elements(page, QUESTIONS)[QUESTIONS])
+    assert "1 to decide · 1 to do" in top and "Post one #coding message" in top
+    assert "Review devops #3" not in top and "Post the first #coding message" not in top
+    listed = text_of(sections_of(page)["01"])
+    assert "Review devops #3 to do · done · cleared in turn 02" in listed and "replaced by A3 in turn 02" in listed
+
+
+def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
+    """D3, B's floor: each option a row, its gives and costs in columns of their own, the pick
+    marked; an option that names no cost leaves its cell empty."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    card = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
+    rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
+    assert rows == [["", "option", "gives", "costs"],
+                    ["a", "Push now my pick", "#4 and #5 carry the rule today", "their old SHAs stop resolving"],
+                    ["b", "Wait for the first review", "a reviewer sees one history", ""]]
+
+
+def test_the_artefacts_to_look_at_are_the_ones_linked_since_the_user_last_spoke(tmp_path: Path) -> None:
+    """With a message of the user's before each turn, only the newest turn's artefact waits; where
+    the user said nothing, every turn's does, oldest first."""
+    directory, transcript = todo_session(tmp_path / "spoke", transcript_turns=True)
+    assert [s.link.text for _, s in view_of(directory, transcript).looks] == ["devops#2"]
+    directory, transcript = todo_session(tmp_path / "silent", transcript_turns=False)
+    assert [s.link.text for _, s in view_of(directory, transcript).looks] == ["The six PR texts", "devops#2"]
+
+
+def test_each_card_names_its_item_by_the_handle_the_batch_sends(tmp_path: Path) -> None:
+    """P3's message names each item as RULES.md tells the agent to read it: a question by its tag, a
+    to-do by its tag, an artefact by the path its record wrote."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=False)
+    page = render_session(directory, transcript, now=NOW)
+    cards = re.findall(r'<article class="card [^"]*" id="([^"]+)" data-handle="([^"]+)" data-kind="(\w+)"', page)
+    assert cards == [("q1", "Q1", "decide"), ("a3", "A3", "do"), ("look-01-1", "agent/show/lint/texts.html", "look"),
+                     ("look-02-2", "https://github.com/HELFERLINE/devops/issues/2", "look")]
