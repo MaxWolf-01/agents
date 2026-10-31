@@ -170,8 +170,10 @@ Good code requires good abstractions requires deep understanding.
 | ORM | Declarative data manipulation |
 | Conditionals | Rules |
 | Inconsistency | Consistency |
+| Polling | Events |
 
 - Before writing code, climb this ladder and stop at the first rung that holds: does it need to exist at all (YAGNI) → does this codebase already have it → stdlib → native platform feature / already-installed dependency → can it be one line → only then, the minimum code that works. The ladder runs *after* you understand the problem, never instead of it.
+- A process with nothing to do costs nothing: code waits on the event (a file notice, a process exit, a pipe or socket turning readable, a stream, a queue), in tests as in the code they test. A clock is for what nothing can tell: a deadline on a wait whose event may never come (`job wait --deadline`, for a run that stalls or a match that never hits), a backstop against a missed notice, a remote host with no push; it says which where it sits. The minimum code is the least the system does at runtime, never the fewest places an edit touches.
 - **Assess constructs by the artifacts they produce**, not the experience of authoring them.
 - Strictly separate what from how.
 - Represent data as data.
