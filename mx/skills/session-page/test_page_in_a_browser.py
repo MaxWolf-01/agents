@@ -409,6 +409,87 @@ with sync_playwright() as pw:
                 out["after"] = inner.evaluate(SHOWN)
         finally:
             server.shutdown()
+    elif scenario == "tables":
+        # where turn 05's tables sit against its text, its edge and the pane, and which cells wrap
+        context, page = open_page(args["width"], 800)
+        out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right} }
+          const turn = document.getElementById("t05"), prose = turn.querySelector(".turn-body .prose")
+          const wraps = (cell) => { const s = getComputedStyle(cell)
+            return cell.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) > 1.5 * parseFloat(s.lineHeight) }
+          return {turn: box(turn), text: box(prose.querySelector("p")), pane: box(document.getElementById("turns-pane")),
+                  tables: [...prose.querySelectorAll(":scope > table")].map((t) => ({...box(t), wraps: [...t.querySelectorAll("th, td")].some(wraps)}))} })()'''))
+    elif scenario == "log":
+        # the drawer as the reader sees it: open or not, the turn it names, each step's line
+        context, page = open_page(1280, 800)
+        SHOWN = '''(() => { const log = document.getElementById("log")
+          return {open: !!log && log.checkVisibility(), which: log?.querySelector(".which")?.textContent ?? null,
+                  steps: [...(log?.querySelectorAll(".step") ?? [])].map((s) => s.classList.contains("thinking")
+                    ? ["thinking", s.querySelector(".subject").textContent] : [s.querySelector(".verb").textContent, s.querySelector(".subject").textContent])} })()'''
+        LOADED = "'toolCalls' in window"
+        STEP = '''(verb) => [...document.querySelectorAll("#log .step")].find((s) => s.querySelector(".verb")?.textContent === verb)'''
+        out["closed"] = page.evaluate(SHOWN) | {"loaded": page.evaluate(LOADED)}
+        page.keyboard.press("l")
+        page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
+        out["newest"] = page.evaluate(SHOWN) | {"loaded": page.evaluate(LOADED)}
+        page.keyboard.press("j")
+        page.keyboard.press("j")
+        out["after_jj"] = page.evaluate(SHOWN)
+        page.keyboard.press("k")
+
+        def opened(verb):
+            page.evaluate(f"(verb) => ({STEP})(verb).querySelector('button').click()", verb)
+            return page.evaluate(f'''(verb) => [...({STEP})(verb).querySelectorAll(".detail pre")].map((p) => ({{lang: p.dataset.lang,
+                cls: p.className, text: p.textContent, lit: !!p.querySelector("[class^=hljs-]"), more: !!p.nextElementSibling?.matches(".more")}}))''', verb)
+        out["bash"], out["edit"], out["read"] = opened("ran"), opened("edited"), opened("read")
+        out["read_whole"] = page.evaluate(f'''(() => {{ const s = ({STEP})("read"); s.querySelector(".more").click()
+            return s.querySelector(".detail pre").textContent.length }})()''')
+        page.keyboard.press("Escape")
+        out["escaped"] = page.evaluate(SHOWN)["open"]
+        page.click("#log-toggle")
+        out["clicked"] = page.evaluate(SHOWN)["open"]
+        page.keyboard.press("l")
+        out["closed_again"] = page.evaluate(SHOWN)["open"]
+    elif scenario == "log_keys":
+        # Tab hands the keys to the open log and back: the step they are on, which steps are open, the turn shown
+        context, page = open_page(1280, 800)
+        SHOWN = '''(() => { const log = document.getElementById("log"), steps = [...log.querySelectorAll(".step")]
+          return {which: log.querySelector(".which").textContent.split(" · ")[0], keyed: log.classList.contains("keyed"),
+                  cur: steps.findIndex((s) => s.classList.contains("cur")), open: steps.flatMap((s, n) => s.classList.contains("open") ? [n] : []),
+                  all: log.querySelector("[data-all]")?.textContent ?? null} })()'''
+        page.keyboard.press("l")
+        page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
+        out["opened"] = page.evaluate(SHOWN)
+        for name, keys in (("tab", "Tab"), ("jj", "j j"), ("o", "o"), ("k", "k"), ("O", "O"), ("OO", "O"), ("G", "G"), ("gg", "g g"),
+                           ("back", "Tab"), ("j_turns", "j j")):
+            for key in keys.split():
+                page.keyboard.press(key)
+            out[name] = page.evaluate(SHOWN)
+        page.click("#log .step:nth-child(2) > button")
+        out["clicked"] = page.evaluate(SHOWN)
+        page.click("#log [data-all]")
+        out["all_clicked"] = page.evaluate(SHOWN)
+    elif scenario == "live":
+        # the turn under way: shown with no turn picked, a call added while open, left for a turn and come back to
+        context, page = open_page(1280, 800)
+        live = Path(args["live"])
+        SHOWN = '''(() => { const log = document.getElementById("log")
+          return {which: log.querySelector(".which").textContent, jump: !!log.querySelector(".to-live"),
+                  steps: [...log.querySelectorAll(".step")].map((s) => [s.querySelector(".verb").textContent,
+                    s.querySelector(".subject").textContent, s.querySelector(".took").classList.contains("running")])} })()'''
+        live.write_text(args["first"])
+        page.keyboard.press("l")
+        page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
+        out["first"] = page.evaluate(SHOWN)
+        live.write_text(args["second"])
+        page.wait_for_function("document.querySelectorAll('#log .step').length === 2", timeout=10000)
+        out["second"] = page.evaluate(SHOWN)
+        page.keyboard.press("j")
+        out["turn"] = page.evaluate(SHOWN)
+        page.click("#log .to-live")
+        out["back"] = page.evaluate(SHOWN)
+        live.unlink()
+        page.wait_for_function("!document.querySelector('#log .which').textContent.startsWith('under way')", timeout=10000)
+        out["ended"] = page.evaluate(SHOWN)
     browser.close()
 print(json.dumps(out))
 """
