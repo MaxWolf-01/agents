@@ -16,7 +16,8 @@ not on the fix.
   with the session's directory: a session running since records went there may still name it.
 - A turn record whose prose points at another part of the page in words ("under Details") rather
   than linking it is sent back the same way, every time, and so is the turn's own record where it
-  puts to the user a ticket's question its ticket does not hold open.
+  puts to the user a ticket's question its ticket does not hold open, or lists under its Links a
+  file that does not exist.
 - The first write after which the records parse, in a turn that has written its record, gets
   the turn's prose review (`turn_review`), and its findings are sent back. The review runs once
   per turn: an edit after the findings, or a record written later in the turn, is parsed and not
@@ -61,7 +62,7 @@ MOVED = ("{written} is in the agent repo, where session records went before mx k
 def decide(hook: dict, directory: Path | None) -> Decision:
     """What to tell the agent after the write the hook JSON describes, over the session directory."""
     import turn_review
-    from session_page import SESSIONS, RecordError, agent_repo_of, check_references, check_ticket_questions, left_alone, read_session, written_this_turn
+    from session_page import SESSIONS, RecordError, agent_repo_of, check_links, check_references, check_ticket_questions, left_alone, read_session, written_this_turn
     from stop_hook import RECAP
 
     if unread := left_alone():
@@ -90,8 +91,10 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if turn.path.resolve() == written:
         try:
             check_ticket_questions(session.root, turn)
+            check_links(session.root, session.directory, turn)
         except RecordError as e:
-            return Decision("send back", "ticket question not open", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
+            return Decision("send back", "ticket question not open or link to nothing",
+                            f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
     if turn_review.reviewed_since(session.id, session.began):
         return Decision("allow", "record reviewed this turn")
     if said := turn_review.feedback_on(session, turn):
