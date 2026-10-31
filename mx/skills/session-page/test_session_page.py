@@ -36,7 +36,7 @@ from session_checks import (
 )
 from session_page import (
     ACCOUNT_VARIABLE, AGENT_REPO, ARTEFACT, COLUMN, LOG, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path,
-    chat_record, inline, note_account, pages_directory, read_session, render_session, write_page,
+    RecordError, chat_record, inline, note_account, pages_directory, read_session, render_session, write_page,
 )
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -730,6 +730,86 @@ def test_the_page_carries_no_tool_call_and_its_log_beside_it_carries_each(worked
     bash = [s for s in log["t04"] if s["tool"] == "Bash"]
     assert [(s["subject"], s["input"]["command"], s["output"]) for s in bash] == [("Read the distinct doc", "cat docs/very-distinct-name.md", output)]
     assert set(log) == {"t01", "t02", "t03", "t04"}
+
+
+# ---- what waits on the user beside the questions: to-dos and artefacts to look at -------------
+# The oracle is agent/tickets/work-through-what-waits-one-item-at-a-time.md: its P1 (a to-do stays at
+# the top until a later record clears it), its decision that to-dos live in the turn record, and the
+# floor its D3 sets, among it a question's options as a table of what each gives and costs.
+
+TODO_TURNS = (
+    "---\ndate: 2026-10-29\n---\n\n# Unity's lint baseline cleared\n\n"
+    "## Questions\n\n- [Q1] **Force-push devops #4 and #5 now?** nobody has reviewed them\n"
+    "  - (a) Push now *my pick*\n    - Gives: #4 and #5 carry the rule today\n    - Costs: their old SHAs stop resolving\n"
+    "  - (b) Wait for the first review\n    - Gives: a reviewer sees one history\n\n"
+    "## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`\n- [A2] **Post the first #coding message** once\n  FeedbackFlow#62 is merged\n\n"
+    "## Links\n\n- [The six PR texts](agent/show/lint/texts.html): Q1 leans on them\n",
+    "---\ndate: 2026-10-29\nanswered:\n  A1: done\nsuperseded:\n  A2: A3\n---\n\n# devops #3 reviewed; the #coding message changed\n\n"
+    "## To do\n\n- [A3] **Post one #coding message** for both changes\n\n"
+    "## Links\n\n- [devops#2](https://github.com/HELFERLINE/devops/issues/2): the collection issue\n"
+    "- [The six PR texts, reworded](agent/show/lint/texts.html): linked again\n",
+)
+
+
+def todo_session(root: Path, transcript_turns: bool) -> tuple[Path, Path]:
+    """A session of TODO_TURNS' two records; with `transcript_turns`, a transcript with a prompt
+    before each, else one where the user said nothing."""
+    directory, transcript = write_session(root / SESSIONS / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}] * 2)
+    for n, text in enumerate(TODO_TURNS, start=1):
+        (directory / "turns" / f"{n:02d}.md").write_text(text)
+    if not transcript_turns:
+        transcript.write_text("")
+    return directory, transcript
+
+
+def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path) -> None:
+    """P1: A1, answered done, and A2, superseded by A3, leave the top; A3 waits there, with the
+    question beside it, and the turn that listed the two shows how each left."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    v = view_of(directory, transcript)
+    assert [d.handle for _, d in v.todos] == ["A3"] and waiting(v) == ["Q1"]
+    page = render_session(directory, transcript, now=NOW)
+    top = text_of(elements(page, QUESTIONS)[QUESTIONS])
+    assert "1 to decide · 1 to do" in top and "Post one #coding message" in top
+    assert "Review devops #3" not in top and "Post the first #coding message" not in top
+    listed = text_of(sections_of(page)["01"])
+    assert "Review devops #3 to do · done · cleared in turn 02" in listed and "replaced by A3 in turn 02" in listed
+
+
+def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
+    """The floor D3 sets: each option a row, its gives and costs in columns of their own, the pick
+    marked; an option that names no cost leaves its cell empty."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    card = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
+    rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
+    assert rows == [["", "option", "gives", "costs"],
+                    ["a", "Push now my pick", "#4 and #5 carry the rule today", "their old SHAs stop resolving"],
+                    ["b", "Wait for the first review", "a reviewer sees one history", ""]]
+
+
+def test_the_artefacts_to_look_at_are_the_ones_linked_since_the_user_last_spoke(tmp_path: Path) -> None:
+    """With a message of the user's before each turn, only the newest turn's artefacts wait; where
+    the user said nothing, every turn's do, oldest first, and one two turns linked waits once,
+    under the later."""
+    directory, transcript = todo_session(tmp_path / "spoke", transcript_turns=True)
+    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "devops#2"), (2, "The six PR texts, reworded")]
+    directory, transcript = todo_session(tmp_path / "silent", transcript_turns=False)
+    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "The six PR texts, reworded"), (2, "devops#2")]
+
+
+def test_a_to_do_superseded_by_a_question_is_refused_as_a_to_do_supersedes_only_a_to_do(tmp_path: Path) -> None:
+    """A1 is listed in turn 01 and Q1 asked there, so only the rule that a to-do's replacement is a to-do
+    refuses turn 02's `A1: Q1`."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=False)
+    (directory / "turns" / "02.md").write_text("---\ndate: 2026-10-29\nsuperseded:\n  A1: Q1\n---\n\n# Round 2\n")
+    with pytest.raises(RecordError, match="superseded: A1 names 'Q1', not a to-do's tag like A2"):
+        view_of(directory, transcript)
+
+
+def test_a_relative_link_read_outside_a_render_stays_as_written() -> None:
+    """The hub reads a chat turn's first line as its status line through `inline`, with no page being
+    rendered and so no repo root: a relative link there once raised, and the hub's read with it."""
+    assert 'href="agent/show/x/report.md"' in inline("Waiting on [the worker](agent/show/x/report.md)", paths=False)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,8 @@ import turn_review  # noqa: E402
 from live_hook import LIVE  # noqa: E402
 from session_page import (  # noqa: E402
     PAGE, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
-    read_session, write_page, make_session_directory, note_account, resolved, session_directory, strip_tags, written_this_turn,
+    open_todos, read_session, write_page, make_session_directory, note_account, resolved, session_directory, strip_tags,
+    written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -63,7 +64,7 @@ class Decision:
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     chat: tuple[Path, str] | None = None  # the chat turn's record a render writes first, as its path and text
     shown: str = ""  # the line under a render's turn that wrote a record, up to the link `main` adds
-    waiting: tuple[str, ...] = ()  # the lines under it, one per open question
+    waiting: tuple[str, ...] = ()  # the lines under it, one per open question or to-do
     artefacts: tuple[str, ...] = ()  # the file or URL of each artefact the record this turn wrote links
 
 
@@ -76,10 +77,10 @@ HUB_HEALTH = "/.health"
 HUB_UNIT = "/u/{session}"
 
 # How every send-back, the write hook's too, asks the turn to end: RULES.md's chat recap. The
-# hook shows the open questions and the link to the page under it.
+# hook shows the open questions and to-dos and the link to the page under it.
 RECAP = (
-    "end the turn on its chat recap: what waits on the user outside the page's questions, as action items, "
-    "one plain line each that reads on its own, or one line saying nothing else does; no line points at the page"
+    "end the turn on its chat recap: a line or two on what the turn did that reads on its own; what waits on the "
+    "user goes in the record's Questions, To do and Links, not the recap; no line points at the page"
 )
 UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
 OUTSIDE_WRITE = (
@@ -144,12 +145,12 @@ def shown(asked: tuple[str, ...]) -> str:
 
 
 def waiting(session: Session) -> tuple[str, ...]:
-    """A line for each open question, oldest first: its tag, a ticket's question qualified by its
-    ticket, `new` where a turn since the user's last message asked it, and its headline as the
-    page's reader reads it, since the terminal renders no markdown: a link as its text, emphasis
-    and code without their marks."""
+    """A line for each open question, oldest first, then each open to-do: its tag, a ticket's
+    question qualified by its ticket, `new` where a turn since the user's last message asked it, and
+    its headline as the page's reader reads it, since the terminal renders no markdown: a link as
+    its text, emphasis and code without their marks."""
     return tuple(f"{q.handle}{' new' if asked_since_spoke(session, t) else ''} · {strip_tags(inline(q.headline, paths=False))}"
-                 for t, q in open_questions(session))
+                 for t, q in [*open_questions(session), *open_todos(session)])
 
 
 def asked_since_spoke(session: Session, turn: Turn) -> bool:

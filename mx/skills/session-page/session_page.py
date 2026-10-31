@@ -437,6 +437,8 @@ class Option:
     letter: str
     text: str
     picked: bool  # the agent's own pick, which the record marks
+    gives: str = ""  # what taking it gives, from its `- Gives:` sub-item, where it has one
+    costs: str = ""  # what taking it costs, from its `- Costs:` sub-item
 
 
 @dataclass(frozen=True)
@@ -484,6 +486,22 @@ class TicketQuestion:
 
 
 @dataclass(frozen=True)
+class ToDo:
+    """One `- [An] **headline** detail` item under a turn's `## To do`: something the user has to do
+    outside the session. Like a question, it waits at the top until a later turn's frontmatter
+    clears it: `answered` once the user says how it went, `superseded` where a changed to-do
+    replaces it."""
+
+    tag: str  # A1, A2, ... the session's running sequence, beside the questions'
+    headline: str
+    detail: str = ""
+
+    @property
+    def handle(self) -> str:
+        return self.tag
+
+
+@dataclass(frozen=True)
 class Link:
     """One item under a turn's `## Links`: an artefact the turn produced, or a ticket file, which
     the artefact column leaves out. Either opens from the page in a tab of its own; the Stop hook
@@ -521,10 +539,11 @@ class Turn:
     messages: tuple[str, ...] = ()  # what the user said that this turn answered, whole, oldest first
     sent: tuple[Sent, ...] = ()  # what other sessions sent in the same stretch, oldest first
     questions: tuple[Question | TicketQuestion, ...] = ()  # in the order the record asks them
+    todos: tuple[ToDo, ...] = ()  # in the order the record lists them
     links: tuple[Link, ...] = ()
     details: str = ""  # the `## Details` section, as markdown
-    # the record's frontmatter: the tag of a question this turn cleared, to the option's letter or
-    # the user's own words, and to the tag of the question that replaced it
+    # the record's frontmatter: the tag of a question or to-do this turn cleared, to the option's
+    # letter or the user's own words, and to the tag of the one that replaced it
     answered: dict[str, str] = field(default_factory=dict)
     superseded: dict[str, str] = field(default_factory=dict)
 
@@ -577,7 +596,7 @@ class Session:
     name: str = ""  # its short name in Claude Code's session registry; empty where it has no entry
     turns: tuple[Turn, ...] = ()
     chats: tuple[Chat, ...] = ()  # oldest first
-    settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
+    settled: dict[str, Settled] = field(default_factory=dict)  # by question or to-do tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
     spoke: datetime | None = None  # when the turn holding the user's last message began (spoke_in)
     described: datetime | None = None  # when the transcript last shows session.md written
@@ -590,7 +609,14 @@ class Session:
 
 # ---- reading the records ----------------------------------------------------
 
-TAG = re.compile(r"Q\d+")
+# What a later turn's frontmatter clears, by the letter its tag opens with: the kind's name and an example tag.
+TAG_KINDS = {"Q": ("question", "Q7"), "A": ("to-do", "A2")}
+TAG = re.compile(f"[{''.join(TAG_KINDS)}]\\d+")
+
+
+def tag_example(letter: str) -> str:
+    kind, example = TAG_KINDS[letter]
+    return f"a {kind}'s tag like {example}"
 
 
 def read_turns(turns: Path) -> list[Turn]:
@@ -603,7 +629,7 @@ def numbered(turns: Path) -> list[Path]:
 
 def read_turn(path: Path) -> Turn:
     front, body, offset = read_frontmatter(path, required={"date"}, allowed={"date", "answered", "superseded"})
-    headline, sections = split_sections(path, body, offset, {"Questions", "Links", "Details"})
+    headline, sections = split_sections(path, body, offset, {"Questions", "To do", "Links", "Details"})
     tables = {}
     for name in ("answered", "superseded"):
         table = front.get(name) or {}
@@ -615,16 +641,17 @@ def read_turn(path: Path) -> Turn:
                 raise RecordError(path, line_of(path, tag), f"{name}: {tag} is a ticket's question, which clears once its ticket "
                                                             "records the ruling (`tracker rule`), never here")
             if not TAG.fullmatch(tag):
-                raise RecordError(path, line_of(path, tag), f"{name}: {tag!r} is not a question tag like Q7")
+                raise RecordError(path, line_of(path, tag), f"{name}: {tag!r} is not {' nor '.join(map(tag_example, TAG_KINDS))}")
     for old, new in tables["superseded"].items():
-        if not TAG.fullmatch(new):
-            raise RecordError(path, line_of(path, old), f"superseded: {old} names {new!r}, not a question tag like Q7")
+        if not TAG.fullmatch(new) or new[0] != old[0]:
+            raise RecordError(path, line_of(path, old), f"superseded: {old} names {new!r}, not {tag_example(old[0])}")
     return Turn(
         number=int(path.stem),
         path=path,
         date=str(front["date"]),
         headline=headline,
         questions=read_questions(path, *sections["Questions"]) if "Questions" in sections else (),
+        todos=read_todos(path, *sections["To do"]) if "To do" in sections else (),
         links=read_links(path, *sections["Links"]) if "Links" in sections else (),
         details=sections.get("Details", (0, ""))[1],
         **tables,
@@ -816,11 +843,14 @@ OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
 PICK = re.compile(r"\s*\*my pick\*\s*")
 WHY = re.compile(r"Why:\s*(.*)")
 BLIND = re.compile(r"Blind:\s*(\S+)")
+GIVES_COSTS = re.compile(r"(Gives|Costs):\s*(.*)")
 
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question | TicketQuestion, ...]:
     """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
     and at most one `Why: text`, as sub-items; a line indented deeper than an item's `-` continues it.
+    An option may carry a `Gives: text` and a `Costs: text` sub-item of its own, which the page lays
+    out as the columns of the question's table of options.
     A blind question carries one `Blind: path` sub-item, its test page, and nothing else. A line back
     at the question's indent once its sub-items began is refused: markdown would show it under the
     question, but continuing the last sub-item would put it inside that option. A ticket's
@@ -850,10 +880,18 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
             raise RecordError(path, n, "a question is `- [Q7] **headline** detail`, or `- [<ticket> D3]` for a ticket's question")
         elif not items:
             raise RecordError(path, n, "text before the first question")
+        elif (m := SUB_ITEM.fullmatch(line)) and (gc := GIVES_COSTS.fullmatch(m.group(1))):
+            options, key = items[-1]["options"], gc.group(1).lower()
+            if not options or indent <= options[-1]["dash"]:
+                raise RecordError(path, n, f"{gc.group(1)}: goes under an option, indented deeper than its `- (a)`")
+            if key in options[-1]:
+                raise RecordError(path, n, f"a second {gc.group(1)}: under option ({options[-1]['letter']}) of {items[-1]['tag']}")
+            part = options[-1][key] = {"text": gc.group(2)}
+            dash = indent
         elif m := SUB_ITEM.fullmatch(line):
             item, dash = items[-1], indent
             if o := OPTION.fullmatch(m.group(1)):
-                part = {"letter": o.group(1), "text": o.group(2)}
+                part = {"letter": o.group(1), "text": o.group(2), "dash": indent}
                 item["options"].append(part)
             elif w := WHY.fullmatch(m.group(1)):
                 if item["why"] is not None:
@@ -887,7 +925,8 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
         letters = [o["letter"] for o in item["options"]]
         if len(set(letters)) != len(letters):
             raise RecordError(path, item["line"], f"{item['tag']} repeats an option letter")
-        options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(), bool(PICK.search(o["text"]))) for o in item["options"])
+        options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(), bool(PICK.search(o["text"])),
+                               o.get("gives", {}).get("text", ""), o.get("costs", {}).get("text", "")) for o in item["options"])
         if len(options) < 2:
             raise RecordError(path, item["line"], f"{item['tag']} offers {len(options)} option{'s' * (len(options) != 1)}; a question offers at least two, `(a) text` sub-items")
         if sum(o.picked for o in options) != 1:
@@ -895,6 +934,28 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
         why = item["why"]["text"] if item["why"] else ""
         questions.append(Question(item["tag"], item["headline"], item["text"], options, why))
     return tuple(questions)
+
+
+TODO_ITEM = re.compile(r"- \[(A\d+)\] \*\*(.+?)\*\*(?:\s+(.*))?")
+
+
+def read_todos(path: Path, start: int, text: str) -> tuple[ToDo, ...]:
+    """`- [A2] **headline** detail` items; an indented line continues the detail. A to-do carries no
+    sub-items: what it leans on goes in ## Details, which it links."""
+    todos: list[list[str]] = []
+    for n, line in enumerate(text.split("\n"), start=start):
+        if not line.strip():
+            continue
+        if m := TODO_ITEM.fullmatch(line):
+            todos.append([m.group(1), m.group(2), m.group(3) or ""])
+        elif SUB_ITEM.fullmatch(line) and todos:
+            raise RecordError(path, n, f"{todos[-1][0]} is a to-do, which takes no sub-items; what it leans on goes in ## Details, "
+                                       f"which it links as [text](#t{int(path.stem):02d})")
+        elif line.startswith(" ") and todos:
+            todos[-1][2] = f"{todos[-1][2]} {line.strip()}".strip()
+        else:
+            raise RecordError(path, n, "a to-do is `- [A2] **what the user does** detail`")
+    return tuple(ToDo(*todo) for todo in todos)
 
 
 LINK_ITEM = re.compile(r"- \[(.+?)\]\(([^()\s]+)\)(?::\s*(.*))?\s*")
@@ -920,15 +981,15 @@ def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
 
 
 def settle(turns: list[Turn]) -> dict[str, Settled]:
-    """How each question that left the top left it, from later turns' frontmatter. A tag no
-    earlier turn asked, or one already settled, does not parse."""
+    """How each question and to-do that left the top left it, from later turns' frontmatter. A tag
+    no earlier turn asked, or one already settled, does not parse."""
     asked: dict[str, int] = {}
     settled: dict[str, Settled] = {}
     for turn in turns:
         for how, table in (("answered", turn.answered), ("superseded", turn.superseded)):
             for tag, value in table.items():
                 if tag not in asked:
-                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a question of an earlier turn")
+                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a {TAG_KINDS[tag[0]][0]} of an earlier turn")
                 if tag in settled:
                     raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
                 settled[tag] = Settled(how, value, turn.number)
@@ -938,6 +999,10 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
             if question.tag in asked:
                 raise RecordError(turn.path, None, f"{question.tag} was already asked in turn {asked[question.tag]:02d}")
             asked[question.tag] = turn.number
+        for todo in turn.todos:
+            if todo.tag in asked:
+                raise RecordError(turn.path, None, f"{todo.tag} was already listed in turn {asked[todo.tag]:02d}")
+            asked[todo.tag] = turn.number
     for turn in turns:
         for old, new in turn.superseded.items():
             if new not in asked:
@@ -1197,8 +1262,15 @@ KEYS = [
     ("G", "last turn"),
     ("n", "the newest turn"),
     ("t 0 7", "turn 07, by the number it shows"),
-    ("[ ]", "previous, next question"),
-    ("q", "show or fold the questions"),
+    ("[ ]", "what waits on you: the keys go to its card, where [ ] move between the items"),
+    ("q", "show or fold what waits on you"),
+    ("a b c", "on a question's card: pick that option"),
+    ("Enter p", "on a question's card: take the agent's pick"),
+    ("d x", "on a to-do's card: done, dismissed"),
+    ("o s", "on an artefact's card: open it, mark it seen; seen stays on the page"),
+    ("n", "on a card: a note, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
+    ("u", "on a card: clear what is staged"),
+    ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back to the cards"),
     ("1 to 9", "open the turn's nth artefact"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's"),
     ("Tab", "hand the keys to the open tool calls and back; there j k walk them, o Enter open one, O open or close all, g g G first, last"),
@@ -1214,6 +1286,22 @@ def open_questions(session: Session) -> list[tuple[Turn, Question | TicketQuesti
     """The questions waiting on the user, with the turn that asked each, oldest first: the session's
     own that no later turn answered or superseded, and each ticket's question its ticket holds open."""
     return [(t, q) for t in session.turns for q in t.questions if waits(q, session.settled)]
+
+
+def open_todos(session: Session) -> list[tuple[Turn, ToDo]]:
+    """The to-dos waiting on the user, with the turn that listed each, oldest first: those no later
+    turn answered or superseded."""
+    return [(t, d) for t in session.turns for d in t.todos if d.tag not in session.settled]
+
+
+def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
+    """The artefacts waiting for the user to look at, oldest first: those the turns written since the
+    user last spoke linked, the turn holding their last message included (a chat turn may hold it),
+    every turn's where the transcript holds no message of theirs. An artefact two of those turns
+    linked waits once, under the later."""
+    since = [t for t in session.turns if session.spoke is None or (t.written is not None and t.written > session.spoke)]
+    found = {s.artefact: (t, s) for t in since for s in shown_links(t, session.root, session.directory) if s.artefact}
+    return list(found.values())
 
 
 def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
@@ -1275,6 +1363,8 @@ class View:
     session: Session
     rows: tuple[Row, ...]  # newest first, each chat turn among the numbered ones by its time
     waiting: tuple[tuple[Turn, Question | TicketQuestion], ...]  # open_questions
+    todos: tuple[tuple[Turn, ToDo], ...]  # open_todos
+    looks: tuple[tuple[Turn, Shown], ...]  # to_look_at
     span: str  # the dates the turns fall on: one, or the first and the last; empty with no turn
     resume: str  # the command that resumes the session
 
@@ -1298,6 +1388,8 @@ def view(session: Session) -> View:
         session=session,
         rows=rows,
         waiting=tuple(open_questions(session)),
+        todos=tuple(open_todos(session)),
+        looks=tuple(to_look_at(session)),
         span="" if not dates else dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}",
         resume=f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}",
     )
@@ -1330,11 +1422,7 @@ def when(t: Turn | Chat) -> str:
 
 def assemble(v: View, now: datetime) -> str:
     session = v.session
-    top = f"""
-    <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
-      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(v.waiting)} question{'s' * (len(v.waiting) != 1)}</h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
-      {''.join((open_ticket_question if isinstance(q, TicketQuestion) else open_question)(t, q, folded=i > 0) for i, (t, q) in enumerate(v.waiting))}
-    </section>""" if v.waiting else ""
+    top = band(v)
     body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
     name = (f'<span class="sep">|</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
@@ -1484,57 +1572,120 @@ def artefact(s: Shown, cls: str) -> str:
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
-def open_question(turn: Turn, q: Question, folded: bool) -> str:
-    """A question waiting on the user, as a row of the accordion: folded to its headline and the
-    words of the option recommended, or open in full, its body scrolling on its own."""
+KINDS = {"decide": "to decide", "do": "to do", "look": "to look at"}
+
+
+def band(v: View) -> str:
+    """What waits on the user, at the top: one card per item, one shown at a time (page.js), the
+    questions first, then the to-dos, then the artefacts to look at; above the cards a tick per
+    item, and the review of the batch, which page.js fills, after them. Nothing where nothing waits."""
+    cards = ([decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
+             + [look_card(t, s, n) for n, (t, s) in enumerate(v.looks, start=1)])
+    if not cards:
+        return ""
+    counts = {"decide": len(v.waiting), "do": len(v.todos), "look": len(v.looks)}
+    heading = " · ".join(f"{n} {KINDS[kind]}" for kind, n in counts.items() if n)
+    return f"""
+    <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
+      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {heading}<span class="tally" id="tally"></span></h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
+      <div class="ticks" id="ticks" aria-label="every item, the ones staged filled"></div>
+      <div class="cards">{"".join(cards)}
+      </div>
+      <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
+    </section>"""
+
+
+def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: str, meta: str, body: str, keys: str,
+         data: dict[str, str] | None = None, noted: str = "note") -> str:
+    """One item as its card: its tag in the rail, its headline, its kind and where it came from, all
+    of its context, and the keys that act on it. `handle` is what the batch names it by; `noted` is
+    what n gives it, a note, or the answer itself where it offers no option to pick; `data`, the
+    card's further `data-` attributes, which page.js reads."""
+    word = KINDS[kind].removeprefix("to ")
+    attributes = "".join(f' data-{name}="{esc(value)}"' for name, value in {"handle": handle, "kind": kind, "kind-word": word, **(data or {})}.items())
+    return f"""
+<article class="card {cls}" id="{anchor}"{attributes} tabindex="-1">
+  <span class="rail v-num">{rail}</span>
+  <div class="card-main">
+    <h3 class="v-h2">{headline}</h3>
+    <p class="v-meta from">{word} · {meta}</p>
+    <div class="card-body">{body}</div>
+    <p class="keys-row v-meta">{keys}<span><kbd>n</kbd> {noted}</span><span><kbd>u</kbd> clear</span><span><kbd>[</kbd> <kbd>]</kbd> items</span><span><kbd>r</kbd> review</span></p>
+    <p class="staged v-small" hidden></p>
+  </div>
+</article>"""
+
+
+def asked_in(turn: Turn, verb: str = "asked") -> str:
+    return f'{verb} in <a href="#t{turn.key}">turn {turn.key}</a>'
+
+
+def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
+    """A question waiting on the user: its options as a table of what each gives and costs, the
+    agent's pick marked. A ticket's question has its words from its ticket and is answered in words;
+    a blind one opens its test page, which holds its options."""
+    if isinstance(q, TicketQuestion):
+        detail = f'<p class="q-detail">{inline(q.named.detail)}</p>' if q.named and q.named.detail else ""
+        return card(cls="ticket", anchor=ticket_question_anchor(q), handle=q.handle, kind="decide", rail=q.tag,
+                    headline=inline(q.headline), body=detail, noted="answer in words",
+                    meta=f"{ticket_link(q, opens=True)} · {asked_in(turn, 'put to you')} · it clears once its ticket records the ruling",
+                    keys="<span><kbd>o</kbd> open the ticket</span>" if q.named else "")
     detail = f'<p class="q-detail">{inline(q.detail)}</p>' if q.detail else ""
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
-    pick = next((o for o in q.options if o.picked), None)
-    pickline = f'<p class="pickline"><span class="v-num">{pick.letter}</span> · {esc(strip_tags(inline(pick.text)))}</p>' if pick else ""
     if q.blind:
-        # The pick line's place on a folded question, so the test is one click from the band.
         test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get()), None)
-        pickline = f'<p class="pickline blind">blind · {artefact(test, "link")}</p>'
-    return f"""
-<article class="q{' folded' if folded else ''}" id="{q.tag.lower()}" tabindex="-1">
-  <span class="rail v-num">{q.tag}</span>
-  <div class="q-main">
-    <h3 class="v-h3">{inline(q.headline)}</h3>{pickline}
-    <div class="q-body">
-      {detail}{options(q)}{why}
-      <p class="v-meta asked-in">asked in <a href="#t{turn.key}">turn {turn.key}</a></p>
-    </div>
-  </div>
-</article>"""
+        return card(cls="blind", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
+                    meta=asked_in(turn), body=f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>',
+                    keys="<span><kbd>o</kbd> open the test</span>", noted="the answer the test gave you")
+    pick = next(o for o in q.options if o.picked)
+    letters = "".join(o.letter for o in q.options)
+    keys = (f'<span>{" ".join(f"<kbd>{o.letter}</kbd>" for o in q.options)} pick that option</span>'
+            f'<span><kbd>↵</kbd> <kbd>p</kbd> the pick, {pick.letter}</span>')
+    return card(cls="question", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
+                meta=asked_in(turn), body=detail + option_table(q) + why, keys=keys, data={"options": letters, "pick": pick.letter})
 
 
-def open_ticket_question(turn: Turn, c: TicketQuestion, folded: bool) -> str:
-    """A ticket's question waiting on the user, as a row of the same accordion: its headline and
-    detail as its ticket words them, and under the headline its handle, a link to the ticket."""
-    detail = f'<p class="q-detail">{inline(c.named.detail)}</p>' if c.named and c.named.detail else ""
-    return f"""
-<article class="q{' folded' if folded else ''}" id="{ticket_question_anchor(c)}" tabindex="-1">
-  <span class="rail v-num">{c.tag}</span>
-  <div class="q-main">
-    <h3 class="v-h3">{inline(c.headline)}</h3><p class="pickline ticket">{ticket_link(c)}</p>
-    <div class="q-body">
-      {detail}
-      <p class="v-meta asked-in">asked in <a href="#t{turn.key}">turn {turn.key}</a> · it clears once its ticket records the ruling</p>
-    </div>
-  </div>
-</article>"""
+def option_table(q: Question) -> str:
+    """The question's options, one row each, with the columns of what each gives and costs where any
+    option says."""
+    split = any(o.gives or o.costs for o in q.options)
+    head = "<th></th><th>option</th>" + ("<th>gives</th><th>costs</th>" if split else "")
+    picked = (' class="pick"', '<span class="tag">my pick</span>')
+    rows = "".join(
+        f'<tr data-option="{o.letter}"{picked[0] if o.picked else ""}><td class="k">{o.letter}</td>'
+        f'<td>{inline(o.text)}{picked[1] if o.picked else ""}</td>'
+        + (f'<td class="g">{inline(o.gives)}</td><td class="c">{inline(o.costs)}</td>' if split else "") + "</tr>"
+        for o in q.options)
+    return f'<table class="opttab"><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>'
+
+
+def todo_card(turn: Turn, d: ToDo) -> str:
+    detail = f'<p class="q-detail">{inline(d.detail)}</p>' if d.detail else ""
+    return card(cls="todo", anchor=d.tag.lower(), handle=d.handle, kind="do", rail=d.tag, headline=inline(d.headline),
+                meta=asked_in(turn, "listed"), body=detail, keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
+
+
+def look_card(turn: Turn, s: Shown, n: int) -> str:
+    """An artefact the turns since the user last spoke linked. Seen is the page's own mark, sent to
+    nobody; a note on it goes with the batch, under the path the record wrote."""
+    note = f'<p class="q-detail">{inline(s.link.note)}</p>' if s.link.note else ""
+    return card(cls="look", anchor=f"look-{turn.key}-{n}", handle=s.link.path, kind="look", rail=f"L{n}", headline=artefact(s, "link open"),
+                meta=asked_in(turn, "linked"), body=f'{note}<p class="v-meta path">{esc(s.link.path)}</p>',
+                keys="<span><kbd>o</kbd> open</span><span><kbd>s</kbd> seen</span>")
 
 
 def ticket_question_anchor(c: TicketQuestion) -> str:
     return f"{c.ticket}-{c.tag.lower()}"
 
 
-def ticket_link(c: TicketQuestion) -> str:
+def ticket_link(c: TicketQuestion, opens: bool = False) -> str:
     """The question's handle, a link to its ticket with the question as its hover preview; the
-    handle alone where the ticket holds the question no longer."""
+    handle alone where the ticket holds the question no longer. On a card, `opens` makes it the
+    link o opens."""
     if c.named is None:
         return esc(c.handle)
-    return qualified_link(esc(c.handle), ticket_path(c.ticket), c.named.preview)
+    link = qualified_link(esc(c.handle), ticket_path(c.ticket), c.named.preview)
+    return link.replace('class="', 'class="open ', 1) if opens else link
 
 
 def ticket_path(slug: str) -> str:
@@ -1565,6 +1716,7 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
     asked = "".join(asked_ticket_question(q) if isinstance(q, TicketQuestion) else asked_question(q, settled[q.tag])
                     for q in t.questions if not waits(q, settled))
+    asked += "".join(cleared_todo(d, settled[d.tag]) for d in t.todos if d.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
 <details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
@@ -1677,6 +1829,14 @@ def asked_question(q: Question, how: Settled) -> str:
     <p class="v-meta">answered in <a href="#t{how.turn:02d}">turn {how.turn:02d}</a></p>
   </div>
 </div>"""
+
+
+def cleared_todo(d: ToDo, how: Settled) -> str:
+    """A to-do this turn listed that waits no longer: how the user said it went, or the to-do that replaced it."""
+    said = (f'replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}' if how.how == "superseded"
+            else f'{esc(how.value)} · cleared in <a href="#t{how.turn:02d}">turn {how.turn:02d}</a>')
+    return (f'<div class="aq {how.how}" id="{d.tag.lower()}"><span class="k v-num">{d.tag}</span>'
+            f'<div><p class="aq-h">{inline(d.headline)}</p><p class="v-meta">to do · {said}</p></div></div>')
 
 
 def asked_ticket_question(c: TicketQuestion) -> str:
@@ -1906,8 +2066,10 @@ def href(path: str, root: Path | None = None, directory: Path | None = None) -> 
     URL stays as it is."""
     if URL.match(path):
         return path
-    file = file_part(path)
-    return Path(resolved(file, root or ROOT.get(), directory)).as_uri() + path[len(file):]
+    file, root = file_part(path), root or ROOT.get()
+    if root is None and not expanded(file).is_absolute():
+        return path  # read outside a page's render, as the hub reads a status line: no repo root to resolve it from
+    return Path(resolved(file, root, directory)).as_uri() + path[len(file):]
 
 
 def resolved(path: str, root: Path, directory: Path | None = None) -> str:
