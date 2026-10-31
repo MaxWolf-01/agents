@@ -36,7 +36,7 @@ from session_checks import (
 )
 from session_page import (
     ACCOUNT_VARIABLE, AGENT_REPO, ARTEFACT, COLUMN, LOG, PAGE, QUESTIONS, SESSIONS, Turn, View, account, account_name, block, chat_path,
-    chat_record, inline, note_account, pages_directory, read_session, render_session, write_page,
+    RecordError, chat_record, inline, note_account, pages_directory, read_session, render_session, write_page,
 )
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -732,14 +732,10 @@ def test_the_page_carries_no_tool_call_and_its_log_beside_it_carries_each(worked
     assert set(log) == {"t01", "t02", "t03", "t04"}
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
 # ---- what waits on the user beside the questions: to-dos and artefacts to look at -------------
 # The oracle is agent/tickets/work-through-what-waits-one-item-at-a-time.md: its P1 (a to-do stays at
-# the top until a later record clears it), its decision that to-dos live in the turn record, and B's
-# floor (D3), a question's options as a table of what each gives and costs.
+# the top until a later record clears it), its decision that to-dos live in the turn record, and the
+# floor its D3 sets, among it a question's options as a table of what each gives and costs.
 
 TODO_TURNS = (
     "---\ndate: 2026-10-29\n---\n\n# Unity's lint baseline cleared\n\n"
@@ -750,7 +746,8 @@ TODO_TURNS = (
     "## Links\n\n- [The six PR texts](agent/show/lint/texts.html): Q1 leans on them\n",
     "---\ndate: 2026-10-29\nanswered:\n  A1: done\nsuperseded:\n  A2: A3\n---\n\n# devops #3 reviewed; the #coding message changed\n\n"
     "## To do\n\n- [A3] **Post one #coding message** for both changes\n\n"
-    "## Links\n\n- [devops#2](https://github.com/HELFERLINE/devops/issues/2): the collection issue\n",
+    "## Links\n\n- [devops#2](https://github.com/HELFERLINE/devops/issues/2): the collection issue\n"
+    "- [The six PR texts, reworded](agent/show/lint/texts.html): linked again\n",
 )
 
 
@@ -780,7 +777,7 @@ def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path)
 
 
 def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
-    """D3, B's floor: each option a row, its gives and costs in columns of their own, the pick
+    """The floor D3 sets: each option a row, its gives and costs in columns of their own, the pick
     marked; an option that names no cost leaves its cell empty."""
     directory, transcript = todo_session(tmp_path, transcript_turns=True)
     card = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
@@ -791,12 +788,13 @@ def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: 
 
 
 def test_the_artefacts_to_look_at_are_the_ones_linked_since_the_user_last_spoke(tmp_path: Path) -> None:
-    """With a message of the user's before each turn, only the newest turn's artefact waits; where
-    the user said nothing, every turn's does, oldest first."""
+    """With a message of the user's before each turn, only the newest turn's artefacts wait; where
+    the user said nothing, every turn's do, oldest first, and one two turns linked waits once,
+    under the later."""
     directory, transcript = todo_session(tmp_path / "spoke", transcript_turns=True)
-    assert [s.link.text for _, s in view_of(directory, transcript).looks] == ["devops#2"]
+    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "devops#2"), (2, "The six PR texts, reworded")]
     directory, transcript = todo_session(tmp_path / "silent", transcript_turns=False)
-    assert [s.link.text for _, s in view_of(directory, transcript).looks] == ["The six PR texts", "devops#2"]
+    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "The six PR texts, reworded"), (2, "devops#2")]
 
 
 def test_each_card_names_its_item_by_the_handle_the_batch_sends(tmp_path: Path) -> None:
@@ -804,6 +802,29 @@ def test_each_card_names_its_item_by_the_handle_the_batch_sends(tmp_path: Path) 
     to-do by its tag, an artefact by the path its record wrote."""
     directory, transcript = todo_session(tmp_path, transcript_turns=False)
     page = render_session(directory, transcript, now=NOW)
-    cards = re.findall(r'<article class="card [^"]*" id="([^"]+)" data-handle="([^"]+)" data-kind="(\w+)"', page)
-    assert cards == [("q1", "Q1", "decide"), ("a3", "A3", "do"), ("look-01-1", "agent/show/lint/texts.html", "look"),
-                     ("look-02-2", "https://github.com/HELFERLINE/devops/issues/2", "look")]
+    cards = [(attrs["data-handle"], attrs["data-kind"]) for attrs in map(attributes, re.findall(r'<article class="card [^>]*>', page))]
+    assert cards == [("Q1", "decide"), ("A3", "do"), ("agent/show/lint/texts.html", "look"),
+                     ("https://github.com/HELFERLINE/devops/issues/2", "look")]
+
+
+def attributes(tag: str) -> dict[str, str]:
+    return {name: html.unescape(value) for name, value in re.findall(r'([\w-]+)="([^"]*)"', tag)}
+
+
+def test_a_to_do_superseded_by_a_question_is_refused_as_a_to_do_supersedes_only_a_to_do(tmp_path: Path) -> None:
+    """A1 is listed in turn 01 and Q1 asked there, so only the rule that a to-do's replacement is a to-do
+    refuses turn 02's `A1: Q1`."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=False)
+    (directory / "turns" / "02.md").write_text("---\ndate: 2026-10-29\nsuperseded:\n  A1: Q1\n---\n\n# Round 2\n")
+    with pytest.raises(RecordError, match="superseded: A1 names 'Q1', not a to-do's tag like A2"):
+        view_of(directory, transcript)
+
+
+def test_a_relative_link_read_outside_a_render_stays_as_written() -> None:
+    """The hub reads a chat turn's first line as its status line through `inline`, with no page being
+    rendered and so no repo root: a relative link there once raised, and the hub's read with it."""
+    assert 'href="agent/show/x/report.md"' in inline("Waiting on [the worker](agent/show/x/report.md)", paths=False)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

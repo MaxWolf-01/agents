@@ -150,10 +150,11 @@ for (const ev of ["wheel", "touchstart"]) pane.addEventListener(ev, () => (follo
 
 // ---- what waits on the reader: one card at a time, each answer staged, the batch sent as one message
 // Each item is a card the renderer wrote; one shows at a time, and the band takes the keys while the
-// focus is in it ([ and ] put it there). What is staged is kept, as the reader stages it, by the hub
-// tab the page sits in (`hubWaiting` there keeps a file per session and sends through the session's
-// box), or in this browser's storage where no hub frames the page, which then copies the batch
-// instead of sending it. Nothing reaches the session but by a send.
+// focus is in it ([ and ] put it there). What is staged is kept as the reader stages it: by the hub
+// tab the page sits in, through the `hubWaiting` the container hub's tab defines (dotfiles'
+// bin/container-hub.html), which also sends the batch; or, where no hub frames the page, in this
+// browser's storage, and the review then copies the batch instead of sending it. Nothing reaches the
+// session but by a send from the review.
 
 const foldBand = document.getElementById("fold-band")
 const band = (on = waiting.classList.contains("collapsed")) => {
@@ -172,31 +173,38 @@ const STAGED = "session-page:staged:" + document.getElementById("session-id").da
 // the page's own mark; sent: when each item went in a batch, which keeps it off the cards until a
 // turn that ended after the send is on the page
 let state = { staged: {}, seen: [], sent: {} }
-let loaded = !waiting, at = 0, reviewing = false, noting = null, before = ""
+let loaded = !waiting, at = 0, reviewing = false, noting = null, before = "", pending = null
 const handles = new Set(cards.map((c) => c.dataset.handle))
-const KIND_WORDS = { decide: "decide", do: "do", look: "look at" }
 
 const items = () => cards.filter((c) => !state.sent[c.dataset.handle])
 const st = (h) => state.staged[h] || {}
 const seenOf = (h) => state.seen.includes(h)
 const answer = (s) => [s.pick || s.act, s.note].filter(Boolean).join(", ")
-const line = (c) => `${c.dataset.handle}: ${answer(st(c.dataset.handle))}`
-const batch = () => items().filter((c) => state.staged[c.dataset.handle]).map(line).join("\n")
-const words = () => (hub && hub.words ? hub.words(window) : "").trim()
+const line = (h) => `${h}: ${answer(st(h))}`
+// What was staged on an item this render no longer shows (an artefact linked before the user last
+// spoke, a question settled meanwhile): kept until it is sent, and sent after the cards' lines.
+const orphans = () => Object.keys(state.staged).filter((h) => !handles.has(h))
+const batch = () => [...items().map((c) => c.dataset.handle).filter((h) => state.staged[h]), ...orphans()].map(line).join("\n")
+const words = () => (hub ? hub.words(window) : "").trim()
 
 let saving = Promise.resolve()
+// Each save waits for the one before it, so the hub keeps the newest.
 const persist = () => {
   const doc = JSON.parse(JSON.stringify(state))
-  if (!hub) { try { localStorage.setItem(STAGED, JSON.stringify(doc)) } catch {} return }
-  saving = saving.then(() => hub.save(window, doc)).then((r) => { if (r && !r.ok) say(`not kept: ${r.error}`) }, () => say("not kept: the hub tab did not answer"))
+  if (!hub) {
+    try { localStorage.setItem(STAGED, JSON.stringify(doc)) } catch (e) { say(`not kept: this browser's storage refused it (${e.name})`) }
+    return
+  }
+  saving = saving.then(() => hub.save(window, doc)).then((r) => { if (!r.ok) say(`not kept: ${r.error}`) }, () => say("not kept: the hub tab did not answer"))
 }
-const stage = (h, patch) => {
+// `redraw` false leaves the card as it is, for the note field typed into
+const stage = (h, patch, redraw = true) => {
   const s = { ...st(h), ...patch }
   Object.keys(s).forEach((k) => { if (!s[k]) delete s[k] })
   if (Object.keys(s).length) state.staged[h] = s
   else delete state.staged[h]
   persist()
-  draw()
+  if (redraw) draw()
 }
 const toggle = (h, key, value) => stage(h, { [key]: st(h)[key] === value ? null : value })
 const see = (h, on = !seenOf(h)) => {
@@ -210,28 +218,36 @@ const see = (h, on = !seenOf(h)) => {
 const ended = [...document.querySelectorAll("[data-block][data-at]")].map((b) => Date.parse(b.dataset.at))
 const adopt = (doc) => {
   if (!doc || typeof doc !== "object") return
-  const keep = (o) => Object.fromEntries(Object.entries(o || {}).filter(([h]) => handles.has(h)))
-  state = { staged: keep(doc.staged), seen: (doc.seen || []).filter((h) => handles.has(h)),
-            sent: Object.fromEntries(Object.entries(keep(doc.sent)).filter(([, t]) => !ended.some((e) => e > t))) }
+  const shown = (o) => Object.fromEntries(Object.entries(o || {}).filter(([h]) => handles.has(h)))
+  state = { staged: { ...(doc.staged || {}) }, seen: (doc.seen || []).filter((h) => handles.has(h)),
+            sent: Object.fromEntries(Object.entries(shown(doc.sent)).filter(([, t]) => !ended.some((e) => e > t))) }
 }
-if (waiting) {
-  const read = hub ? Promise.resolve().then(() => hub.load(window)) : Promise.resolve(JSON.parse(localStorage.getItem(STAGED) || "null"))
-  read.then(adopt, () => say("what you staged could not be read")).finally(() => { loaded = true; draw() })
-}
+const read = !waiting ? Promise.resolve()
+  : (hub ? Promise.resolve().then(() => hub.load(window)).then((r) => { if (!r.ok) throw new Error(r.error); return r.staged })
+         : Promise.resolve().then(() => JSON.parse(localStorage.getItem(STAGED) || "null")))
+      .then(adopt, (e) => say(`what you staged could not be read: ${e.message}`))
+      .finally(() => {
+        loaded = true
+        // a card the reload or a link named, found among the items once the sent ones are known
+        const n = pending ? items().findIndex((c) => c.id === pending) : -1
+        if (n >= 0) at = n
+        pending = null
+        draw()
+      })
 
-// the hub tab's side: the batch its send puts above the box's own words, and the lines it sent, which leave the cards
+// the hub tab's side: the batch a send from the review carries, and the lines that went, which leave the cards
 window.waitingBatch = () => (loaded ? batch() : "")
-window.waitingSent = (text) => {
+window.waitingSent = (text) => read.then(() => {
   const sent = new Set(text.split("\n")), now = Date.now(), keys = inBand()
-  for (const c of items()) if (state.staged[c.dataset.handle] && sent.has(line(c))) {
-    state.sent[c.dataset.handle] = now
-    delete state.staged[c.dataset.handle]
+  for (const h of Object.keys(state.staged)) if (sent.has(line(h))) {
+    if (handles.has(h)) state.sent[h] = now
+    delete state.staged[h]
   }
   persist()
   // back to the first item still waiting, the keys kept in the band where the review had them
   if (keys) showCard(0)
   else { reviewing = false; at = 0; draw(); waiting.scrollTop = 0 }
-}
+})
 // a reload under a note being typed would take the field from under the reader's fingers
 window.reloadWouldLose = () => noting !== null
 
@@ -241,7 +257,7 @@ const staged = (c) => {
   const option = s.pick && c.querySelector(`tr[data-option="${s.pick}"] td:nth-child(2)`)
   const picked = option ? `${s.pick} · ${option.firstChild.textContent.trim()}` : s.pick
   const what = picked || s.act
-  return what || s.note ? `staged → ${[what, s.note && `note: ${s.note}`].filter(Boolean).join(" · ")}` : ""
+  return what || s.note ? `staged: ${[what, s.note && `note: ${s.note}`].filter(Boolean).join(" · ")}` : ""
 }
 const drawCard = (c) => {
   const h = c.dataset.handle, s = st(h)
@@ -271,7 +287,7 @@ const draw = () => {
   })
   const nStaged = list.filter((c) => state.staged[c.dataset.handle]).length, nSent = cards.length - list.length
   const where = Object.assign(document.createElement("span"), { className: "v-meta where" })
-  where.textContent = !list.length ? "every item sent" : reviewing ? "review" : `${at + 1} of ${list.length} · ${KIND_WORDS[list[at].dataset.kind]}`
+  where.textContent = !list.length ? "every item sent" : reviewing ? "review" : `${at + 1} of ${list.length} · ${list[at].dataset.kindWord}`
   ticks.append(where)
   tally.textContent = (nStaged ? ` · ${nStaged} staged` : "") + (nSent ? ` · ${nSent} sent` : "")
   review.hidden = !reviewing
@@ -281,8 +297,10 @@ const draw = () => {
 const drawReview = (list) => {
   const message = [batch(), words()].filter(Boolean).join("\n\n")
   const left = list.filter((c) => !state.staged[c.dataset.handle]).map((c) => (c.dataset.kind === "look" ? c.querySelector(".rail").textContent : c.dataset.handle))
+  const gone = orphans()
   review.innerHTML = `<h3 class="v-h2">The batch, as the session gets it</h3>` +
     (message ? `<pre>${esc(message)}</pre>` : `<p class="v-small empty">Nothing staged yet.</p>`) +
+    (gone.length ? `<p class="left-out v-small">Staged on items this page no longer shows, and sent with the rest: ${esc(gone.join(", "))}.</p>` : "") +
     `<p class="left-out v-small">${left.length ? `Not answered, so they stay: ${left.join(", ")}.` : "Every item has an answer."}</p>` +
     `<p class="keys-row v-meta"><button type="button" class="key" data-key="Enter"><kbd>↵</kbd> ${hub ? "send" : "copy it: no hub frames this page to send it"}</button>` +
     `<button type="button" class="key" data-key="Escape"><kbd>Esc</kbd> back to the items</button></p>`
@@ -308,7 +326,7 @@ const note = (c) => {
     placeholder: `a note on ${c.querySelector(".rail").textContent}; ↵ keeps it, Esc drops the edit` })
   field.setAttribute("aria-label", "note")
   // kept as typed, so a crash loses nothing; it belongs to the card it was opened on whatever moves
-  field.addEventListener("input", () => { state.staged[h] = { ...st(h), note: field.value.trim() }; if (!field.value.trim()) stage(h, { note: null }); else persist() })
+  field.addEventListener("input", () => stage(h, { note: field.value.trim() }, false))
   field.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== "Escape") return
     e.preventDefault()
@@ -349,7 +367,8 @@ const bandKey = (key) => {
   if (kind === "decide" && key.length === 1 && (c.dataset.options || "").includes(key)) { toggle(h, "pick", key); return true }
   switch (key) {
     case "Enter": case "p":
-      if (kind !== "decide") return key === "Enter"  // never the turn's, from a card
+      // Enter on a to-do's card is swallowed, so it does not open or close the focused turn
+      if (kind !== "decide") return key === "Enter"
       if (!c.dataset.pick) { say(`${c.querySelector(".rail").textContent} carries no pick: answer it with n`); return true }
       if (key === "p") toggle(h, "pick", c.dataset.pick)
       else stage(h, { pick: c.dataset.pick })
@@ -392,8 +411,11 @@ const reveal = (id, how) => {
   const el = id && document.getElementById(id)
   if (!el) return
   sheet(false)
-  const n = items().indexOf(el)
-  if (n >= 0) { showCard(n); return }
+  if (cards.includes(el)) {
+    if (loaded) showCard(Math.max(0, items().indexOf(el)))
+    else { pending = el.id; band(true) }
+    return
+  }
   if (!pane.contains(el)) return
   const turn = el.closest("details.turn")
   if (turn) turn.open = true
@@ -447,8 +469,7 @@ const restore = (s) => {
   cur = s.cur && !follows ? blocks.findIndex((b) => b.id === s.cur) : -1
   mark()
   if (waiting) {
-    const n = items().findIndex((c) => c.id === s.card)
-    if (n >= 0) { at = n; draw() }
+    pending = s.card
     band(s.band)
   }
   const anchor = s.anchor && document.getElementById(s.anchor)

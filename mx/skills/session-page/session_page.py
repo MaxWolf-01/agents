@@ -606,7 +606,18 @@ class Session:
 
 # ---- reading the records ----------------------------------------------------
 
-TAG = re.compile(r"[QA]\d+")  # a question's tag or a to-do's, which a later turn's frontmatter clears
+# What a later turn's frontmatter clears, by the letter its tag opens with: the kind's name and an example tag.
+TAG_KINDS = {"Q": ("question", "Q7"), "A": ("to-do", "A2")}
+TAG = re.compile(f"[{''.join(TAG_KINDS)}]\\d+")
+
+
+def tag_kind(tag: str) -> str:
+    return TAG_KINDS[tag[0]][0]
+
+
+def tag_example(letter: str) -> str:
+    kind, example = TAG_KINDS[letter]
+    return f"a {kind}'s tag like {example}"
 
 
 def read_turns(turns: Path) -> list[Turn]:
@@ -631,11 +642,10 @@ def read_turn(path: Path) -> Turn:
                 raise RecordError(path, line_of(path, tag), f"{name}: {tag} is a ticket's question, which clears once its ticket "
                                                             "records the ruling (`tracker rule`), never here")
             if not TAG.fullmatch(tag):
-                raise RecordError(path, line_of(path, tag), f"{name}: {tag!r} is neither a question's tag like Q7 nor a to-do's like A2")
+                raise RecordError(path, line_of(path, tag), f"{name}: {tag!r} is not {' nor '.join(map(tag_example, TAG_KINDS))}")
     for old, new in tables["superseded"].items():
         if not TAG.fullmatch(new) or new[0] != old[0]:
-            kind = "a question's tag like Q7" if old.startswith("Q") else "a to-do's tag like A2"
-            raise RecordError(path, line_of(path, old), f"superseded: {old} names {new!r}, not {kind}")
+            raise RecordError(path, line_of(path, old), f"superseded: {old} names {new!r}, not {tag_example(old[0])}")
     return Turn(
         number=int(path.stem),
         path=path,
@@ -965,8 +975,7 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
         for how, table in (("answered", turn.answered), ("superseded", turn.superseded)):
             for tag, value in table.items():
                 if tag not in asked:
-                    kind = "question" if tag.startswith("Q") else "to-do"
-                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a {kind} of an earlier turn")
+                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a {tag_kind(tag)} of an earlier turn")
                 if tag in settled:
                     raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
                 settled[tag] = Settled(how, value, turn.number)
@@ -1272,12 +1281,12 @@ def open_todos(session: Session) -> list[tuple[Turn, ToDo]]:
 
 
 def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
-    """The artefacts waiting for the user to look at, oldest first: those the turns since the user
-    last spoke linked, the turn holding their last message included, every turn's where no turn
-    holds one. An artefact two of those turns linked waits once, under the later."""
-    turns = session.turns
-    since = max((i for i, t in enumerate(turns) if t.messages), default=0)
-    found = {s.artefact: (t, s) for t in turns[since:] for s in shown_links(t, session.root) if s.artefact}
+    """The artefacts waiting for the user to look at, oldest first: those the turns written since the
+    user last spoke linked, the turn holding their last message included (a chat turn may hold it),
+    every turn's where the transcript holds no message of theirs. An artefact two of those turns
+    linked waits once, under the later."""
+    since = [t for t in session.turns if session.spoke is None or (t.written is not None and t.written > session.spoke)]
+    found = {s.artefact: (t, s) for t in since for s in shown_links(t, session.root) if s.artefact}
     return list(found.values())
 
 
@@ -1571,17 +1580,20 @@ def band(v: View) -> str:
     </section>"""
 
 
-def card(cls: str, anchor: str, handle: str, kind: str, rail: str, headline: str, meta: str, body: str, keys: str,
-         data: str = "", noted: str = "note") -> str:
+def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: str, meta: str, body: str, keys: str,
+         data: dict[str, str] | None = None, noted: str = "note") -> str:
     """One item as its card: its tag in the rail, its headline, its kind and where it came from, all
     of its context, and the keys that act on it. `handle` is what the batch names it by; `noted` is
-    what n gives it, a note, or the answer itself where it offers no option to pick."""
+    what n gives it, a note, or the answer itself where it offers no option to pick; `data`, the
+    card's further `data-` attributes, which page.js reads."""
+    word = KINDS[kind].removeprefix("to ")
+    attributes = "".join(f' data-{name}="{esc(value)}"' for name, value in {"handle": handle, "kind": kind, "kind-word": word, **(data or {})}.items())
     return f"""
-<article class="card {cls}" id="{anchor}" data-handle="{esc(handle)}" data-kind="{kind}"{data} tabindex="-1">
+<article class="card {cls}" id="{anchor}"{attributes} tabindex="-1">
   <span class="rail v-num">{rail}</span>
   <div class="card-main">
     <h3 class="v-h2">{headline}</h3>
-    <p class="v-meta from">{KINDS[kind].removeprefix("to ")} · {meta}</p>
+    <p class="v-meta from">{word} · {meta}</p>
     <div class="card-body">{body}</div>
     <p class="keys-row v-meta">{keys}<span><kbd>n</kbd> {noted}</span><span><kbd>u</kbd> clear</span><span><kbd>[</kbd> <kbd>]</kbd> items</span><span><kbd>r</kbd> review</span></p>
     <p class="staged v-small" hidden></p>
@@ -1599,22 +1611,23 @@ def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
     a blind one opens its test page, which holds its options."""
     if isinstance(q, TicketQuestion):
         detail = f'<p class="q-detail">{inline(q.named.detail)}</p>' if q.named and q.named.detail else ""
-        return card("ticket", ticket_question_anchor(q), q.handle, "decide", q.tag, inline(q.headline),
-                    f"{ticket_link(q)} · {asked_in(turn, 'put to you')} · it clears once its ticket records the ruling",
-                    detail, "", noted="answer in words")
+        return card(cls="ticket", anchor=ticket_question_anchor(q), handle=q.handle, kind="decide", rail=q.tag,
+                    headline=inline(q.headline), body=detail, noted="answer in words",
+                    meta=f"{ticket_link(q, opens=True)} · {asked_in(turn, 'put to you')} · it clears once its ticket records the ruling",
+                    keys="<span><kbd>o</kbd> open the ticket</span>" if q.named else "")
     detail = f'<p class="q-detail">{inline(q.detail)}</p>' if q.detail else ""
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
     if q.blind:
         test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get()), None)
-        return card("blind", q.tag.lower(), q.handle, "decide", q.tag, inline(q.headline), asked_in(turn),
-                    f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>',
-                    "<span><kbd>o</kbd> open the test</span>", noted="the answer the test gave you")
+        return card(cls="blind", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
+                    meta=asked_in(turn), body=f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>',
+                    keys="<span><kbd>o</kbd> open the test</span>", noted="the answer the test gave you")
     pick = next(o for o in q.options if o.picked)
     letters = "".join(o.letter for o in q.options)
     keys = (f'<span>{" ".join(f"<kbd>{o.letter}</kbd>" for o in q.options)} pick that option</span>'
             f'<span><kbd>↵</kbd> <kbd>p</kbd> the pick, {pick.letter}</span>')
-    return card("question", q.tag.lower(), q.handle, "decide", q.tag, inline(q.headline), asked_in(turn),
-                detail + option_table(q) + why, keys, f' data-options="{letters}" data-pick="{pick.letter}"')
+    return card(cls="question", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
+                meta=asked_in(turn), body=detail + option_table(q) + why, keys=keys, data={"options": letters, "pick": pick.letter})
 
 
 def option_table(q: Question) -> str:
@@ -1633,28 +1646,31 @@ def option_table(q: Question) -> str:
 
 def todo_card(turn: Turn, d: ToDo) -> str:
     detail = f'<p class="q-detail">{inline(d.detail)}</p>' if d.detail else ""
-    return card("todo", d.tag.lower(), d.handle, "do", d.tag, inline(d.headline), asked_in(turn, "listed"), detail,
-                "<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
+    return card(cls="todo", anchor=d.tag.lower(), handle=d.handle, kind="do", rail=d.tag, headline=inline(d.headline),
+                meta=asked_in(turn, "listed"), body=detail, keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
 
 
 def look_card(turn: Turn, s: Shown, n: int) -> str:
     """An artefact the turns since the user last spoke linked. Seen is the page's own mark, sent to
     nobody; a note on it goes with the batch, under the path the record wrote."""
     note = f'<p class="q-detail">{inline(s.link.note)}</p>' if s.link.note else ""
-    return card("look", f"look-{turn.key}-{n}", s.link.path, "look", f"L{n}", artefact(s, "link open"), asked_in(turn, "linked"),
-                f'{note}<p class="v-meta path">{esc(s.link.path)}</p>', "<span><kbd>o</kbd> open</span><span><kbd>s</kbd> seen</span>")
+    return card(cls="look", anchor=f"look-{turn.key}-{n}", handle=s.link.path, kind="look", rail=f"L{n}", headline=artefact(s, "link open"),
+                meta=asked_in(turn, "linked"), body=f'{note}<p class="v-meta path">{esc(s.link.path)}</p>',
+                keys="<span><kbd>o</kbd> open</span><span><kbd>s</kbd> seen</span>")
 
 
 def ticket_question_anchor(c: TicketQuestion) -> str:
     return f"{c.ticket}-{c.tag.lower()}"
 
 
-def ticket_link(c: TicketQuestion) -> str:
+def ticket_link(c: TicketQuestion, opens: bool = False) -> str:
     """The question's handle, a link to its ticket with the question as its hover preview; the
-    handle alone where the ticket holds the question no longer."""
+    handle alone where the ticket holds the question no longer. On a card, `opens` makes it the
+    link o opens."""
     if c.named is None:
         return esc(c.handle)
-    return qualified_link(esc(c.handle), ticket_path(c.ticket), c.named.preview)
+    link = qualified_link(esc(c.handle), ticket_path(c.ticket), c.named.preview)
+    return link.replace('class="', 'class="open ', 1) if opens else link
 
 
 def ticket_path(slug: str) -> str:

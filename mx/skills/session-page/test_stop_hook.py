@@ -755,6 +755,21 @@ def test_a_question_asked_before_the_users_last_message_is_not_new(
     assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}"]
 
 
+LISTS_A_TODO = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`.\n"
+
+
+def test_an_open_to_do_is_named_under_the_line_after_the_questions(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """work-through-what-waits-one-item-at-a-time#P1: the chat a turn ends on is never a to-do's only
+    home, and the hook's lines under it name the to-do record 05 lists, new, after the open question."""
+    fifth = worked_example / "turns" / "05.md"
+    fifth.write_text(LISTS_A_TODO)
+    with_write(unrecorded, "Write", fifth)
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}", "A1 new · Review devops #3"]
+
+
 # A question whose headline links another, as session 168b5d8b's turn 3 asked one with `[Q6](#q6)`
 # in it, and carries emphasis and code besides.
 ASKS_WITH_MARKDOWN = (

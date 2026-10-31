@@ -313,6 +313,9 @@ UNPARSEABLE = {
     "a Gives with no option over it": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Gives: speed\n  - (a) A light review. *my pick*\n"
                  "  - (b) None.\n", 10),
+    "a Gives at its option's indent": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - Gives: speed\n"
+                 "  - (b) None.\n", 11),
     "a second Costs under one option": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n"
                  "    - Costs: a minute\n    - Costs: a model call\n  - (b) None.\n", 12),

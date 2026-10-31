@@ -79,8 +79,8 @@ HUB_UNIT = "/u/{session}"
 # How every send-back, the write hook's too, asks the turn to end: RULES.md's chat recap. The
 # hook shows the open questions and to-dos and the link to the page under it.
 RECAP = (
-    "end the turn on its chat recap: a line or two on what the turn did that reads on its own, with what waits on "
-    "the user in the record's Questions, To do and Links; no line points at the page"
+    "end the turn on its chat recap: a line or two on what the turn did that reads on its own; what waits on the "
+    "user goes in the record's Questions, To do and Links, not the recap; no line points at the page"
 )
 UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
 OUTSIDE_WRITE = (
