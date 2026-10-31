@@ -611,10 +611,6 @@ TAG_KINDS = {"Q": ("question", "Q7"), "A": ("to-do", "A2")}
 TAG = re.compile(f"[{''.join(TAG_KINDS)}]\\d+")
 
 
-def tag_kind(tag: str) -> str:
-    return TAG_KINDS[tag[0]][0]
-
-
 def tag_example(letter: str) -> str:
     kind, example = TAG_KINDS[letter]
     return f"a {kind}'s tag like {example}"
@@ -975,7 +971,7 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
         for how, table in (("answered", turn.answered), ("superseded", turn.superseded)):
             for tag, value in table.items():
                 if tag not in asked:
-                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a {tag_kind(tag)} of an earlier turn")
+                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a {TAG_KINDS[tag[0]][0]} of an earlier turn")
                 if tag in settled:
                     raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
                 settled[tag] = Settled(how, value, turn.number)

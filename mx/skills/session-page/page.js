@@ -217,10 +217,9 @@ const see = (h, on = !seenOf(h)) => {
 // ended after its send, since that turn says whether it settled.
 const ended = [...document.querySelectorAll("[data-block][data-at]")].map((b) => Date.parse(b.dataset.at))
 const adopt = (doc) => {
-  if (!doc || typeof doc !== "object") return
-  const shown = (o) => Object.fromEntries(Object.entries(o || {}).filter(([h]) => handles.has(h)))
-  state = { staged: { ...(doc.staged || {}) }, seen: (doc.seen || []).filter((h) => handles.has(h)),
-            sent: Object.fromEntries(Object.entries(shown(doc.sent)).filter(([, t]) => !ended.some((e) => e > t))) }
+  if (!doc) return
+  state = { staged: doc.staged, seen: doc.seen.filter((h) => handles.has(h)),
+            sent: Object.fromEntries(Object.entries(doc.sent).filter(([h, t]) => handles.has(h) && !ended.some((e) => e > t))) }
 }
 const read = !waiting ? Promise.resolve()
   : (hub ? Promise.resolve().then(() => hub.load(window)).then((r) => { if (!r.ok) throw new Error(r.error); return r.staged })
@@ -233,7 +232,7 @@ const read = !waiting ? Promise.resolve()
         if (n >= 0) at = n
         pending = null
         draw()
-        if (hub) hub.restaged?.(window)
+        if (hub) hub.restaged(window)
       })
 
 // the hub tab's side: the batch a send from the review carries, and the lines that went, which leave the cards
@@ -267,8 +266,8 @@ const drawCard = (c) => {
   c.classList.toggle("seen", seenOf(h))
   const out = c.querySelector(".staged")
   if (noting === h) return
-  out.hidden = !staged(c)
   out.textContent = staged(c)
+  out.hidden = !out.textContent
 }
 const draw = () => {
   if (!waiting) return
@@ -317,7 +316,6 @@ const drawReview = (list) => {
 const inBand = () => !!waiting && waiting.contains(document.activeElement)
 // the review takes the focus, the card it hides having had it, so its Enter and Esc are the band's
 const openReview = () => {
-  if (!waiting) return
   reviewing = true
   band(true)
   draw()
@@ -325,7 +323,6 @@ const openReview = () => {
   waiting.scrollTop = 0
 }
 const showCard = (n) => {
-  if (!waiting) return
   reviewing = false
   at = n
   band(true)
@@ -333,7 +330,6 @@ const showCard = (n) => {
   const c = items()[at]
   if (c) { c.focus({ preventScroll: true }); waiting.scrollTop = 0 }
 }
-const leaveBand = () => { document.activeElement.blur(); if (blocks[cur]) focusBlock(cur) }
 
 const note = (c) => {
   const h = c.dataset.handle, out = c.querySelector(".staged")
@@ -374,7 +370,7 @@ const bandKey = (key) => {
     return false
   }
   const list = items(), c = list[at]
-  if (key === "Escape") { leaveBand(); return true }
+  if (key === "Escape") { document.activeElement.blur(); if (blocks[cur]) focusBlock(cur); return true }
   if (key === "]" || key === "[") { showCard(Math.max(0, Math.min(list.length - 1, at + (key === "]" ? 1 : -1)))); return true }
   if (key === "r") { openReview(); return true }
   if (!c) return false
@@ -397,19 +393,13 @@ const bandKey = (key) => {
   }
   return false
 }
-if (waiting) {
-  waiting.addEventListener("click", (e) => {
-    const k = e.target.closest("[data-key]")
-    if (k) { e.preventDefault(); bandKey(k.dataset.key); return }
-    const row = e.target.closest("tr[data-option]"), c = e.target.closest(".card")
-    if (row && c) toggle(c.dataset.handle, "pick", row.dataset.option)
-  })
-  // an artefact opened from its card, by a click or by o, is seen
-  waiting.addEventListener("click", (e) => {
-    const c = e.target.closest(".card.look")
-    if (c && e.target.closest("a.open")) see(c.dataset.handle, true)
-  }, true)
-}
+// Heard before the hub's catch of a link, so an artefact opened from its card, by a click or by o, is seen.
+if (waiting) waiting.addEventListener("click", (e) => {
+  const k = e.target.closest("[data-key]"), row = e.target.closest("tr[data-option]"), c = e.target.closest(".card")
+  if (k) { e.preventDefault(); bandKey(k.dataset.key) }
+  else if (row && c) toggle(c.dataset.handle, "pick", row.dataset.option)
+  else if (c && c.matches(".look") && e.target.closest("a.open")) see(c.dataset.handle, true)
+}, true)
 draw()
 
 const sheetToggle = document.getElementById("sheet-toggle")

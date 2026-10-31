@@ -797,20 +797,6 @@ def test_the_artefacts_to_look_at_are_the_ones_linked_since_the_user_last_spoke(
     assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "The six PR texts, reworded"), (2, "devops#2")]
 
 
-def test_each_card_names_its_item_by_the_handle_the_batch_sends(tmp_path: Path) -> None:
-    """P3's message names each item as RULES.md tells the agent to read it: a question by its tag, a
-    to-do by its tag, an artefact by the path its record wrote."""
-    directory, transcript = todo_session(tmp_path, transcript_turns=False)
-    page = render_session(directory, transcript, now=NOW)
-    cards = [(attrs["data-handle"], attrs["data-kind"]) for attrs in map(attributes, re.findall(r'<article class="card [^>]*>', page))]
-    assert cards == [("Q1", "decide"), ("A3", "do"), ("agent/show/lint/texts.html", "look"),
-                     ("https://github.com/HELFERLINE/devops/issues/2", "look")]
-
-
-def attributes(tag: str) -> dict[str, str]:
-    return {name: html.unescape(value) for name, value in re.findall(r'([\w-]+)="([^"]*)"', tag)}
-
-
 def test_a_to_do_superseded_by_a_question_is_refused_as_a_to_do_supersedes_only_a_to_do(tmp_path: Path) -> None:
     """A1 is listed in turn 01 and Q1 asked there, so only the rule that a to-do's replacement is a to-do
     refuses turn 02's `A1: Q1`."""

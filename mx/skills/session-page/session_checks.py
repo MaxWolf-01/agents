@@ -321,8 +321,6 @@ UNPARSEABLE = {
                  "    - Costs: a minute\n    - Costs: a model call\n  - (b) None.\n", 12),
     "a to-do that is not a to-do item": ("04.md", f"{ROUND_3}## To do\n\n- review devops #3\n", 9),
     "a to-do with sub-items": ("04.md", f"{ROUND_3}## To do\n\n- [A1] **Review devops #3**\n  - (a) today\n", 10),
-    "a to-do superseded by a question": (
-        "04.md", "---\ndate: 2026-09-23\nsuperseded:\n  A1: Q7\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 4),
     "a to-do no earlier turn listed": (
         "04.md", "---\ndate: 2026-09-23\nanswered:\n  A9: done\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 4),
     "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),

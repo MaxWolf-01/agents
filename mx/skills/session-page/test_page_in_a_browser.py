@@ -403,8 +403,7 @@ with sync_playwright() as pw:
             # the frame's script runs as it parses; its load waits on fonts, which the page cache answers for the tab alone
             page.wait_for_function("document.querySelector('iframe')?.contentDocument?.getElementById('open-questions')", timeout=10000)
             inner = next(f for f in page.frames if f.url.endswith("/" + Path(page_url).name))
-            inner.wait_for_function("document.querySelector('#ticks .where')", timeout=10000)
-            inner.evaluate("new Promise((r) => setTimeout(r, 300))")
+            page.wait_for_function("window.restaged", timeout=10000)  # the page has read what the hub kept
             out["loaded"] = inner.evaluate(SHOWN)
             if args.get("send"):
                 inner.focus("#open-questions .card:not([hidden])")
@@ -570,6 +569,7 @@ def hub_tab(page: Path, kept: dict) -> str:
 window.saved = []; window.sent = null;
 window.hubWaiting = {
   holds: () => true,
+  restaged: () => { window.restaged = true },
   load: async () => ({ ok: true, staged: KEPT }),
   save: async (w, doc) => { window.saved.push(doc); return { ok: true } },
   words: () => "and go on",

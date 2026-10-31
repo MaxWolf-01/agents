@@ -73,8 +73,8 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 
 /* No pane shows a scrollbar; a fade marks an edge with more behind it (page.js sets fade-t and
    fade-b, and --head keeps a sticky heading out of the top fade). */
-.pane, .column, .waiting, .q-body { scrollbar-width: none; --fade: 2.25rem; --head: 0px; }
-:is(.pane, .column, .waiting, .q-body)::-webkit-scrollbar { display: none; }
+.pane, .column, .waiting { scrollbar-width: none; --fade: 2.25rem; --head: 0px; }
+:is(.pane, .column, .waiting)::-webkit-scrollbar { display: none; }
 .fade-t { mask-image: linear-gradient(to bottom, #000 0 var(--head), #0002 var(--head), #000 calc(var(--head) + var(--fade))); }
 .fade-b { mask-image: linear-gradient(to top, #0002 0, #000 var(--fade)); }
 .fade-t.fade-b { mask-image: linear-gradient(to bottom, #000 0 var(--head), #0002 var(--head), #000 calc(var(--head) + var(--fade)), #000 calc(100% - var(--fade)), #0002 100%); }
@@ -163,7 +163,6 @@ button.id:hover { color: var(--accent); }
 .ticks .tk.cur { outline: 2px solid var(--strong); outline-offset: 1px; }
 .ticks .gap { width: 0.7rem; }
 .ticks .where { margin-left: 0.7rem; }
-.cards { flex: none; }
 .card { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); font-size: 0.92rem; }
 .card[hidden] { display: none; }
 .card:focus { outline: none; }
@@ -190,14 +189,13 @@ button.id:hover { color: var(--accent); }
 .opttab td.g, .opttab td.c { color: var(--muted); width: 28%; font-size: 0.93em; }
 /* A card narrower than about three readable columns, as at the hub sidebar's width, stacks each
    option's gives and costs under its words, each named, rather than squeeze them beside it. */
-.cards { container-type: inline-size; }
+.cards { flex: none; container-type: inline-size; }
 @container (max-width: 36rem) {
   .opttab thead { display: none; }
   .opttab tr { display: grid; grid-template-columns: 2rem minmax(0, 1fr); border-bottom: 1px solid var(--edge); }
   .opttab tr:last-child { border-bottom: 0; }
   .opttab td { border-bottom: 0; padding: 0.15rem 0; }
-  .opttab tr > td:nth-child(2) { padding-top: 0.45rem; }
-  .opttab td.k { padding-top: 0.45rem; }
+  .opttab td.k, .opttab td:nth-child(2) { padding-top: 0.45rem; }
   .opttab td.g, .opttab td.c { grid-column: 2; width: auto; }
   .opttab td.c { padding-bottom: 0.45rem; }
   .opttab td.g:empty, .opttab td.c:empty { display: none; }
