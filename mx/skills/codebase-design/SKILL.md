@@ -21,6 +21,10 @@ Use these terms exactly; each entry's _Avoid_ list names the substitutes to stee
 
 **Seam** _(Michael Feathers)_: a place where you can alter behaviour without editing in that place; the *location* at which a module's interface lives. Where to put the seam is its own design decision, distinct from what goes behind it. _Avoid_: boundary (overloaded with DDD's bounded context).
 
+**Near-decomposability** _(Herbert Simon, "The Architecture of Complexity", 1962)_: what a good set of seams gives a system. Interaction inside each module is dense and fast, interaction across its seam sparse and slow, so a module's short-run behaviour hardly depends on the others, and its long run depends on them only through a few aggregate values: those are its interface. _Avoid_: "loosely coupled" alone, which names the part across the seam and drops the part inside.
+
+**Cohesion**: how far a module's parts change for the same reason. The dual of coupling: coupling asks whether things that vary separately stay apart, cohesion whether things that change together stay together. _Avoid_: judging it by how alike the code looks.
+
 **Adapter**: a concrete thing that satisfies an interface at a seam. Describes *role* (what slot it fills), not substance (what's inside).
 
 **Leverage**: what callers get from depth: more capability per unit of interface they learn. One implementation pays back across N call sites and M tests.
@@ -30,6 +34,7 @@ Use these terms exactly; each entry's _Avoid_ list names the substitutes to stee
 ## Principles
 
 - **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, mockable, swappable parts; they just aren't part of the interface. A module can have **internal seams** (private to its implementation, used by its own tests) as well as the **external seam** at its interface; an internal seam stays out of the interface even when tests use it.
+- **Cut where interaction is weak.** A seam belongs where the traffic across it is sparse, slow and fits in a few values, and the traffic inside is dense and fast: what changes for the same reason sits on one side, what varies separately on two. The commit history measures it better than the import graph: files that change in the same commits interact. A seam that most changes cross is in the wrong place, however deep the modules on either side of it look.
 - **The deletion test.** Imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.
 - **The interface is the test surface.** Callers and tests cross the same seam. If you want to test *past* the interface, the module is probably the wrong shape. Two shapes keep that true: dependencies are passed in, not constructed inside; results are returned, not produced as side effects. Either one broken means a test needs setup past the interface.
 - **Three questions before an interface is final**: can I reduce the number of methods? Can I simplify the parameters? Can I hide more complexity inside? Each "yes" is depth left on the table.

@@ -8,7 +8,7 @@ Code smells (Fowler, _Refactoring_, ch.3, extended) the Standards axis knows by 
 Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 - **Mysterious Name**: a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no honest name comes, the design's murky.
-- **Duplicated Code**: the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
+- **Duplicated Code**: the same logic shape appears in more than one hunk or file in the change, and both copies change for the same reason. → extract the shared shape, call it from both. Copies that only look alike and change for different reasons stay apart: extracting them couples their callers, and the shared function gathers a flag per caller until it is worse than the copies (the wrong abstraction). Where that has already happened, inline it back into its callers, then extract what they truly share.
 - **Feature Envy**: a method that reaches into another object's data more than its own. → move the method onto the data it envies.
 - **Data Clumps**: the same few fields or params keep travelling together (a type wanting to be born). → bundle them into one type, pass that.
 - **Primitive Obsession**: a primitive or string standing in for a domain concept that deserves its own type, including flag `bool`s a two-constructor variant would make self-describing at call sites. → give the concept its own small type.
