@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Claude Code status line: reads the session JSON on stdin, prints two rows, and keeps the input in ~/.cache/claude-statusline/.
 #   row 1: session id │ [host] user in dir with model (effort) │ git │ session duration
-#   row 2: label bar detail, for the context window and the 5h and weekly usage windows
+#   row 2: label bar detail, for the context window and the weekly usage window
 # Input fields: https://code.claude.com/docs/en/statusline
 input=$(cat)
 now=$(date +%s)
 D='\e[90m' N='\e[0m'
 
 # \x1f separates the fields: a tab would collapse an empty field, like a missing effort.
-IFS=$'\x1f' read -r sid model effort dir tp ctx_pct ctx_tokens h5 h5_reset wk wk_reset < <(jq -r '[
+IFS=$'\x1f' read -r sid model effort dir tp ctx_pct ctx_tokens wk wk_reset < <(jq -r '[
   (.session_id // ""),
   .model.display_name,
   (.effort.level // ""),
@@ -16,8 +16,6 @@ IFS=$'\x1f' read -r sid model effort dir tp ctx_pct ctx_tokens h5 h5_reset wk wk
   (.transcript_path // ""),
   (.context_window.used_percentage // 0 | floor),
   (.context_window.total_input_tokens // 0),
-  (.rate_limits.five_hour.used_percentage // -1 | floor),
-  (.rate_limits.five_hour.resets_at // 0),
   (.rate_limits.seven_day.used_percentage // -1 | floor),
   (.rate_limits.seven_day.resets_at // 0)
 ] | map(tostring) | join("\u001f")' <<<"$input")
@@ -124,6 +122,5 @@ echo
 # Row 2
 if ((ctx_pct < 50)); then c='\e[32m'; elif ((ctx_pct < 75)); then c='\e[33m'; else c='\e[31m'; fi
 printf "${D}ctx$N $(bar "$ctx_pct" "$c") $D%s$N" "$(tokens "$ctx_tokens")"
-((h5 >= 0)) && printf "   ${D}5h$N $(bar "$h5" "$(pace_colour "$h5" "$h5_reset" 18000)") $D↻%s$N" "$(until_reset "$h5_reset")"
 ((wk >= 0)) && printf "   ${D}week$N $(bar "$wk" "$(pace_colour "$wk" "$wk_reset" 604800)") $D↻%s$N" "$(until_reset "$wk_reset")"
 echo
