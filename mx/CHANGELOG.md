@@ -1,3 +1,14 @@
+## 1.0.102
+
+- What waits on you: questions, to-dos and links to open, one card at a time, sent as one batch
+  A session page's top band now holds everything waiting on the user: open questions, to-dos, and files linked since they last spoke. It shows one card at a time, with a strip of ticks that groups the cards by kind. The user answers each with a key, and the review screen sends every staged answer as one message through the hub's box; outside the hub, the review copies the batch instead. Turn records gain a `## To do` section whose items persist until a later record clears them, and an option can carry `Gives:` and `Costs:`, shown as a table that stacks in a narrow card. The chat recap no longer lists action items. The hub keeps staged answers in a file per session, so a crash loses none, counts open to-dos as needing the user, and says at its box what stays staged.
+- Seams go where interaction is weak: near-decomposability and cohesion in the design skills
+  codebase-design said where a seam goes is its own decision and gave no rule for it. Its glossary gains near-decomposability (Simon, The Architecture of Complexity, 1962) and cohesion, and its principles gain one: cut where interaction is weak, the traffic across a seam sparse, slow and summarised in a few values, what changes for the same reason on one side, measured by the commit history. improve-codebase-architecture's scan asks which files of two modules keep changing in the same commits, with the counts in the candidate. The Duplicated Code smell extracts only copies that change for the same reason, and says how to undo the wrong abstraction.
+- Session pages open a record's show/ links from the session's own directory
+  A turn record's path under show/ now resolves from the session's directory, where /mx:show puts session work's artefacts, instead of from the repo root, where it pointed at nothing: in a turn's Links, in its prose and code spans, and in what the Stop hook hands the hub. RULES.md says so. The write hook also sends back a record whose Links name a file that does not exist.
+- Agents wait on the event, not the clock: a taste rule and two review smells
+  claude/CLAUDE.md's taste table gains Polling | Events, with a rule beside the ladder: a process with nothing to do costs nothing, code and tests wait on the event, a clock is for what nothing can tell (a deadline on a wait that may never end, a backstop, a remote host with no push) and says which, and the minimum code is the least the system does at runtime. The code-review baselines gain Clock Where an Event Exists (SMELLS.md) and Clock-Waiting Test (TEST-SMELLS.md).
+
 ## 1.0.101
 
 - A secret only max can type runs as one --tty job he switches to
