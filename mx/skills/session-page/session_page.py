@@ -273,11 +273,11 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     root = agent.parent if agent else started_in(entries) or directory
     turns = read_turns(directory / "turns")
     chats = read_chats(directory / "turns")
-    settled = settle(turns)
     turns = held_in_tickets(turns, root / tracker.TICKETS)
     written = written_at(entries, directory, turns)
     turns = [replace(t, written=written.get(t.number)) for t in turns]
     spoken = said(entries)
+    settled = settle(turns, spoken)
     timeline = in_order(turns, chats)
     times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
@@ -577,11 +577,11 @@ class Chat:
 @dataclass(frozen=True)
 class Settled:
     """How a question left the top: answered with `value`, or superseded by the question `value`
-    names, in turn `turn`."""
+    names, in turn `turn`, or, where `turn` is None, by a line of the user's message."""
 
     how: Literal["answered", "superseded"]
     value: str
-    turn: int
+    turn: int | None
 
 
 @dataclass(frozen=True)
@@ -980,9 +980,17 @@ def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
     return tuple(Link(*link) for link in links)
 
 
-def settle(turns: list[Turn]) -> dict[str, Settled]:
-    """How each question and to-do that left the top left it, from later turns' frontmatter. A tag
-    no earlier turn asked, or one already settled, does not parse."""
+# A line of the user's message that answers an item of the page, in the form the page sends it:
+# `Q7: a`, `A3: done`, a note after a comma.
+ANSWER_LINE = re.compile(rf"^({TAG.pattern}): *(\S.*?)\s*$", re.M)
+
+
+def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = ()) -> dict[str, Settled]:
+    """How each question and to-do that left the top left it: from later turns' frontmatter, then
+    from each line of the user's `messages` that answers an item still open in the page's form
+    (`ANSWER_LINE`), once a turn has asked it. A record wins over a line, since it can word an
+    answer the line did not. A tag no earlier turn asked, or one a record already settled, does not
+    parse."""
     asked: dict[str, int] = {}
     settled: dict[str, Settled] = {}
     for turn in turns:
@@ -1007,6 +1015,11 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
         for old, new in turn.superseded.items():
             if new not in asked:
                 raise RecordError(turn.path, line_of(turn.path, old), f"superseded: {old} names {new}, which no turn asks")
+    written = {turn.number: turn.written for turn in turns}
+    for at, text in sorted(messages, key=lambda m: m[0]):
+        for tag, value in ANSWER_LINE.findall(text):
+            if tag in asked and tag not in settled and (written[asked[tag]] is None or written[asked[tag]] < at):
+                settled[tag] = Settled("answered", value, None)
     return settled
 
 
@@ -1818,23 +1831,29 @@ def asked_question(q: Question, how: Settled) -> str:
     if how.how == "superseded":
         return (f'<div class="aq superseded" {anchor}><span class="k v-num">{q.tag}</span><div><p class="aq-h">{inline(q.headline)}</p>'
                 f'<p class="v-meta">replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}</p></div></div>')
-    letter = how.value if any(o.letter == how.value for o in q.options) else None
-    free = "" if letter else f'<p class="v-small free"><span class="v-meta">your answer</span> {esc(how.value)}</p>'
+    picked = how.value.split(",", 1)[0].strip()
+    letter = picked if any(o.letter == picked for o in q.options) else None
+    free = "" if how.value == letter else f'<p class="v-small free"><span class="v-meta">your answer</span> {esc(how.value)}</p>'
     return f"""
 <div class="aq answered" {anchor}>
   <span class="k v-num">{q.tag}</span>
   <div>
     <p class="aq-h">{inline(q.headline)}</p>
     {options(q, letter)}{free}
-    <p class="v-meta">answered in <a href="#t{how.turn:02d}">turn {how.turn:02d}</a></p>
+    <p class="v-meta">{where(how, "answered")}</p>
   </div>
 </div>"""
+
+
+def where(how: Settled, verb: str) -> str:
+    """Where an item was answered: the turn whose record did it, or the user's own message."""
+    return f'{verb} in your message' if how.turn is None else f'{verb} in <a href="#t{how.turn:02d}">turn {how.turn:02d}</a>'
 
 
 def cleared_todo(d: ToDo, how: Settled) -> str:
     """A to-do this turn listed that waits no longer: how the user said it went, or the to-do that replaced it."""
     said = (f'replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}' if how.how == "superseded"
-            else f'{esc(how.value)} · cleared in <a href="#t{how.turn:02d}">turn {how.turn:02d}</a>')
+            else f'{esc(how.value)} · {where(how, "cleared")}')
     return (f'<div class="aq {how.how}" id="{d.tag.lower()}"><span class="k v-num">{d.tag}</span>'
             f'<div><p class="aq-h">{inline(d.headline)}</p><p class="v-meta">to do · {said}</p></div></div>')
 

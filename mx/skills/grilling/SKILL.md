@@ -35,7 +35,7 @@ A decision a figure shows better than prose arrives as one, built by a subagent 
 
 ## Facts and decisions
 
-Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, web, tools), look it up rather than asking. A fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round; ask the rest of the frontier now. A question only answerable, or better answered, by seeing or running something → propose a `/mx:prototype` detour, or file it as a child ticket the prototype answers when the detour cannot run in this session. The _decisions_ are the user's: put each to them and wait.
+Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, web, tools), look it up rather than asking. A fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round; ask the rest of the frontier now. A question only answerable, or better answered, by seeing or running something → propose a `/mx:prototype` detour, or file it as a child ticket the prototype answers when the detour cannot run in this session.
 
 ## Fog and scope
 

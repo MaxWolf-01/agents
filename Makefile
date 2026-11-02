@@ -79,9 +79,10 @@ release-patch release-minor release-major: check test-all test-full-path
 	  if (part == "major") { printf "%d.0.0", $$1+1 } \
 	  else if (part == "minor") { printf "%d.%d.0", $$1, $$2+1 } \
 	  else { printf "%d.%d.%d", $$1, $$2, $$3+1 } }'); \
-	tmp=$$(mktemp); jq --arg v "$$NEW" '.version = $$v' $(PLUGIN) >$$tmp && mv $$tmp $(PLUGIN); \
 	last=$$(git log --first-parent --grep='^mx v[0-9]' --format=%H -1); \
-	{ uv run --quiet tools/changelog_section.py $$last $$NEW; [ ! -f $(CHANGELOG) ] || cat $(CHANGELOG); } >$$tmp; mv $$tmp $(CHANGELOG); \
+	section=$$(uv run --quiet tools/changelog_section.py $$last $$NEW); \
+	tmp=$$(mktemp); jq --arg v "$$NEW" '.version = $$v' $(PLUGIN) >$$tmp && mv $$tmp $(PLUGIN); \
+	{ printf '%s\n\n' "$$section"; [ ! -f $(CHANGELOG) ] || cat $(CHANGELOG); } >$$tmp; mv $$tmp $(CHANGELOG); \
 	git add $(CHANGELOG); \
 	git commit -q -m "mx v$$NEW" -- $(PLUGIN) $(CHANGELOG); \
 	git tag -a "mx-v$$NEW" -m "mx v$$NEW"; \

@@ -29,6 +29,17 @@ def test_merges_bring_their_first_paragraph_and_everything_else_its_subject(tmp_
     )
 
 
+def test_a_release_with_nothing_under_mx_refuses(tmp_path: Path) -> None:
+    git(tmp_path, "init", "-q", "-b", "master")
+    since = commit(tmp_path, "mx/a", "mx v1.0.0")
+    commit(tmp_path, "docs/e", "docs(e): nothing under mx/")
+
+    run = subprocess.run([str(SCRIPT), since, "1.0.1"], cwd=tmp_path, capture_output=True, text=True)
+
+    assert (run.returncode, run.stdout) == (1, "")
+    assert f"nothing under mx/ changed since {since}" in run.stderr
+
+
 def git(repo: Path, *args: str) -> str:
     env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
