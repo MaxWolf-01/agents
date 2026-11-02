@@ -36,7 +36,7 @@ The code level is the same for every shape, the diff on the review page, so a sh
 | A new or moved module boundary | dependency diagram | |
 | A prompt, a skill, a process change | sequence or dependency diagram, when the workflow moved | a role-played exchange: what the agent answered before, what it answers now, marked as role-play; a real session is output nobody reads, and most often the diff is all such a change needs |
 | A script, a hook, a CLI | the modules it reads and writes, when that moved | what an agent or the user types, and what it produced |
-| A page or a UI | | the page rendered: screenshots, the page itself, or both; before the page exists, a prototype's render (`/mx:prototype`) |
+| A page or a UI | | the page itself, running; screenshots beside it as the record; before the page exists, a prototype's render (`/mx:prototype`) |
 | A config or a keybinding | | the setting or the keystroke, and what it does |
 
 Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it. At a landing the table says what its show holds. Every document takes this table, an ADR included, and most ADRs hit no row.
@@ -45,7 +45,7 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 ## A landing's show
 
-Every landing (`/mx:dispatch`) comes with its review page and one show, a build that puts no call to the user included, read whenever the user looks. A change its code diff makes plain at a glance (What a reader can be shown) goes without one, and the landing says so in a line. The show is for the user's understanding of what was built, and where the landing puts calls to the user, it is built around them, as far as their ruling needs it. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
+Every landing (`/mx:dispatch`) comes with its review page and one show, a build that puts no call to the user included, read whenever the user looks. A typo or a rename goes without one, and the landing says so in a line. The show is for the user's understanding of what was built, and where the landing puts calls to the user, it is built around them, as far as their ruling needs it. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
 
 - **One per landing.** A tree's show covers every child ticket in review, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule on them with the parent ticket at its close-out. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
