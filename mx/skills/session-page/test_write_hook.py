@@ -27,7 +27,7 @@ import stop_hook
 import turn_review
 import write_hook
 from session_page import PAGE
-from stop_hook import RECAP
+from stop_hook import END
 from session_checks import (
     CATALOGUE_FIXTURE, LEFT_ALONE, LISTS_A_QUESTION, LONG, RULES_FIXTURE, SESSION, SPOKEN_AFTER, TICKET_QUESTION_UNPARSEABLE, TURN_STARTS,
     UNATTENDED, UNPARSEABLE, appended, logged, project_of, unreachable, with_write,
@@ -109,7 +109,7 @@ def test_a_record_with_findings_goes_back_on_its_write_with_at_most_three(
     worked_example: Path, writing: Path, stale_page: str, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """turns-end-on-their-recap#P1 and P5: the findings reach the agent from the Write that wrote
-    the record, while the turn runs, asking for the recap once it is revised; the page waits for the
+    the record, while the turn runs, asking the turn to end once it is revised; the page waits for the
     turn's end. The edit that revises the record is parsed and not reviewed again."""
     record = worked_example / "turns" / "04.md"
     monkeypatch.setattr(turn_review, "review", reviewer(*map(finding, IN_RECORD)))
@@ -118,7 +118,7 @@ def test_a_record_with_findings_goes_back_on_its_write_with_at_most_three(
     assert str(record) in said
     assert [quote for quote in IN_RECORD if f'"{quote}"' in said] == IN_RECORD[:3]
     assert "**AI vocabulary.**" in said, "a cited rule comes with its text"
-    assert RECAP in said
+    assert END in said
     assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
     assert (worked_example / PAGE).read_text() == stale_page
 
@@ -307,13 +307,13 @@ def test_a_write_that_leaves_the_records_unparseable_is_answered_with_the_reader
     run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """turns-end-on-their-recap#P2: the reason names the file and the line the reader gave up on,
-    asks for the recap once the record is fixed, and costs no model call."""
+    asks the turn to end once the record is fixed, and costs no model call."""
     record = worked_example / "turns" / name
     monkeypatch.setattr(turn_review, "review", unreachable)
     record.write_text(text)
     said = run(wrote(record, writing, tool))
     assert said.startswith(f"{record}:{line}: " if line else f"{record}: ")
-    assert "carry on" in said and RECAP in said, "the turn goes on, and still ends on its recap"
+    assert "carry on" in said and END in said, "the turn goes on, and still ends as it would have"
     assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
 
@@ -353,7 +353,7 @@ def test_a_turn_record_pointing_at_another_part_of_the_page_in_words_goes_back_u
     record.write_text(text + "\n\nThe four ways out are under Details.\n")
     said = run(wrote(record, writing))
     assert said.startswith(f"{record}:{text.count(chr(10)) + 3}: 'under Details' ")
-    assert "(#t07)" in said and RECAP in said
+    assert "(#t07)" in said and END in said
     assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
     monkeypatch.setattr(turn_review, "review", reviewer())
@@ -393,7 +393,7 @@ def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold
     record.write_text(text)
     answer = run(wrote(record, writing))
     assert answer.startswith(f"{record}:{text.splitlines().index(f'- [{handle}]') + 1}: ") and said in answer
-    assert RECAP in answer
+    assert END in answer
 
     monkeypatch.setattr(turn_review, "review", reviewer())
     record.write_text(text.replace(handle, "two-main-checkouts D1"))
@@ -417,7 +417,7 @@ def test_a_record_linking_a_file_that_does_not_exist_goes_back_until_the_link_fi
     answer = run(wrote(record, writing))
     line = text.splitlines().index("- [The rule's diff](show/rule.html): the polling rule") + 1
     assert answer.startswith(f"{record}:{line}: show/rule.html is {worked_example / 'show' / 'rule.html'}, which does not exist")
-    assert RECAP in answer
+    assert END in answer
 
     monkeypatch.setattr(turn_review, "review", reviewer())
     (worked_example / "show").mkdir()

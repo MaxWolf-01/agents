@@ -7,8 +7,8 @@
 
 It reads the PostToolUse JSON of a Write, Edit or MultiEdit on stdin; `decide` answers with a
 Decision over the session's own directory, and `main` hands its reason to the agent as added
-context. The agent fixes the record before it writes its recap, so the turn ends on the recap and
-not on the fix.
+context. The agent fixes the record before the turn ends, so the turn never ends on a report of the
+fix.
 
 - A write that leaves a record of the session unparseable is sent back with the reader's error,
   every time.
@@ -63,7 +63,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     """What to tell the agent after the write the hook JSON describes, over the session directory."""
     import turn_review
     from session_page import SESSIONS, RecordError, agent_repo_of, check_links, check_references, check_ticket_questions, left_alone, read_session, written_this_turn
-    from stop_hook import RECAP
+    from stop_hook import END
 
     if unread := left_alone():
         return Decision("allow", unread)
@@ -80,12 +80,12 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     try:
         session = read_session(directory, Path(hook["transcript_path"]), pending=(call,))
     except RecordError as e:
-        return Decision("send back", "record does not parse", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
+        return Decision("send back", "record does not parse", f"{e}\nFix the record and carry on with the turn; then {END}, as you would have without this error.")
     if written.parent == directory.resolve() / "turns":
         try:
             check_references(written)
         except RecordError as e:
-            return Decision("send back", "reference in words", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
+            return Decision("send back", "reference in words", f"{e}\nFix the record and carry on with the turn; then {END}, as you would have without this error.")
     if (turn := written_this_turn(session)) is None:
         return Decision("allow", "records parse")
     if turn.path.resolve() == written:
@@ -94,11 +94,11 @@ def decide(hook: dict, directory: Path | None) -> Decision:
             check_links(session.root, session.directory, turn)
         except RecordError as e:
             return Decision("send back", "ticket question not open or link to nothing",
-                            f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
+                            f"{e}\nFix the record and carry on with the turn; then {END}, as you would have without this error.")
     if turn_review.reviewed_since(session.id, session.began):
         return Decision("allow", "record reviewed this turn")
     if said := turn_review.feedback_on(session, turn):
-        return Decision("send back", "review findings", f"{said}\nThe user does not see this review. Once the record is revised, {RECAP}, as you would have without it.")
+        return Decision("send back", "review findings", f"{said}\nThe user does not see this review. Once the record is revised, {END}, as you would have without it.")
     return Decision("allow", "review found nothing")
 
 
