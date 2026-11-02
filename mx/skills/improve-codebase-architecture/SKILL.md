@@ -45,7 +45,6 @@ The scan is done when every candidate carries:
 - **Problem**: why the current architecture is causing friction
 - **Solution**: plain English description of what would change; the interface itself is designed in step 3, with the user
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
-- **Invariant**: what always holds at the new seam, and the check that states it (`/mx:testing`, Property tests).
 - **Dependency category**: which of the four in `/mx:codebase-design` the deepening falls into
 - **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
 - **Impact**: what the deepening buys against what it costs, in one line; candidates are ordered by it, in the report and in the grilling. Strength is how sure you are the deepening holds, impact what it pays

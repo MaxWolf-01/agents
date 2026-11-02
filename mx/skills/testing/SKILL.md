@@ -35,7 +35,7 @@ Every expected value comes from outside the implementation: a sentence of the ti
 
 ## Property tests
 
-A property test is written when a seam is designed or cleaned: `/mx:improve-codebase-architecture` names the invariant at the new seam and its check. A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
+A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
 
 An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is a sign the seam is wrong: a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
 
