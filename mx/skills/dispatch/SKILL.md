@@ -26,7 +26,7 @@ Two scripts beside this skill carry the mechanics; their help (The scripts, belo
 
 Open the tick with `dispatch ctl probe`: it decides who exited.
 
-**The sort.** A build's calls are its assumptions, its questions, and what the diff settles that the ticket did not, and each goes to one of three: **already the user's**, settled under their call mark in the ticket or its ancestry, in grilling or an earlier ruling, and built as settled; **the agent's**, an implementation call, how the thing is built; **the user's to make**, a call that changes what they asked for ([the session page's rules](../session-page/RULES.md), the turn record's Questions), which an agent-sketched call (`my call`) that does still is, since the user never made it. At a parent's close-out the sort runs over the whole tree, the parent's calls and every child's in `review`.
+**The sort.** A build's calls are its assumptions, its questions, and what the diff settles that the ticket did not, and each goes to one of three: **already the user's**, settled under their call mark in the ticket or its ancestry, in grilling or an earlier ruling, and built as settled; **the user's to make**, a call [the session page's rules](../session-page/RULES.md) give the user (What the user decides), which an agent-sketched call (`my call`) still is, since the user never made it; **the agent's**, the rest. At a parent's close-out the sort runs over the whole tree, the parent's calls and every child's in `review`.
 
 For each worker that has exited, `dispatch fetch <slug>`. The **report** at `agent/show/<slug>/report.md` on its agent branch is the worker's finished signal, and the probe line's `report=` says whether this round committed one:
 
