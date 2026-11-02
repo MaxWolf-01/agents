@@ -776,6 +776,23 @@ def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path)
     assert "Review devops #3 to do · done · cleared in turn 02" in listed and "replaced by A3 in turn 02" in listed
 
 
+def test_a_line_of_the_users_message_in_the_pages_form_settles_its_item(tmp_path: Path) -> None:
+    """An answer the user sends settles its item as it lands, whether or not a record follows: the
+    record of turn 01 asks Q1 and lists A1 and A2; a message before it settles nothing, the one
+    after it settles Q1 and A1 with its own words, and a line quoted or mid-sentence settles nothing.
+    A later record that also answers Q1 is read, its words winning."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "turns" / "02.md").unlink()
+    write_transcript(transcript, ["Q1: b, before it was asked", "Q1: a, push them\nA1: done\n> A2: done\nand A2: done too"])
+    v = view_of(directory, transcript)
+    assert waiting(v) == [] and [d.handle for _, d in v.todos] == ["A2"]
+    listed = text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
+    assert "answered in your message" in listed and "push them" in listed and "done · cleared in your message" in listed
+
+    (directory / "turns" / "02.md").write_text("---\ndate: 2026-10-29\nanswered:\n  Q1: b, on second thought\n---\n\n# Pushed\n")
+    assert "on second thought" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
+
+
 def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
     """The floor D3 sets: each option a row, its gives and costs in columns of their own, the pick
     marked; an option that names no cost leaves its cell empty."""
