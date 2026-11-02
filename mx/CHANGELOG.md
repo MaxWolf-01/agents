@@ -1,3 +1,8 @@
+## 1.0.104
+
+- feat(workflow): the retro's top proposals of 2026-11-02 — workers cut their own diff, architecture is the user's, answers settle where they land
+  Workers now trim their own branch before review, and their taste block matches the global one again. Agents ask the user before a build rests on an architecture call the user has not made, and decide everything else themselves. A question whose options look different is asked with a render of each, and a UI is shown running. On the session page, a reply line such as "Q7: a" settles its question as the user sends it, marked "answered in your message", with no record needed. A parent's accept no longer marks its tree's open questions as answered. Merges into the trunk are staged with `--no-commit`, checked, then committed with `git commit -F -` or aborted. Releases refuse, before bumping the version, when nothing under mx/ changed since the last one.
+
 ## 1.0.103
 
 - A paged turn ends on its record, and the terminal shows its headline
