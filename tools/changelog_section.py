@@ -5,6 +5,8 @@
 # ///
 """Print the CHANGELOG.md section of a release: its version, then one entry per commit on HEAD's first-parent line since SINCE that changes something under mx/.
 
+A release with no such commit is refused, exit 1, before anything is written.
+
 An entry is the commit's subject. A merge's entry adds the first paragraph of its body, joined onto one indented line, unless that paragraph holds only trailers. Commits whose subject is a release's own (`mx v1.2.3`) are left out.
 
 Examples:
@@ -52,6 +54,8 @@ def section(since: str, version: str) -> str:
         entries.append(f"- {subject}")
         if len(parents.split()) > 1 and (paragraph := lead(body)):
             entries.append(f"  {paragraph}")
+    if not entries:
+        raise SystemExit(f"nothing under mx/ changed since {since}")
     return f"## {version}\n\n" + "".join(f"{entry}\n" for entry in entries)
 
 
