@@ -21,10 +21,10 @@ it never opens. The page itself opens only where no container hub answers, and o
 that writes it first, since a repeat would be another tab: the hub finds a session's page on disk
 and reloads it once it is written anew. Each open is a line of the log saying what came of it.
 
-The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
-whose turn wrote a record shows the user a message of the hook's own under it, as a
-`systemMessage`: a line linking the hub's tab at the session's unit, or the page's file where no hub
-answers, and under it a line for each question waiting on them (`waiting`).
+A turn whose answer is on the page ends without a chat message of its own, so a render whose turn
+wrote a record shows the user, as a `systemMessage`, what the terminal reads in its place: the
+record's headline, a line linking the hub's tab at the session's unit, or the page's file where no
+hub answers, and under it a line for each question and to-do waiting on them (`waiting`).
 
 Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the
 hook took that path, and the session directory it resolved.
@@ -63,7 +63,8 @@ class Decision:
     why: str  # which path the hook took, for the log
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     chat: tuple[Path, str] | None = None  # the chat turn's record a render writes first, as its path and text
-    shown: str = ""  # the line under a render's turn that wrote a record, up to the link `main` adds
+    headline: str = ""  # the record's headline, the first line a render's turn that wrote a record shows
+    shown: str = ""  # the line under the headline, up to the link `main` adds
     waiting: tuple[str, ...] = ()  # the lines under it, one per open question or to-do
     artefacts: tuple[str, ...] = ()  # the file or URL of each artefact the record this turn wrote links
 
@@ -76,16 +77,15 @@ HUB_SOCKET_VARIABLE = "CONTAINER_HUB_SOCKET"
 HUB_HEALTH = "/.health"
 HUB_UNIT = "/u/{session}"
 
-# How every send-back, the write hook's too, asks the turn to end: RULES.md's chat recap. The
-# hook shows the open questions and to-dos and the link to the page under it.
-RECAP = (
-    "end the turn on its chat recap: a line or two on what the turn did that reads on its own; what waits on the "
-    "user goes in the record's Questions, To do and Links, not the recap; no line points at the page"
+# How every send-back, the write hook's too, asks the turn to end, as RULES.md has it.
+END = (
+    "end the turn without a chat message: the Stop hook shows the user the record's headline, the page's link and "
+    "what waits on them, so what the user needs goes in the record"
 )
-UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
+UNPARSED = f"Fix the record, then {END}, as you would have without this error. The page renders once every record parses."
 OUTSIDE_WRITE = (
     "This turn wrote {record} without the Write tool, so the page pairs the user's message with no turn. "
-    f"Write it again with Write, then {RECAP}."
+    f"Write it again with Write, then {END}."
 )
 
 
@@ -105,8 +105,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     - Otherwise the page renders. Where this turn wrote no record and ended on a reply, the reply
       is written first as a chat turn (`session_page.CHAT`), which takes no
       number of the agent's records; `main` creates the session's directory for it where there is
-      none yet. Where this turn wrote a record, the render comes with the line the user sees under
-      the agent's recap (`shown`, short of its link, and `waiting`) and the record's artefacts, and where that
+      none yet. Where this turn wrote a record, the render comes with the lines the user sees in place
+      of a chat message (`headline`, `shown`, short of its link, and `waiting`) and the record's artefacts, and where that
       record was reviewed, the records as the turn ended are logged beside the review, so the log
       pairs a draft with its revision.
     """
@@ -131,7 +131,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if turn is None:
         return Decision("render", "no record written this turn")
     asked = waiting(session)
-    rendered = {"shown": shown(asked), "waiting": asked, "artefacts": linked(session, turn)}
+    rendered = {"headline": plain(turn.headline), "shown": shown(asked), "waiting": asked, "artefacts": linked(session, turn)}
     if not turn_review.reviewed_since(session.id, session.began):
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
@@ -139,18 +139,23 @@ def decide(hook: dict, directory: Path | None) -> Decision:
 
 
 def shown(asked: tuple[str, ...]) -> str:
-    """The line under a turn whose answer is on the page, up to its link: whether a question waits on
-    the user there, given the lines `waiting` names them in."""
+    """The line under the headline of a turn whose answer is on the page, up to its link: whether a
+    question waits on the user there, given the lines `waiting` names them in."""
     return f"session page · {'waiting on you' if asked else 'nothing waiting on you'}"
 
 
 def waiting(session: Session) -> tuple[str, ...]:
     """A line for each open question, oldest first, then each open to-do: its tag, a ticket's
     question qualified by its ticket, `new` where a turn since the user's last message asked it, and
-    its headline as the page's reader reads it, since the terminal renders no markdown: a link as
-    its text, emphasis and code without their marks."""
-    return tuple(f"{q.handle}{' new' if asked_since_spoke(session, t) else ''} · {strip_tags(inline(q.headline, paths=False))}"
+    its headline (`plain`)."""
+    return tuple(f"{q.handle}{' new' if asked_since_spoke(session, t) else ''} · {plain(q.headline)}"
                  for t, q in [*open_questions(session), *open_todos(session)])
+
+
+def plain(markdown: str) -> str:
+    """A line of a record as the page's reader reads it, since the terminal renders no markdown: a
+    link as its text, emphasis and code without their marks."""
+    return strip_tags(inline(markdown, paths=False))
 
 
 def asked_since_spoke(session: Session, turn: Turn) -> bool:
@@ -247,7 +252,7 @@ def main() -> None:
             turn_review.log(session_id, opened=open_in_browser(artefact, session_id), artefact=artefact)
         if decision.shown:
             line = f"{decision.shown} · {unit or (directory / PAGE).as_uri()}"
-            print(json.dumps({"systemMessage": "\n".join((line, *decision.waiting))}))
+            print(json.dumps({"systemMessage": "\n".join((decision.headline, line, *decision.waiting))}))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
     # the turn is over, and the page just rendered holds its calls where it holds the turn

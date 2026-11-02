@@ -127,9 +127,10 @@ def shown(capsys: pytest.CaptureFixture) -> str:
     return said["systemMessage"]
 
 
-def first_line(message: str) -> str:
-    """The line of the hook's message that links the page; the open questions follow it."""
-    return message.splitlines()[0]
+def link_line(message: str) -> str:
+    """The line of the hook's message that links the page, under the record's headline; the open
+    questions follow it."""
+    return message.splitlines()[1]
 
 
 def said_back(capsys: pytest.CaptureFixture) -> str:
@@ -170,7 +171,7 @@ def test_a_session_keeps_its_page_in_one_directory_whichever_worktree_it_ran_in(
         (directory / PAGE).unlink(missing_ok=True)
         run(payload(directory, transcript) | {"cwd": str(cwd)})
         assert (directory / PAGE).is_file(), cwd
-        assert first_line(shown(capsys)).endswith((directory / PAGE).as_uri()), cwd
+        assert link_line(shown(capsys)).endswith((directory / PAGE).as_uri()), cwd
     assert not (worktree / "agent").exists()
     assert not (main / "agent" / "sessions").exists()
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "8e0f1c22-0000-0000-0000-000000000000")
@@ -429,8 +430,8 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     run: Callable[[dict], None], attended: Path, tmp_path: Path,
 ) -> None:
     """A page on disk that this hook did not write, a render of an older version say, is rendered
-    over and, with no hub, not opened again; the turn's artefacts still open, and the line still
-    shows under the recap."""
+    over and, with no hub, not opened again; the turn's artefacts still open, and the hook's message
+    still shows."""
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
     assert (worked_example / PAGE).read_text() != stale_page
@@ -438,7 +439,7 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
         str(tmp_path / "agent/show/session-page/round-3" / page)
         for page in ("pages.html", "spec.html")]
-    assert first_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
+    assert link_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the hub ----------------------------------------------------------------
@@ -503,7 +504,7 @@ def test_the_hooks_line_links_the_sessions_unit_where_a_hub_answers_and_the_page
         hub(status, url)
     link = f"{HUB_URL}/u/{worked_example.name}" if unit else (worked_example / PAGE).as_uri()
     run(payload(worked_example, transcript))
-    assert first_line(shown(capsys)) == f"session page · waiting on you · {link}"
+    assert link_line(shown(capsys)) == f"session page · waiting on you · {link}"
 
 
 @pytest.fixture
@@ -552,7 +553,7 @@ def test_a_hub_socket_that_cannot_be_asked_is_no_hub(
     monkeypatch.setenv("CONTAINER_HUB_SOCKET", str(hub_socket(request)))
     run(payload(worked_example, transcript))
     assert [entry["opened"].startswith("started ") for entry in logged(attended, "page")] == [True]
-    assert first_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
+    assert link_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the records kept out of every checkout ----------------------------------
@@ -726,6 +727,7 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
 ANSWERS_Q7 = "---\ndate: 2026-09-23\nanswered:\n  Q7: a\n---\n\n# Round 4\n\n## Details\n\nThe light review it is.\n"
 ASKS_NOTHING = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe ledger has one bank.\n"
 Q7 = "What reviews a turn's own prose?"  # the headline record 04 asks Q7 by
+ROUND_3 = "Round 3: the page is a container, and the spec gets a page of its own"  # record 04's headline
 
 
 def test_a_turn_that_wrote_a_record_ends_on_the_hooks_line_naming_what_waits(
@@ -734,15 +736,15 @@ def test_a_turn_that_wrote_a_record_ends_on_the_hooks_line_naming_what_waits(
     """stop-hook-prints-the-page-link#P1 and turn-end-line-names-the-open-questions: the worked
     example's record 04 asks Q7 after the user's last message, so the line under it names Q7 by its
     headline, new; a record 05 answering it, after the user spoke again, leaves nothing. Either way
-    the first line ends on the page's link."""
+    the record's headline opens the message, and the line under it ends on the page's link."""
     link = (worked_example / PAGE).as_uri()
     run(payload(worked_example, transcript))
-    assert shown(capsys) == f"session page · waiting on you · {link}\nQ7 new · {Q7}"
+    assert shown(capsys) == f"{ROUND_3}\nsession page · waiting on you · {link}\nQ7 new · {Q7}"
     fifth = worked_example / "turns" / "05.md"
     fifth.write_text(ANSWERS_Q7)
     with_write(unrecorded, "Write", fifth)
     run(payload(worked_example, unrecorded))
-    assert shown(capsys) == f"session page · nothing waiting on you · {link}"
+    assert shown(capsys) == f"Round 4\nsession page · nothing waiting on you · {link}"
 
 
 def test_a_question_asked_before_the_users_last_message_is_not_new(
@@ -754,7 +756,7 @@ def test_a_question_asked_before_the_users_last_message_is_not_new(
     fifth.write_text(ASKS_NOTHING)
     with_write(unrecorded, "Write", fifth)
     run(payload(worked_example, unrecorded))
-    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}"]
+    assert shown(capsys).splitlines()[2:] == [f"Q7 · {Q7}"]
 
 
 LISTS_A_TODO = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`.\n"
@@ -769,7 +771,7 @@ def test_an_open_to_do_is_named_under_the_line_after_the_questions(
     fifth.write_text(LISTS_A_TODO)
     with_write(unrecorded, "Write", fifth)
     run(payload(worked_example, unrecorded))
-    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}", "A1 new · Review devops #3"]
+    assert shown(capsys).splitlines()[2:] == [f"Q7 · {Q7}", "A1 new · Review devops #3"]
 
 
 # A question whose headline links another, as session 168b5d8b's turn 3 asked one with `[Q6](#q6)`
@@ -790,7 +792,7 @@ def test_a_headline_reaches_the_line_as_plain_text(
     fifth.write_text(ASKS_WITH_MARKDOWN)
     with_write(unrecorded, "Write", fifth)
     run(payload(worked_example, unrecorded))
-    assert shown(capsys).splitlines()[1:] == [f"Q7 · {Q7}", "Q8 new · Fold Q7 into the light review in turn_review.py?"]
+    assert shown(capsys).splitlines()[2:] == [f"Q7 · {Q7}", "Q8 new · Fold Q7 into the light review in turn_review.py?"]
 
 
 # What starts a drawn turn: the user's own prompt; a finished task, with the user saying nothing;
@@ -948,8 +950,8 @@ def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
     worked_example: Path, unrecorded: Path, tmp_path: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
     """D1's point: no record the agent writes can land on a chat turn. After one, the agent's next
-    record is 05, the number after its own 04, written with Write; it is that turn's, shown under
-    its recap above the chat turn, which keeps its reply."""
+    record is 05, the number after its own 04, written with Write; it is that turn's, shown above
+    the chat turn, which keeps its reply."""
     run(payload(worked_example, unrecorded, reply="Yes, the second bank."))
     capsys.readouterr()
     [chat] = chats(worked_example)
@@ -962,7 +964,7 @@ def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
     appended(next_turn, next_turn, {"type": "assistant", "message": {"role": "assistant", "content": [call]},
                                     "timestamp": (datetime.now(UTC) + timedelta(minutes=2)).isoformat()})
     run(payload(worked_example, next_turn, reply="Round 4 is on the page."))
-    assert shown(capsys).startswith("session page · ")
+    assert link_line(shown(capsys)).startswith("session page · ")
     page = (worked_example / PAGE).read_text()
     assert rows(page) == ["t05", chat.stem, "t04", "t03", "t02", "t01"]
     assert "And the third?" in turns_on(page)["t05"]
@@ -1021,7 +1023,7 @@ def test_the_turns_end_runs_no_review(
     run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
     """turns-end-on-their-recap#P3: the review ran when the record was written, or not at all, and a
-    turn that wrote a record renders with the hook's line under the recap either way. The log says
+    turn that wrote a record renders with the hook's message either way. The log says
     which of the two it was."""
     if reviewed:
         attended.write_text(json.dumps(REVIEWED_04 | {"session_id": worked_example.name}) + "\n")
@@ -1195,16 +1197,16 @@ SENT_BACK_AT_THE_END = {"a record that does not parse": unparsed, "a record writ
 
 
 @pytest.mark.parametrize("arrange", SENT_BACK_AT_THE_END.values(), ids=SENT_BACK_AT_THE_END)
-def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
+def test_what_the_turns_end_still_sends_back_asks_the_turn_to_end_as_the_rules_say(
     arrange: Callable, worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
     run: Callable[[dict], None], request: pytest.FixtureRequest,
 ) -> None:
-    """turns-end-on-their-recap#P3 and P4: the records the write hook never saw are still checked
-    at the turn's end, and the send-back asks the turn to end on its recap, which
-    (turn-end-line-names-the-open-questions#P3) lists no question: the hook's message names them."""
+    """turns-end-on-their-recap#P3: the records the write hook never saw are still checked at the
+    turn's end, and the send-back asks the turn to end as RULES.md has it, listing no question
+    (turn-end-line-names-the-open-questions#P3): the hook's message names them."""
     run(arrange(worked_example, transcript, request))
     said = said_back(capsys)
-    assert stop_hook.RECAP in said and "without a reply" not in said
+    assert stop_hook.END in said
     assert not LISTS_A_QUESTION.search(said.splitlines()[-1])
 
 
