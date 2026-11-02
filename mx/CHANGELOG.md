@@ -1,3 +1,8 @@
+## 1.0.103
+
+- A paged turn ends on its record, and the terminal shows its headline
+  When an agent turn writes its answer to the session page, it no longer ends with a short summary in the chat, so each answer is written only once. The Stop hook's message in the terminal takes its place: it opens with the record's headline, then gives the page link and the open questions and to-dos. Send-backs from both hooks now tell the agent to end without a chat message.
+
 ## 1.0.102
 
 - What waits on you: questions, to-dos and links to open, one card at a time, sent as one batch
