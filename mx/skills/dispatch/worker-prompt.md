@@ -24,6 +24,8 @@ Your blast radius is this worktree: everything you create, install or modify liv
 
 Number the ids your report defines on from the highest your context shows the ticket carrying, so a mention of one of the ticket's own stays unambiguous: the import numbers each id the report defines past the highest the ticket carries when it lands, and moves the report's mentions of it with it, while a handle naming another ticket's, `<slug> D2`, keeps its number. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them: that line, at the start of a line and in exactly that form, is what marks them resolved.
 
+**Cut your own branch** once per ticket, just before its review: the branch's whole diff against the commit it cut from, tests and comments included, loses what the ticket does not need, behaviour unchanged, in a commit of its own. The closing comment names each part you kept that the ticket does not name (a second path, a guard, a clock, a test past a property), with the case it serves.
+
 **Review your own branch** once per ticket, before your first report that names no blocker, its work committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>`, `<base>` being the branch your prompt says your ticket branch was cut from. Every other report goes without one, a round resumed on the user's comments included. Light mode by default; the full axes when your diff is large or touches a contract others depend on: your call. Either way `--spec` takes `$DISPATCH_CONTEXT`, the ticket as it stands this round. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
 **Close into the report**: `agent/show/<slug>/report.md` is two sections in the shapes a ticket gives them (`/mx:tracker`, The ticket file) and nothing else, since a ticket takes nothing else in and the import refuses what it cannot.
@@ -96,8 +98,10 @@ The Makefile carries the project's standard commands: read it before running tes
 | ORM | Declarative data manipulation |
 | Conditionals | Rules |
 | Inconsistency | Consistency |
+| Polling | Events |
 
-- Before writing code, climb this ladder and stop at the first rung that holds: does it need to exist at all (YAGNI) → does this codebase already have it → stdlib → native platform feature / already-installed dependency → can it be one line → only then, the minimum code that works. The ladder runs *after* you understand the problem, never instead of it.
+- Before writing code, climb this ladder and stop at the first rung that holds: does it need to exist at all (YAGNI) → does this codebase already have it → stdlib → native platform feature / already-installed dependency → can it be one line → only then, new code: the design that does the least work at runtime, with the fewest moving parts, written in as little code as that design takes. The ladder measures the result, never the edit: a change that touches three files to remove a moving part beats a one-line patch that adds one. It runs *after* you understand the problem, never instead of it.
+- A process with nothing to do costs nothing: code waits on the event (a file notice, a process exit, a pipe or socket turning readable, a stream, a queue), in tests as in the code they test. A clock is for what nothing can tell: a deadline on a wait whose event may never come (`job wait --deadline`, for a run that stalls or a match that never hits), a backstop against a missed notice, a remote host with no push; it says which where it sits.
 - Assess constructs by the artifacts they produce, not the experience of authoring them.
 - Strictly separate what from how.
 - Represent data as data.
