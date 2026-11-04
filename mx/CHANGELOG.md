@@ -1,3 +1,8 @@
+## 1.0.105
+
+- tyro-cli: a flag whose value is optional
+  PATTERNS.md gains a section showing a PrimitiveConstructorSpec with nargs="*" as a flag taken alone or with one value, the help hint that hides an empty default, and the case where the flag takes the word a positional needed; SKILL.md's pointer names the branch.
+
 ## 1.0.104
 
 - feat(workflow): the retro's top proposals of 2026-11-02 — workers cut their own diff, architecture is the user's, answers settle where they land
