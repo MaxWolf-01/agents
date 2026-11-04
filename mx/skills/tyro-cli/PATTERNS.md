@@ -90,6 +90,30 @@ config = tyro.cli(Config)
 
 **`OmitArgPrefixes` with nested dataclasses** can cause name collisions if nested structs share field names. Only use it for flat, single-dataclass CLIs.
 
+## A flag with an optional value
+
+`--image` alone means one thing, `--image shot.png` another (argparse's `nargs="?"`). tyro has no marker for it, and `PrimitiveConstructorSpec(nargs="?")` is internal; a constructor taking zero or more values does it:
+
+```python
+def _one_image(values: list[str]) -> Path | bool:
+    if len(values) > 1:
+        raise ValueError("--image takes one FILE at most")
+    return Path(values[0]) if values else True
+
+IMAGE = tyro.constructors.PrimitiveConstructorSpec(
+    nargs="*", metavar="[FILE]", instance_from_str=_one_image,
+    is_instance=lambda x: isinstance(x, (bool, Path)),
+    str_from_instance=lambda x: [str(x)] if isinstance(x, Path) else [])
+
+@dataclass
+class Put:
+    source: Annotated[Path, tyro.conf.Positional]
+    image: Annotated[Path | bool, IMAGE, tyro.conf.arg(help_behavior_hint="(default: none)")] = False
+```
+
+- Without `help_behavior_hint`, `--help` prints `(default: )`.
+- The flag takes words up to the next flag. It leaves one for a required positional only when that word is the last on the line: `--image page.html` and `page.html --image` parse, `--image page.html --title T` reads `page.html` as the image and fails on the missing positional.
+
 ## Useful features reference
 
 | Feature | Usage | When |

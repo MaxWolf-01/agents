@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
 ### Subcommands, nested configs, machine output
 
-- Subcommands, nested configs, positional or repeated args, short aliases, the rest of `tyro.conf`: [PATTERNS.md](PATTERNS.md).
+- Subcommands, nested configs, positional or repeated args, a flag whose value is optional (`--image` or `--image FILE`), short aliases, the rest of `tyro.conf`: [PATTERNS.md](PATTERNS.md).
 - Output a program or an agent reads (`--plain`, `--json`, a JSON schema in `--help`): [OUTPUT.md](OUTPUT.md).
 
 ## Documenting --help
