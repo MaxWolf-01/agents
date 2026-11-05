@@ -409,6 +409,9 @@ with sync_playwright() as pw:
                 inner.focus("#open-questions .card:not([hidden])")
                 for key in args["keys"]:
                     page.keyboard.press(key)
+                out["typed"] = inner.evaluate("document.querySelector('#review pre').textContent")
+                page.evaluate("window.words = 'and go on'")
+                inner.evaluate("window.waitingWords()")  # what the hub tab calls as the user types in its box
                 out["review"] = inner.evaluate("document.querySelector('#review pre').textContent")
                 out["stays"] = inner.evaluate("document.querySelector('#review .left-out summary').textContent")
                 out["before"] = page.evaluate("window.sent")
@@ -566,16 +569,16 @@ def hub_tab(page: Path, kept: dict) -> str:
     under way would be, and hands the page back the lines it sent, the box's own words after them."""
     tab = page.parent / "tab.html"
     tab.write_text("""<!doctype html><meta charset="utf-8"><script>
-window.saved = []; window.sent = null;
+window.saved = []; window.sent = null; window.words = "and go";
 window.hubWaiting = {
   holds: () => true,
   restaged: () => { window.restaged = true },
   load: async () => ({ ok: true, staged: KEPT }),
   save: async (w, doc) => { window.saved.push(doc); return { ok: true } },
-  words: () => "and go on",
+  words: () => window.words,
   send: async (w) => {
     const batch = w.waitingBatch().split("\\n").filter((l) => !l.startsWith("A1:")).join("\\n")
-    window.sent = batch + "\\n\\nand go on"
+    window.sent = batch + "\\n\\n" + window.words
     w.waitingSent(batch)
     return { ok: true }
   },
@@ -1018,7 +1021,7 @@ def test_the_keys_stage_each_kind_of_item_and_the_review_shows_the_batch(waiting
 def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_sent_off_the_cards(waiting_page: Path) -> None:
     """#P2 and #P3 at the page's seam with the hub tab: what the hub kept is staged on load, a note on
     an item this render no longer shows among it; nothing goes before the review's Enter, which shows
-    the batch with the box's words below it; once the hub sent it, the lines it sent leave the cards
+    the batch with the box's words below it, as they stand when the box last changed; once the hub sent it, the lines it sent leave the cards
     and the staging, and one it left out (A1's) stays staged; the band starts again at the first item
     still waiting, the keys in it."""
     staged = {"Q1": {"pick": "b", "note": "kept by the hub"}, "agent/show/old/fig.html": {"note": "the axis is off"}}
@@ -1026,7 +1029,7 @@ def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_se
     seen = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=hub_tab(waiting_page, kept), send=True, keys=["]", "d", "r"])
     assert seen["loaded"]["staged"] == "staged: b · Wait for the first review · note: kept by the hub", seen["loaded"]
     message = "Q1: b, kept by the hub\nA1: done\nagent/show/old/fig.html: the axis is off\n\nand go on"
-    assert seen["review"] == message and seen["before"] is None, seen
+    assert seen["typed"] == message[: -len(" on")] and seen["review"] == message and seen["before"] is None, seen
     assert seen["stays"] == "Not answered, so they stay: 2 to look at", seen["stays"]
     assert seen["sent"] == "Q1: b, kept by the hub\nagent/show/old/fig.html: the axis is off\n\nand go on", seen["sent"]
     assert seen["saved"]["staged"] == {"A1": {"act": "done"}} and set(seen["saved"]["sent"]) == {"Q1"}, seen["saved"]

@@ -249,6 +249,8 @@ window.waitingSent = (text) => read.then(() => {
   if (keys) showCard(0)
   else { reviewing = false; at = 0; draw(); waiting.scrollTop = 0 }
 })
+// the box's words changed as the user typed there: the review's message shows them, the rest of it left as it is
+window.waitingWords = () => { if (reviewing) review.querySelector(".message").outerHTML = message() }
 // a reload under a note being typed would take the field from under the reader's fingers
 window.reloadWouldLose = () => noting !== null
 
@@ -295,8 +297,11 @@ const draw = () => {
   if (reviewing) drawReview(list)
   refade()
 }
+const message = () => {
+  const text = [batch(), words()].filter(Boolean).join("\n\n")
+  return text ? `<pre class="message">${esc(text)}</pre>` : `<p class="v-small empty message">Nothing staged yet.</p>`
+}
 const drawReview = (list) => {
-  const message = [batch(), words()].filter(Boolean).join("\n\n")
   const left = list.filter((c) => !state.staged[c.dataset.handle] && !(c.dataset.kind === "look" && seenOf(c.dataset.handle)))
   const kinds = [...new Set(left.map((c) => c.dataset.kindWord))]
   const of = (word) => left.filter((c) => c.dataset.kindWord === word)
@@ -305,8 +310,7 @@ const drawReview = (list) => {
     : `<details class="left-out v-small"><summary>Not answered, so they stay: ${kinds.map((w) => `${of(w).length} to ${w}`).join(", ")}</summary>` +
       kinds.map((w) => `<p><span class="v-meta">to ${w}</span> ${esc(of(w).map(named).join(", "))}</p>`).join("") + `</details>`
   const gone = orphans()
-  review.innerHTML = `<h3 class="v-h2">The batch, as the session gets it</h3>` +
-    (message ? `<pre>${esc(message)}</pre>` : `<p class="v-small empty">Nothing staged yet.</p>`) +
+  review.innerHTML = `<h3 class="v-h2">The batch, as the session gets it</h3>` + message() +
     (gone.length ? `<p class="left-out v-small">Staged on items this page no longer shows, and sent with the rest: ${esc(gone.join(", "))}.</p>` : "") +
     stays +
     `<p class="keys-row v-meta"><button type="button" class="key" data-key="Enter"><kbd>↵</kbd> ${hub ? "send" : "copy it: no hub frames this page to send it"}</button>` +
