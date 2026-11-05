@@ -1,3 +1,8 @@
+## 1.0.106
+
+- feat(session-page): the review's preview follows the hub box as it is typed
+  When the session page sits in a hub tab, its review of the batch now keeps up with what the user types into the hub's message box. The page exposes waitingWords(), which the hub calls on each change to the box, and redraws only the message preview, leaving the rest of the review (an open "not answered" list) alone. Before, the preview held the box's words as they stood when r opened the review, so later typing was sent unseen. The hub half is the dotfiles commit "the box tells its session page each change to its words".
+
 ## 1.0.105
 
 - tyro-cli: a flag whose value is optional
