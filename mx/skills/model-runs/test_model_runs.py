@@ -111,16 +111,37 @@ def test_a_run_in_a_repo_names_the_repo_off_its_git_dir(tmp_path: Path) -> None:
 def test_a_run_that_ends_without_a_result_still_gets_its_line(tmp_path: Path) -> None:
     """Killed, crashed or cut off: the line says so, sums the tokens of the messages that arrived,
     one per message however many lines it streamed as, and carries claude's exit and the session
-    id a resume needs. What claude printed goes through, since with no result it is the error."""
+    id a resume needs. What claude printed goes through, since with no result it is the error, and
+    the line keeps the end of it, stdout and stderr, so the log names the failure."""
     synthetic = {"type": "assistant", "message": {"id": "m9", "model": "<synthetic>", "usage": {"input_tokens": 0, "output_tokens": 0}}}
-    fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, synthetic) + "API Error: overloaded\n", then="exit 1")
+    fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, synthetic) + "API Error: overloaded\n",
+                then="echo 'retrying failed: 529' >&2\nexit 1")
     done = model_runs(tmp_path, "run", "--site", "worker", "--attempt", "2", "--range", "", "--", "claude", "-p", "--model", "opus")
     assert done.returncode == 1
     assert done.stdout == "API Error: overloaded\n"
+    assert done.stderr == "retrying failed: 529\n", "claude's stderr still reaches the caller"
     (line,) = lines(tmp_path)
     assert (line["exit"], line["end"], line["cost_usd"], line["turns"], line["attempt"]) == (1, "no result", None, None, 2)
     assert line["session"] == "sess-1" and line["ran"] == ["claude-opus-5-5"]
     assert line["tokens"] == {"input": 10, "output": 40, "cache_read": 500, "cache_write": 20}
+    assert line["printed"]["stdout"].endswith("API Error: overloaded")
+    assert line["printed"]["stderr"] == "retrying failed: 529"
+
+
+def test_a_run_that_printed_text_and_exited_0_is_no_answer(tmp_path: Path) -> None:
+    """The change-summary runs that a stand-in claude answered in plain text: model-runs handed the
+    text back with status 0, and the caller took it for the paragraph. The run exits non-zero, its
+    line keeps the text, and only the end of a long output is kept."""
+    fake_claude(tmp_path, "x" * 5000 + "Not logged in\n")
+    done = model_runs(tmp_path, "run", "--site", "change-summary", "--", "claude", "-p")
+    assert done.returncode != 0
+    (line,) = lines(tmp_path)
+    assert (line["exit"], line["end"]) == (0, "no result")
+    assert line["printed"]["stdout"].endswith("Not logged in") and len(line["printed"]["stdout"]) == 2047, "the last 2 KB, its final newline dropped"
+    assert line["printed"]["stderr"] == ""
+    fake_claude(tmp_path, stream(INIT, RESULT))
+    model_runs(tmp_path, "run", "--site", "change-summary", "--", "claude", "-p")
+    assert "printed" not in lines(tmp_path)[1], "a run that answered keeps none of its output"
 
 
 def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:

@@ -19,7 +19,10 @@
 #           text, for a caller that reads the session id or the cost itself.
 #           A run that ends without a result (killed, crashed, cut off) still
 #           gets its line: `end` says `no result`, `tokens` are summed from
-#           the messages that did arrive, and `cost_usd` is null.
+#           the messages that did arrive, `cost_usd` is null, and `printed`
+#           keeps the end of what claude wrote. Such a run exits non-zero
+#           even where claude exited 0, so what it printed instead of a
+#           result never passes for an answer.
 #   pull    appends the lines a worker host's log holds that this one does
 #           not, by id, reading the same path there over ssh.
 #   report  cost, time and runs per site, per ticket, per review axis and per
@@ -51,6 +54,8 @@
 #             interrupt, `timeout` for one --timeout ended
 #   end       claude's result subtype (success, error_max_turns, ...), or
 #             `no result`
+#   printed   on a `no result` line only: {stdout, stderr}, the last 2 KB
+#             claude wrote to each
 #
 # Env:
 #   MODEL_RUNS_LOG   the log file; ~/logs/agent/runs.jsonl unless set. `pull`
@@ -122,11 +127,12 @@ run() {
         esac
     done
 
-    local id at t0 raw rc ended= child
+    local id at t0 raw err rc ended= child
     id=$(cat /proc/sys/kernel/random/uuid)
     at=$(date -u +%FT%TZ)
     t0=$(date +%s)
     raw=$(mktemp)
+    err=$(mktemp)
     # `timeout` wraps claude itself and sends it TERM at the limit, so nothing
     # of this script's is left holding the caller's pipes afterwards.
     [ -z "$timeout" ] || set -- timeout "$timeout" "$@"
@@ -136,13 +142,17 @@ run() {
     # /dev/null unless its stdin is redirected, and the caller's stdin is the
     # worker's message.
     trap 'ended=stopped; kill -TERM "$child" 2>/dev/null' TERM INT
-    "$@" --verbose --output-format stream-json > "$raw" <&0 &
+    "$@" --verbose --output-format stream-json > "$raw" 2> "$err" <&0 &
     child=$!
     wait "$child"
     rc=$?
     # A second wait, in case the trap interrupted the first before the child ended.
     wait "$child" 2>/dev/null
     trap - TERM INT
+    # claude's stderr reaches the caller once claude has ended, not as it is
+    # written: a pipe through tee would be held open by anything claude left
+    # running, and this script would wait on it.
+    cat "$err" >&2
     [ -n "$timeout" ] && [ "$rc" -eq 124 ] && [ -z "$ended" ] && ended=timeout
 
     local line
@@ -150,7 +160,8 @@ run() {
         --arg id "$id" --arg at "$at" --arg site "$site" --arg repo "$(repo_name)" \
         --arg ticket "$ticket" --arg axis "$axis" --arg attempt "$attempt" --arg range "$range" \
         --arg host "$(hostname -s)" --arg model "$model" --arg effort "$effort" \
-        --arg ended "$ended" --arg rc "$rc" --argjson duration "$(( $(date +%s) - t0 ))" '
+        --arg ended "$ended" --arg rc "$rc" --arg out "$(tail -c 2048 "$raw")" --arg err "$(tail -c 2048 "$err")" \
+        --argjson duration "$(( $(date +%s) - t0 ))" '
         split("\n") | map(fromjson? // empty) as $events
         | ($events | map(select(.type == "system" and .subtype == "init")) | first) as $init
         | ($events | map(select(.type == "result")) | last) as $res
@@ -177,7 +188,7 @@ run() {
                     cache_read: (.cache_read_input_tokens // 0), cache_write: (.cache_creation_input_tokens // 0)}),
             exit: (if $ended != "" then $ended else ($rc | tonumber) end),
             end: ($res.subtype // "no result")
-          }' "$raw")
+          } + if $res == null then {printed: {stdout: $out, stderr: $err}} else {} end' "$raw")
     mkdir -p "$(dirname "$log")"
     [ -z "$line" ] || line=$(this_runs_share "$line")
     if [ -n "$line" ]; then
@@ -189,7 +200,9 @@ run() {
     # What the caller sees: the answer, or the result object it asked for,
     # and the raw output where no result came, which is what a claude that
     # printed an error instead would have shown.
-    if jq -e 'select(.type == "result")' "$raw" > /dev/null 2>&1; then
+    local answered=
+    jq -e 'select(.type == "result")' "$raw" > /dev/null 2>&1 && answered=1
+    if [ -n "$answered" ]; then
         if [ -n "$json" ]; then
             jq -c -s '[.[] | select(.type == "result")] | last' "$raw"
         else
@@ -198,11 +211,12 @@ run() {
     else
         grep -v '^{"type":' "$raw"
     fi
-    rm -f "$raw"
+    rm -f "$raw" "$err"
     case $ended in
         stopped) return 143 ;;
         timeout) return 124 ;;
     esac
+    [ -n "$answered" ] || [ "$rc" -ne 0 ] || return 1
     return "$rc"
 }
 
