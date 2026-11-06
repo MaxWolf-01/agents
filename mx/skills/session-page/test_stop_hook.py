@@ -920,7 +920,7 @@ def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_
     page = (worked_example / PAGE).read_text()
     assert rows(page) == [chat.stem, "t04", "t03", "t02", "t01"]
     said = turns_on(page)[chat.stem]
-    assert said.startswith(f"you {SPOKEN_AFTER['message']['content']}"), "a chat turn shows no number"
+    assert said.startswith(f"chat you {SPOKEN_AFTER['message']['content']}"), "a chat turn shows chat where a record shows its number"
     assert [anchor for anchor, turn in elements(page, r"t\d+").items() if re.match(r"<details\b[^>]*\bopen\b", turn)] == ["t04"]
 
 

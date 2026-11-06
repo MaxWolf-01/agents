@@ -1745,16 +1745,15 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
 
 
 def chat_row(r: Row) -> str:
-    """A chat turn: one compact row with no number, the user's messages behind a click and the
-    reply as it was, with nothing to open or close."""
+    """A chat turn: a row named `chat` where a turn record has its number, the user's messages
+    behind a click, and below them the reply as it was, in the column a record's Details take, with
+    nothing to open or close."""
     return f"""
 <article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
-  <span class="rail">{COPY_TURN}</span>
-  <div class="chat-body">
-    {you(r)}{"".join(map(peer, r.turn.sent))}
-    <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(r.turn.reply)}</div></div>
-  </div>
+  <span class="rail v-meta">chat{COPY_TURN}</span>
+  <div class="chat-head">{you(r)}{"".join(map(peer, r.turn.sent))}</div>
   <span class="v-meta date">{esc(r.when)}</span>
+  <div class="reply prose">{block(r.turn.reply)}</div>
 </article>"""
 
 

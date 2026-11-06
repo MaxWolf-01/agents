@@ -423,14 +423,15 @@ with sync_playwright() as pw:
         finally:
             server.shutdown()
     elif scenario == "tables":
-        # where turn 05's tables sit against its text, its edge and the pane, and which cells wrap
+        # where a turn's tables sit against its text, its edge and the pane, and which cells wrap
         context, page = open_page(args["width"], 800)
-        out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right} }
-          const turn = document.getElementById("t05"), prose = turn.querySelector(".turn-body .prose")
+        out.update(page.evaluate('''(([which, text]) => { const box = (el) => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right} }
+          const turn = document.querySelector(which), prose = turn.querySelector(text)
           const wraps = (cell) => { const s = getComputedStyle(cell)
             return cell.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) > 1.5 * parseFloat(s.lineHeight) }
           return {turn: box(turn), text: box(prose.querySelector("p")), pane: box(document.getElementById("turns-pane")),
-                  tables: [...prose.querySelectorAll(":scope > table")].map((t) => ({...box(t), wraps: [...t.querySelectorAll("th, td")].some(wraps)}))} })()'''))
+                  tables: [...prose.querySelectorAll(":scope > table")].map((t) => ({...box(t), wraps: [...t.querySelectorAll("th, td")].some(wraps)}))} })''',
+          [args["turn"], args["text"]]))
     elif scenario == "log":
         # the drawer as the reader sees it: open or not, the turn it names, each step's line
         context, page = open_page(1280, 800)
@@ -663,6 +664,17 @@ def tabled(rendered: tuple[Path, Path], transcript: Path) -> Path:
     return page
 
 
+@pytest.fixture
+def chat_tabled(rendered: tuple[Path, Path], transcript: Path) -> Path:
+    """The worked example with a chat turn after its turns, whose reply holds the same two tables."""
+    page, _ = rendered
+    now = datetime.now(UTC)
+    chat_path(page.parent / "turns", now).write_text(
+        chat_record(f"A paragraph before the tables.\n\n{WIDE_TABLE}\n{NARROW_TABLE}", now))
+    page.write_text(render_session(page.parent, transcript))
+    return page
+
+
 def probe(page: Path, scenario: str, **args: object) -> dict:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
@@ -874,12 +886,19 @@ def test_the_card_gone_to_shows_alone_with_its_headline_in_view_in_a_crowded_ban
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_a_wide_table_spreads_past_the_text_and_stays_in_its_turn(tabled: Path, width: int) -> None:
+@pytest.mark.parametrize("kind", ["record", "chat"])
+def test_a_wide_table_spreads_past_the_text_and_stays_in_its_turn(
+    kind: str, width: int, request: pytest.FixtureRequest
+) -> None:
     """A table too wide for the text's measure spreads past the text rather than wrap its cells, as
     far as the room the turn has: never left of the turn's edge, where the current turn's mark runs,
     nor past the pane's. At a wide window it fits on one line a row, having spread left of the text
-    too. A narrow table stays at the text's start."""
-    seen = probe(tabled, "tables", width=width)
+    too. A narrow table stays at the text's start. A chat turn's reply lays its tables out the same
+    as a turn record's Details."""
+    if kind == "record":
+        seen = probe(request.getfixturevalue("tabled"), "tables", width=width, turn="#t05", text=".turn-body .prose")
+    else:
+        seen = probe(request.getfixturevalue("chat_tabled"), "tables", width=width, turn=".turn.chat", text=".reply")
     (wide, narrow), turn, text, pane = seen["tables"], seen["turn"], seen["text"], seen["pane"]
     assert wide["left"] >= turn["left"] - 1, f"the table runs over the current turn's mark: {seen}"
     assert wide["right"] <= pane["right"] + 1, f"the table runs past the pane: {seen}"
