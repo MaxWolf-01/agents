@@ -2996,3 +2996,20 @@ def test_every_write_leaves_the_ticket_it_wrote_committed(split: Path) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+# ---- held still ------------------------------------------------------------
+
+
+def test_a_read_asked_twice_in_a_held_still_scope_runs_git_once_and_is_read_fresh_after_it(
+    repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ran: list[tuple[str, ...]] = []
+    real = tr.run_git
+    monkeypatch.setattr(tr, "run_git", lambda root, args: ran.append(tuple(args)) or real(root, args))
+    with tr.held_still():
+        assert tr.parent_branch(repo, "lamp") is None
+        git(repo, "branch", "lamp")
+        assert tr.parent_branch(repo, "lamp") is None  # the scope holds the repo still
+    assert len(ran) == 1
+    assert tr.parent_branch(repo, "lamp") == "lamp"

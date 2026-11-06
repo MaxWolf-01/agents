@@ -39,6 +39,7 @@ Examples:
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import difflib
 import functools
@@ -50,11 +51,14 @@ import sys
 import tomllib
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Annotated, Iterable, Literal, Sequence, get_args
+from typing import Annotated, Iterable, Iterator, Literal, Sequence, get_args
 
 import tyro
 import yaml
 from tyro.extras import SubcommandApp
+
+# libyaml's loader where PyYAML was built with it: the same safe subset, several times faster
+SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 import in_step  # two main checkouts of a repo kept in step through git, beside this script
 
@@ -291,10 +295,11 @@ def frontier() -> int:
     tracker = here()
     refuse([refusal for ticket in tracker.tickets.values() for refusal in refusals_of(ticket, tracker)])
     ready, waiting = [], []
-    for ticket in sorted(tracker.tickets.values(), key=lambda one: (one.meta.get("priority") or 9, one.slug)):
-        if ticket.status == "done":
-            continue
-        (waiting if (holding := held(ticket, tracker)) else ready).append((ticket, holding))
+    with held_still():
+        for ticket in sorted(tracker.tickets.values(), key=lambda one: (one.meta.get("priority") or 9, one.slug)):
+            if ticket.status == "done":
+                continue
+            (waiting if (holding := held(ticket, tracker)) else ready).append((ticket, holding))
     for ticket, _ in ready:
         print(line_of(ticket, f"parent {ticket.parent}" if ticket.parent else ""))
     if waiting:
@@ -2018,7 +2023,7 @@ def frontmatter(path: Path, text: str, refusals: list[Refusal]) -> tuple[dict, d
     block = match.group(1)
     opens = block.count("\n") + 4  # the line the body starts on, which a refusal in the body counts from
     try:
-        meta = yaml.safe_load(block) or {}
+        meta = yaml.load(block, Loader=SAFE_LOADER) or {}
     except yaml.YAMLError as broken:
         refusals.append(Refusal(path, 1, f"frontmatter is not YAML, {' '.join(str(broken).split())}"))
         return {}, {}, opens, match.group(2)
@@ -2446,8 +2451,36 @@ def tried(root: Path, *args: str) -> subprocess.CompletedProcess:
     linked worktree `GIT_DIR`, which would make `root` itself the work tree's top, and the commit
     hook would find no tracker in a worker's worktree. `GIT_INDEX_FILE` stays, since it is the
     index the commit is made of."""
+    if READS is not None and args and args[0] in READ_ONLY:
+        key = (str(root), args)
+        if key not in READS:
+            READS[key] = run_git(root, args)
+        return READS[key]
+    return run_git(root, args)
+
+
+def run_git(root: Path, args: Sequence[str]) -> subprocess.CompletedProcess:
     found = {key: value for key, value in os.environ.items() if key not in ("GIT_DIR", "GIT_WORK_TREE")}
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=found)
+
+
+# The git subcommands `held_still` answers a second time from its first answer.
+READ_ONLY = frozenset({"rev-parse", "for-each-ref", "merge-base", "log", "symbolic-ref", "config", "cat-file", "worktree"})
+READS: dict[tuple[str, tuple[str, ...]], subprocess.CompletedProcess] | None = None
+
+
+@contextlib.contextmanager
+def held_still() -> Iterator[None]:
+    """A scope in which every repo is taken to stand still, so a read-only git command asked twice
+    is answered from its first run: a reader that asks one question per ticket (the board, the
+    frontier) then forks git once per distinct question, not once per ticket. Nothing in the
+    scope may write a ref; the answers are dropped as it ends."""
+    global READS
+    outer, READS = READS, {} if READS is None else READS
+    try:
+        yield
+    finally:
+        READS = outer
 
 
 def toplevel(start: Path) -> Path:

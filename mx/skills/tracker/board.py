@@ -255,8 +255,11 @@ def read(root: Path, repo: Path, out: Path) -> Reading:
     """Everything a render of the page `out` reads, GitHub asked about the references the tickets
     name where its cached answer will not do."""
     code = project(root)
-    session_log.cache_clear()  # once per render: the sessions that committed on a ticket while the board watches
-    tickets = load_tickets(root, repo, out.parent)
+    # once per render: the sessions that committed on a ticket, and the transcripts written, while the board watches
+    session_log.cache_clear()
+    transcript_index.cache_clear()
+    with tracker.held_still():
+        tickets = load_tickets(root, repo, out.parent)
     log = git_log(code)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(tickets), github.cache_path(out))
@@ -283,7 +286,8 @@ def tracker_statuses(root: Path, repo: Path) -> tuple[tuple[str, str], ...]:
     between the two would otherwise sit inside the snapshot and outside the baseline. It costs one
     load of the tracker per watcher start. The links are no part of a status, so this writes them
     from the tracker's own directory (briefing_state does the same)."""
-    return statuses(load_tickets(root, repo, root.parent))
+    with tracker.held_still():
+        return statuses(load_tickets(root, repo, root.parent))
 
 
 def watch(watching: "Watch", tickets_root: Path, repo: Path, out: Path) -> "Watch":
@@ -983,17 +987,24 @@ def answers(address: str) -> bool:
     return True
 
 
+# One converter each, reset per text: building one costs more than most texts take to convert.
+INLINE = markdown.Markdown()
+BODY = markdown.Markdown(extensions=["fenced_code", "tables"], tab_length=3)
+
+
+@functools.lru_cache(maxsize=4096)
 def inline_md(text: str) -> str:
     """Markdown as one line of HTML: a brief or a headline carries code and emphasis, never a block."""
-    return re.sub(r"^<p>|</p>$", "", markdown.markdown(text).strip()) if text else ""
+    return re.sub(r"^<p>|</p>$", "", INLINE.reset().convert(text).strip()) if text else ""
 
 
 def ref_anchor(ref: str) -> str:
     return f"#t-{ref}"
 
 
+@functools.lru_cache(maxsize=4096)  # a watcher's next render converts only the texts that changed
 def render_body(md: str) -> str:
-    out = markdown.markdown(md, extensions=["fenced_code", "tables"], tab_length=3)
+    out = BODY.reset().convert(md)
     # a link to another ticket file becomes that row's anchor, wherever the writer wrote it from
     return re.sub(r'href="(?:[\w./-]*/)?([a-z0-9][\w-]*)\.md"', r'href="#t-\1"', out)
 
@@ -1181,10 +1192,20 @@ def transcript(session: str, transcripts: Path) -> tuple[str, tuple[str, ...]] |
     """(the session's title, the directories it ran in) from its transcript on this machine, or None
     where this machine has no transcript of it. The newest transcript answers, since a session
     resumed in another directory writes a second one."""
-    written = sorted(transcripts.glob(f"*/{session}.jsonl"), key=lambda p: p.stat().st_mtime)
+    written = sorted(transcript_index(transcripts).get(session, ()), key=lambda p: p.stat().st_mtime)
     if not written:
         return None
     return read_transcript(written[-1], written[-1].stat().st_size)
+
+
+@functools.cache
+def transcript_index(transcripts: Path) -> dict[str, list[Path]]:
+    """Every transcript under `transcripts`, by session id: one walk of the projects a render asks
+    about each session against, which `read` drops once per render."""
+    found: dict[str, list[Path]] = {}
+    for path in transcripts.glob("*/*.jsonl"):
+        found.setdefault(path.stem, []).append(path)
+    return found
 
 
 @functools.cache
