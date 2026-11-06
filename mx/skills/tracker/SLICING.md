@@ -1,6 +1,6 @@
 # Cutting a ticket into child tickets
 
-Work bigger than one fresh worker is cut into **child tickets**: tracer-bullet vertical slices of the ticket that holds the design, each declaring the tickets that **block** it. One slice means no cut, and the ticket is itself the thing built.
+A ticket is cut into **child tickets** where its contexts are independent: a child exists where its worker needs little of the others' context and hands back something compact (a component behind a clean interface, an independent research path, a black-box check), each declaring the tickets that **block** it. Everything else stays one ticket, however long: one worker builds it, its vertical slices landing as commits in order on one branch, each still drivable, and the worker hands off to a fresh one when its context passes its mark (the worker contract, [`worker-prompt.md`](../dispatch/worker-prompt.md)). Every cut costs coordination and loses information at the boundary, so size alone never makes one. No independent part means no cut, and the ticket is itself the thing built.
 
 Cut as soon as the grilling's frontier is empty (`/mx:grilling`), ratified or not: what the user has not ruled on travels into the child tickets as the assumptions their workers carry. The ticket being cut is not rewritten, beyond numbering properties an earlier round left without ids; an id is bookkeeping, not design.
 
@@ -8,18 +8,21 @@ Cut as soon as the grilling's frontier is empty (`/mx:grilling`), ratified or no
 
 Understand the current state of the code before slicing. Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
 
-## 2. Draft the slices
+## 2. Draft the slices, then find the independent parts
+
+Draw the work up as vertical slices first, whether they become child tickets or commits of one:
 
 <vertical-slice-rules>
 
 - Each slice cuts a narrow but COMPLETE path through every layer (schema, API, UI, tests): vertical, NOT a horizontal slice of one layer
 - A completed slice is drivable or verifiable on its own
-- Each slice is sized to fit in a single fresh context window
 - Any prefactoring should be done first
 
 </vertical-slice-rules>
 
-Give each its **blocking edges**: the tickets that must be done before it can start. Prefer orderings that make the work **drivable early**: human QA is gated on what it costs to drive the work, and every slice that lands before a drivable surface exists accumulates unreviewed taste debt.
+Then test each candidate child ticket for **independent context**: could its worker build it from the ticket context and the interfaces it consumes, without reading what its siblings build, and hand back something its dependents take whole? Slices that fail the test against each other are one ticket, built by one worker as commits in that order. Slices that share one surface (one UI, one document, one API façade) fail it, however few files they share.
+
+Give each child its **blocking edges**: the tickets that must be done before it can start. Prefer orderings that make the work **drivable early**: human QA is gated on what it costs to drive the work, and every slice that lands before a drivable surface exists accumulates unreviewed taste debt.
 
 **Settle the shapes before the cut.** Every slice is ruled with the ticket being cut, at its close-out, and its dependents build on it unruled. So an interface or data shape the slices consume is decided in that ticket's Decisions, in its grilling or a prototype, before any slice is filed. Test each blocking edge: if the blocker came back wrong, would the fix to the dependent be an amend? Where it would be a rewrite, the shape is still open, and the cut waits for it.
 
@@ -37,12 +40,12 @@ A property no single slice can make hold means the cut is wrong: merge the slice
 
 ## 3. File them
 
-`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, in dependency order, each `--status open`, so it builds without a triage: how a ticket is cut is the cutting agent's call, and a slice's ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
+`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per child, in dependency order, each `--status open`, so it builds without a triage: how a ticket is cut is the cutting agent's call, and a slice's ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
 
 Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker knows what it builds on; they reach the user when the parent ticket is ruled, and the slice's worker files none of them again.
 
 ## 4. Report the breakdown, then dispatch
 
-Check the breakdown's shape yourself against the vertical-slice rules: the cut is yours, and the user judges the built tree at its close-out, not the cut. Render the board (`/mx:tracker`) and report the breakdown on [the session page](../session-page/RULES.md) as a numbered list: slug, blocked by, what it delivers. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
+Check the breakdown's shape yourself against the vertical-slice rules and the independence test: the cut is yours, and the user judges the built tree at its close-out, not the cut. Render the board (`/mx:tracker`) and report the breakdown on [the session page](../session-page/RULES.md) as a numbered list: slug, blocked by, what it delivers. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
 `/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves.
