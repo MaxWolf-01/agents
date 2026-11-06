@@ -36,7 +36,7 @@ Two sections close the file:
 
 ## The file
 
-A handoff is `agent/handoffs/YYYY-MM-DD-<descriptive-slug>.md` in the agent repo of the project the work is in, committed in its main checkout, as a ticket file is. Its frontmatter carries this session's id:
+A handoff is `agent/handoffs/YYYY-MM-DD-<descriptive-slug>.md` in the agent repo of the project the work is in, committed in its main checkout, as a ticket file is. A dispatched worker's is `agent/show/<slug>/handoff.md` on its agent branch instead, beside where its report goes, so the orchestrator's fetch brings it home with the branch; its contract says when it writes one, and nobody `/clear`s it, so the rest of this section is a session's. Its frontmatter carries this session's id:
 
 ```markdown
 ---

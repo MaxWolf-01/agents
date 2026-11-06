@@ -10,9 +10,10 @@ the first time it stands past a mark, says so to the model, once per mark, namin
 place (the first, the second, ...) and its figure. The marks are MX_CONTEXT_CHECKPOINTS,
 comma-separated token counts, two of them unless set (MARKS below). A context that has fallen
 back under a mark said (a compaction) hears that mark again on its way back up. A dispatched
-worker (DISPATCH_WORKLOG set), a print-mode session (CLAUDE_CODE_SESSION_ATTENDED=0) and a
-subagent's tool batches (agent_id in the event) hear nothing: only the session's own thread has a
-user to tell.
+worker (DISPATCH_WORKLOG set) has one mark of its own, MX_WORKER_CHECKPOINT (WORKER_MARK below),
+and hears the note its contract acts on, since no user reads it. A print-mode session
+(CLAUDE_CODE_SESSION_ATTENDED=0) and a subagent's tool batches (agent_id in the event) hear
+nothing.
 
 `ended <pid>` runs on SessionEnd with reason clear and `started <pid>` on SessionStart with source
 clear, in the same Claude Code process: the first records the session id that just ended under
@@ -37,6 +38,7 @@ from pathlib import Path
 
 STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "mx"
 MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "500000,600000").split(",") if m.strip()]
+WORKER_MARK = int(os.environ.get("MX_WORKER_CHECKPOINT", "400000"))
 TRACKER = Path(__file__).resolve().parents[1] / "tracker" / "tracker.py"
 PICKUP = Path(__file__).resolve().parent / "pickup.py"
 BLOCK = 64 * 1024
@@ -91,12 +93,13 @@ def figure(tokens: int) -> str:
 
 def checkpoint(hook: dict) -> None:
     session = hook["session_id"]
-    if os.environ.get("DISPATCH_WORKLOG"):
-        return log("checkpoint", session, decision="skip", why="dispatched worker")
-    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
-        return log("checkpoint", session, decision="skip", why="unattended session")
     if hook.get("agent_id"):
         return log("checkpoint", session, decision="skip", why="subagent", agent_id=hook["agent_id"])
+    # A worker runs in print mode too, so it is told apart first.
+    worker = bool(os.environ.get("DISPATCH_WORKLOG"))
+    if not worker and os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+        return log("checkpoint", session, decision="skip", why="unattended session")
+    marks = [WORKER_MARK] if worker else MARKS
     tokens = context_tokens(Path(hook["transcript_path"]))
     if tokens is None:
         return log("checkpoint", session, decision="quiet", why="no assistant message in the transcript")
@@ -108,18 +111,23 @@ def checkpoint(hook: dict) -> None:
     if tokens < told:
         # the context fell back under a mark already said (a compaction): the marks above it are
         # unsaid again, so the session hears them as it grows back
-        told = max([m for m in MARKS if m <= tokens], default=0)
+        told = max([m for m in marks if m <= tokens], default=0)
         seen.write_text(str(told))
-    passed = [m for m in MARKS if told < m <= tokens]
+    passed = [m for m in marks if told < m <= tokens]
     if not passed:
         return log("checkpoint", session, decision="quiet", tokens=tokens, told=told)
     mark = max(passed)
     seen.parent.mkdir(parents=True, exist_ok=True)
     seen.write_text(str(mark))
+    if worker:
+        said(f"Context checkpoint: this worker's context stands at {figure(tokens)} tokens, past its mark "
+             f"({figure(mark)}). What a worker does at its mark is in your contract, under handing off.",
+             hook["hook_event_name"])
+        return log("checkpoint", session, decision="said", tokens=tokens, mark=mark, worker=True)
     place = ORDINALS[MARKS.index(mark)] if MARKS.index(mark) < len(ORDINALS) else f"{MARKS.index(mark) + 1}th"
-    marks = ", ".join(figure(m) for m in MARKS)
+    listed = ", ".join(figure(m) for m in MARKS)
     said(f"Context checkpoint: this session's context stands at {figure(tokens)} tokens, past the "
-         f"{place} of {len(MARKS)} marks ({figure(mark)}; the marks are {marks}). What a session does at "
+         f"{place} of {len(MARKS)} marks ({figure(mark)}; the marks are {listed}). What a session does at "
          f"each mark is in the mx handoff skill, under Continuation.", hook["hook_event_name"])
     log("checkpoint", session, decision="said", tokens=tokens, mark=mark)
 

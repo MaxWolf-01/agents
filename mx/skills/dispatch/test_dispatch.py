@@ -1097,6 +1097,39 @@ def test_a_worker_that_stops_early_is_resumed_until_it_reports(tmp_path: Path, r
     assert "attempt 1 exited 0 with no report, an early stop; resuming" in (runner / "run-1.log").read_text()
 
 
+@pytest.mark.parametrize("taken_over, writes, says", [
+    (False, "handoff", "attempts=1 exit=0 report=no handoff=yes"),
+    (True, "report", "attempts=1 exit=0 report=yes handoff=no"),
+])
+def test_a_worker_that_hands_off_is_finished_for_the_round_and_said_so(
+    tmp_path: Path, runner: Path, taken_over: bool, writes: str, says: str
+) -> None:
+    """`tickets-cut-by-independent-context`: a worker past its context mark commits a handoff and
+    stops, and the runner leaves it stopped rather than resuming it as an early stop; the status
+    line says which of the two it left. The worker that takes over removes the handoff in the
+    commit that reports, which is no handoff of this round."""
+    worktree = tmp_path / "lamp-warm-preset"
+    (worktree / "agent" / "show" / "warm-preset").mkdir(parents=True)
+    git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
+    git(worktree / "agent", "commit", "-q", "--allow-empty", "-m", "the agent repo")
+    if taken_over:
+        (worktree / "agent" / "show" / "warm-preset" / "handoff.md").write_text("# the worker before\n")
+        git(worktree / "agent", "add", "-A")
+        git(worktree / "agent", "commit", "-q", "-m", "the worker before's handoff")
+    committing = {
+        "handoff": 'printf "# Handoff\\n" > agent/show/warm-preset/handoff.md\n',
+        "report": 'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
+                  'git -C agent rm -q show/warm-preset/handoff.md\n',
+    }[writes]
+    claude = ('#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + committing
+              + 'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
+              'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m round\n')
+
+    done = run_worker(runner, claude=claude, model="sonnet", cwd=worktree)
+    assert done.returncode == 0, done.stderr
+    assert (runner / "run-1.status").read_text().startswith(says), (runner / "run-1.status").read_text()
+
+
 @pytest.mark.parametrize("given", ["", "low"])
 def test_the_runner_passes_an_effort_to_every_attempt_medium_unless_told(tmp_path: Path, runner: Path, given: str) -> None:
     """`model-effort-defaults`: every `claude` a worker runs on names its effort, so no worker runs

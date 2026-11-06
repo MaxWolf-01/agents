@@ -28,7 +28,8 @@
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the runner's status line, or `gone`: the
 #                 runner died without one (a killed pane, a reboot).
-#                 report=yes: this round committed a new report.
+#                 report=yes: this round committed a new report;
+#                 handoff=yes: a handoff instead, its worker past its mark.
 # log <slug> [lines]
 #                 the status line and the worklog's last lines, 20 by default.
 # cleanup <slug> [--force]
