@@ -126,7 +126,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:orient` | the router; start here |
 | `/mx:grilling` | sharpen a plan by interview; the design lands in the ticket as it settles |
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
-| `/mx:testing`, `/mx:code-review` | what makes a test worth keeping, and when the full-path checks run; four-axis review |
+| `/mx:testing`, `/mx:code-review` | what makes a test worth keeping, and when the full-path checks run; a review by two reviewers, one reading the diff and one running its tests |
 | `/mx:dispatch` | work a ticket and its children: one orchestrator, a fresh worker per ticket, serial or in parallel |
 | `/mx:prototype` | throwaway code when shapes are rivals or one has to be driven to be judged |
 | `/mx:triage` | the proposed tickets grouped by cause, the bookkeeping applied, and only the design calls put to you |
