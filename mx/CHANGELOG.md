@@ -1,3 +1,8 @@
+## 1.0.112
+
+- dispatch and tracker accept rounds merged through team PRs, reset rounds, re-cut parents and no-code tickets
+  Four bookkeeping bugs behind the refused accepts in helferline's 2026-11-05 batch are fixed. A merge-commit PR from the team's own `feature/<slug>`, which carries copies of the ticket's commits, now records the copy's range and lets the ticket branch go once GitHub holds each of its patches. A range a later round reset away leaves `diff:` as that round lands, while a range already on the branch the round merges into stays. A parent that ran a round of its own before it had children gets that round's agent branch merged by its accept, with its report imported first as `land` would. A ticket the user is in the loop for, with no round, is accepted as done. `merged_tip` also finds a merge from any branch ending in `/<slug>`, and `tracker set field=` drops the field.
+
 ## 1.0.111
 
 - feat(session-page): prompts, turns and tool calls show their size; o, O and k reach every turn and step; Ctrl+Alt shows the keys
