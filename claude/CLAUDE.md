@@ -87,6 +87,7 @@ Miscl hygiene:
 
 <permissions>
 Permissions are prose `autoMode` entries in ~/.claude/settings.json; each entry covers a class of action judged by a classifier.
+The classifier reads max's messages and your tool calls, never your chat text: a step he is to approve goes in a turn record on the session page, where his "go" or "Q3: a" reaches it.
 A `sudo` needs no ask: run it in a `job` with `--tty` (`/mx:tmux`), and max approves or refuses it with a YubiKey touch; where no key is offered, sudo falls back to a password prompt in that pane.
 To avoid auto-mode false positives, and for general best practice (safety and efficiency):
 - Prefer absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`).
