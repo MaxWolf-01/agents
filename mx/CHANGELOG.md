@@ -1,3 +1,8 @@
+## 1.0.111
+
+- feat(session-page): prompts, turns and tool calls show their size; o, O and k reach every turn and step; Ctrl+Alt shows the keys
+  Each prompt on the session page shows its size in bytes, its tokens on hover, and each turn and tool call shows the tokens and bytes it consumed and produced. `o` opens or closes every turn, Enter one, and `O` every step in the open log; `k` past the newest turn reaches the turn under way, so the log's "under way" and close buttons are gone. Holding Ctrl+Alt shows each control's key over it, and the controls drop their key text.
+
 ## 1.0.110
 
 - board speed held by tests: a render asks git each question once and reads new transcripts
