@@ -19,7 +19,7 @@ If I ask you to do something related to my system config, the first place to loo
 Repos are generally in /home/max/repos/github/{MaxWolf-01,...}/, but some older ones might be in /home/max/repos/{...}.
 My Obsidian vault is in /home/max/repos/obsidian/knowledge-base (4k+ md files and growing; if you need context on me, my knowledge, etc. pp. Read the CLAUDE.md there for more info).
 MaxWolf-01/jarvis runs a personal assistant version of you as a discord bot on a VPS, MaxWolf-01-clanker/jarvis-vault contains their (messy ^^) knowledge-base.
-My laptop overheats under sustained load and sleeps when the lid closes, so work that loads a machine for long (containers, strangers' projects and their installs, training, anything on a GPU), runs for hours, or is timed or left unattended goes to pc, xmg19 or a runpod pod (`hosts` shows which are up and how busy); when it genuinely needs the laptop, say why. A test suite, build or release of a few minutes runs on the laptop.
+My laptop overheats under sustained load and sleeps when the lid closes, so work that loads a machine for long (containers, strangers' projects and their installs, training, anything on a GPU), runs for hours, or is timed or left unattended goes to a worker user on pc or xmg19 (`hosts` lists them, which are up and how busy) or a runpod pod; when it genuinely needs the laptop, say why. Anything of a few minutes, a test suite, a build, a release or a single container, runs on the laptop.
 
 Common abbreviations / phrases I use -- kinda like mini-skills (triggers include variations/typos; *all* caps stresses the point):
 - "qq" (quick question) ... I want a concise answer (1-2 paragraphs max, maybe just a single sentence)
