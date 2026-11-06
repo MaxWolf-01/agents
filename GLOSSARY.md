@@ -46,7 +46,7 @@ The ticket another ticket is part of. It holds the design its children are parts
 _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
-A ticket that is part of another: a part whose worker needs little of its siblings' context, built and reviewed on its own, and ruled with its parent ticket.
+A ticket that is part of another, built and reviewed on its own, and ruled with its parent ticket.
 _Avoid_: subtask, sub-ticket, step, hinge
 
 **Ticket context**:

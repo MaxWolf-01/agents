@@ -393,14 +393,6 @@ def test_the_tests_reviewer_reads_the_test_smells_and_the_three_jobs_and_no_more
     assert numbered == ["1. ", "2. ", "3. "], "the three jobs are not all above the skill's first section"
 
 
-def test_the_read_reviewer_of_a_diff_with_tests_reads_what_the_tests_reviewer_does_when_alone(repo):
-    assert run(repo, "--reviewers", "read").returncode == 0
-
-    given = sources(review_dir(repo) / "prompts" / "read.md")
-    assert [path.name for path in given[-2:]] == ["TEST-SMELLS.md", "testing-jobs.md"]
-    assert not any(path.parent.name == "testing" for path in given), "the whole testing skill was handed over"
-
-
 @pytest.mark.parametrize(("touches_tests", "args", "handed"), [
     (True, ("--reviewers", "read"), True),
     (True, (), False),
@@ -415,11 +407,12 @@ def test_the_test_sources_go_to_read_when_no_tests_reviewer_runs(repo, touches_t
 
     assert run(repo, *args).returncode == 0
 
-    given = [path.name for path in sources(review_dir(repo) / "prompts" / "read.md")]
+    given = sources(review_dir(repo) / "prompts" / "read.md")
     if handed:
-        assert given[-2:] == ["TEST-SMELLS.md", "testing-jobs.md"]
+        assert [path.name for path in given[-2:]] == ["TEST-SMELLS.md", "testing-jobs.md"]
+        assert not any(path.parent.name == "testing" for path in given), "the whole testing skill was handed over"
     else:
-        assert not {"TEST-SMELLS.md", "testing-jobs.md"} & set(given)
+        assert not {"TEST-SMELLS.md", "testing-jobs.md"} & {path.name for path in given}
 
 
 # What `review` takes a changed file for, by the conventions of the languages this workflow meets
@@ -498,6 +491,15 @@ def test_a_reviewer_that_died_after_opening_its_report_reads_as_died_not_as_repo
     died = next(line for line in done.stderr.splitlines() if "tests reviewer died" in line)
     assert "exited 1" in died and "You've hit your limit" in died
     assert "--reviewers tests " in done.stderr.strip().splitlines()[-1]
+
+
+def test_a_reviewer_of_no_such_name_is_refused_naming_the_two_before_anything_starts(repo):
+    """`--axes` is gone, so the name a caller is likeliest to type wrong is an old axis's."""
+    done = run(repo, "--reviewers", "correctness")
+
+    assert done.returncode == 1
+    assert "no reviewer named correctness: there are read and tests" in done.stderr
+    assert not (review_dir(repo) / "prompts").exists()
 
 
 def test_a_flag_before_the_fixed_point_is_refused_with_the_order(repo):

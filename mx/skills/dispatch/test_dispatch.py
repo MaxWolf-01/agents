@@ -1106,8 +1106,8 @@ def test_a_worker_that_hands_off_is_finished_for_the_round_and_said_so(
 ) -> None:
     """`tickets-cut-by-independent-context`: a worker past its context mark commits a handoff and
     stops, and the runner leaves it stopped rather than resuming it as an early stop; the status
-    line says which of the two it left. The worker that takes over removes the handoff in the
-    commit that reports, which is no handoff of this round."""
+    line says which of the two it left. A worker that took over starts with the handoff before it
+    on the branch, which is no handoff of its round."""
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent" / "show" / "warm-preset").mkdir(parents=True)
     git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
@@ -1118,8 +1118,7 @@ def test_a_worker_that_hands_off_is_finished_for_the_round_and_said_so(
         git(worktree / "agent", "commit", "-q", "-m", "the worker before's handoff")
     committing = {
         "handoff": 'printf "# Handoff\\n" > agent/show/warm-preset/handoff.md\n',
-        "report": 'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
-                  'git -C agent rm -q show/warm-preset/handoff.md\n',
+        "report": 'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n',
     }[writes]
     claude = ('#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + committing
               + 'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
@@ -1169,7 +1168,7 @@ def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path, runner: P
 
     assert done.returncode == 1
     assert (runner / "run-1.status").read_text().startswith(
-        "attempts=0 exit=1 report=no session=- error=DISPATCH_PLUGIN_DIR unset")
+        "attempts=0 exit=1 report=no handoff=no session=- error=DISPATCH_PLUGIN_DIR unset")
     assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
 
 
@@ -1197,7 +1196,7 @@ def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path:
 
     assert done.returncode == 1
     assert (runner / "run-1.status").read_text().startswith(
-        "attempts=0 exit=1 report=no session=- error=no '## What the user decides' section in")
+        "attempts=0 exit=1 report=no handoff=no session=- error=no '## What the user decides' section in")
     assert "older than" in (runner / "run-1.status").read_text()
     assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
 
@@ -1285,7 +1284,7 @@ def test_a_runner_staged_without_model_runs_refuses_to_start(runner: Path) -> No
     (runner / "model-runs").unlink()
     done = run_worker(runner, model="sonnet")
     assert done.returncode == 1
-    assert (runner / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no model-runs beside run-worker.sh")
+    assert (runner / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no handoff=no session=- error=no model-runs beside run-worker.sh")
 
 
 @pytest.mark.full_path

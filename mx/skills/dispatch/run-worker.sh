@@ -43,14 +43,14 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
 if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 # Every attempt runs through it, so a run nobody logged cannot happen quietly.
 model_runs=$here/model-runs
 if [ ! -f "$model_runs" ]; then
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "no model-runs beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -58,7 +58,7 @@ fi
 # it none of the skills its contract names exist.
 plugin=${DISPATCH_PLUGIN_DIR:-}
 if [ -z "$plugin" ]; then
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "DISPATCH_PLUGIN_DIR unset, so no mx plugin to give the worker" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -67,7 +67,7 @@ fi
 rules=$plugin/skills/session-page/RULES.md
 asking_rule=$(awk '/^## What the user decides$/ { on = 1; print; next } on && /^#{1,2} / { exit } on' "$rules" 2> /dev/null)
 if [ -z "$asking_rule" ]; then
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "no '## What the user decides' section in $rules; is this host's mx older than the dispatcher's?" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -99,13 +99,9 @@ was_reported=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2>
 reported() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)" != "$was_reported" ]; }
 # A worker past its context mark commits a handoff instead of a report and stops: finished for this
 # round as much as a reported one, and for the orchestrator to resume or hand to a fresh worker.
-# This round's, as with the report, and there: the commit that reports removes the one it took over.
+# This round's, as with the report: a worker that took over from a handoff starts with it there.
 was_handed_off=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/handoff.md" 2> /dev/null)
-handed_off() {
-    local now
-    now=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/handoff.md" 2> /dev/null)
-    [ -n "$now" ] && [ "$now" != "$was_handed_off" ]
-}
+handed_off() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/handoff.md" 2> /dev/null)" != "$was_handed_off" ]; }
 # The models this round's turns of the session transcript answered in, comma-separated: <model> is
 # an alias the host's claude resolves, so what ran is read off the run, not the command line. `-`
 # is a round no model answered, `?` one whose transcript or `jq` is missing. This round's, as with

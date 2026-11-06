@@ -26,6 +26,7 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent / "checkpoint.py"
 SKILL = Path(__file__).resolve().parent / "SKILL.md"
 HOOKS = Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
+WORKER_CONTRACT = Path(__file__).resolve().parents[1] / "dispatch" / "worker-prompt.md"
 
 
 def turn(kind: str, **usage: int) -> str:
@@ -156,11 +157,20 @@ def test_a_worker_is_told_once_at_its_own_mark_and_pointed_at_its_contract(tmp_p
     transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=401_000))
     note = context(hook(tmp_path, "checkpoint", event(transcript), **worker))
     assert note.startswith("Context checkpoint: this worker's context stands at 401k tokens, past its mark (400k)."), note
-    assert "your contract, under handing off" in note
+    pointed = note.split("under ")[-1].strip('".')
+    assert f"**{pointed}**" in WORKER_CONTRACT.read_text(), f"the note points at {pointed!r}, which the contract does not name"
 
     transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=650_000))
     assert context(hook(tmp_path, "checkpoint", event(transcript), **worker)) == "", "a worker has one mark, said once"
-    assert context(hook(tmp_path, "checkpoint", event(transcript, session="s2"), **worker, MX_WORKER_CHECKPOINT="600000")) != ""
+
+
+def test_a_workers_mark_comes_from_the_environment_so_a_demo_can_cross_one(tmp_path: Path) -> None:
+    worker = {"DISPATCH_WORKLOG": str(tmp_path / "log"), "MX_WORKER_CHECKPOINT": "20000"}
+    transcript = tmp_path / "s1.jsonl"
+    transcript.write_text(turn("assistant", cache_read_input_tokens=19_000))
+    assert context(hook(tmp_path, "checkpoint", event(transcript), **worker)) == ""
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=25_000))
+    assert "past its mark (20k)" in context(hook(tmp_path, "checkpoint", event(transcript), **worker))
 
 
 def test_a_transcript_with_no_assistant_message_or_none_at_all_says_nothing(tmp_path: Path) -> None:

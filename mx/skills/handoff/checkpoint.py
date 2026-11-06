@@ -121,7 +121,7 @@ def checkpoint(hook: dict) -> None:
     seen.write_text(str(mark))
     if worker:
         said(f"Context checkpoint: this worker's context stands at {figure(tokens)} tokens, past its mark "
-             f"({figure(mark)}). What a worker does at its mark is in your contract, under handing off.",
+             f"({figure(mark)}). What a worker does at its mark is in your contract, under \"Handing off\".",
              hook["hook_event_name"])
         return log("checkpoint", session, decision="said", tokens=tokens, mark=mark, worker=True)
     place = ORDINALS[MARKS.index(mark)] if MARKS.index(mark) < len(ORDINALS) else f"{MARKS.index(mark) + 1}th"
