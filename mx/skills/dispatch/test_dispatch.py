@@ -335,13 +335,14 @@ def waited(toy: Path, state: Path | None = None) -> Path:
 
 
 def status_of(toy: Path, slug: str) -> str:
-    return (tracked(toy) / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
+    """The ticket's status, read from history once `tracker retire` has taken it out."""
+    return tracker.tracker_of(tracker.tracker_root(toy)).found(slug).status
 
 
 def ranges_of(toy: Path, slug: str) -> list[str]:
     """The ticket's `diff:` ranges, as `tracker data` prints them."""
     read = tracker.tracker_of(tracker.tracker_root(toy))
-    return tracker.as_data(read.ticket(slug), read)["diff"]
+    return tracker.as_data(read.found(slug), read)["diff"]
 
 
 def rule_open(toy: Path, slug: str, env: dict[str, str] | None = None) -> None:
@@ -741,7 +742,7 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     landed = run(toy, "accept", "warm-preset")
     assert landed.returncode == 0, landed.stderr
     assert status_of(toy, "warm-preset") == "done"
-    assert git(agent, "log", "-1", "--format=%P", "HEAD~1").split()[1] == tip["agent"], "the agent branch merged by the accept"
+    assert git(agent, "log", "-1", "--merges", "--format=%P").split()[1] == tip["agent"], "the agent branch merged by the accept"
     got = subprocess.run([str(tracker), "get", "warm-preset", "diff"], cwd=toy, capture_output=True, text=True)
     assert got.stdout.split() == [f"code@{cut['code']}..{tip['code']}", f"agent@{cut['agent']}..{tip['agent']}"], got.stdout
 
@@ -1400,7 +1401,8 @@ def test_a_cleanup_refuses_over_work_no_spawn_put_in_the_worktree_and_force_dele
 def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fails_is_said(toy: Path, staged: Path) -> None:
     """A done ticket has nothing left to resume: its `done` takes the host's worktrees and branches,
     the run record, and the fetched branches here. A host that does not answer leaves the `done`
-    standing and says what tries again; the next `review` does."""
+    standing and says what tries again; the next probe does, once `tracker retire` has taken the
+    ticket out from under its parent ticket, which is still open."""
     (staged.parent / "run-worker.sh").write_text(BUILDING)
     remote, env = fake_remote(toy)
     run(toy, "claim", "warm-preset")
@@ -1420,13 +1422,12 @@ def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fai
     assert status_of(toy, "warm-preset") == "done"
     assert git(toy, "branch", "--list", "ticket/warm-preset"), "kept until the host is clean"
 
-    again = review(env)
-    assert again.returncode == 0, again.stderr
+    assert not (tracked(toy) / "warm-preset.md").exists(), "retired, its parent ticket still open"
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert "no run recorded" in probed.stderr, probed.stderr
     assert not (remote / "repos" / "dispatch" / "lamp-warm-preset").exists()
     for top in (remote / "repos" / "dispatch" / "lamp.git", toy, toy / "agent"):
         assert not git(top, "branch", "--list", "ticket/warm-preset"), top
-    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
-    assert "no run recorded" in probed.stderr, probed.stderr
 
 
 def built_on_host(toy: Path, staged: Path, host: str) -> tuple[dict[str, str], Path]:
@@ -1611,7 +1612,7 @@ def test_a_round_with_no_code_lands_on_a_review_told_to_merge_it(toy: Path) -> N
     said = run(toy, "review", "warm-preset", "--merge")
     assert said.returncode == 0, said.stderr
     assert status_of(toy, "warm-preset") == "done"
-    assert git(agent, "rev-parse", "main~1^2").strip() == tip, "merged --no-ff, then landed"
+    assert git(agent, "log", "-1", "--merges", "--format=%P", "main").split()[1] == tip, "merged --no-ff, then landed"
 
 
 # `tickets-land-in-listed-repos`: a ticket's round lands in the listed repos its `repos:` names

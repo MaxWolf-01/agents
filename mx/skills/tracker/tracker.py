@@ -168,13 +168,14 @@ def repos() -> int:
 @app.command(name="get")
 def get(slug: Annotated[str, tyro.conf.Positional], field: Annotated[Field, tyro.conf.Positional]) -> int:
     """Print one frontmatter field of one ticket, as the file writes it, a list field one entry per
-    line. Exit 1 when the ticket does not declare it.
+    line; a retired ticket is read from the commit before its removal. Exit 1 when the ticket does
+    not declare it.
 
     Args:
         slug: the ticket.
         field: the frontmatter field.
     """
-    ticket = here().ticket(slug)
+    ticket = here().found(slug)
     if field not in ticket.meta:
         raise Refused([f"{slug} declares no `{field}`"])
     value = ticket.meta[field]
@@ -186,7 +187,7 @@ def get(slug: Annotated[str, tyro.conf.Positional], field: Annotated[Field, tyro
 def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") -> int:
     """The tracker as JSON: every ticket with its frontmatter, sections, questions, properties,
     acceptance criteria and assumptions. One ticket alone when given a slug, a path or `-`, which
-    reads a ticket file from stdin.
+    reads a ticket file from stdin; a slug retired is read from the commit before its removal.
 
     JSON schema:
 
@@ -221,7 +222,7 @@ def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") ->
         print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker)]}, indent=2))
         return 0
     tracker = here()
-    tickets = [tracker.ticket(source)] if source else list(tracker.tickets.values())
+    tickets = [tracker.found(source)] if source else list(tracker.tickets.values())
     refuse([refusal for ticket in tickets for refusal in refusals_of(ticket, tracker)])
     print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker) for ticket in tickets]}, indent=2))
     return 0
@@ -317,7 +318,9 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
         return "proposed, waiting for a triage"
     if ticket.needs_user:
         return "on the user, who is in the loop for it"
-    blocking = [tracker.tickets[ref] for ref in ticket.blocked_by if not frees(tracker.tickets[ref], ticket, tracker)]
+    # an edge naming no ticket that stays names one retired, which is done (reference_refusals)
+    blocking = [tracker.tickets[ref] for ref in ticket.blocked_by
+                if ref in tracker.tickets and not frees(tracker.tickets[ref], ticket, tracker)]
     if blocking:
         return "on " + ", ".join(f"{one.slug} ({one.status})" for one in blocking)
     return ""
@@ -1329,10 +1332,14 @@ LINKED = re.compile(r"agent/(?:prototypes|research)/[\w./-]*[\w-]")
 @app.command(name="retire")
 def retire(dry_run: bool = False) -> int:
     """Take every finished tree out of the live tracker, with the show directories, prototypes and
-    research notes its tickets own, and commit the removal. A tree is finished when its top-level
-    ticket and every ticket under it are done and no ticket that stays cites one of its properties.
-    Prints every step it runs, and each done tree it leaves with what holds it. Run it once a
-    `done` is committed; it retires nothing where no tree is finished.
+    research notes its tickets own, and commit the removal. A tree is finished when a done ticket
+    and every ticket under it are done and its parent ticket, where it has one, is not: a subtree
+    leaves an umbrella still open. A tree stays while a ticket that stays cites one of its
+    properties, or while a close-out review of its parent is not done. A ticket that stays and
+    waits on one retired keeps the edge: `get`, `data` and every check read the retired ticket
+    from the commit before its removal, as done. Prints every step it runs, and each done tree it
+    leaves with what holds it. Run it once a `done` is committed; it retires nothing where no tree
+    is finished.
 
     Args:
         dry_run: print each finished tree and every file it would take out, and change nothing.
@@ -1356,7 +1363,7 @@ def retire(dry_run: bool = False) -> int:
     known = {top / name for name in git(top, "ls-files").splitlines()}
     leaving = sorted(owned(retiring, tracker))
     tracked = [path for path in leaving if path in known]
-    refuse_uncommitted(tracked + [one.path for one in unblocking(retiring, tracker)], top)
+    refuse_uncommitted(tracked, top)
     if tracked:
         run(top, "git", "rm", "-q", *[str(path.relative_to(top)) for path in tracked])
     for path in [path for path in leaving if path not in known and path.exists()]:
@@ -1369,23 +1376,41 @@ def retire(dry_run: bool = False) -> int:
     for directory in sorted({path.parent for path in leaving if path.parent != tracker.root}, reverse=True):
         if directory.is_dir() and not any(directory.iterdir()):
             run(top, "rmdir", str(directory.relative_to(top)))
-    committed = [str(path.relative_to(top)) for path in tracked + unblock(retiring, tracker, top)]
+    # an edge onto a retired ticket stays, read from its history as done (Tracker.retired)
+    committed = [str(path.relative_to(top)) for path in tracked]
     named = ", ".join(trees)
+    # a subject names a few trees; past that it counts them, and the body names each
+    subject = f"retire {named}: finished" if len(trees) <= 3 else f"retire {len(trees)} finished trees"
+    body = [] if len(trees) <= 3 else ["-m", "\n".join(trees)]
     if committed:  # a commit with no path would take whatever else is staged
-        run(top, "git", "commit", "-q", "-m", f"retire {named}: finished", "--", *committed)
+        run(top, "git", "commit", "-q", "-m", subject, *body, "--", *committed)
     print(f"retired {named}, {len(retiring)} ticket{'s' * (len(retiring) > 1)} in all")
     return 0
 
 
 def finished(tracker: Tracker) -> tuple[dict[str, list[Ticket]], dict[str, str]]:
-    """Every finished tree, its tickets keyed by its top-level ticket's slug, and each done
-    top-level ticket that stays with what holds it. A tree cited only from another finished tree
-    leaves with it."""
+    """Every finished tree, its tickets keyed by its root's slug, and each done ticket that stays at
+    the root of one with what holds it. A finished tree is a done ticket with every ticket under it
+    done, whose parent ticket is not: the whole tree where its top-level ticket is done, a subtree
+    of an umbrella still open otherwise. A subtree stays while a close-out review of its parent is
+    not done, since that review reads it, and so does a tree a ticket that stays cites; one cited
+    only from another finished tree leaves with it."""
+    def whole(slug: str) -> list[Ticket]:
+        return [tracker.tickets[slug], *descendants(slug, tracker)]
+
+    def done(slug: str) -> bool:
+        return all(one.status == "done" for one in whole(slug))
+
     trees, held = {}, {}
-    for root in (one for one in tracker.tickets.values() if one.parent is None and one.status == "done"):
-        tree = [root, *descendants(root.slug, tracker)]
+    for root in (one for one in tracker.tickets.values() if one.status == "done"):
+        if root.parent in tracker.tickets and done(root.parent):
+            continue  # it leaves in its parent's tree
+        tree = whole(root.slug)
+        reviewing = [one.slug for one in tracker.children(root.parent) if one.close_out and one.status != "done"] if root.parent else []
         if standing := [one.slug for one in tree if one.status != "done"]:
             held[root.slug] = f"{', '.join(standing)} not done"
+        elif reviewing:
+            held[root.slug] = f"{', '.join(reviewing)} reviews {root.parent}'s tree and is not done"
         else:
             trees[root.slug] = tree
     while citing := cites_into([one for tree in trees.values() for one in tree], tracker):
@@ -1483,15 +1508,15 @@ def renders(path: Path, known: set[Path]) -> bool:
 
 
 def unblocking(retiring: Sequence[Ticket], tracker: Tracker) -> list[Ticket]:
-    """The tickets that stay and wait on one that is leaving."""
+    """The tickets that stay and wait on one that is dropped."""
     retired = {one.slug for one in retiring}
     return [ticket for ticket in tracker.tickets.values()
             if ticket.slug not in retired and set(ticket.blocked_by) & retired]
 
 
 def unblock(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> list[Path]:
-    """The blocking edges onto the leaving tickets, dropped from the tickets that stay, which it
-    returns: a retired ticket is done, and an edge naming no ticket is refused by every reader."""
+    """The blocking edges onto the dropped tickets, taken off the tickets that stay, which it
+    returns: a dropped ticket was never done, and an edge naming no ticket is refused by every reader."""
     retired = {one.slug for one in retiring}
     staying = unblocking(retiring, tracker)
     for ticket in staying:
@@ -1700,7 +1725,8 @@ def reference_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
     cites through its ancestry."""
     found = []
     for key, ref in refs_of(ticket):
-        if unreadable_ref(ref) is None and str(ref) not in tracker.tickets:
+        if unreadable_ref(ref) is None and str(ref) not in tracker.tickets \
+                and not (key == "blocked-by" and tracker.retired(str(ref))):
             found.append(Refusal(ticket.path, at(ticket, key), f"`{key}: {ref}` names no ticket at {tracker.root / f'{ref}.md'}"))
     if ticket.parent in tracker.tickets and ticket.slug in {one.slug for one in tracker.ancestors(ticket.parent)}:
         found.append(Refusal(ticket.path, at(ticket, "parent"), f"`parent: {ticket.parent}` closes a cycle; a ticket's ancestry is a line to a top-level ticket"))
@@ -2294,6 +2320,29 @@ class Tracker:
             raise Refused([f"no ticket {slug} at {self.root / f'{slug}.md'}"])
         return self.tickets[slug]
 
+    def retired(self, slug: str) -> Ticket | None:
+        """The done ticket `tracker retire` took out under `slug`, as its file read in the commit
+        before the one that removed it; None where no done ticket of that slug left. A ticket that
+        stays may still wait on it, and its history is where it is read from then."""
+        top = tried(self.root, "rev-parse", "--show-toplevel").stdout.strip()
+        if not top or not SLUG.fullmatch(slug):
+            return None
+        name = str((self.root / f"{slug}.md").resolve().relative_to(Path(top).resolve()))
+        removed = tried(Path(top), "log", "-1", "--diff-filter=D", "--format=%H", "--", name).stdout.strip()
+        text = removed and tried(Path(top), "show", f"{removed}^:{name}")
+        if not text or text.returncode != 0:
+            return None
+        ticket = read(self.root / f"{slug}.md", text.stdout)
+        return ticket if ticket.status == "done" else None
+
+    def found(self, slug: str) -> Ticket:
+        """A ticket that stays, else one retired, read from its history (`retired`)."""
+        if slug in self.tickets:
+            return self.tickets[slug]
+        if gone := self.retired(slug):
+            return gone
+        return self.ticket(slug)
+
     def at_path(self, path: Path) -> Ticket:
         if path not in self.by_path:
             raise Refused([f"no ticket at {path}"])
@@ -2465,7 +2514,7 @@ def run_git(root: Path, args: Sequence[str]) -> subprocess.CompletedProcess:
 
 
 # The git subcommands `held_still` answers a second time from its first answer.
-READ_ONLY = frozenset({"rev-parse", "for-each-ref", "merge-base", "log", "symbolic-ref", "config", "cat-file", "worktree"})
+READ_ONLY = frozenset({"rev-parse", "for-each-ref", "merge-base", "log", "show", "symbolic-ref", "config", "cat-file", "worktree"})
 READS: dict[tuple[str, tuple[str, ...]], subprocess.CompletedProcess] | None = None
 
 

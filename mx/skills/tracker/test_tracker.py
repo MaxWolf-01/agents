@@ -1348,8 +1348,10 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
     assert "status: done" in git(repo, "show", "HEAD~1:agent/tickets/one-flow.md"), "and history holds the done ticket"
     assert not (show / "one-flow").exists() and not (show / "map-columns").exists(), "and the emptied directories go"
 
-    assert run(repo, "get", "speed-up-tests", "blocked-by").code == 1, "the edge onto a retired ticket goes with it"
+    assert run(repo, "get", "speed-up-tests", "blocked-by").out == "one-flow\n", "the edge onto a retired ticket stays"
+    assert run(repo, "get", "one-flow", "status").out == "done\n", "and the ticket it names is read from history"
     assert run(repo, "check", str(tickets / "speed-up-tests.md")).code == 0
+    assert "one-flow" not in run(repo, "frontier").out, "a retired blocker is done, so it holds nothing back"
 
 
 # The executable Properties of agent/tickets/speculative-first.md, P2 and P3, over one parent ticket
@@ -1545,18 +1547,32 @@ def test_a_finished_tree_a_live_ticket_cites_stays_until_the_citing_one_finishes
     assert not list(tickets.glob("*.md")), "the citing tree and the one it cites leave together"
 
 
-def test_a_tree_with_a_ticket_not_done_stays_whole(tickets: Path, repo: Path) -> None:
-    """A done child of a parent still open is read at the parent's close-out, and a done parent's
-    child not done is still live work, so neither tree leaves."""
+def test_a_done_subtree_leaves_an_open_umbrella_and_a_tree_with_a_ticket_not_done_stays(tickets: Path, repo: Path) -> None:
+    """A done child of a parent still open leaves on its own, the subtree under it with it; a done
+    parent's child not done is still live work, so that tree stays whole."""
     ticket(tickets, "one-flow", status="claimed")
     ticket(tickets, "map-columns", parent="one-flow", status="done")
+    ticket(tickets, "parse-rows", parent="map-columns", status="done")
     ticket(tickets, "csv-import", status="done")
     ticket(tickets, "saved-views", parent="csv-import", status="review")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "the tickets")
     said = run(repo, "retire")
-    assert said.code == 0 and "csv-import stays: saved-views not done" in said.out and "no finished tree" in said.out
-    assert len(list(tickets.glob("*.md"))) == 4
+    assert said.code == 0 and "csv-import stays: saved-views not done" in said.out, said.said
+    assert "retired map-columns, 2 tickets in all" in said.out
+    assert sorted(path.stem for path in tickets.glob("*.md")) == ["csv-import", "one-flow", "saved-views"]
+
+
+def test_a_done_subtree_stays_while_a_close_out_review_of_its_parent_is_not_done(tickets: Path, repo: Path) -> None:
+    """The close-out review reads every other child of the parent it reviews."""
+    ticket(tickets, "one-flow", status="claimed")
+    ticket(tickets, "map-columns", parent="one-flow", status="done")
+    ticket(tickets, "review-one-flow", parent="one-flow", status="open", **{"close-out": "true"})
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    said = run(repo, "retire")
+    assert said.code == 0 and "map-columns stays: review-one-flow reviews one-flow's tree and is not done" in said.out, said.said
+    assert (tickets / "map-columns.md").exists()
 
 
 @pytest.mark.parametrize("status", ["proposed", "open", "claimed", "review"])
@@ -3013,3 +3029,14 @@ def test_a_read_asked_twice_in_a_held_still_scope_runs_git_once_and_is_read_fres
         assert tr.parent_branch(repo, "lamp") is None  # the scope holds the repo still
     assert len(ran) == 1
     assert tr.parent_branch(repo, "lamp") == "lamp"
+
+
+def test_a_retire_of_many_trees_counts_them_in_its_subject_and_names_each_in_its_body(tickets: Path, repo: Path) -> None:
+    slugs = ["csv-import", "map-columns", "one-flow", "saved-views"]
+    for slug in slugs:
+        ticket(tickets, slug, status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    assert run(repo, "retire").code == 0
+    assert git(repo, "log", "-1", "--format=%s") == "retire 4 finished trees\n"
+    assert git(repo, "log", "-1", "--format=%b").split() == slugs
