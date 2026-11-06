@@ -148,10 +148,14 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 Everything else is layout convention, a few lines each.
 
 - **Architecture**: group by tier or trust boundary, hold one direction of primary flow, accent the key integration point or store.
+- **Architecture delta** (a concept diff of a structure): a before panel, a ledger of the changes, an after panel. The after panel copies the before panel's coordinates for every part that stayed, so the reader's map holds and only what moved looks new.
+- **Hub and spoke**: the platform in the middle, sources plugging in on one side and readers out on the other, each wire labelled with how it connects (the protocol, the file, the call).
 - **Flowchart**: diamonds for decisions, label every branch, one entry and one exit unless a second exit is the point.
-- **Sequence**: actors across the top, lifelines down, time strictly downward, activation bars for held control. One combined fragment, two `alt` regions, no nesting past one level.
-- **State**: filled dot for initial, ringed dot for final, transitions labelled `event [guard] / action`.
-- **ER**: entity as a box with a field list, cardinality glyphs at both ends, 8 entities max.
+- **Sequence**: actors across the top, lifelines down, time strictly downward, activation bars for held control. A return is a dashed line with a filled arrowhead, an async message an open arrowhead. One combined fragment, its operator in a small tab at its top left, two `alt` regions, no nesting past one level.
+- **State**: filled dot for initial, ringed dot for final, transitions labelled `event [guard] / action`. A transition from any state is one note (`* → error on timeout`), never an arrow from each.
+- **ER**: entity as a box with a field list, `#` before a primary key and `→` before a foreign key, cardinality glyphs at both ends 10–12px from the box edge, 8 entities max. A **schema** view is the same boxes with SQL types and constraint chips, each foreign key drawn from its column to the column it references.
+- **Fishbone** (a diagnosis): the effect at the head, causes along ribs grouped by category, every cause investigated drawn and the confirmed one in the accent, so the figure shows what was ruled out as well as what was found.
+- **Journey**: stages across, a sentiment curve above them, a marker on each pain point where the curve drops.
 - **Timeline**: one axis, events on alternating sides when they crowd, uneven spacing only if the spacing is to scale.
 - **Swimlane**: lanes for actors, flow crossing between them; add a step axis and chips when the handoffs matter more than the order.
 - **Nested / layers / tree / org chart**: containment, stacking, and parentage. Depth is the budget: 6 levels nested, 6 layers, 4 for tree and org depth.
@@ -160,6 +164,7 @@ Everything else is layout convention, a few lines each.
 - **Pyramid / funnel**: ranked tiers or drop-off. Widths to scale when they encode a quantity, equal when they encode rank only.
 - **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in the house's `series-1` onward, at 0.18 fill opacity.
 - **Gantt**: tasks as rows, bars on a date axis, dependencies as thin elbows. 12 tasks max.
+- **Exploded view**: one physical thing with its parts pulled apart along the axis they assemble on, each labelled outside the part on a leader line.
 
 ---
 
