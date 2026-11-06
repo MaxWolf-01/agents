@@ -1661,7 +1661,11 @@ def merged_in(top: Path, onto: str, branch: str) -> None:
 
 
 def boards(toy: Path) -> list[str]:
-    """What dispatch asked the board to draw, once per run of it."""
+    """What dispatch asked the board to draw, once per run of it, read once the render it started
+    in the background has let go of its lock."""
+    lock = Path(git(toy, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "dispatch" / "board.lock"
+    if lock.exists():
+        subprocess.run(["flock", str(lock), "true"], check=True)
     calls = toy.parent / "bin" / "board.calls"
     return calls.read_text().splitlines() if calls.exists() else []
 
@@ -2495,6 +2499,7 @@ def answer(said: dict, backend: Path, number: int = 7) -> None:
 def only_read(toy: Path) -> None:
     """`tickets-land-in-listed-repos#P7`: every call of `gh` was a read: review's `pr view`, and the
     query of the board it renders."""
+    boards(toy)  # once the board is done with its query
     calls = (toy.parent / "bin" / "gh.calls").read_text().splitlines()
     assert any(call.startswith("pr view ") for call in calls), calls
     assert all(call.startswith(("pr view ", "api graphql -f query=query ")) for call in calls), calls
