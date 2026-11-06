@@ -1188,9 +1188,7 @@ def repo_name(path: Path) -> str | None:
 @functools.cache
 def toplevel(directory: Path) -> Path | None:
     """The top of the checkout `directory` is in, or None where it is in none."""
-    done = subprocess.run(
-        ["git", "-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True, text=True
-    )
+    done = tracker.tried(directory, "rev-parse", "--show-toplevel")  # the tracker's question, which a render asks once
     return Path(done.stdout.strip()).resolve() if done.returncode == 0 else None
 
 

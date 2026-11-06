@@ -1627,6 +1627,39 @@ def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tup
     assert [s.title for s in sessions_in(rows_read(root, repo, out)["view-list"])] == ["Ledger imports"]
 
 
+def test_a_transcript_written_between_two_renders_is_read_by_the_second(worked: tuple[Path, Path], tmp_path: Path) -> None:
+    """The board lists the transcripts again on every render: a session that reaches this machine
+    while the board watches is resumable from the next one."""
+    root, repo = worked
+    out = tmp_path / "board.html"
+    assert "Back on this machine" not in [s.title for s in sessions_in(rows_read(root, repo, out)["map-columns"])]
+    write_transcript(board.TRANSCRIPTS, AWAY, str(repo), "Back on this machine")
+    assert "Back on this machine" in [s.title for s in sessions_in(rows_read(root, repo, out)["map-columns"])]
+
+
+def test_a_render_asks_git_each_question_once_however_many_tickets_ask_it(
+    worked: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Siblings in review under a parent being built each ask whether the parent's branch is there
+    and what the ticket branches are; a render forks git for each question once."""
+    root, repo = worked
+    ticket(root / "lamp.md", "claimed")
+    for slug in ("warm", "cool", "dim", "bright"):
+        ticket(root / f"{slug}.md", "review", parent="lamp", blocked_by=["warm"] if slug != "warm" else None)
+    demo_git(repo, "add", "--", "agent/tickets")
+    demo_git(repo, "commit", "-q", "-m", "the lamp tree")
+    demo_git(repo, "branch", "lamp")
+    shim, log = tmp_path / "shim", tmp_path / "git.calls"
+    shim.mkdir()
+    (shim / "git").write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\nexec "{shutil.which("git")}" "$@"\n')
+    (shim / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}{os.pathsep}{os.environ['PATH']}")
+    board.read(root, repo, tmp_path / "board.html")
+    asked = log.read_text().splitlines()
+    assert asked, "the shim saw the render's git"
+    assert [call for call in set(asked) if asked.count(call) > 1] == []
+
+
 def test_the_button_that_resumes_a_session_shows_the_command_it_copies(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The spec's reviewed Property, at the button this slice adds: what it says on hover is what
     the click puts on the clipboard, and its note names the session the way the reader knows it."""
