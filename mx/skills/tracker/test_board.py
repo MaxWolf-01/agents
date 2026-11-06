@@ -2889,5 +2889,14 @@ def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_tic
         assert not any(said in held for said in about), f"{sidecar} says something about a ticket"
 
 
+def test_a_link_one_ticket_defines_is_no_link_in_the_next_ones_text() -> None:
+    """The board converts every text with the same converter, so nothing one text defines may
+    reach another's."""
+    defines = "see [x]\n\n[x]: http://a.example"
+    assert "<a " in board.render_body(defines) and "<a " in board.inline_md(defines)
+    assert "<a " not in board.render_body("plain [x] here")
+    assert "<a " not in board.inline_md("plain [x] here")
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

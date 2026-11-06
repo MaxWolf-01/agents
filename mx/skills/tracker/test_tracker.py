@@ -1348,8 +1348,10 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
     assert "status: done" in git(repo, "show", "HEAD~1:agent/tickets/one-flow.md"), "and history holds the done ticket"
     assert not (show / "one-flow").exists() and not (show / "map-columns").exists(), "and the emptied directories go"
 
-    assert run(repo, "get", "speed-up-tests", "blocked-by").code == 1, "the edge onto a retired ticket goes with it"
+    assert run(repo, "get", "speed-up-tests", "blocked-by").out == "one-flow\n", "the edge onto a retired ticket stays"
+    assert run(repo, "get", "one-flow", "status").out == "done\n", "and the ticket it names is read from history"
     assert run(repo, "check", str(tickets / "speed-up-tests.md")).code == 0
+    assert "one-flow" not in run(repo, "frontier").out, "a retired blocker is done, so it holds nothing back"
 
 
 # The executable Properties of agent/tickets/speculative-first.md, P2 and P3, over one parent ticket
@@ -1545,18 +1547,99 @@ def test_a_finished_tree_a_live_ticket_cites_stays_until_the_citing_one_finishes
     assert not list(tickets.glob("*.md")), "the citing tree and the one it cites leave together"
 
 
-def test_a_tree_with_a_ticket_not_done_stays_whole(tickets: Path, repo: Path) -> None:
-    """A done child of a parent still open is read at the parent's close-out, and a done parent's
-    child not done is still live work, so neither tree leaves."""
+def test_a_done_subtree_leaves_an_open_umbrella_and_a_tree_with_a_ticket_not_done_stays(tickets: Path, repo: Path) -> None:
+    """A done child of an umbrella still open leaves on its own, the subtree under it with it; so
+    does a done child of a done parent whose other child is still live work, which keeps that
+    parent and that child."""
     ticket(tickets, "one-flow", status="claimed")
     ticket(tickets, "map-columns", parent="one-flow", status="done")
+    ticket(tickets, "parse-rows", parent="map-columns", status="done")
     ticket(tickets, "csv-import", status="done")
     ticket(tickets, "saved-views", parent="csv-import", status="review")
+    ticket(tickets, "export-rows", parent="csv-import", status="done")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "the tickets")
     said = run(repo, "retire")
-    assert said.code == 0 and "csv-import stays: saved-views not done" in said.out and "no finished tree" in said.out
-    assert len(list(tickets.glob("*.md"))) == 4
+    assert said.code == 0 and "csv-import stays: saved-views not done" in said.out, said.said
+    assert "retired export-rows, map-columns, 3 tickets in all" in said.out
+    assert sorted(path.stem for path in tickets.glob("*.md")) == ["csv-import", "one-flow", "saved-views"]
+
+
+def test_a_retired_ticket_under_a_retired_parent_is_read_whole_from_history(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="claimed")
+    ticket(tickets, "map-columns", parent="one-flow", status="done")
+    ticket(tickets, "parse-rows", parent="map-columns", status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    assert run(repo, "retire").code == 0
+    said = run(repo, "data", "parse-rows")
+    assert said.code == 0, said.said
+    assert json.loads(said.out)["tickets"][0]["parent"] == "map-columns"
+
+
+def test_a_done_child_stays_under_a_parent_that_closes_out(tickets: Path, repo: Path) -> None:
+    """A close-out review reads every other child of the parent it reviews, and the record that it
+    ran is the review ticket itself, done or not; a parent with a branch of its own is being built,
+    and its close-out is yet to be filed."""
+    ticket(tickets, "one-flow", status="claimed")
+    ticket(tickets, "map-columns", parent="one-flow", status="done")
+    ticket(tickets, "review-one-flow", parent="one-flow", status="done", **{"close-out": "true"})
+    ticket(tickets, "csv-import", status="claimed")
+    ticket(tickets, "saved-views", parent="csv-import", status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    git(repo, "branch", "csv-import")
+    said = run(repo, "retire")
+    assert said.code == 0 and "no finished tree to retire" in said.out, said.said
+    assert "map-columns stays: one-flow closes out with review-one-flow, which reads every child" in said.out
+    assert "review-one-flow stays: one-flow closes out with review-one-flow" in said.out
+    assert "saved-views stays: csv-import is being built on its branch csv-import" in said.out
+
+
+def test_an_edge_reads_a_retired_ticket_only_where_it_was_done_and_only_as_a_blocker(tickets: Path, repo: Path) -> None:
+    """A ticket deleted by hand while still open is no retired one, and a parent or a citation never
+    names a retired ticket, since retire takes a ticket's tree and every citing tree with it."""
+    ticket(tickets, "map-columns", status="done")
+    ticket(tickets, "parse-rows", status="open")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    git(repo, "rm", "-q", "agent/tickets/map-columns.md", "agent/tickets/parse-rows.md")
+    git(repo, "commit", "-q", "-m", "gone")
+    tickets.mkdir(parents=True, exist_ok=True)  # git takes the emptied directories with the last file
+    waits = ticket(tickets, "export-rows", **{"blocked-by": "[map-columns, parse-rows]"})
+    under = ticket(tickets, "saved-views", parent="map-columns")
+    said = run(repo, "check", str(waits), str(under))
+    assert said.code == 1
+    assert "`blocked-by: parse-rows` names no ticket" in said.out + said.err
+    assert "`blocked-by: map-columns` names no ticket" not in said.out + said.err
+    assert "`parent: map-columns` names no ticket" in said.out + said.err
+
+
+def test_a_new_ticket_cannot_take_a_retired_ones_slug(tickets: Path, repo: Path) -> None:
+    """An edge onto the retired ticket would wait on the new one."""
+    ticket(tickets, "map-columns", status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    assert run(repo, "retire").code == 0
+    tickets.mkdir(parents=True, exist_ok=True)  # git takes the emptied directories with the last file
+    said = run(repo, "new", "map-columns", "--priority", "2", "--size", "S")
+    assert said.code == 1 and "retired ticket's slug" in said.out + said.err, said.said
+
+
+@pytest.mark.parametrize(("count", "subject"), [(3, "retire csv-import, map-columns, one-flow: finished"),
+                                                (4, "retire 4 finished trees")])
+def test_a_retire_names_up_to_three_trees_in_its_subject_and_counts_more(
+    tickets: Path, repo: Path, count: int, subject: str,
+) -> None:
+    slugs = ["csv-import", "map-columns", "one-flow", "saved-views"][:count]
+    for slug in slugs:
+        ticket(tickets, slug, status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    assert run(repo, "retire").code == 0
+    assert git(repo, "log", "-1", "--format=%s") == subject + "\n"
+    if count > 3:
+        assert git(repo, "log", "-1", "--format=%b").split() == slugs
 
 
 @pytest.mark.parametrize("status", ["proposed", "open", "claimed", "review"])

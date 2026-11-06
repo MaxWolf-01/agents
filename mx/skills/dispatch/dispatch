@@ -807,8 +807,7 @@ landed_round() { # <slug> <land|accept> <its arguments...>
     page_specs "$id"
     render_page "$id" "${shown[@]}"
     [ -z "$retiring" ] || retire_trees
-    # On PATH beside `dispatch`, as diffview is.
-    run board "$tickets" --no-watch --no-open
+    draw_board
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
     # shellcheck disable=SC2086
     [ -z "$retiring" ] || retire "$id" "$up" $named || return 1
@@ -863,6 +862,21 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
     return $rc
 }
 
+# Renders the board in the background, which nothing here waits on: a landing is done once its
+# ticket file is, and a watcher of the board re-renders on that file anyway. One render at a time,
+# so a second landing's render reads the tracker after the first one's. The lock is taken here
+# where it is free and handed to the render, so it is held from before this returns until the
+# render ends. `board` is on PATH beside `dispatch`, as diffview is.
+draw_board() {
+    mkdir -p "$state"
+    echo "+ board $tickets --no-watch --no-open" >&2
+    echo "dispatch: the board renders in the background; $state/board.log says how it went" >&2
+    exec 9>> "$state/board.lock"
+    flock -n 9 || true  # held by an earlier render, which the one below waits for
+    setsid bash -c 'flock 9 && exec "$@"' _ board "$tickets" --no-watch --no-open >> "$state/board.log" 2>&1 < /dev/null &
+    exec 9>&-
+}
+
 # Retires the run of every ticket `done` or gone from the tracker, from any branch, where
 # `retirable` allows; each run that stays says why.
 sweep() {
@@ -884,15 +898,21 @@ sweep() {
 }
 
 retire_swept() { # <slug> <host> <the probe of its scratch dir there>
-    local why left=done up
-    [ -n "$(field "$1" status)" ] || left="gone from the tracker"
+    local why left=done up named
+    if [ -z "$(field "$1" status)" ]; then
+        left="gone from the tracker"
+        # A ticket retired from under a parent still open is read from history, where `data` finds
+        # it; one dropped is not, and its parent and repos are then nobody's.
+        tracked=$("$tracker" data "$1" 2> /dev/null) || tracked='{"tickets": []}'
+    fi
     up=$(field "$1" parent)
+    named=$(field "$1" repos)
     why=$(retirable "$1" "$2" "$up" "$3") || {
         echo "dispatch: $1 is $left, and its run on $2 stays: ${why:-its branches could not be read}" >&2
         return 1
     }
-    # shellcheck disable=SC2046
-    retire "$1" "$up" $(field "$1" repos)
+    # shellcheck disable=SC2086
+    retire "$1" "$up" $named
 }
 
 # Whether <slug>'s run on <host> may go; exit 1 and why where its worker runs, or a branch the host
@@ -942,7 +962,7 @@ accept() { # <slug>
     fi
     tracked=$(run "$tracker" accept "$id") || exit 1
     retire_trees
-    run board "$tickets" --no-watch --no-open
+    draw_board
     # Each child's run is recorded under the parent's branch.
     rc=0
     for child in $(jq -r --arg p "$id" '.tickets[] | select(.slug != $p) | .slug' <<< "$tracked"); do
