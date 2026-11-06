@@ -251,15 +251,16 @@ button.id:hover { color: var(--accent); }
    far as the room either side allows, the left's ending at the turn's edge, where the current turn's mark runs. A narrow
    one stays at the text's start. The shift left is half of what the table outgrows the text by, or more where the right
    lacks the room, never past the turn's edge; a translate's percentage is of the table's own width. */
-.turn-body .prose > table { width: max-content; max-width: calc(var(--text) + var(--rail) + var(--gutter) - var(--pad));
+.turn-body .prose > table, .reply > table { width: max-content; max-width: calc(var(--text) + var(--rail) + var(--gutter) - var(--pad));
   translate: calc(-1 * clamp(0px, max((100% - var(--text)) / 2, 100% - var(--text) - var(--gutter) + var(--pad)), var(--rail))); }
-/* a chat turn: the reply the turn ended on in the chat, one compact row with nothing to open */
-.turn.chat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.75rem 0; }
+/* a chat turn: the reply the turn ended on in the chat, with nothing to open; the reply takes the column a record's
+   Details take, so its text and tables read the same */
+.turn.chat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; row-gap: 0.35rem; padding: 0.75rem 0; }
 .turn.chat:focus-visible { outline: none; }
 .turn.chat .date { white-space: nowrap; }
-.chat-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; padding-right: 1.5rem; }
-.reply { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.75rem; align-items: baseline; padding: 0 0.8rem; margin-left: -0.8rem; max-width: var(--measure); }
-.reply .prose { font-size: 0.95em; overflow-wrap: anywhere; }
+.chat-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; padding-right: 1.5rem; }
+.chat-head:empty { display: none; }
+.reply { grid-column: 2 / -1; }
 
 .said > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: baseline; padding: 0.45rem 0.8rem; margin-left: -0.8rem; border-radius: var(--radius); transition: background-color 150ms; }
 .said > summary::-webkit-details-marker { display: none; }
