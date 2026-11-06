@@ -1,3 +1,8 @@
+## 1.0.108
+
+- A chat turn's reply lays out like a turn record's Details, wide tables included
+  On the session page, a chat turn (one that ended on a plain chat reply instead of writing a turn record) now shows `chat` in the rail where a record shows its number. The user's messages sit at the top, and the reply goes below them in the column a record's Details use, at the same size and without `overflow-wrap: anywhere`. Wide tables in a chat reply now spread past the text as they do in a record, instead of squeezing columns to a few letters a line.
+
 ## 1.0.107
 
 - tracker board renders fast, dispatch stops waiting on it, and done subtrees leave open umbrellas
