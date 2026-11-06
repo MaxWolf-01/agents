@@ -869,7 +869,8 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
 # render ends. `board` is on PATH beside `dispatch`, as diffview is.
 draw_board() {
     mkdir -p "$state"
-    echo "+ board $tickets --no-watch --no-open, in the background; it says how it went in $state/board.log" >&2
+    echo "+ board $tickets --no-watch --no-open" >&2
+    echo "dispatch: the board renders in the background; $state/board.log says how it went" >&2
     exec 9>> "$state/board.lock"
     flock -n 9 || true  # held by an earlier render, which the one below waits for
     setsid bash -c 'flock 9 && exec "$@"' _ board "$tickets" --no-watch --no-open >> "$state/board.log" 2>&1 < /dev/null &
@@ -897,15 +898,21 @@ sweep() {
 }
 
 retire_swept() { # <slug> <host> <the probe of its scratch dir there>
-    local why left=done up
-    [ -n "$(field "$1" status)" ] || left="gone from the tracker"
+    local why left=done up named
+    if [ -z "$(field "$1" status)" ]; then
+        left="gone from the tracker"
+        # A ticket retired from under a parent still open is read from history, where `data` finds
+        # it; one dropped is not, and its parent and repos are then nobody's.
+        tracked=$("$tracker" data "$1" 2> /dev/null) || tracked='{"tickets": []}'
+    fi
     up=$(field "$1" parent)
+    named=$(field "$1" repos)
     why=$(retirable "$1" "$2" "$up" "$3") || {
         echo "dispatch: $1 is $left, and its run on $2 stays: ${why:-its branches could not be read}" >&2
         return 1
     }
-    # shellcheck disable=SC2046
-    retire "$1" "$up" $(field "$1" repos)
+    # shellcheck disable=SC2086
+    retire "$1" "$up" $named
 }
 
 # Whether <slug>'s run on <host> may go; exit 1 and why where its worker runs, or a branch the host

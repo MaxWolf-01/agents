@@ -833,6 +833,7 @@ class Ticket:
     questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
     freed: list[str] = field(default_factory=list)  # blockers not done that hold it back no longer (tracker.frees)
     under: str | None = None  # the parent ticket whose row this one folds under (board.folded)
+    retired: tuple[str, ...] = ()  # the blockers retired since the edge was written, which have no row
 
 
 def load_tickets(root: Path, repo: Path | None, here: Path) -> list[Ticket]:
@@ -922,6 +923,7 @@ def shown(
         brief=inline_md(read.brief),
         questions=read.questions,
         under=under,
+        retired=tuple(ref for ref in read.blocked_by if ref not in tickets),
     )
 
 
@@ -987,15 +989,22 @@ def answers(address: str) -> bool:
     return True
 
 
-# One converter each, reset per text: building one costs more than most texts take to convert.
-INLINE = markdown.Markdown()
-BODY = markdown.Markdown(extensions=["fenced_code", "tables"], tab_length=3)
+# One converter of each kind per thread, reset per text: building one costs more than most texts
+# take to convert, and one holds a conversion's state, which the briefing thread would share.
+CONVERTERS = threading.local()
+
+
+def converter(kind: str) -> markdown.Markdown:
+    if not hasattr(CONVERTERS, kind):
+        made = markdown.Markdown(extensions=["fenced_code", "tables"], tab_length=3) if kind == "body" else markdown.Markdown()
+        setattr(CONVERTERS, kind, made)
+    return getattr(CONVERTERS, kind).reset()
 
 
 @functools.lru_cache(maxsize=4096)
 def inline_md(text: str) -> str:
     """Markdown as one line of HTML: a brief or a headline carries code and emphasis, never a block."""
-    return re.sub(r"^<p>|</p>$", "", INLINE.reset().convert(text).strip()) if text else ""
+    return re.sub(r"^<p>|</p>$", "", converter("inline").convert(text).strip()) if text else ""
 
 
 def ref_anchor(ref: str) -> str:
@@ -1004,7 +1013,7 @@ def ref_anchor(ref: str) -> str:
 
 @functools.lru_cache(maxsize=4096)  # a watcher's next render converts only the texts that changed
 def render_body(md: str) -> str:
-    out = BODY.reset().convert(md)
+    out = converter("body").convert(md)
     # a link to another ticket file becomes that row's anchor, wherever the writer wrote it from
     return re.sub(r'href="(?:[\w./-]*/)?([a-z0-9][\w-]*)\.md"', r'href="#t-\1"', out)
 
@@ -1575,7 +1584,8 @@ def marks_of(t: Ticket, kin: int, gh: dict[str, str]) -> tuple[Mark, ...]:
         Mark("time", SIZES[t.size][0], SIZE_TIP),
         Mark("pri", f"p{t.priority} {PRIORITY[t.priority][0]}", PRIORITY_TIP, look=f"p{t.priority}"),
         *(Mark("chip", ref, FREED_TIP.format(ref=ref) if ref in t.freed
-               else f"Waits on {ref}, {'done' if status == 'done' else 'not done yet'}.", look=status, href=ref_anchor(ref))
+               else f"Waits on {ref}, {'done' if status == 'done' else 'not done yet'}.", look=status,
+               href="" if ref in t.retired else ref_anchor(ref))
           for ref, status in t.blocked_by),
     )
 
