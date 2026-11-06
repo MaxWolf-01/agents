@@ -288,7 +288,8 @@ class Args:
     width: int = 1400
     """Viewport width in CSS pixels; the page gets the height it asks for."""
     narrow: bool = False
-    """Also measure each page at width/1.5 (the window at 150% zoom) and at 700px, in the same tab."""
+    """Also measure each page at width/1.5 (the window at 150% zoom) and at 700px, in the same tab,
+    narrowest last; a width not narrower than --width is skipped."""
     pad: float = 6.0
     """Clearance in pixels an SVG text needs from its rect's edge before it counts as tight."""
     settle: float = 0.25
@@ -368,8 +369,8 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
         return [unmeasurable(args.width, f"still loading after {args.patience:g}s")]
     found: list[dict] = []
     made: set[tuple] = set()
-    widths = [args.width, *([round(args.width / 1.5), 700] if args.narrow else [])]
-    for n, width in enumerate(dict.fromkeys(widths)):
+    narrower = sorted({w for w in (round(args.width / 1.5), 700) if w < args.width}, reverse=True)
+    for n, width in enumerate([args.width, *(narrower if args.narrow else [])]):
         if n:
             # The window keeps the last width's height, so a page that is as tall here costs one rest.
             until = time.monotonic() + args.patience
