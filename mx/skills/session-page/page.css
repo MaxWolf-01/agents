@@ -61,6 +61,9 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 /* under the path the pointer or the focus is on, the key that copies it */
 .key-hint { position: fixed; z-index: 15; padding: 0.1rem 0.4rem; border: 1px solid var(--edge); border-radius: 4px; background: var(--ground); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); white-space: nowrap; pointer-events: none; }
 .key-hint kbd { font-size: 0.66rem; }
+/* a control's key over it, while Ctrl+Alt is held (page.js) */
+.key-over { position: fixed; z-index: 60; translate: -50% -50%; padding: 0.05rem 0.35rem; border: 1px solid var(--accent); border-radius: 4px;
+  background: var(--ground); color: var(--accent); font: 500 0.72rem/1.4 var(--font-mono); white-space: nowrap; pointer-events: none; }
 
 /* Left, the title, the questions and the turns' pane; right, the timeline, full height. */
 main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--column); }
@@ -114,7 +117,6 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 
 /* the control to the newest turn, marked while a turn has arrived that the reader has not reached */
 .newest { display: inline-flex; align-items: center; gap: 0.35rem; height: 1.6rem; padding: 0 0.45rem; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--muted); font: 400 0.72rem/1 var(--font-mono); white-space: nowrap; cursor: pointer; transition: color 150ms, border-color 150ms; }
-.newest kbd { font-size: 0.68rem; }
 .newest:hover { color: var(--accent); border-color: var(--accent); }
 .newest .dot { display: none; width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--accent); }
 .newest.fresh { color: var(--accent); border-color: var(--accent); }
@@ -133,8 +135,6 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .handoffs a { color: var(--accent); text-decoration: none; }
 .handoffs a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .resume { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; letter-spacing: inherit; white-space: nowrap; cursor: pointer; }
-.resume kbd { font-size: 0.68rem; }
-.resume:hover kbd { color: var(--accent); border-color: var(--accent); }
 button.id { padding: 0; border: none; border-bottom: 1px dotted currentColor; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; transition: color 150ms; }
 button.id:hover { color: var(--accent); }
 
@@ -153,7 +153,6 @@ button.id:hover { color: var(--accent); }
 .waiting .divider { flex: none; position: sticky; top: 0; z-index: 1; margin: 0 0 0.35rem; padding: 0.8rem 0 0.5rem; background: var(--ground-2); }
 .waiting .tally { color: var(--accent); }
 .fold-band { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
-.fold-band kbd { font-size: 0.68rem; }
 .waiting.collapsed { padding-bottom: 0; }
 .waiting.collapsed > :not(.divider) { display: none; }
 .ticks { flex: none; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 0 0 0.9rem; }
@@ -239,6 +238,9 @@ button.id:hover { color: var(--accent); }
 .turn[open] > summary .hl { font-weight: 600; color: var(--strong); }
 .turn > summary:hover .hl { color: var(--accent); }
 .turn > summary .date { white-space: nowrap; }
+/* what the turn consumed and produced, under its date */
+.blk .date .spent { display: block; text-align: right; font-size: 0.68rem; opacity: 0.8; }
+.said-text .msg > .size { display: block; margin-bottom: 0.35rem; }
 .turn > summary .chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; margin-top: 0.55rem; }
 .turn[open] > summary .chips { display: none; }
 .chip { display: inline-flex; align-items: baseline; gap: 0.4rem; max-width: 100%; box-sizing: border-box; padding: 0.15rem 0.6rem 0.15rem 0.3rem; border: 1px solid var(--edge); border-radius: 999px; font-size: 0.8rem; line-height: 1.5; transition: border-color 150ms; }
@@ -319,8 +321,8 @@ a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
   .turn > summary .date { grid-column: 2; }
   .turn.chat { grid-template-columns: var(--rail) minmax(0, 1fr); }
   .turn.chat .date { grid-column: 2; }
-  .said > summary { grid-template-columns: auto minmax(0, 1fr); }
-  .said > summary .count { display: none; }
+  .blk .date .spent { text-align: left; }
+  .said > summary .count .lead { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }

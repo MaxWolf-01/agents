@@ -19,6 +19,7 @@ from copies kept on this machine (show/page_cache.py), so a run after the first 
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from datetime import UTC, datetime
@@ -149,6 +150,18 @@ with sync_playwright() as pw:
         out["toast"] = page.text_content("#toast")
         out["help"] = page.evaluate('''[...document.querySelectorAll("#help td:first-child")].map((td) =>
             [...td.querySelectorAll("kbd")].map((k) => k.textContent).join(" "))''')
+        OPEN = '[...document.querySelectorAll("details.turn")].map((t) => t.open)'
+        page.keyboard.press("o")
+        out["o"] = page.evaluate(OPEN)
+        page.keyboard.press("o")
+        out["oo"] = page.evaluate(OPEN)
+        OVER = '[...document.querySelectorAll(".key-over")].map((k) => k.textContent)'
+        page.keyboard.down("Control")
+        page.keyboard.down("Alt")
+        out["held"] = page.evaluate(OVER)
+        page.keyboard.up("Alt")
+        out["let_go"] = page.evaluate(OVER)
+        page.keyboard.up("Control")
 
     elif scenario == "copy-code":
         context, page = open_page(1280, 800)
@@ -290,6 +303,11 @@ with sync_playwright() as pw:
         out["short"] = {"column": short.eval_on_selector("#artefacts", BOX), "row": short.eval_on_selector("#a01", BOX),
                         "overflows": short.eval_on_selector("#artefacts", "(el) => el.scrollHeight > el.clientHeight")}
 
+    elif scenario == "prompt_size":
+        # the size each turn's prompts show on their folded line, as far as the reader sees it
+        context, page = open_page(args["width"], 800)
+        out["sizes"] = page.evaluate('''[...document.querySelectorAll(".said > summary .count .size")]
+            .filter((el) => el.checkVisibility()).map((el) => el.textContent)''')
     elif scenario == "layout":
         # P3, P7, P8 at one width: the panes, the control at both ends of the turns, the band's rows
         width = args["width"]
@@ -456,6 +474,7 @@ with sync_playwright() as pw:
             page.evaluate(f"(verb) => ({STEP})(verb).querySelector('button').click()", verb)
             return page.evaluate(f'''(verb) => [...({STEP})(verb).querySelectorAll(".detail pre")].map((p) => ({{lang: p.dataset.lang,
                 cls: p.className, text: p.textContent, lit: !!p.querySelector("[class^=hljs-]"), more: !!p.nextElementSibling?.matches(".more")}}))''', verb)
+        out["bash_size"] = page.evaluate(f"({STEP})('ran').querySelector('.size').textContent")
         out["bash"], out["edit"], out["read"] = opened("ran"), opened("edited"), opened("read")
         out["read_whole"] = page.evaluate(f'''(() => {{ const s = ({STEP})("read"); s.querySelector(".more").click()
             return s.querySelector(".detail pre").textContent.length }})()''')
@@ -476,7 +495,7 @@ with sync_playwright() as pw:
         page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
         out["opened"] = page.evaluate(SHOWN)
         for name, keys in (("tab", "Tab"), ("jj", "j j"), ("o", "o"), ("k", "k"), ("O", "O"), ("OO", "O"), ("G", "G"), ("gg", "g g"),
-                           ("back", "Tab"), ("j_turns", "j j")):
+                           ("back", "Tab"), ("O_unkeyed", "O"), ("j_turns", "j j")):
             for key in keys.split():
                 page.keyboard.press(key)
             out[name] = page.evaluate(SHOWN)
@@ -489,7 +508,7 @@ with sync_playwright() as pw:
         context, page = open_page(1280, 800)
         live = Path(args["live"])
         SHOWN = '''(() => { const log = document.getElementById("log")
-          return {which: log.querySelector(".which").textContent, jump: !!log.querySelector(".to-live"),
+          return {which: log.querySelector(".which").textContent, buttons: [...log.querySelectorAll(".log-head button")].map((b) => b.textContent),
                   steps: [...log.querySelectorAll(".step")].map((s) => [s.querySelector(".verb").textContent,
                     s.querySelector(".subject").textContent, s.querySelector(".took").classList.contains("running")])} })()'''
         live.write_text(args["first"])
@@ -501,8 +520,10 @@ with sync_playwright() as pw:
         out["second"] = page.evaluate(SHOWN)
         page.keyboard.press("j")
         out["turn"] = page.evaluate(SHOWN)
-        page.click("#log .to-live")
+        page.keyboard.press("k")
         out["back"] = page.evaluate(SHOWN)
+        page.keyboard.press("j")
+        out["newest_again"] = page.evaluate(SHOWN)
         live.unlink()
         page.wait_for_function("!document.querySelector('#log .which').textContent.startsWith('under way')", timeout=10000)
         out["ended"] = page.evaluate(SHOWN)
@@ -695,7 +716,8 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     focused turn's first and second artefact, past the ticket file turn 04 links first, by clicking
     its link, and a number the turn has no artefact for opens nothing and says so. The key list
     names the keys this page added (P6). The resume control sits on the title's meta line, and it
-    and R copy the resume command."""
+    and R copy the resume command. o opens every turn and then closes them all (session-page-keys-and-sizes), and
+    Ctrl+Alt held shows each control's key over it, until it is let go."""
     page, root = rendered
     seen = probe(page, "keys")
     assert seen["chips"] == [
@@ -713,8 +735,11 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["resume_inline"], "the resume control is not on the title's meta line"
     resume = f"cd /home/max/repos/github/MaxWolf-01/agents && claude --resume {SESSION}"
     assert (seen["resume_clicked"], seen["resume_keyed"]) == (resume, resume)
-    for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R", "l"):
+    for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R", "l", "o", "O", "Ctrl Alt"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
+    assert (seen["o"], seen["oo"]) == ([True] * 4, [False] * 4), "o opens every turn, then closes every turn"
+    assert {"l", "?", "R", "n", "q"} <= set(seen["held"]), f"Ctrl+Alt held shows each control's key over it: {seen['held']}"
+    assert seen["let_go"] == []
 
 
 def test_a_code_blocks_button_copies_its_code(rendered: tuple[Path, Path], transcript: Path) -> None:
@@ -843,6 +868,14 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
     assert short["column"]["top"] <= short["row"]["top"] and short["row"]["bottom"] <= short["column"]["bottom"], short
 
 
+@pytest.mark.parametrize("width", (WIDTHS[0], WIDTHS[-1]))
+def test_a_prompt_shows_its_size_at_a_wide_window_and_in_the_hub_sidebar(rendered: tuple[Path, Path], width: int) -> None:
+    """session-page-keys-and-sizes: each prompt shows its size in bytes, in a wide window and at the hub sidebar's width."""
+    page, _ = rendered
+    sizes = probe(page, "prompt_size", width=width)["sizes"]
+    assert sizes and all(re.fullmatch(r"\d+(\.\d)? k?B", s) for s in sizes), sizes
+
+
 @pytest.mark.parametrize("width", WIDTHS)
 def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: int) -> None:
     """P3, P7, P8 and the layout the ticket's Decisions bind, at each width the hub shows the page at: the
@@ -941,8 +974,8 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     opens the newest turn's calls in order, one line each, and the log follows j and k. A Bash call
     shows its command highlighted as shell, an Edit its old and new text as a diff highlighted by
     the file's extension, a long Read is cut short, its line numbers dropped, and shows whole on
-    demand. Thinking shows where the transcript kept its text. Esc closes it, the control opens it,
-    l closes it."""
+    demand. Thinking shows where the transcript kept its text. A call shows the bytes it consumed and produced. Esc
+    closes it, the control opens it, l closes it."""
     page, _ = rendered
     write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
     seen = probe(page, "log")
@@ -955,6 +988,7 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert [s for s in seen["after_jj"]["steps"] if s[0] == "thinking"] == [["thinking", "The grid wants a leading word."]]
     bash, ran = seen["bash"]
     assert (bash["lang"], bash["text"], bash["lit"], ran["text"]) == ("bash", "make test BASE=master", True, "321 passed")
+    assert seen["bash_size"] == "in ≈3 tok 10 B · out ≈17 tok 65 B", "the result it consumed and the request it produced, as compact JSON"
     old, new, _ = seen["edit"]
     assert (old["cls"], old["lang"], old["text"], old["lit"]) == ("code del", "css", ".bar { color: red; }", True)
     assert (new["cls"], new["lang"], new["text"], new["lit"]) == ("code add", "css", ".bar { color: green; }", True)
@@ -966,8 +1000,9 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
 
 def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[Path, Path], transcript: Path, tmp_path: Path) -> None:
     """With no turn picked, the open log shows the turn under way's calls, a running one's time
-    still moving, and a call the live hook adds shows without a reload. A picked turn shows its own,
-    with the way back to the turn under way in the head; once the turn ends, the log falls back."""
+    still moving, and a call the live hook adds shows without a reload. A picked turn shows its own; k on the newest
+    turn goes on to the turn under way, j back, and the head holds no button for either, nor one to close it; once
+    the turn ends, the log falls back."""
     page, _ = rendered
     write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
     at = datetime.now(UTC).isoformat()
@@ -979,18 +1014,19 @@ def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[P
 
     seen = probe(page, "live", live=str(page.parent / LIVE), first=calls(("make test", at)),
                  second=calls(("make test", at), ("make check", None)))
-    assert seen["first"] == {"which": "under way · make the log live", "jump": False, "steps": [["ran", "make test", False]]}
+    assert seen["first"] == {"which": "under way · make the log live", "buttons": ["open all"], "steps": [["ran", "make test", False]]}
     assert seen["second"]["steps"] == [["ran", "make test", False], ["ran", "make check", True]]
-    assert seen["turn"]["which"].startswith("turn ") and seen["turn"]["jump"]
-    assert seen["back"] == seen["second"]
-    assert not seen["ended"]["jump"]
+    assert seen["turn"]["which"].startswith("turn 04 ") and seen["turn"]["buttons"] == ["open all"]
+    assert seen["back"] == seen["second"], "k on the newest turn goes on to the turn under way"
+    assert seen["newest_again"]["which"] == seen["turn"]["which"], "and j goes back to the newest turn"
+    assert not seen["ended"]["which"].startswith("under way")
 
 
 
 def test_the_log_takes_the_keys_to_walk_open_and_close_its_steps(rendered: tuple[Path, Path], transcript: Path, tmp_path: Path) -> None:
     """Tab hands the keys to the open log: j and k walk its steps, o opens the one they are on, O
-    opens or closes them all, g g and G go to the first and last; Tab hands them back, and j moves
-    the turns again. A click on a step hands the keys over on that step; the head's control opens or
+    opens or closes them all, g g and G go to the first and last; Tab hands them back, O still opens or closes the
+    steps, and j moves the turns again. A click on a step hands the keys over on that step; the head's control opens or
     closes them all."""
     page, _ = rendered
     write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
@@ -1004,6 +1040,7 @@ def test_the_log_takes_the_keys_to_walk_open_and_close_its_steps(rendered: tuple
     assert seen["O"]["all"] == "close all" and seen["OO"] == {**seen["OO"], "open": [], "all": "open all"}
     assert (seen["G"]["cur"], seen["gg"]["cur"]) == (n - 1, 0)
     assert (seen["back"]["keyed"], seen["back"]["cur"], seen["back"]["which"]) == (False, -1, "turn 04")
+    assert (seen["O_unkeyed"]["keyed"], seen["O_unkeyed"]["open"]) == (False, list(range(n))), "O opens them all with the keys on the turns too"
     assert seen["j_turns"]["which"] == "turn 03"
     assert (seen["clicked"]["keyed"], seen["clicked"]["cur"], seen["clicked"]["open"]) == (True, 1, [1])
     assert seen["all_clicked"]["all"] == "close all"
