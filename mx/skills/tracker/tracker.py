@@ -445,7 +445,7 @@ def set_fields(
     message: str = "",
 ) -> int:
     """Write frontmatter fields, committed, refusing what the tracker's rules forbid and saying which
-    rule. `field=value` sets one, `field+=value` appends to a list field.
+    rule. `field=value` sets one, `field+=value` appends to a list field, and `field=` drops one.
 
     Args:
         slug: the ticket.
@@ -469,8 +469,9 @@ def set_fields(
             # what this write has appended so far, so two appends to one field keep both: a round
             # lands in two repos and writes a range for each
             grown.setdefault(key, [str(one) for one in ticket.meta.get(key) or []]).append(value)
-        changes[key] = rendered(grown[key]) if appended else value
-        said.append(f"{key}: {rendered(ticket.meta[key])} → {changes[key]}" if key in ticket.meta else f"{key}: {changes[key]}")
+        changes[key] = rendered(grown[key]) if appended else value or None  # `field=` drops the field
+        now = changes[key] if changes[key] is not None else "(none)"
+        said.append(f"{key}: {rendered(ticket.meta[key])} → {now}" if key in ticket.meta else f"{key}: {now}")
     _, written = written_into(ticket, changes, tracker)
     ticket.path.write_text(written)
     commit_tickets(tracker, message or f"{slug}: " + "; ".join(said), [ticket.path])
@@ -530,8 +531,10 @@ def land(slug: Annotated[str, tyro.conf.Positional], merge: bool = False, dry_ru
     committed that the ticket lacks (as `import` brings it), the merge of its agent branch, its
     status and its ranges. The round is the ticket's `ticket/<slug>` branch in the code repo this
     runs in, in the agent repo, and in each listed repo its `repos:` names; a branch deleted after
-    its merge is read off that merge, on the branch it merged into, by a subject naming the branch
-    as git's own `Merge branch 'ticket/<slug>'` and GitHub's `Merge pull request` do.
+    its merge is read off that merge, on the branch it merged into, by a subject naming a branch
+    that ends in `/<slug>`, as git's own `Merge branch 'ticket/<slug>'` and GitHub's `Merge pull
+    request #7 from owner/feature/<slug>` do. A range the ticket records that its branch in that
+    repo no longer holds, from a round since reset, is replaced by the round's own.
 
     The agent branch merges --no-ff into the branch the agent repo has out, under git's own subject,
     once the round's other branches have all merged and one of them carries a commit: the code
@@ -569,9 +572,11 @@ def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
     one commit, or on none of it.
 
     A ticket ruled alone is landed with its agent branch merged (`land --merge`), once every other
-    branch of its round has merged --no-ff, and refused where that leaves it short of `done`. A
-    parent ticket ruled whole is accepted on the branch above it once the parent's branch has merged
-    there --no-ff: `done` on the parent and on every child of it in `review`. The parent's ranges
+    branch of its round has merged --no-ff, and refused where that leaves it short of `done`; a
+    ticket the user is in the loop for, with no round at all, is `done` at the ruling.
+    A parent ticket ruled whole is accepted on the branch above it once the parent's branch has
+    merged there --no-ff: `done` on the parent and on every child of it in `review`, and the merge
+    of its own `ticket/<slug>` agent branch, where it ran a round before it had children. The parent's ranges
     are its own branch, named by its slug alone, measured against the branch above it, in the code
     repo and, where a ticket of the tree names a listed repo, in each listed repo holding that
     branch. Where the rules refuse any one of them `done`, the whole is refused: a child in review
@@ -598,12 +603,31 @@ def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
             if parent_branch(repo.path, slug):
                 own.append(branch_in(repo.name, repo.path, git(repo.path, "rev-parse", slug).strip(), listed_bases(repo, parent.parent)))
     ruled = [child for child in tracker.children(slug) if child.status == "review"]
+    # A ticket that ran a round of its own before it was cut into children holds a `ticket/<slug>`
+    # agent branch with that round's report, which no child's landing merges; the accept does.
+    # It is taken in as `land` takes a round: its report imported, refused where it writes a ticket.
+    agent, own_round, merged_own = toplevel(tracker.root), f"ticket/{slug}", False
+    body, brought, start = None, {}, parent
+    if tried(agent, "rev-parse", "--verify", "-q", f"refs/heads/{own_round}").returncode == 0 \
+            and not reached(agent, own_round, head(agent)):
+        if report := report_into(parent, tracker):
+            body, brought, _ = report
+            start = read(parent.path, written_with(body, brought))
+        for one in (start, *ruled):
+            refuse_open(one)  # the done this merge brings would be refused, and the merge stand
+        merge_agent(agent, slug)
+        merged_own = True
     writes = []
     # each write checked against the tree as the ones before it leave it, the parent's last, as its
     # own `done` waits on its children's; none written before every one of them is taken
-    for one, changes in [*((child, {"status": "done"}) for child in ruled),
-                         (parent, {"status": "done", **ranged(parent, own)})]:
-        writes.append(written_into(one, changes, tracker))
+    for one, changes, text, was in [*((child, {"status": "done"}, None, None) for child in ruled),
+                                    (parent, {**brought, "status": "done", **ranged(start, own)}, body, start)]:
+        try:
+            writes.append(written_into(one, changes, tracker, text, was))
+        except Refused as no:
+            if merged_own:
+                raise Refused([str(no), f"the agent branch {own_round} merged into {head(agent)} before that refusal, and that merge stands"])
+            raise
         tracker = tracker.with_ticket(writes[-1][0])
     for after, written in writes:
         after.path.write_text(written)
@@ -622,6 +646,15 @@ def landing(slug: str, merge: bool = False, dry_run: bool = False, accepting: bo
     # the ticket as the import leaves it, which every rule below is read against
     start = read(ticket.path, written_with(body, changes)) if changes else ticket
     branches = round_of(ticket, tracker)
+    if not branches and accepting and start.needs_user:
+        # no round to land: a ticket the user is in the loop for is done at the ruling (`unlanded`);
+        # any other with no branch here was built on a host its round was never fetched from
+        after, written = written_into(ticket, {**changes, "status": "done"}, tracker, body, start)
+        after.path.write_text(written)
+        commit_tickets(tracker, f"{slug} accepted, with no round to land", [after.path])
+        print(json.dumps({"root": str(tracker.root), "tickets": [as_data(after, tracker.with_ticket(after))],
+                          "merged": True, "merging": False, "round": []}, indent=2))
+        return 0
     if not branches:
         raise Refused([f"no branch ticket/{slug}, and no merge of one, in {' or '.join(str(top) for top in repos_of(tracker))}; fetch it from the worker host first"])
     elsewhere = [one for one in branches if one.repo != "agent"]
@@ -703,10 +736,19 @@ def written_into(ticket: Ticket, changes: dict[str, str], tracker: Tracker,
 
 def ranged(ticket: Ticket, branches: Sequence[Branch]) -> dict[str, str]:
     """The `diff:` a ticket gets from `branches`: each range it does not record yet, after the ones it
-    does; nothing where it records them all."""
+    does that still stand; nothing where that changes nothing. A recorded range stands unless its
+    last commit is on neither the round's branch in its repo nor a branch that one merges into: a
+    later round that reset the branch dropped that work, and a range onto commits no branch holds
+    would refuse every `done`."""
     recorded = [str(one) for one in ticket.meta.get("diff") or []]
-    new = [one.range for one in branches if one.range and one.range not in recorded]
-    return {"diff": rendered(recorded + new)} if new else {}
+    tips = {one.repo: one for one in branches if one.range}
+    def stands(written: str) -> bool:
+        found = RANGE.fullmatch(written)
+        held = found and tips.get(found.group(1) or "code")
+        return not held or any(reached(held.top, found.group(2), onto) for onto in (held.tip, *held.bases))
+    kept = [one for one in recorded if stands(one)]
+    new = [one.range for one in branches if one.range and one.range not in kept]
+    return {"diff": rendered(kept + new)} if kept + new != recorded else {}
 
 
 def commit_tickets(tracker: Tracker, message: str, paths: Sequence[Path]) -> None:
@@ -734,6 +776,8 @@ class Branch:
     tip: str
     merged: bool  # into one of the branches it cut from and merges back into
     range: str | None  # `<repo>@<first>..<last>`; None where `branch_in` finds none
+    top: Path  # the checkout it was read in
+    bases: tuple[str, ...] = ()  # the branches it cut from and merges back into
 
 
 def round_of(ticket: Ticket, tracker: Tracker) -> list[Branch]:
@@ -761,10 +805,11 @@ def round_tip(top: Path, slug: str, bases: Sequence[str]) -> str | None:
 
 def merged_tip(top: Path, slug: str, bases: Sequence[str]) -> str | None:
     """The second parent of the newest merge on one of `bases`' first-parent lines whose subject
-    names `ticket/<slug>`, as git's own `Merge branch 'ticket/<slug>'` and GitHub's `Merge pull
-    request #7 from owner/ticket/<slug>` do: the tip a deleted ticket branch had when it merged.
-    None where no merge names it."""
-    named = re.compile(rf"(?<![\w-])ticket/{re.escape(slug)}(?![\w-])")
+    names a branch ending in `/<slug>`, as git's own `Merge branch 'ticket/<slug>'` and GitHub's
+    `Merge pull request #7 from owner/ticket/<slug>` do, and a pull request a team opened from its
+    own `feature/<slug>`: the tip a deleted ticket branch had when it merged. None where no merge
+    names it."""
+    named = re.compile(rf"(?<=/){re.escape(slug)}(?![\w-])")
     for onto in bases:
         for line in tried(top, "log", "--first-parent", "--merges", "--format=%P%x09%s", onto, "--").stdout.splitlines():
             parents, _, subject = line.partition("\t")
@@ -798,7 +843,7 @@ def branch_in(repo: str, top: Path, tip: str, bases: Sequence[str]) -> Branch:
         start = merge_base(top, tip, *bases)
         if not start:
             raise Refused([f"{tip} in {top} shares no commit with {' or '.join(bases)}, the branches it merges into"])
-        return Branch(repo, tip, False, f"{repo}@{start}..{tip}")
+        return Branch(repo, tip, False, f"{repo}@{start}..{tip}", top, tuple(bases))
     fork = None
     for onto in on:
         if merge := merge_of(top, onto, tip):
@@ -806,7 +851,7 @@ def branch_in(repo: str, top: Path, tip: str, bases: Sequence[str]) -> Branch:
     if fork:
         for onto in (one for one in bases if one not in on):
             fork = newer(top, fork, merge_base(top, tip, onto))
-    return Branch(repo, tip, True, f"{repo}@{fork}..{tip}" if fork else None)
+    return Branch(repo, tip, True, f"{repo}@{fork}..{tip}" if fork else None, top, tuple(bases))
 
 
 def merge_base(top: Path, *refs: str) -> str | None:
