@@ -3063,6 +3063,25 @@ def test_a_parents_accept_merges_the_agent_branch_of_a_round_it_ran_before_it_ha
     assert run(split, "get", "map-columns", "status").out == "done\n"
 
 
+def test_a_parents_accept_refuses_an_open_question_before_it_merges_its_own_agent_branch(split: Path) -> None:
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    in_review(split, "map-columns", body="## Questions\n\n- [D1] **Warm?** Or cool.\n", parent="one-flow")
+    built(agent, "ticket/one-flow", "main", "the first round's report")
+    git(split, "checkout", "-q", "-b", "one-flow")
+    built(split, "ticket/map-columns", "one-flow", "the second pass")
+    merged(split, "ticket/map-columns")
+    git(split, "checkout", "-q", "main")
+    merged(split, "one-flow")
+    said = run(split, "accept", "one-flow")
+    assert said.code == 1 and "D1 is open" in said.err, said.said
+    assert not reached_in(agent, "ticket/one-flow", "main"), "the agent branch waits for an accept that holds"
+
+
+def reached_in(top: Path, branch: str, onto: str) -> bool:
+    return subprocess.run(["git", "-C", str(top), "merge-base", "--is-ancestor", branch, onto]).returncode == 0
+
+
 def test_a_ticket_with_no_round_is_accepted_where_the_rules_let_it_be_done(split: Path) -> None:
     """A ticket the user is in the loop for, done at the ruling, with nothing built on a branch."""
     agent = split / "agent"
@@ -3071,9 +3090,9 @@ def test_a_ticket_with_no_round_is_accepted_where_the_rules_let_it_be_done(split
     assert said.code == 0, said.said
     assert run(split, "get", "real-keys", "status").out == "done\n"
     assert subjects(agent)[0] == "real-keys accepted, with no round to land"
-    in_review(split, "open-question", body="## Questions\n\n- [D1] **Warm?** Or cool.\n", **{"needs-user": "true"})
-    said = run(split, "accept", "open-question")
-    assert said.code == 1 and "D1 is open" in said.err, said.said
+    in_review(split, "never-fetched")
+    said = run(split, "accept", "never-fetched")
+    assert said.code == 1 and "fetch it from the worker host first" in said.err, "any other ticket with no round here was built elsewhere"
 
 
 def test_a_range_a_later_round_reset_away_leaves_the_diff_as_that_round_lands(split: Path) -> None:
@@ -3093,6 +3112,27 @@ def test_a_range_a_later_round_reset_away_leaves_the_diff_as_that_round_lands(sp
     said = run(split, "land", "map-columns")
     assert said.code == 0, said.said
     assert run(split, "get", "map-columns", "diff").out == f"code@{second}\n"
+
+
+def test_a_range_already_on_the_branch_a_later_round_merges_into_stays_beside_that_round(split: Path) -> None:
+    """The first round merged into the parent's branch; the second was cut from a copy that lacks
+    that merge. The first round's work stands where it landed."""
+    in_review(split, "one-flow")
+    in_review(split, "map-columns", parent="one-flow")
+    git(split, "checkout", "-q", "-b", "one-flow")
+    before = tip(split)
+    first = built(split, "ticket/map-columns", "one-flow", "the first round")
+    merged(split, "ticket/map-columns")
+    assert run(split, "land", "map-columns").code == 0
+    git(split, "branch", "-q", "-D", "ticket/map-columns")
+    git(split, "checkout", "-q", "-b", "ticket/map-columns", before)
+    committed(split, "the second round")
+    second = f"{before}..{tip(split)}"
+    git(split, "checkout", "-q", "one-flow")
+    merged(split, "ticket/map-columns")
+    said = run(split, "land", "map-columns")
+    assert said.code == 0, said.said
+    assert run(split, "get", "map-columns", "diff").out == f"code@{first}\ncode@{second}\n"
 
 
 def test_a_round_merged_through_a_pull_request_from_a_branch_of_the_teams_own_lands_from_its_merge(split: Path) -> None:

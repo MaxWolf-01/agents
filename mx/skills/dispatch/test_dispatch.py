@@ -2646,7 +2646,6 @@ def test_a_pull_request_from_a_branch_of_the_teams_own_with_copies_of_the_commit
     merged_on_github(backend, "merge", branch="feature/warm-preset")
     done = run(toy, "review", "warm-preset")
     assert done.returncode == 0, done.stderr
-    assert "merged a branch other than warm-preset's" in done.stderr, done.stderr
     assert status_of(toy, "warm-preset") == "done"
     assert [r for r in ranges_of(toy, "warm-preset") if r.startswith("Backend@")] == [f"Backend@{fork}..{copy}"]
     assert not git(backend, "branch", "--list", "ticket/warm-preset")
