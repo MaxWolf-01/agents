@@ -87,7 +87,7 @@ Miscl hygiene:
 
 <permissions>
 Permissions are prose `autoMode` entries in ~/.claude/settings.json; each entry covers a class of action judged by a classifier.
-A `sudo` needs no ask: run it, and max approves or refuses it with a YubiKey touch.
+A `sudo` needs no ask: run it in a `job` with `--tty` (`/mx:tmux`), and max approves or refuses it with a YubiKey touch; where no key is offered, sudo falls back to a password prompt in that pane.
 To avoid auto-mode false positives, and for general best practice (safety and efficiency):
 - Prefer absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`).
 - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
