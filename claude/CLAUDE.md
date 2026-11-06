@@ -104,6 +104,8 @@ Installed here, each with a `--help` to read before guessing at flags: `tre` (gi
 
 `gh-asset push <image>` turns a screenshot into a URL for a GitHub comment, PR body or issue, private repos included. Reach for it rather than asking max to drag an image in; a push cannot be withdrawn.
 
+`ratings serve <folder>` lets max rate a pile of files (images, audio, video, PDFs, text) one at a time by key or phone swipe; reach for it whenever he has to classify or pick from many things, instead of listing them in chat, and read the verdicts back with `ratings list`.
+
 LaTeX: full TeX Live is on the workstations (`pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font). Just compile, no availability checks or nix-shell. `pdftoppm` renders the PDF to PNG so you can look at your output.
 
 Makefiles carry the standard commands in max's projects: read the Makefile before any dev work (tests, type checks, starting servers).
