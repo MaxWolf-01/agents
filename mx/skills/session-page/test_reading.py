@@ -592,6 +592,35 @@ def test_thinking_is_a_step_only_where_the_transcript_kept_its_text(worked_examp
     assert (thought.tool, thought.output) == ("", "The grid wants a leading word.")
 
 
+def reply(at: str, id: str, block: dict, input: int, cached: int, output: int) -> str:
+    """One block of the reply `id`, as Claude Code writes each block of a reply, with the reply's usage as it stood then."""
+    usage = {"input_tokens": input, "cache_read_input_tokens": cached, "cache_creation_input_tokens": 5, "output_tokens": output}
+    return json.dumps({"type": "assistant", "timestamp": at, "message": {"id": id, "role": "assistant", "content": [block], "usage": usage}})
+
+
+def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """session-page-keys-and-sizes: a turn shows the tokens and bytes it consumed and produced; a reply's tokens count
+    once, as its last block's entry has them, however many entries its blocks take; the model consumes a prompt and a
+    tool's result, and produces its thinking, its text and a tool's request. A prompt shows its bytes, its tokens on
+    hover."""
+    worked = with_work(
+        transcript, tmp_path / "t.jsonl",
+        json.dumps({"type": "user", "timestamp": "2026-09-22T22:04:00Z", "message": {"role": "user", "content": "Größer, bitte"}}),
+        reply("2026-09-22T22:05:00Z", "msg_a", {"type": "thinking", "thinking": "abcd", "signature": "x"}, 10, 100, 3),
+        reply("2026-09-22T22:05:01Z", "msg_a", call("Bash", "b", command="ls"), 10, 100, 7),
+        came_back("2026-09-22T22:05:02Z", "b", "é"),
+        reply("2026-09-22T22:06:00Z", "msg_b", {"type": "text", "text": "ok"}, 1, 200, 2),
+    )
+    before, after = (session_page.read_session(worked_example, t).spent["t03"] for t in (transcript, worked))
+    # 15 bytes of prompt and 2 of result; 4 of thinking, 16 of `{"command":"ls"}` and 2 of text
+    assert (after.consumed_tokens - before.consumed_tokens, after.produced_tokens - before.produced_tokens,
+            after.consumed_bytes - before.consumed_bytes, after.produced_bytes - before.produced_bytes) == (321, 9, 17, 22)
+    page = render_session(worked_example, worked, now=NOW)
+    head = re.search(r'<details class="turn[^"]*" id="t03".*?</summary>', page, re.S).group(0)
+    assert f"in {before.consumed_tokens + 321} tok" in text_of(head)
+    assert 'title="≈4 tokens">15 B</span>' in page, "13 characters, two of them two bytes each"
+
+
 def test_work_after_a_message_no_record_answers_yet_is_on_no_turn(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
     """As the message said after the newest record is on no turn until a later record is written,
     so is the work done for it: turn 04 keeps what it did before that message and nothing after."""

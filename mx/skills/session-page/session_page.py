@@ -59,7 +59,7 @@ from markdown_it.token import Token
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
 import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
 import qualified  # noqa: E402  what a ticket's qualified tag names, which the page shows its questions by and links
-from steps import Step, shown, steps_of  # noqa: E402  the tool calls each turn made, as the log shows them
+from steps import Spent, Step, shown, spent_of, steps_of  # noqa: E402  the tool calls each turn made, as the log shows them, and what it spent
 from live_hook import LIVE  # noqa: E402  the turn under way's tool calls, which the log polls
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
@@ -281,7 +281,9 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     timeline = in_order(turns, chats)
     times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
-    work = worked_for(timeline, [when for when, _ in spoken], steps_of(entries))
+    said_at = [when for when, _ in spoken]
+    work = worked_for(timeline, said_at, steps_of(entries))
+    spent = {key: sum(pieces[1:], pieces[0]) for key, pieces in worked_for(timeline, said_at, spent_of(entries)).items() if pieces}
     paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
               for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front.get("session", directory.name))
@@ -305,6 +307,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         titles={other: title_of(d) for other, d in others.items()},
         others=others,
         log=work,
+        spent=spent,
     )
 
 
@@ -605,6 +608,7 @@ class Session:
     titles: dict[str, str] = field(default_factory=dict)  # those sessions' titles, by id, where their session.md has one
     others: dict[str, Path] = field(default_factory=dict)  # those sessions' directories, by id, which hold their pages
     log: dict[str, tuple["Step", ...]] = field(default_factory=dict)  # each turn's steps, by the id of its block (`worked_for`)
+    spent: dict[str, "Spent"] = field(default_factory=dict)  # what each turn consumed and produced, by the id of its block, as `log` divides it
 
 
 # ---- reading the records ----------------------------------------------------
@@ -1224,7 +1228,10 @@ def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -
 # ---- what a turn did: its tool calls and the thinking the transcript kept ----
 
 
-def worked_for(timeline: list["Turn | Chat"], said_at: list[datetime], steps: list[Step]) -> dict[str, tuple[Step, ...]]:
+W = TypeVar("W", Step, Spent)
+
+
+def worked_for(timeline: list["Turn | Chat"], said_at: list[datetime], steps: list[W]) -> dict[str, tuple[W, ...]]:
     """Each turn's steps, by the id of its block: the steps from its first message, as the page
     pairs messages with it (`bucket`, over `said_at`, when the user said each), to the next turn's
     first. A turn with no message of the user's starts where the turn before it was written; a step
@@ -1237,11 +1244,12 @@ def worked_for(timeline: list["Turn | Chat"], said_at: list[datetime], steps: li
         before = t.written or before
     newest = max((at for at in times if at is not None), default=None)
     end = next((when for when in said_at if newest is not None and when > newest), None)
-    owned: dict[str, list[Step]] = {block_id(t): [] for t in timeline}
+    owned: dict[str, list[W]] = {block_id(t): [] for t in timeline}
+    latest_first = list(reversed(list(zip(timeline, starts))))
     for step in steps:
         if end is not None and step.at >= end:
             continue
-        owner = next((t for t, start in reversed(list(zip(timeline, starts))) if start is not None and start <= step.at), timeline[0] if timeline else None)
+        owner = next((t for t, start in latest_first if start is not None and start <= step.at), timeline[0] if timeline else None)
         if owner is not None:
             owned[block_id(owner)].append(step)
     return {key: tuple(found) for key, found in owned.items()}
@@ -1359,6 +1367,7 @@ class Row:
     # before them, that there was none.
     silence: Literal["", "unwritten", "unanswered"]
     links: tuple[Shown, ...]
+    spent: Spent | None = None  # None where the transcript shows none of the turn's work
 
     @property
     def key(self) -> str:
@@ -1394,7 +1403,7 @@ def view(session: Session) -> View:
     hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
     rows = tuple(
         Row(t, when(t), t is newest, "unwritten" if t.written is None else "unanswered" if hint else "",
-            shown_links(t, session.root, session.directory) if isinstance(t, Turn) else ())
+            shown_links(t, session.root, session.directory) if isinstance(t, Turn) else (), session.spent.get(block_id(t)))
         for t, hint in zip(shown, hinted))
     dates = sorted({r.when[:10] for r in rows})
     return View(
@@ -1736,7 +1745,7 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
   <summary class="head">
     <span class="rail v-num">{r.key}{COPY_TURN}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
-    <span class="v-meta date">{esc(r.when)}</span>{chips(r)}
+    <span class="v-meta date">{esc(r.when)}{spent(r.spent)}</span>{chips(r)}
   </summary>
   <div class="turn-body">
     {you(r)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(r.links)}{asked}
@@ -1752,9 +1761,35 @@ def chat_row(r: Row) -> str:
 <article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
   <span class="rail v-meta">chat{COPY_TURN}</span>
   <div class="chat-head">{you(r)}{"".join(map(peer, r.turn.sent))}</div>
-  <span class="v-meta date">{esc(r.when)}</span>
+  <span class="v-meta date">{esc(r.when)}{spent(r.spent)}</span>
   <div class="reply prose">{block(r.turn.reply)}</div>
 </article>"""
+
+
+def spent(s: Spent | None) -> str:
+    """What a turn consumed and produced, tokens and bytes, each spelled out on hover."""
+    if s is None:
+        return ""
+    title = (f"consumed {s.consumed_tokens:,} tokens, {s.consumed_bytes:,} bytes: every request's input, and the prompts and tool results read\n"
+             f"produced {s.produced_tokens:,} tokens, {s.produced_bytes:,} bytes: the text, thinking and tool requests written")
+    return (f'<span class="spent" title="{esc(title)}">in {tokens(s.consumed_tokens)} tok {size(s.consumed_bytes)}'
+            f' · out {tokens(s.produced_tokens)} tok {size(s.produced_bytes)}</span>')
+
+
+def size(n: int) -> str:
+    """A count of bytes, in decimal units, as log.js's `size` writes it."""
+    return f"{n} B" if n < 1000 else f"{n / 1000:.1f} kB" if n < 999_950 else f"{n / 1e6:.1f} MB"
+
+
+def tokens(n: int) -> str:
+    """A count of tokens, short."""
+    return f"{n}" if n < 1000 else f"{n / 1000:.1f}k" if n < 999_950 else f"{n / 1e6:.1f}M"
+
+
+def about_tokens(text: str) -> str:
+    """The tokens a text comes to, estimated at four characters each, as log.js's `about` estimates them: the API counts
+    a text's tokens only as part of a request."""
+    return f"≈{-(-len(text) // 4):,} tokens"
 
 
 def ended(r: Row) -> str:
@@ -1794,15 +1829,16 @@ def peer(s: Sent) -> str:
 
 
 def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> str:
-    """Messages behind one click, each whole, its paragraphs and line breaks kept."""
-    words = sum(len(m.split()) for m in messages)
+    """Messages behind one click, each whole, its paragraphs and line breaks kept, and its size in bytes, its tokens on
+    hover."""
+    weigh = lambda text: f'<span class="v-meta size" title="{about_tokens(text)}">{size(len(text.encode()))}</span>'
     parts = "".join(
-        '<div class="msg">' + "".join(f"<p>{esc(p.strip()).replace(chr(10), '<br>')}</p>"
+        '<div class="msg">' + (weigh(m) if len(messages) > 1 else "") + "".join(f"<p>{esc(p.strip()).replace(chr(10), '<br>')}</p>"
                                       for p in re.split(r"\n[ \t]*\n+", m) if p.strip()) + "</div>"
         for m in messages)
     return f"""
 <details class="{cls}">
-  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{lead}{words:,} words</span></summary>
+  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{lead}{weigh("".join(messages))}</span></summary>
   <div class="said-text">{parts}</div>
 </details>"""
 

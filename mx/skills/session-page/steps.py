@@ -6,6 +6,7 @@ them from hook events while the turn runs (`live_hook.py`). Only the standard li
 live hook imports this on every tool call.
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -48,6 +49,66 @@ def steps_of(entries: list[dict]) -> list[Step]:
                 done, output, failed = results.get(str(b.get("id")), (None, "", False))
                 steps.append(Step(at, str(b.get("name", "")), b.get("input") if isinstance(b.get("input"), dict) else {}, output, failed, done))
     return sorted(steps, key=lambda s: s.at)
+
+
+@dataclass(frozen=True)
+class Spent:
+    """What a turn, or one piece of it, consumed and produced, as the model sees it: it consumes a
+    prompt and a tool's result, and produces its text, its thinking and a tool's request. The
+    tokens are the API's own count, the bytes the UTF-8 size of the text."""
+
+    at: datetime
+    consumed_tokens: int = 0  # every input token a request was billed for, the cached ones included
+    produced_tokens: int = 0
+    consumed_bytes: int = 0
+    produced_bytes: int = 0
+
+    def __add__(self, other: "Spent") -> "Spent":
+        return Spent(min(self.at, other.at), self.consumed_tokens + other.consumed_tokens, self.produced_tokens + other.produced_tokens,
+                     self.consumed_bytes + other.consumed_bytes, self.produced_bytes + other.produced_bytes)
+
+
+def spent_of(entries: list[dict]) -> list[Spent]:
+    """What each entry of the main transcript consumed and produced, oldest first: a user entry's
+    bytes, an assistant entry's bytes, and each reply's tokens once. Claude Code writes each block
+    of one reply as an entry of its own, each repeating the reply's usage as it stood then, so the
+    reply's last entry holds its count."""
+    out, usage = [], {}
+    for entry in entries:
+        message, at = entry.get("message") or {}, entry.get("timestamp")
+        if entry.get("isSidechain") or at is None or not isinstance(message, dict):
+            continue
+        at = datetime.fromisoformat(at)
+        content = message.get("content")
+        blocks = content if isinstance(content, list) else [{"type": "text", "text": content}] if isinstance(content, str) else []
+        size = sum(len(block_text(b).encode()) for b in blocks if isinstance(b, dict))
+        if entry.get("type") == "user":
+            out.append(Spent(at, consumed_bytes=size))
+        elif entry.get("type") == "assistant":
+            out.append(Spent(at, produced_bytes=size))
+            if isinstance(message.get("usage"), dict):
+                reply = message.get("id") or id(entry)
+                usage[reply] = (usage.get(reply, (at,))[0], message["usage"])
+    for at, u in usage.values():
+        count = lambda key: u.get(key) if isinstance(u.get(key), int) else 0
+        out.append(Spent(at, consumed_tokens=count("input_tokens") + count("cache_creation_input_tokens") + count("cache_read_input_tokens"),
+                         produced_tokens=count("output_tokens")))
+    return sorted(out, key=lambda s: s.at)
+
+
+def block_text(block: dict) -> str:
+    """A message block's text as the model reads or writes it: a tool's request as compact JSON."""
+    kind = block.get("type")
+    if kind == "tool_use":
+        return request_text(block.get("input"))
+    if kind == "tool_result":
+        return result_text(block.get("content"))
+    return str(block.get("text") or block.get("thinking") or "") if kind in ("text", "thinking") else ""
+
+
+def request_text(request: object) -> str:
+    """A tool's request as the log sizes it, the same JSON the page's `JSON.stringify` writes."""
+    return json.dumps(request if request is not None else {}, ensure_ascii=False, separators=(",", ":"))
 
 
 def result_text(content: object) -> str:

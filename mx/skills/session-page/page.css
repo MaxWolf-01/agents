@@ -239,6 +239,9 @@ button.id:hover { color: var(--accent); }
 .turn[open] > summary .hl { font-weight: 600; color: var(--strong); }
 .turn > summary:hover .hl { color: var(--accent); }
 .turn > summary .date { white-space: nowrap; }
+/* what the turn consumed and produced, under its date */
+.blk .date .spent { display: block; text-align: right; font-size: 0.68rem; opacity: 0.8; }
+.said-text .msg > .size { display: block; margin-bottom: 0.35rem; }
 .turn > summary .chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; margin-top: 0.55rem; }
 .turn[open] > summary .chips { display: none; }
 .chip { display: inline-flex; align-items: baseline; gap: 0.4rem; max-width: 100%; box-sizing: border-box; padding: 0.15rem 0.6rem 0.15rem 0.3rem; border: 1px solid var(--edge); border-radius: 999px; font-size: 0.8rem; line-height: 1.5; transition: border-color 150ms; }
@@ -319,6 +322,7 @@ a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
   .turn > summary .date { grid-column: 2; }
   .turn.chat { grid-template-columns: var(--rail) minmax(0, 1fr); }
   .turn.chat .date { grid-column: 2; }
+  .blk .date .spent { text-align: left; }
   .said > summary { grid-template-columns: auto minmax(0, 1fr); }
   .said > summary .count { display: none; }
 }
