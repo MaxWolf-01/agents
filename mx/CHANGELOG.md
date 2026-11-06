@@ -1,3 +1,8 @@
+## 1.0.107
+
+- tracker board renders fast, dispatch stops waiting on it, and done subtrees leave open umbrellas
+  Finished subtrees can now leave the ticket tracker while their parent ticket stays open, as long as that parent is an umbrella: no branch of its own in the code repo and no close-out review. A parent being built keeps its done children for its close-out, which reads every one. Tickets that wait on a retired one keep the edge and read it from git history as done, and a new ticket cannot reuse a retired ticket's slug. Dispatch draws the board in the background, so `review` and `accept` no longer wait on a render. Repeated read-only git calls are memoised per render, cutting 2,240 git processes to about 240, and the board reuses its markdown converters and lists transcripts once.
+
 ## 1.0.106
 
 - feat(session-page): the review's preview follows the hub box as it is typed
