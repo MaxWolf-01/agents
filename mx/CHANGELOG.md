@@ -1,3 +1,8 @@
+## 1.0.110
+
+- board speed held by tests: a render asks git each question once and reads new transcripts
+  Two tests at the board's `read` seam guard the 1.0.107 speed work: a git shim on PATH sees no command repeat in one render over a parent with siblings in review, and a transcript written between two renders is listed by the second. The first caught one repeat, the board's own repo-root lookup beside the tracker's memoised one, which now shares it.
+
 ## 1.0.109
 
 - The hub box's Enter sends what the session page's review shows while it is open
