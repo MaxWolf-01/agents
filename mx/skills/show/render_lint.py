@@ -8,8 +8,9 @@
 Opens each address in a tab of its own, in one headless Chromium context at the given
 width, and measures every text element against its box. With --narrow it then measures the
 same tab twice more: as the window at 150% zoom, which lays the page out in width/1.5 CSS
-pixels, and at 700px. A finding already made at an earlier width is not repeated at a later one. Findings are geometric, so a
-clean run means nothing sticks out or collides, not that the page looks good.
+pixels, and at 700px; a finding already made at an earlier width is not repeated at a later
+one. Findings are geometric, so a clean run means nothing sticks out or collides, not that the
+page looks good.
 
 Kinds, by severity:
 - escapes: an SVG text runs past the rect it starts in, or past the SVG itself;
@@ -384,11 +385,8 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
             still = at_rest(page, loading, args, until)
         if not still:
             return [*found, unmeasurable(width, f"still {'loading' if loading else 'moving'} after {args.patience:g}s")]
-        for f in page.evaluate(MEASURE, args.pad):
-            key = (f["kind"], f["where"], f["el"], f["text"])
-            if key in made:
-                continue
-            made.add(key)
+        here = page.evaluate(MEASURE, args.pad)
+        for f in [f for f in here if same(f) not in made]:
             f["width"] = width
             if args.crops:
                 b, m = f["box"], 24
@@ -396,7 +394,13 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
                 page.screenshot(path=str(out), full_page=True, clip={"x": max(0, b["x"] - m), "y": max(0, b["y"] - m), "width": b["w"] + 2 * m, "height": b["h"] + 2 * m})
                 f["crop"] = str(out)
             found.append(f)
+        made |= {same(f) for f in here}
     return found
+
+
+def same(finding: dict) -> tuple:
+    """What makes two findings at different widths one."""
+    return finding["kind"], finding["where"], finding["el"], finding["text"]
 
 
 def unmeasurable(width: int, why: str) -> dict:
