@@ -65,8 +65,10 @@ case $stage in
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && for f in leading-words permissions critique; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
-    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "${STUB_PAGE:-<html>}" > report.html ;;
+    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; echo '{"type": "result", "subtype": "success"}'; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "${STUB_PAGE:-<html>}" > report.html ;;
 esac
+# the end of a turn, as claude reports it
+echo '{"type": "result", "subtype": "success"}'
 """
 
 

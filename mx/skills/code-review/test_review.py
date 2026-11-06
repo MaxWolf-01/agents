@@ -45,6 +45,8 @@ if [ -n "${FAKE_DIES:-}" ] && [[ $report == */$FAKE_DIES.md ]]; then
     exit 1
 fi
 [ -n "$report" ] && [ -z "${FAKE_NO_REPORT:-}" ] && echo "No findings." > "$report"
+# the end of a turn, as claude reports it
+echo '{"type": "result", "subtype": "success"}'
 """
 
 
