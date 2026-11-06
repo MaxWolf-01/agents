@@ -1,3 +1,8 @@
+## 1.0.109
+
+- The hub box's Enter sends what the session page's review shows while it is open
+  The session page now tells a hub tab whether its review of staged answers is open (waitingReviewing). The hub's box asks it on Enter: while the review is open, Enter in the box sends the batch with the box's words below it, as the review shows, instead of the words alone. The hub half is the dotfiles commit "the box's Enter sends what the session page's review shows while it is open".
+
 ## 1.0.108
 
 - A chat turn's reply lays out like a turn record's Details, wide tables included
