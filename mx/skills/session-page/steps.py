@@ -97,18 +97,14 @@ def spent_of(entries: list[dict]) -> list[Spent]:
 
 
 def block_text(block: dict) -> str:
-    """A message block's text as the model reads or writes it: a tool's request as compact JSON."""
+    """A message block's text as the model reads or writes it: a tool's request as compact JSON, as log.js's
+    `JSON.stringify` writes it."""
     kind = block.get("type")
     if kind == "tool_use":
-        return request_text(block.get("input"))
+        return json.dumps(block.get("input") or {}, ensure_ascii=False, separators=(",", ":"))
     if kind == "tool_result":
         return result_text(block.get("content"))
     return str(block.get("text") or block.get("thinking") or "") if kind in ("text", "thinking") else ""
-
-
-def request_text(request: object) -> str:
-    """A tool's request as the log sizes it, the same JSON the page's `JSON.stringify` writes."""
-    return json.dumps(request if request is not None else {}, ensure_ascii=False, separators=(",", ":"))
 
 
 def result_text(content: object) -> str:
