@@ -1841,7 +1841,7 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> s
         for m in messages)
     return f"""
 <details class="{cls}">
-  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{lead}{weigh("".join(messages))}</span></summary>
+  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count"><span class="lead">{lead}</span>{weigh("".join(messages))}</span></summary>
   <div class="said-text">{parts}</div>
 </details>"""
 
@@ -1980,7 +1980,7 @@ COPY_CODE = f'<button class="copy-code" type="button" aria-label="copy the code"
 # Under a turn's number: copies the turn's record, as `y` does with the cursor on the turn. Out of the Tab order,
 # which goes from turn to turn.
 COPY_TURN = (f'<button class="copy-turn" type="button" tabindex="-1" aria-label="copy the turn\'s markdown" '
-             f'aria-keyshortcuts="y" title="copy the turn\'s markdown">{COPY_ICON}</button>')
+             f'aria-keyshortcuts="y" title="copy the turn\'s markdown (y)">{COPY_ICON}</button>')
 
 
 def with_copy(rule: Callable):

@@ -322,8 +322,7 @@ a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
   .turn.chat { grid-template-columns: var(--rail) minmax(0, 1fr); }
   .turn.chat .date { grid-column: 2; }
   .blk .date .spent { text-align: left; }
-  .said > summary { grid-template-columns: auto minmax(0, 1fr); }
-  .said > summary .count { display: none; }
+  .said > summary .count .lead { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }

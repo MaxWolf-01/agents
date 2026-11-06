@@ -19,6 +19,7 @@ from copies kept on this machine (show/page_cache.py), so a run after the first 
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from datetime import UTC, datetime
@@ -302,6 +303,11 @@ with sync_playwright() as pw:
         out["short"] = {"column": short.eval_on_selector("#artefacts", BOX), "row": short.eval_on_selector("#a01", BOX),
                         "overflows": short.eval_on_selector("#artefacts", "(el) => el.scrollHeight > el.clientHeight")}
 
+    elif scenario == "prompt_size":
+        # the size each turn's prompts show on their folded line, as far as the reader sees it
+        context, page = open_page(args["width"], 800)
+        out["sizes"] = page.evaluate('''[...document.querySelectorAll(".said > summary .count .size")]
+            .filter((el) => el.checkVisibility()).map((el) => el.textContent)''')
     elif scenario == "layout":
         # P3, P7, P8 at one width: the panes, the control at both ends of the turns, the band's rows
         width = args["width"]
@@ -862,6 +868,14 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
     assert short["column"]["top"] <= short["row"]["top"] and short["row"]["bottom"] <= short["column"]["bottom"], short
 
 
+@pytest.mark.parametrize("width", (WIDTHS[0], WIDTHS[-1]))
+def test_a_prompt_shows_its_size_at_a_wide_window_and_in_the_hub_sidebar(rendered: tuple[Path, Path], width: int) -> None:
+    """session-page-keys-and-sizes: each prompt shows its size in bytes, in a wide window and at the hub sidebar's width."""
+    page, _ = rendered
+    sizes = probe(page, "prompt_size", width=width)["sizes"]
+    assert sizes and all(re.fullmatch(r"\d+(\.\d)? k?B", s) for s in sizes), sizes
+
+
 @pytest.mark.parametrize("width", WIDTHS)
 def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: int) -> None:
     """P3, P7, P8 and the layout the ticket's Decisions bind, at each width the hub shows the page at: the
@@ -974,7 +988,7 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert [s for s in seen["after_jj"]["steps"] if s[0] == "thinking"] == [["thinking", "The grid wants a leading word."]]
     bash, ran = seen["bash"]
     assert (bash["lang"], bash["text"], bash["lit"], ran["text"]) == ("bash", "make test BASE=master", True, "321 passed")
-    assert seen["bash_size"] == "in 10 B · out 65 B", "the result it consumed and the request it produced, as compact JSON"
+    assert seen["bash_size"] == "in ≈3 tok 10 B · out ≈17 tok 65 B", "the result it consumed and the request it produced, as compact JSON"
     old, new, _ = seen["edit"]
     assert (old["cls"], old["lang"], old["text"], old["lit"]) == ("code del", "css", ".bar { color: red; }", True)
     assert (new["cls"], new["lang"], new["text"], new["lit"]) == ("code add", "css", ".bar { color: green; }", True)
@@ -1002,7 +1016,7 @@ def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[P
                  second=calls(("make test", at), ("make check", None)))
     assert seen["first"] == {"which": "under way · make the log live", "buttons": ["open all"], "steps": [["ran", "make test", False]]}
     assert seen["second"]["steps"] == [["ran", "make test", False], ["ran", "make check", True]]
-    assert seen["turn"]["which"].startswith("turn 04 ")
+    assert seen["turn"]["which"].startswith("turn 04 ") and seen["turn"]["buttons"] == ["open all"]
     assert seen["back"] == seen["second"], "k on the newest turn goes on to the turn under way"
     assert seen["newest_again"]["which"] == seen["turn"]["which"], "and j goes back to the newest turn"
     assert not seen["ended"]["which"].startswith("under way")

@@ -618,7 +618,8 @@ def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(wor
     page = render_session(worked_example, worked, now=NOW)
     head = re.search(r'<details class="turn[^"]*" id="t03".*?</summary>', page, re.S).group(0)
     assert f"in {before.consumed_tokens + 321} tok" in text_of(head)
-    assert 'title="≈4 tokens">15 B</span>' in page, "13 characters, two of them two bytes each"
+    sizes = [(html.unescape(title), text_of(shown)) for title, shown in re.findall(r'<span class="v-meta size" title="([^"]*)">(.*?)</span>', page)]
+    assert ("≈4 tokens", "15 B") in sizes, "13 characters, two of them two bytes each"
 
 
 def test_work_after_a_message_no_record_answers_yet_is_on_no_turn(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
