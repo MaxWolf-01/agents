@@ -410,6 +410,7 @@ with sync_playwright() as pw:
                 for key in args["keys"]:
                     page.keyboard.press(key)
                 out["typed"] = inner.evaluate("document.querySelector('#review pre').textContent")
+                out["reviewing"] = inner.evaluate("window.waitingReviewing()")  # what the box's Enter asks before it sends
                 page.evaluate("window.words = 'and go on'")
                 inner.evaluate("window.waitingWords()")  # what the hub tab calls as the user types in its box
                 out["review"] = inner.evaluate("document.querySelector('#review pre').textContent")
@@ -420,6 +421,7 @@ with sync_playwright() as pw:
                 out["sent"] = page.evaluate("window.sent")
                 out["saved"] = page.evaluate("window.saved.at(-1)")
                 out["after"] = inner.evaluate(SHOWN)
+                out["reviewing_after"] = inner.evaluate("window.waitingReviewing()")
         finally:
             server.shutdown()
     elif scenario == "tables":
@@ -1049,6 +1051,7 @@ def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_se
     assert seen["loaded"]["staged"] == "staged: b · Wait for the first review · note: kept by the hub", seen["loaded"]
     message = "Q1: b, kept by the hub\nA1: done\nagent/show/old/fig.html: the axis is off\n\nand go on"
     assert seen["typed"] == message[: -len(" on")] and seen["review"] == message and seen["before"] is None, seen
+    assert seen["reviewing"] and not seen["reviewing_after"], "the hub's box reads whether the review is open to send what it shows"
     assert seen["stays"] == "Not answered, so they stay: 2 to look at", seen["stays"]
     assert seen["sent"] == "Q1: b, kept by the hub\nagent/show/old/fig.html: the axis is off\n\nand go on", seen["sent"]
     assert seen["saved"]["staged"] == {"A1": {"act": "done"}} and set(seen["saved"]["sent"]) == {"Q1"}, seen["saved"]

@@ -249,6 +249,8 @@ window.waitingSent = (text) => read.then(() => {
   if (keys) showCard(0)
   else { reviewing = false; at = 0; draw(); waiting.scrollTop = 0 }
 })
+// the review is open: the box's Enter sends what it shows, the batch with the box's words below it
+window.waitingReviewing = () => reviewing
 // the box's words changed as the user typed there: the review's message shows them, the rest of it left as it is
 window.waitingWords = () => { if (reviewing) review.querySelector(".message").outerHTML = message() }
 // a reload under a note being typed would take the field from under the reader's fingers
