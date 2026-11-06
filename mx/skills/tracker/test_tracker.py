@@ -3045,6 +3045,80 @@ def test_a_round_whose_branches_were_deleted_after_their_merge_lands_from_the_me
     assert said.code == 1 and "fetch it from the worker host first" in said.err, "a round never fetched is said so"
 
 
+def test_a_parents_accept_merges_the_agent_branch_of_a_round_it_ran_before_it_had_children(split: Path) -> None:
+    """A ticket built alone, then cut into a child for a second pass: its own report is on its
+    `ticket/<slug>` agent branch, which no child's landing merges."""
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    in_review(split, "map-columns", parent="one-flow")
+    built(agent, "ticket/one-flow", "main", "the first round's report")
+    git(split, "checkout", "-q", "-b", "one-flow")
+    built(split, "ticket/map-columns", "one-flow", "the second pass")
+    merged(split, "ticket/map-columns")
+    git(split, "checkout", "-q", "main")
+    merged(split, "one-flow")
+    said = run(split, "accept", "one-flow")
+    assert said.code == 0, said.said
+    assert subjects(agent)[:2] == ["one-flow landed, ruled whole", "Merge branch 'ticket/one-flow'"]
+    assert run(split, "get", "map-columns", "status").out == "done\n"
+
+
+def test_a_ticket_with_no_round_is_accepted_where_the_rules_let_it_be_done(split: Path) -> None:
+    """A ticket the user is in the loop for, done at the ruling, with nothing built on a branch."""
+    agent = split / "agent"
+    in_review(split, "real-keys", **{"needs-user": "true"})
+    said = run(split, "accept", "real-keys")
+    assert said.code == 0, said.said
+    assert run(split, "get", "real-keys", "status").out == "done\n"
+    assert subjects(agent)[0] == "real-keys accepted, with no round to land"
+    in_review(split, "open-question", body="## Questions\n\n- [D1] **Warm?** Or cool.\n", **{"needs-user": "true"})
+    said = run(split, "accept", "open-question")
+    assert said.code == 1 and "D1 is open" in said.err, said.said
+
+
+def test_a_range_a_later_round_reset_away_leaves_the_diff_as_that_round_lands(split: Path) -> None:
+    """A child's second round reset its branch and its parent's merge of it, and built again: the
+    first round's commit is on no branch, and a range onto it would refuse every done."""
+    in_review(split, "one-flow")
+    in_review(split, "map-columns", parent="one-flow")
+    git(split, "checkout", "-q", "-b", "one-flow")
+    first = built(split, "ticket/map-columns", "one-flow", "the first try")
+    merged(split, "ticket/map-columns")
+    assert run(split, "land", "map-columns").code == 0
+    assert run(split, "get", "map-columns", "diff").out == f"code@{first}\n"
+    git(split, "reset", "-q", "--hard", "one-flow~1")
+    git(split, "branch", "-q", "-D", "ticket/map-columns")
+    second = built(split, "ticket/map-columns", "one-flow", "the second try")
+    merged(split, "ticket/map-columns")
+    said = run(split, "land", "map-columns")
+    assert said.code == 0, said.said
+    assert run(split, "get", "map-columns", "diff").out == f"code@{second}\n"
+
+
+def test_a_round_merged_through_a_pull_request_from_a_branch_of_the_teams_own_lands_from_its_merge(split: Path) -> None:
+    """A team that opens its pull requests from `feature/<slug>`: GitHub's subject names that
+    branch, which is gone once the ticket branch is deleted too."""
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    code = built(split, "ticket/one-flow", "main", "the flow")
+    git(split, "merge", "-q", "--no-ff", "-m", "Merge pull request #7 from acme/feature/one-flow", "ticket/one-flow")
+    git(split, "branch", "-q", "-D", "ticket/one-flow")
+    built(agent, "ticket/one-flow", "main", "the report")
+    said, read = printed(split, "land", "one-flow")
+    assert said.code == 0, said.said
+    assert [(one["repo"], one["merged"]) for one in read["round"]] == [("code", True), ("agent", True)]
+    assert read["tickets"][0]["diff"][0] == f"code@{code}"
+
+
+def test_an_empty_assignment_drops_the_field(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "lamp", status="open")
+    ticket(tickets, "warm", parent="lamp", status="open")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    assert run(repo, "set", "warm", "parent=").code == 0
+    assert "parent" not in (tickets / "warm.md").read_text()
+
+
 def test_every_write_leaves_the_ticket_it_wrote_committed(split: Path) -> None:
     """`land-takes-a-round-whole`'s third criterion: once a write exits 0, its ticket file has no
     change no commit holds, a hand edit it found there included."""

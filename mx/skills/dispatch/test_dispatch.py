@@ -2633,6 +2633,25 @@ def test_a_pull_request_merged_with_a_merge_commit_is_recorded_as_its_branch(toy
     assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
 
 
+def test_a_pull_request_from_a_branch_of_the_teams_own_with_copies_of_the_commits_lands_as_it_merged(toy: Path) -> None:
+    """A team that opens its pull requests from `feature/<slug>`, cut afresh with the ticket's
+    commits picked onto it: the merge commit brought those copies in, not the ticket branch, so what
+    landed is the copy's range, and the ticket branch goes, since GitHub holds each of its patches."""
+    backend = on_github(toy)
+    assert run(toy, "review", "warm-preset").returncode == 0
+    git(backend, "switch", "-q", "-c", "feature/warm-preset", "development")
+    git(backend, "cherry-pick", "development..ticket/warm-preset")
+    git(backend, "switch", "-q", "development")
+    fork, copy = git(backend, "rev-parse", "development", "feature/warm-preset").split()
+    merged_on_github(backend, "merge", branch="feature/warm-preset")
+    done = run(toy, "review", "warm-preset")
+    assert done.returncode == 0, done.stderr
+    assert "merged a branch other than warm-preset's" in done.stderr, done.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert [r for r in ranges_of(toy, "warm-preset") if r.startswith("Backend@")] == [f"Backend@{fork}..{copy}"]
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+
+
 def test_a_ticket_branch_holding_commits_its_pull_request_did_not_carry_stays(toy: Path) -> None:
     """A commit made on the ticket branch after its pull request merged never reached GitHub: the
     range is still the squash's, the branch keeps that commit, the ticket stays in `review`, and the

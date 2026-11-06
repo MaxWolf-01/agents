@@ -989,7 +989,7 @@ land_on_github() { # <slug> <name...>
         name=${on_github[${at,,}]-}
         # Skips a PR in a listed repo whose branch merged.
         [ -z "$name" ] || [[ " $* " == *" $name "* ]] || continue
-        pr_landed "$ref" || rc=1
+        pr_landed "$ref" "$id" || rc=1
     done
     # A parent's PR carries its <slug> branch with its descendants' work merged in, so theirs is
     # recorded and deleted the same way; the whole tracker is read for their ranges.
@@ -1040,12 +1040,14 @@ record_landed() { # <slug> [append]
     changed=1
 }
 
-# Deletes <branch> in listed repo <name> where its PR carried its tip, setting `changed`; one with
-# commits the PR lacked stays and sets `rc`.
+# Deletes <branch> in listed repo <name> where its PR carried its tip, or a copy of each of its
+# commits (`git cherry`, against the branch the PR merged into), setting `changed`; one with commits
+# the PR lacked stays and sets `rc`.
 drop_carried() { # <name> <branch>
     local tip
     tip=$(git -C "${listed_top[$1]}" rev-parse -q --verify "refs/heads/$2") || return 0
-    if [[ " ${carried[$1]} " != *" $tip "* ]]; then
+    if [[ " ${carried[$1]} " != *" $tip "* ]] &&
+        { [ -z "${merged_onto[$1]-}" ] || git -C "${listed_top[$1]}" cherry "${merged_onto[$1]}" "$tip" | grep -q '^+'; }; then
         echo "dispatch: $2 in $1 holds commits its pull request did not carry, so it stays, and done waits for them" >&2
         rc=1
     elif run git -C "${listed_top[$1]}" branch -q -D "$2"; then
@@ -1055,14 +1057,15 @@ drop_carried() { # <name> <branch>
     fi
 }
 
-declare -A on_github=() landed_in=() rewritten=() held=() carried=()
+declare -A on_github=() landed_in=() rewritten=() held=() carried=() merged_onto=()
 order=()
 
 # Reads what <ref>'s PR landed as into its listed repo's `landed_in` range and `carried` commits,
-# setting `rewritten` for a squash or rebase merge. An unmerged PR sets `held`; one GitHub or origin
-# cannot confirm sets `held` and returns nonzero.
-pr_landed() { # <ref>
-    local repo=${1%#*} number=${1##*#} name top said merge onto parents count start kind
+# setting `rewritten` for a squash or rebase merge, and for a merge commit of a branch that is not
+# <slug>'s own: a team that opens its PRs from branches of its own copies the commits. An unmerged
+# PR sets `held`; one GitHub or origin cannot confirm sets `held` and returns nonzero.
+pr_landed() { # <ref> <slug>
+    local repo=${1%#*} number=${1##*#} name top said merge onto parents count start kind mine
     name=${on_github[${repo,,}]-}
     [ -n "$name" ] || { echo "dispatch: $1 is in no repo \`tracker repos\` lists, none having $repo as its origin, so nothing changes for it" >&2; return 0; }
     top=${listed_top[$name]}
@@ -1077,10 +1080,18 @@ pr_landed() { # <ref>
         git -C "$top" merge-base --is-ancestor "$merge" "origin/$onto"; } ||
         { echo "dispatch: $1's merge $merge is not on $onto as origin has it in $top, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
     carried[$name]+=" $(jq -r '[.commits[].oid] | join(" ")' <<< "$said")"
+    merged_onto[$name]=origin/$onto
     read -r -a parents <<< "$(git -C "$top" rev-list --parents -n 1 "$merge")"
     if [ ${#parents[@]} -gt 2 ]; then
-        echo "dispatch: $1 merged with a merge commit, which brought its commits in as they were" >&2
         landed_in[$name]+=" $name@$(git -C "$top" merge-base "${parents[1]}" "${parents[2]}")..${parents[2]}"
+        # A parent ticket's branch is named by its slug alone, a child's ticket/<slug>.
+        mine=$(git -C "$top" rev-parse -q --verify "refs/heads/$2" || git -C "$top" rev-parse -q --verify "refs/heads/ticket/$2")
+        if [ -z "$mine" ] || git -C "$top" merge-base --is-ancestor "$mine" "${parents[2]}"; then
+            echo "dispatch: $1 merged with a merge commit, which brought its commits in as they were" >&2
+        else
+            echo "dispatch: $1 merged a branch other than $2's with a merge commit, so what landed in $name is ${parents[1]}..${parents[2]}" >&2
+            rewritten[$name]=1
+        fi
         return 0
     fi
     # A rebase merge puts the pull request's commits on the branch one by one, each keeping the
