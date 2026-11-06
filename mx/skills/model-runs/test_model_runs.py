@@ -85,6 +85,7 @@ def test_a_run_leaves_one_line_with_what_claude_reported_and_prints_the_answer(t
     assert (line["session_cost_usd"], line["session_api_s"]) == (0.1234, 3.9), "a first run's share is the whole total"
     assert line["tokens"] == {"input": 22, "output": 70, "cache_read": 1100, "cache_write": 20}, "the result's totals, not the messages'"
     assert line["at"].endswith("Z") and line["id"] and line["host"]
+    assert "printed" not in line, "a run that answered keeps none of its output"
 
 
 def test_a_run_in_a_repo_names_the_repo_off_its_git_dir(tmp_path: Path) -> None:
@@ -130,18 +131,16 @@ def test_a_run_that_ends_without_a_result_still_gets_its_line(tmp_path: Path) ->
 
 def test_a_run_that_printed_text_and_exited_0_is_no_answer(tmp_path: Path) -> None:
     """The change-summary runs that a stand-in claude answered in plain text: model-runs handed the
-    text back with status 0, and the caller took it for the paragraph. The run exits non-zero, its
-    line keeps the text, and only the end of a long output is kept."""
-    fake_claude(tmp_path, "x" * 5000 + "Not logged in\n")
+    text back with status 0, and the caller took it for the paragraph. The run exits non-zero, and
+    its line keeps the end of the text without the stream's events, whose bytes would crowd it out."""
+    fake_claude(tmp_path, stream(INIT, TURN_A) + "x" * 5000 + "Not logged in\n")
     done = model_runs(tmp_path, "run", "--site", "change-summary", "--", "claude", "-p")
     assert done.returncode != 0
     (line,) = lines(tmp_path)
     assert (line["exit"], line["end"]) == (0, "no result")
-    assert line["printed"]["stdout"].endswith("Not logged in") and len(line["printed"]["stdout"]) == 2047, "the last 2 KB, its final newline dropped"
+    printed = line["printed"]["stdout"]
+    assert printed.endswith("Not logged in") and len(printed) <= 2048 and '"type"' not in printed
     assert line["printed"]["stderr"] == ""
-    fake_claude(tmp_path, stream(INIT, RESULT))
-    model_runs(tmp_path, "run", "--site", "change-summary", "--", "claude", "-p")
-    assert "printed" not in lines(tmp_path)[1], "a run that answered keeps none of its output"
 
 
 def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:

@@ -8,7 +8,8 @@
 #        model-runs needs
 #   run     runs the `claude` command line after `--` with `--verbose
 #           --output-format stream-json` added, prints what the model answered,
-#           exits with claude's status, and appends one line to the log. --site
+#           exits with claude's status (1 where claude exited 0 with no
+#           result), and appends one line to the log. --site
 #           names the call site (worker, review, briefing, change-summary,
 #           turn-review); the repo is read off the working directory's git
 #           dir, the model and effort off the command line, the rest off what
@@ -22,7 +23,8 @@
 #           the messages that did arrive, `cost_usd` is null, and `printed`
 #           keeps the end of what claude wrote. Such a run exits non-zero
 #           even where claude exited 0, so what it printed instead of a
-#           result never passes for an answer.
+#           result never passes for an answer. claude's stderr reaches the
+#           caller once claude has ended, not as it is written.
 #   pull    appends the lines a worker host's log holds that this one does
 #           not, by id, reading the same path there over ssh.
 #   report  cost, time and runs per site, per ticket, per review axis and per
@@ -55,7 +57,7 @@
 #   end       claude's result subtype (success, error_max_turns, ...), or
 #             `no result`
 #   printed   on a `no result` line only: {stdout, stderr}, the last 2 KB
-#             claude wrote to each
+#             claude wrote to each, stdout without its stream-json events
 #
 # Env:
 #   MODEL_RUNS_LOG   the log file; ~/logs/agent/runs.jsonl unless set. `pull`
@@ -149,9 +151,8 @@ run() {
     # A second wait, in case the trap interrupted the first before the child ended.
     wait "$child" 2>/dev/null
     trap - TERM INT
-    # claude's stderr reaches the caller once claude has ended, not as it is
-    # written: a pipe through tee would be held open by anything claude left
-    # running, and this script would wait on it.
+    # Not streamed through tee: anything claude left running would hold
+    # that pipe open, and this script would wait on it.
     cat "$err" >&2
     [ -n "$timeout" ] && [ "$rc" -eq 124 ] && [ -z "$ended" ] && ended=timeout
 
@@ -160,7 +161,7 @@ run() {
         --arg id "$id" --arg at "$at" --arg site "$site" --arg repo "$(repo_name)" \
         --arg ticket "$ticket" --arg axis "$axis" --arg attempt "$attempt" --arg range "$range" \
         --arg host "$(hostname -s)" --arg model "$model" --arg effort "$effort" \
-        --arg ended "$ended" --arg rc "$rc" --arg out "$(tail -c 2048 "$raw")" --arg err "$(tail -c 2048 "$err")" \
+        --arg ended "$ended" --arg rc "$rc" --arg out "$(grep -v '^{"type":' "$raw" | tail -c 2048)" --arg err "$(tail -c 2048 "$err")" \
         --argjson duration "$(( $(date +%s) - t0 ))" '
         split("\n") | map(fromjson? // empty) as $events
         | ($events | map(select(.type == "system" and .subtype == "init")) | first) as $init
