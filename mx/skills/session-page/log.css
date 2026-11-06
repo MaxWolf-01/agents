@@ -20,15 +20,15 @@
 .log .step > button:hover { background: var(--wash-ink); }
 .log .step .verb { flex: none; color: var(--muted); }
 .log .step .subject { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--body); }
+.log .step .size { flex: none; color: var(--muted); opacity: 0.7; font-size: 0.7rem; }
 .log .step .took { flex: none; color: var(--muted); opacity: 0.7; }
 .log .step .failed { flex: none; color: light-dark(#9c3d22, #d98a6c); }
 .log .step .took.running { color: var(--accent); opacity: 1; }
-/* the turn under way: a dot that breathes before its name in the head, and the head's way to it from another turn */
+/* the turn under way: a dot that breathes before its name in the head */
 .log-head .pulse { display: inline-block; width: 0.5em; height: 0.5em; margin-right: 0.45em; border-radius: 50%; background: var(--accent);
   animation: log-pulse 1.6s ease-in-out infinite; }
 @keyframes log-pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .log-head .pulse { animation: none; } }
-.log-head .to-live { color: var(--accent); }
 /* the step the keys are on, while the log holds them */
 .log.keyed .log-head { border-bottom-color: var(--accent); }
 .log .step.cur > button { box-shadow: inset 2px 0 0 var(--accent); background: var(--wash-ink); }

@@ -160,7 +160,7 @@ const foldBand = document.getElementById("fold-band")
 const band = (on = waiting.classList.contains("collapsed")) => {
   waiting.classList.toggle("collapsed", !on)
   foldBand.setAttribute("aria-expanded", on)
-  foldBand.firstChild.textContent = on ? "fold " : "show "
+  foldBand.textContent = on ? "fold" : "show"
   refade()
 }
 if (foldBand) foldBand.addEventListener("click", () => band())
@@ -606,6 +606,28 @@ addEventListener("scroll", hideHint, { capture: true, passive: true })
 
 // ---- the keys
 
+// Ctrl+Alt held shows each control's key over it, so a control needs no key written on it. Any other
+// key, a scroll or leaving the page takes them away: the hub's own keys are Ctrl+Alt and another key.
+let overKeys = []
+const hideKeys = () => { overKeys.forEach((k) => k.remove()); overKeys = [] }
+const showKeys = () => {
+  for (const el of document.querySelectorAll("[aria-keyshortcuts]")) {
+    const r = el.getBoundingClientRect()
+    if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) || r.bottom < 0 || r.top > innerHeight) continue
+    const k = Object.assign(document.createElement("kbd"), { className: "key-over", textContent: el.getAttribute("aria-keyshortcuts") })
+    Object.assign(k.style, { left: `${r.left + r.width / 2}px`, top: `${r.top + r.height / 2}px` })
+    document.body.append(k)
+    overKeys.push(k)
+  }
+}
+addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.altKey && (e.key === "Control" || e.key === "Alt")) { if (!overKeys.length) showKeys() }
+  else hideKeys()
+}, true)
+addEventListener("keyup", (e) => { if (e.key === "Control" || e.key === "Alt") hideKeys() }, true)
+addEventListener("blur", hideKeys)
+addEventListener("scroll", hideKeys, { capture: true, passive: true })
+
 // a scrolling key where nothing that scrolls has the focus scrolls the turns' pane, which the window would have
 const scrollByKey = (key) => {
   const page = pane.clientHeight * 0.85
@@ -637,8 +659,8 @@ document.addEventListener("keydown", (e) => {
     case "[": case "]": if (items().length) showCard(at); break
     case "q": if (waiting) band(); break
     case "r": if (waiting) openReview(); break
-    case "o": case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
-    case "O": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
+    case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
+    case "o": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
     case "R": copy(); break
     case "y": copyTurn(focused || blocks[0]); break
     case "Y": if (blocks.length) { write(sources.session); say("copied the session as markdown") } else say("no turn yet"); break

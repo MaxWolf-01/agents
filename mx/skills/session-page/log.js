@@ -1,8 +1,9 @@
 // The tool-call log: a drawer on the right, over the timeline, showing what the focused turn did
 // (page.js marks that turn's block .cur); with none focused, the turn under way's, else the newest
-// turn's. `log l` in the bar or l opens and closes it, and Esc closes it. Tab, or a click on a
-// step, hands the keys to the open log: j and k walk its steps, o and Enter open one, O opens or
-// closes them all, and Tab hands the keys back to the turns. The steps live beside the
+// turn's; k on the newest turn goes on to the turn under way. The bar's control or l opens and
+// closes it, and Esc closes it. O opens or closes all its steps. Tab, or a click on a step, hands
+// the keys to the open log: j and k walk its steps, o and Enter open one, and Tab hands the keys
+// back to the turns. The steps live beside the
 // page in tool-calls.js, which the first opening loads, with the highlighter; until then the page
 // holds none of them. The turn under way's are in live-calls.js, which the live hook rewrites as
 // each call starts and ends, and which the open log loads again every POLL. It runs after page.js
@@ -28,6 +29,10 @@
   const icon = (k) => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k] || ICON.other}</svg>`
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
   const secs = (a, b) => (a && b ? Math.max(0, (Date.parse(b) - Date.parse(a)) / 1000) : null)
+  // sizes as session_page.py's `size` and `about_tokens` write them: bytes in decimal units, tokens at four characters each
+  const bytes = (text) => new TextEncoder().encode(text).length
+  const size = (n) => (n < 1000 ? `${n} B` : n < 999950 ? `${(n / 1000).toFixed(1)} kB` : `${(n / 1e6).toFixed(1)} MB`)
+  const about = (text) => `≈${Math.ceil(text.length / 4).toLocaleString("en")} tokens`
   const took = (s) => (s == null ? "" : s < 1 ? "<1s" : s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`)
 
   // ---- loading, once: the steps and the highlighter, each a script; a highlighter that fails to load leaves the code plain
@@ -111,7 +116,7 @@
   document.body.append(panel)
   const cursor = () => blocks.find((b) => b.classList.contains("cur"))
   const focused = () => cursor() || blocks[0]
-  // the turn under way shows where no turn is focused, or where the reader asked for it from the head
+  // the turn under way shows where no turn is focused, or where the reader went on to it from the newest turn
   let toLive = false, cursorWas
   const target = () => (window.liveCalls && (toLive || !cursor()) ? LIVE : focused())
   const LIVE = "live"
@@ -124,11 +129,17 @@
   }
   let shownFor = null
 
+  // what a step consumed and produced, as the model sees it: a call's result read, its request or a thought written
+  const spent = (s) => {
+    const made = s.kind === "thinking" ? s.output : JSON.stringify(s.input), read = s.kind === "thinking" ? "" : s.output || ""
+    const title = `${read ? `consumed ${bytes(read).toLocaleString("en")} bytes, ${about(read)}: the result\n` : ""}produced ${bytes(made).toLocaleString("en")} bytes, ${about(made)}: ${s.kind === "thinking" ? "the thought" : "the request"}`
+    return `<span class="size" title="${esc(title)}">${read ? `in ${size(bytes(read))} · ` : ""}out ${size(bytes(made))}</span>`
+  }
   const running = (s) => `<span class="took running" data-at="${esc(s.at)}">${took(secs(s.at, new Date().toISOString()))}…</span>`
   const step = (s, n) => s.kind === "thinking"
-    ? `<div class="step thinking" data-n="${n}"><button type="button">${icon("thinking")}<span class="subject">${esc(s.output)}</span></button></div>`
+    ? `<div class="step thinking" data-n="${n}"><button type="button">${icon("thinking")}<span class="subject">${esc(s.output)}</span>${spent(s)}</button></div>`
     : `<div class="step" data-n="${n}"><button type="button">${icon(s.kind)}<span class="verb">${esc(s.verb)}</span><span class="subject">${esc(s.subject)}</span>` +
-      `${s.failed ? '<span class="failed" title="failed">✕</span>' : ""}${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}</button></div>`
+      `${s.failed ? '<span class="failed" title="failed">✕</span>' : ""}${spent(s)}${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}</button></div>`
 
   // Drawn again over the same turn, as its calls come in, the log keeps the steps the reader opened
   // and where they scrolled to, and follows the newest call where they were at the end.
@@ -146,14 +157,11 @@
     const empty = shownFor === LIVE ? "no tool calls yet"
       : !window.toolCalls ? "the tool calls are not beside this page: the next turn's render writes them"
       : "no tool calls for this turn"
-    const jump = shownFor !== LIVE && window.liveCalls
-      ? '<button type="button" class="to-live" data-live title="the tool calls of the turn under way">under way</button>' : ""
     panel.innerHTML = `
       <div class="log-head">
         <span class="which" title="${esc(shownFor === LIVE ? window.liveCalls.prompt || "" : shownFor ? shownFor.querySelector(".hl, .date").textContent : "")}">${label(shownFor)}</span>
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
         ${steps.some((s) => s.kind !== "thinking") ? '<button type="button" class="all" data-all aria-keyshortcuts="O">open all</button>' : ""}
-        ${jump}<button type="button" data-close title="close (Esc)" aria-label="close the tool calls">×</button>
       </div>
       <div class="log-steps">${steps.length ? steps.map(step).join("") : `<p class="log-empty">${empty}</p>`}</div>`
     const box = panel.querySelector(".log-steps")
@@ -204,9 +212,7 @@
   }
 
   panel.addEventListener("click", (e) => {
-    if (e.target.closest("[data-close]")) return toggle(false)
     if (e.target.closest("[data-all]")) return flipAll()
-    if (e.target.closest("[data-live]")) { toLive = true; return draw() }
     const more = e.target.closest(".more")
     if (more) {
       const pre = more.previousElementSibling, [n, k] = pre.dataset.whole.split(".").map(Number)
@@ -256,18 +262,21 @@
     if (e.key === "l") { toggle(); e.preventDefault() }
     else if (e.key === "Escape" && isOpen()) toggle(false)
   })
-  // ahead of page.js's keys, in the capture phase, so the log's j and k never also move the turns
+  // ahead of page.js's keys, in the capture phase, so the log's j and k never also move the turns, and
+  // k on the newest turn goes on to the turn under way, which j leaves for the newest turn again
   let gArmed = 0
   addEventListener("keydown", (e) => {
     if (!isOpen() || e.ctrlKey || e.metaKey || e.altKey || typing(e)) return
     if (e.key === "Tab" && !e.shiftKey) steer(!keyed)
+    else if (e.key === "O") flipAll()
+    else if (!keyed && e.key === "k" && window.liveCalls && cursor() && cursor() === blocks[0]) { toLive = true; draw() }
+    else if (!keyed && e.key === "j" && toLive && window.liveCalls) { toLive = false; draw() }
     else if (!keyed) return
     else if (e.key === "j") point(at + 1)
     else if (e.key === "k") point(Math.max(0, at - 1))
     else if (e.key === "G") point(stepEls().length - 1)
     else if (e.key === "g") { if (Date.now() - gArmed < 500) { point(0); gArmed = 0 } else gArmed = Date.now() }
     else if (e.key === "o" || e.key === "Enter") { flip(stepEls()[at]); nameAll(); point(at) }
-    else if (e.key === "O") flipAll()
     else return
     e.preventDefault()
     e.stopImmediatePropagation()

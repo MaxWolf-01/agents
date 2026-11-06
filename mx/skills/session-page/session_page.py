@@ -1277,8 +1277,8 @@ NAMES: ContextVar[Callable[[re.Match], qualified.Cited | None] | None] = Context
 
 KEYS = [
     ("j k", "next, previous turn"),
-    ("o Enter", "open or close the turn"),
-    ("O", "open or close every turn"),
+    ("Enter", "open or close the turn"),
+    ("o", "open or close every turn"),
     ("g g", "top"),
     ("G", "last turn"),
     ("n", "the newest turn"),
@@ -1293,13 +1293,16 @@ KEYS = [
     ("u", "on a card: clear what is staged"),
     ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back to the cards"),
     ("1 to 9", "open the turn's nth artefact"),
-    ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's"),
-    ("Tab", "hand the keys to the open tool calls and back; there j k walk them, o Enter open one, O open or close all, g g G first, last"),
+    ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's; "
+          "with them open, k on the newest turn goes on to the turn under way's"),
+    ("O", "open or close every step of the open tool calls"),
+    ("Tab", "hand the keys to the open tool calls and back; there j k walk them, o Enter open one, g g G first, last"),
     ("y", "copy the turn's markdown, the newest turn's where none is picked"),
     ("Y", "copy the whole session's markdown"),
     ("R", "copy the resume command"),
     ("c", "copy the path under the pointer"),
     ("?", "this list"),
+    ("Ctrl Alt", "held: each control's key, over it"),
 ]
 
 
@@ -1469,7 +1472,7 @@ def assemble(v: View, now: datetime) -> str:
 <header class="bar">
   <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
-  <button class="log-toggle v-meta" id="log-toggle" aria-controls="log" aria-expanded="false" aria-keyshortcuts="l" data-src="{LOG}?{now:%Y%m%d%H%M%S%f}" data-live="{LIVE}" title="the focused turn's tool calls">log <kbd>l</kbd></button>
+  <button class="log-toggle v-meta" id="log-toggle" aria-controls="log" aria-expanded="false" aria-keyshortcuts="l" data-src="{LOG}?{now:%Y%m%d%H%M%S%f}" data-live="{LIVE}" title="the focused turn's tool calls" aria-label="the focused turn's tool calls"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
     <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -1480,7 +1483,7 @@ def assemble(v: View, now: datetime) -> str:
   <div class="left">
     <section class="intro">
       <h1 class="v-title">{title}</h1>{handoffs(session)}
-      <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="resume" id="resume" data-cmd="{esc(v.resume)}" title="copy: {esc(v.resume)}">copy resume command <kbd>R</kbd></button></p>
+      <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="resume" id="resume" data-cmd="{esc(v.resume)}" aria-keyshortcuts="R" title="copy: {esc(v.resume)}">copy resume command</button></p>
     </section>{top}
     <div class="pane" id="turns-pane">
       <section class="turns" aria-label="turns">
@@ -1576,7 +1579,7 @@ def newest_control(rows: tuple[Row, ...]) -> str:
         return ""
     label = rows[0].key if isinstance(rows[0].turn, Turn) else "chat"
     return (f'<button class="newest" data-newest aria-keyshortcuts="n" title="the newest turn">'
-            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span><kbd>n</kbd></button>')
+            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span></button>')
 
 
 def opening_key(s: Shown) -> str:
@@ -1609,7 +1612,7 @@ def band(v: View) -> str:
     heading = " · ".join(f"{n} {KINDS[kind]}" for kind, n in counts.items() if n)
     return f"""
     <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
-      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {heading}<span class="tally" id="tally"></span></h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
+      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {heading}<span class="tally" id="tally"></span></h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold</button></div>
       <div class="ticks" id="ticks" aria-label="every item, the ones staged filled"></div>
       <div class="cards">{"".join(cards)}
       </div>
@@ -1977,7 +1980,7 @@ COPY_CODE = f'<button class="copy-code" type="button" aria-label="copy the code"
 # Under a turn's number: copies the turn's record, as `y` does with the cursor on the turn. Out of the Tab order,
 # which goes from turn to turn.
 COPY_TURN = (f'<button class="copy-turn" type="button" tabindex="-1" aria-label="copy the turn\'s markdown" '
-             f'title="copy the turn\'s markdown (y)">{COPY_ICON}</button>')
+             f'aria-keyshortcuts="y" title="copy the turn\'s markdown">{COPY_ICON}</button>')
 
 
 def with_copy(rule: Callable):
