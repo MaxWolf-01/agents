@@ -41,13 +41,13 @@ Roles, so a page asks for a heading rather than a size:
 | `v-lead` | the sentence under a title, usually muted |
 | body | running text, stopped at the measure; `prose` styles it by tag |
 | `v-small` | captions, chrome, asides |
-| `v-meta` | the mono line: dates, counts, provenance, field labels; lowercase |
+| `v-meta` | the mono line: dates, counts, provenance, field labels |
 | `v-num` | a number inside text or a cell, tabular |
 
 ## Habits
 
 1. **Separate with space, not with boxes.** A hairline only where two things would otherwise touch; a filled block only where something must be found. A hairline does what a shadow would, and the dimmed backdrop says which layer is in front.
-2. **Labels lowercase, never small caps.** Small type in capitals shouts, and one shouting label makes the whole palette loud.
+2. **Labels in sentence case, never small caps.** Small type in capitals shouts, and one shouting label makes the whole palette loud. A figure's labels may go lowercase.
 3. **One accent, one job.** Links and the primary action wear it; nothing else does, so the eye can trust it. One meaning, however many marks carry it: a page whose accent means three things has two too many.
 4. **The screen holds what is read every time.** An explanation, a rare detail, a label the styling already carries: each sits one hover, click or key away, on demand where the reader is. Decluttering moves a needed fact to a better place rather than deleting it.
 5. **Show a state rather than label it, and show each fact once.** A mark that says it needs no word beside it, and the good state needs no mark at all.
@@ -55,7 +55,8 @@ Roles, so a page asks for a heading rather than a size:
 7. **Every word reads cold**, in words the user already has. A tooltip says what the thing means and when it matters, which its name alone cannot.
 8. **The content gets the room.** Margins as wide as reading needs and no wider, no horizontal scroll, full names wherever the space allows.
 9. **A dashboard leads with what the user can act on**, in the user's scales (days, gigabytes left) rather than the system's counters. A chart earns its place by showing change over time; a count nobody acts on goes. Every status page is a small dashboard.
-10. **Reuse what already works.** One component and one icon set per job across every surface of a project, and the best surface it already has as the reference for the next.
+10. **A page opens on what it is for.** A tool or a dashboard is no report: no preamble, no large header, no summary ahead of the thing itself.
+11. **Reuse what already works.** One component and one icon set per job across every surface of a project, and the best surface it already has as the reference for the next.
 
 Copy on the page is artefact text: `/mx:writing-for-humans` binds every label and every line of chrome.
 
