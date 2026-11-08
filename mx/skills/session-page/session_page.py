@@ -1827,7 +1827,7 @@ def you(r: Row) -> str:
     messages = r.turn.messages
     if not messages:
         return ""
-    lead = amount("messages", str(len(messages))) if len(messages) > 1 else ""
+    lead = f'<span data-tip="{len(messages)} messages">{amount("messages", str(len(messages)))}</span>' if len(messages) > 1 else ""
     return message_block("said you", "you", messages, lead)
 
 
