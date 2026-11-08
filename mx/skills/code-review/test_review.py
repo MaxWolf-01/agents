@@ -13,8 +13,10 @@ it started, is never disturbed by another; D114 and D115, a reviewer starts from
 caller's setup and runs Opus at the effort the caller gives, `medium` by default; and
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
 every ancestor's, assembled by the one command that assembles a worker's prompt; and
-`agent/tickets/review-says-when-an-axis-died.md`, that an axis whose reviewer died reads
-differently from one that reported, and that a flag before the fixed point is refused naming the order.
+`agent/tickets/review-says-when-an-axis-died.md`, that a reviewer that died reads
+differently from one that reported, and that a flag before the fixed point is refused naming the order;
+and `agent/tickets/tickets-cut-by-independent-context.md`, that a review is one shape, two reviewers:
+one reads the diff against the spec and the standards, one runs the suite.
 """
 
 import json
@@ -63,7 +65,7 @@ def commit(repo: Path, path: str, text: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A repo whose last commit touches a test file, so the Tests axis applies, a spec beside it,
+    """A repo whose last commit touches a test file, so the tests reviewer runs, a spec beside it,
     and the stand-in `claude`."""
     repo = tmp_path / "repo"
     git(tmp_path, "init", "-q", "-b", "main", str(repo))
@@ -158,7 +160,7 @@ def test_a_review_leaves_the_reviewed_tree_as_it_found_it(repo):
     """Run from an agent repo, a listed repo or one nested in a worker's worktree, `review` once
     wrote its reports to an `agent/reviews/` of the tree it stood in, where nothing reads them and
     where they showed as untracked debris; the scratch repo has no `agent/` and ignores nothing."""
-    done = run(repo, "--axes", "tests", "--spec", spec(repo))
+    done = run(repo, "--reviewers", "tests")
 
     assert done.returncode == 0, done.stderr
     assert git(repo, "status", "--porcelain", "--ignored") == ""
@@ -169,10 +171,10 @@ def test_a_review_leaves_the_reviewed_tree_as_it_found_it(repo):
 
 
 def test_a_killed_review_does_not_block_the_next_one(repo):
-    killed(repo, "--axes", "tests", "--spec", spec(repo))
+    killed(repo, "--reviewers", "tests")
     assert (review_dir(repo) / "checkout").exists()
 
-    again = run(repo, "--axes", "tests", "--spec", spec(repo))
+    again = run(repo, "--reviewers", "tests")
 
     assert again.returncode == 0, again.stderr
     assert (review_dir(repo) / "tests.md").read_text() == "No findings.\n"
@@ -180,11 +182,11 @@ def test_a_killed_review_does_not_block_the_next_one(repo):
 
 
 def test_a_second_review_of_a_running_range_is_refused_and_touches_nothing(repo):
-    with running(repo, "--axes", "tests", "--spec", spec(repo)) as first:
+    with running(repo, "--reviewers", "tests") as first:
         prompts = review_dir(repo) / "prompts"
         before = {path.name: path.stat().st_mtime_ns for path in prompts.iterdir()}
 
-        second = run(repo, "--axes", "tests", "--spec", spec(repo))
+        second = run(repo, "--reviewers", "tests")
 
         assert second.returncode == 1
         assert "is running" in second.stderr
@@ -194,22 +196,22 @@ def test_a_second_review_of_a_running_range_is_refused_and_touches_nothing(repo)
 
 
 def test_a_reviewer_that_outlives_its_killed_script_still_holds_the_range(repo):
-    with running(repo, "--axes", "tests", "--spec", spec(repo)) as first:
+    with running(repo, "--reviewers", "tests") as first:
         os.kill(first.pid, signal.SIGKILL)  # the script alone; its reviewer works on
         first.wait()
 
-        second = run(repo, "--axes", "tests", "--spec", spec(repo))
+        second = run(repo, "--reviewers", "tests")
 
         assert second.returncode == 1
         assert (review_dir(repo) / "checkout").exists()
 
 
 def test_a_checkout_a_killed_review_left_under_another_range_is_removed(repo):
-    killed(repo, "--axes", "tests", "--spec", spec(repo))
+    killed(repo, "--reviewers", "tests")
     left = review_dir(repo) / "checkout"
     commit(repo, "src/two.py", "TWO = 2\n")  # a new range, which the leftover is not under
 
-    done = run(repo, "--axes", "correctness")
+    done = run(repo, "--reviewers", "read")
 
     assert done.returncode == 0, done.stderr
     assert not left.exists()
@@ -217,11 +219,11 @@ def test_a_checkout_a_killed_review_left_under_another_range_is_removed(repo):
 
 
 def test_a_live_review_of_another_range_keeps_its_checkout(repo):
-    with running(repo, "--axes", "tests", "--spec", spec(repo)) as first:
+    with running(repo, "--reviewers", "tests") as first:
         live = review_dir(repo) / "checkout"
         commit(repo, "src/two.py", "TWO = 2\n")
 
-        done = run(repo, "--axes", "correctness")
+        done = run(repo, "--reviewers", "read")
 
         assert done.returncode == 0, done.stderr
         assert live.exists()
@@ -230,10 +232,10 @@ def test_a_live_review_of_another_range_keeps_its_checkout(repo):
 
 
 def test_a_killed_reviews_directory_deleted_by_hand_does_not_block_its_range(repo):
-    killed(repo, "--axes", "tests", "--spec", spec(repo))
+    killed(repo, "--reviewers", "tests")
     shutil.rmtree(reviews(repo))  # git still lists the checkout
 
-    again = run(repo, "--axes", "tests", "--spec", spec(repo))
+    again = run(repo, "--reviewers", "tests")
 
     assert again.returncode == 0, again.stderr
     assert worktrees(repo) == 1
@@ -243,7 +245,7 @@ def test_a_checkout_from_before_range_locks_is_left_and_named(repo):
     old = reviews(repo) / "aaaaaaa..bbbbbbb" / "checkout"
     git(repo, "worktree", "add", "-q", "--detach", str(old), "main~1")
 
-    done = run(repo, "--axes", "correctness")
+    done = run(repo, "--reviewers", "read")
 
     assert done.returncode == 0, done.stderr
     assert old.exists()
@@ -254,7 +256,7 @@ def test_a_checkout_from_before_range_locks_is_left_and_named(repo):
 
 
 def test_a_reviewer_starts_from_none_of_the_callers_setup(repo):
-    assert run(repo, "--axes", "correctness").returncode == 0
+    assert run(repo, "--reviewers", "read").returncode == 0
     argv = launched(repo)
     assert value(argv, "--setting-sources") == ""
     assert {"--strict-mcp-config", "--disable-slash-commands"} <= set(argv)
@@ -264,15 +266,15 @@ def test_a_reviewer_starts_from_none_of_the_callers_setup(repo):
 
 
 def test_every_reviewer_runs_opus_at_medium_effort_unless_told_otherwise(repo):
-    assert run(repo, "--light").returncode == 0
+    assert run(repo, "--reviewers", "read").returncode == 0
     assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "medium")
     assert Path(f"{argv_file(repo)}.cache").read_text() == "1\n", "a reviewer writes its cache at the 5-minute rate"
-    # `run-log`: one line per axis, naming the axis and the spec's ticket where one was given
+    # `run-log`: one line per reviewer, naming it and the spec's ticket where one was given
     (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["axis"], logged["ticket"], logged["model"], logged["effort"]) == \
-        ("review", "light", "", "opus", "medium")
+        ("review", "read", "", "opus", "medium")
 
-    assert run(repo, "--light", "--effort", "low").returncode == 0
+    assert run(repo, "--reviewers", "read", "--effort", "low").returncode == 0
     assert value(launched(repo), "--effort") == "low"
 
 
@@ -293,23 +295,23 @@ def ticketed(repo: Path) -> Path:
 def test_every_reviewer_is_given_a_time_budget_the_caller_can_change(repo):
     """The budget is the prompt's, which the reviewer paces its work to; the clock it checks against
     is `date`, so every reviewer may run that."""
-    assert run(repo, "--light").returncode == 0
-    prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
+    assert run(repo, "--reviewers", "read").returncode == 0
+    prompt = (review_dir(repo) / "prompts" / "read.md").read_text()
     assert "You have 10 minutes." in prompt
     assert "Bash(date)" in launched(repo)
-    assert run(repo, "--light", "--minutes", "25").returncode == 0
-    assert "You have 25 minutes." in (review_dir(repo) / "prompts" / "light.md").read_text()
-    refused = run(repo, "--light", "--minutes", "soon")
+    assert run(repo, "--reviewers", "read", "--minutes", "25").returncode == 0
+    assert "You have 25 minutes." in (review_dir(repo) / "prompts" / "read.md").read_text()
+    refused = run(repo, "--reviewers", "read", "--minutes", "soon")
     assert refused.returncode != 0 and "--minutes takes a whole number" in refused.stderr
 
 
 def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     ticketed(repo)
 
-    done = run(repo, "--axes", "spec", "--spec", "lamp-presets")
-    # `run-log`: the axis's line names the ticket the spec came from, and the range it read
+    done = run(repo, "--reviewers", "read", "--spec", "lamp-presets")
+    # `run-log`: the reviewer's line names the ticket the spec came from, and the range it read
     (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
-    assert (logged["site"], logged["axis"], logged["ticket"]) == ("review", "spec", "lamp-presets")
+    assert (logged["site"], logged["axis"], logged["ticket"]) == ("review", "read", "lamp-presets")
     assert logged["range"] and ".." in logged["range"]
 
     assert done.returncode == 0, done.stderr
@@ -317,49 +319,61 @@ def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     assert assembled.startswith("## lamp-presets")
     assert "## parent ticket: lamp" in assembled
     assert "What the whole lamp is for." in assembled
-    assert str(review_dir(repo) / "ticket.md") in (review_dir(repo) / "prompts" / "spec.md").read_text()
+    assert str(review_dir(repo) / "ticket.md") in (review_dir(repo) / "prompts" / "read.md").read_text()
 
 
 def test_a_spec_given_as_a_slug_that_names_no_ticket_is_refused_before_any_reviewer(repo):
     ticketed(repo)
 
-    done = run(repo, "--axes", "spec", "--spec", "no-such-ticket")
+    done = run(repo, "--spec", "no-such-ticket")
 
     assert done.returncode == 1
     assert "neither a file nor a ticket of this tracker" in done.stderr
     assert not (review_dir(repo) / "prompts").exists(), "nothing was rendered, so nothing was started"
 
 
-def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo):
-    """One reviewer, and the ticket's context in its prompt: a small ticketed diff is read against
-    what the ticket asked for rather than on its own terms, by the spec axis's own prompt."""
-    ticketed(repo)
+def test_the_tests_reviewer_runs_when_the_diff_touches_a_test_and_read_runs_on_every_diff(repo):
+    assert run(repo).stdout.split() == [str(review_dir(repo) / name) for name in ("read.md", "tests.md")]
 
-    done = run(repo, "--light", "--spec", "lamp-presets")
+    commit(repo, "docs/notes.md", "a diff that touches no test\n")
 
-    assert done.returncode == 0, done.stderr
-    prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
-    assert "## Spec: does it faithfully implement what was asked for?" in prompt
-    assert str(review_dir(repo) / "ticket.md") in prompt
-    assert (review_dir(repo) / "ticket.md").read_text().startswith("## lamp-presets")
+    assert run(repo).stdout.split() == [str(review_dir(repo) / "read.md")]
 
 
-def test_light_mode_without_a_spec_carries_no_spec_part(repo):
-    assert run(repo, "--light").returncode == 0
-    prompt = (review_dir(repo) / "prompts" / "light.md").read_text()
-    assert "## Spec:" not in prompt
+@pytest.mark.parametrize(("reviewer", "part"), [
+    ("read", "## Spec: does it faithfully implement what was asked for?"),
+    ("tests", "## Testing seams"),
+])
+def test_a_reviewer_judges_against_the_ticket_only_when_it_is_given_one(repo, reviewer, part):
+    """Ticketed, the diff is read against what the ticket asked for and its tests against the seams
+    it names; with no spec, both judge the diff on its own terms."""
+    assert run(repo, "--reviewers", reviewer).returncode == 0
+    assert part not in (review_dir(repo) / "prompts" / f"{reviewer}.md").read_text()
     assert not (review_dir(repo) / "ticket.md").exists()
 
+    ticketed(repo)
+    assert run(repo, "--reviewers", reviewer, "--spec", "lamp-presets").returncode == 0
+    prompt = (review_dir(repo) / "prompts" / f"{reviewer}.md").read_text()
+    assert part in prompt and str(review_dir(repo) / "ticket.md") in prompt
 
-def test_each_axis_numbers_its_findings_under_a_letter_of_its_own(repo):
-    """A finding is cited `review <range> S13` outside its report (`fewer-workflow-concepts`), which
-    reads as one finding only while no two axes of a review share a letter."""
-    assert run(repo, "--axes", "correctness,standards,spec,tests", "--spec", spec(repo)).returncode == 0
-    assert run(repo, "--light").returncode == 0
-    heading = {axis: re.findall(r"### ([A-Z])1\b", (review_dir(repo) / "prompts" / f"{axis}.md").read_text())
-               for axis in ("correctness", "standards", "spec", "tests", "light")}
+
+def test_read_works_its_passes_in_order_and_opens_the_standards_last(repo):
+    """Progressive disclosure: one reviewer loads correctness, the spec and then the standards
+    sources in turn, so the longest reading comes after the passes that need none of it."""
+    assert run(repo, "--reviewers", "read", "--spec", spec(repo)).returncode == 0
+    prompt = (review_dir(repo) / "prompts" / "read.md").read_text()
+    passes = [prompt.index(f"## {name}:") for name in ("Correctness", "Spec", "Standards")]
+    assert passes == sorted(passes), passes
+
+
+def test_each_reviewer_numbers_its_findings_under_a_letter_of_its_own(repo):
+    """A finding is cited `review <range> R13` outside its report (`fewer-workflow-concepts`), which
+    reads as one finding only while no two reviewers of a review share a letter."""
+    assert run(repo).returncode == 0
+    heading = {name: re.findall(r"### ([A-Z])1\b", (review_dir(repo) / "prompts" / f"{name}.md").read_text())
+               for name in ("read", "tests")}
     assert all(len(found) == 1 for found in heading.values()), f"each prompt asks for one heading form: {heading}"
-    assert len({found[0] for found in heading.values()}) == 5, heading
+    assert len({found[0] for found in heading.values()}) == 2, heading
 
 
 def sources(prompt: Path) -> list[Path]:
@@ -370,7 +384,7 @@ def test_the_tests_reviewer_reads_the_test_smells_and_the_three_jobs_and_no_more
     """The rest of /mx:testing restates the test-smell baseline for whoever writes a test, so the
     reviewer of one is handed the baseline and the three jobs its prompt asks about: the skill's
     body above its first section, which a heading put above the jobs would cut short."""
-    assert run(repo, "--axes", "tests", "--spec", spec(repo)).returncode == 0
+    assert run(repo, "--reviewers", "tests").returncode == 0
 
     given = sources(review_dir(repo) / "prompts" / "tests.md")
     assert [path.name for path in given] == ["TEST-SMELLS.md", "testing-jobs.md"]
@@ -381,34 +395,26 @@ def test_the_tests_reviewer_reads_the_test_smells_and_the_three_jobs_and_no_more
     assert numbered == ["1. ", "2. ", "3. "], "the three jobs are not all above the skill's first section"
 
 
-def test_the_light_reviewer_of_a_diff_with_tests_reads_what_the_tests_reviewer_does(repo):
-    assert run(repo, "--light").returncode == 0
-
-    given = sources(review_dir(repo) / "prompts" / "light.md")
-    assert [path.name for path in given[-2:]] == ["TEST-SMELLS.md", "testing-jobs.md"]
-    assert not any(path.parent.name == "testing" for path in given), "the whole testing skill was handed over"
-
-
-@pytest.mark.parametrize(("touches_tests", "args", "prompt", "handed"), [
-    (True, ("--axes", "standards"), "standards", True),
-    (True, ("--axes", "standards,tests", "--spec", "SPEC"), "standards", False),
-    (False, ("--light",), "light", False),
-    (False, ("--axes", "standards"), "standards", False),
+@pytest.mark.parametrize(("touches_tests", "args", "handed"), [
+    (True, ("--reviewers", "read"), True),
+    (True, (), False),
+    (False, (), False),
 ])
-def test_the_test_sources_go_to_whoever_reads_the_tests_when_no_tests_axis_runs(repo, touches_tests, args, prompt, handed):
-    """The light or standards reviewer of a diff that touches tests reads them in the Tests
-    reviewer's place; beside a Tests axis, or on a diff with no test in it, nobody else needs the
-    baseline (`/mx:code-review`, What binds the review)."""
+def test_the_test_sources_go_to_read_when_no_tests_reviewer_runs(repo, touches_tests, args, handed):
+    """The read reviewer of a diff that touches tests reads them in the tests reviewer's place;
+    beside a tests reviewer, or on a diff with no test in it, it needs no test baseline
+    (`/mx:code-review`, What binds the review)."""
     if not touches_tests:
         commit(repo, "docs/notes.md", "a diff that touches no test\n")
 
-    assert run(repo, *(spec(repo) if arg == "SPEC" else arg for arg in args)).returncode == 0
+    assert run(repo, *args).returncode == 0
 
-    given = [path.name for path in sources(review_dir(repo) / "prompts" / f"{prompt}.md")]
+    given = sources(review_dir(repo) / "prompts" / "read.md")
     if handed:
-        assert given[-2:] == ["TEST-SMELLS.md", "testing-jobs.md"]
+        assert [path.name for path in given[-2:]] == ["TEST-SMELLS.md", "testing-jobs.md"]
+        assert not any(path.parent.name == "testing" for path in given), "the whole testing skill was handed over"
     else:
-        assert not {"TEST-SMELLS.md", "testing-jobs.md"} & set(given)
+        assert not {"TEST-SMELLS.md", "testing-jobs.md"} & {path.name for path in given}
 
 
 # What `review` takes a changed file for, by the conventions of the languages this workflow meets
@@ -432,10 +438,10 @@ NEAR_MISSES = ["src/latest.py", "contest.py", "contests/lamp.py", "inspec/lamp.m
 
 
 def handed(repo: Path) -> str:
-    """The standards a lone standards reviewer of the last commit is handed, as one text."""
-    done = run(repo, "--axes", "standards")
+    """The standards a lone read reviewer of the last commit is handed, as one text."""
+    done = run(repo, "--reviewers", "read")
     assert done.returncode == 0, done.stderr
-    return "\n".join(map(str, sources(review_dir(repo) / "prompts" / "standards.md")))
+    return "\n".join(map(str, sources(review_dir(repo) / "prompts" / "read.md")))
 
 
 @pytest.mark.parametrize(("kind", "path"), [(kind, path) for kind, paths in CLASSED.items() for path in paths])
@@ -460,41 +466,50 @@ def test_a_changed_file_of_no_kind_hands_the_reviewer_none_of_their_standards(re
 
 
 def test_a_spec_given_as_a_file_is_read_as_the_file(repo):
-    done = run(repo, "--axes", "spec", "--spec", spec(repo))
+    done = run(repo, "--reviewers", "read", "--spec", spec(repo))
 
     assert done.returncode == 0, done.stderr
-    assert spec(repo) in (review_dir(repo) / "prompts" / "spec.md").read_text()
+    assert spec(repo) in (review_dir(repo) / "prompts" / "read.md").read_text()
     assert not (review_dir(repo) / "ticket.md").exists()
 
 
 def test_a_missing_report_is_rerun_at_the_same_effort_and_on_the_spec_as_it_was_given(repo):
     ticketed(repo)
-    done = run(repo, "--axes", "spec", "--effort", "low", "--spec", "lamp-presets", FAKE_NO_REPORT="1")
+    done = run(repo, "--reviewers", "read", "--effort", "low", "--spec", "lamp-presets", FAKE_NO_REPORT="1")
 
     assert done.returncode == 1
     rerun = done.stderr.strip().splitlines()[-1]
-    assert "--axes spec" in rerun and "--effort low" in rerun
+    assert "--reviewers read" in rerun and "--effort low" in rerun
     assert "--spec lamp-presets" in rerun, f"the re-run reads the assembled file rather than the ticket: {rerun}"
 
 
-def test_an_axis_whose_reviewer_died_after_opening_its_report_reads_as_died_not_as_reported(repo):
+def test_a_reviewer_that_died_after_opening_its_report_reads_as_died_not_as_reported(repo):
     """The first four-axis review of testing-weight hit the usage limit: every reviewer had
     created its report and exited 1, and the paths were printed as if the reports had landed."""
-    done = run(repo, "--axes", "correctness,standards", FAKE_DIES="standards")
+    done = run(repo, FAKE_DIES="tests")
 
     assert done.returncode == 1
-    assert done.stdout.split() == [str(review_dir(repo) / "correctness.md")]
-    died = next(line for line in done.stderr.splitlines() if "standards axis died" in line)
+    assert done.stdout.split() == [str(review_dir(repo) / "read.md")]
+    died = next(line for line in done.stderr.splitlines() if "tests reviewer died" in line)
     assert "exited 1" in died and "You've hit your limit" in died
-    assert "--axes standards " in done.stderr.strip().splitlines()[-1]
+    assert "--reviewers tests " in done.stderr.strip().splitlines()[-1]
+
+
+def test_a_reviewer_of_no_such_name_is_refused_naming_the_two_before_anything_starts(repo):
+    """`--axes` is gone, so the name a caller is likeliest to type wrong is an old axis's."""
+    done = run(repo, "--reviewers", "correctness")
+
+    assert done.returncode == 1
+    assert "no reviewer named correctness: there are read and tests" in done.stderr
+    assert not (review_dir(repo) / "prompts").exists()
 
 
 def test_a_flag_before_the_fixed_point_is_refused_with_the_order(repo):
     cmd = command(repo, 0, ())
-    done = subprocess.run(**{**cmd, "args": [str(REVIEW), "--light", "main~1"]}, capture_output=True, timeout=60)
+    done = subprocess.run(**{**cmd, "args": [str(REVIEW), "--effort", "main~1"]}, capture_output=True, timeout=60)
 
     assert done.returncode == 1
-    assert done.stderr.strip() == "review: --light came before the fixed point, which comes first: review <fixed-point> [flags]"
+    assert done.stderr.strip() == "review: --effort came before the fixed point, which comes first: review <fixed-point> [flags]"
 
 
 if __name__ == "__main__":

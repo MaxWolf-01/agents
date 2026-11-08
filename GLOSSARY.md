@@ -42,11 +42,11 @@ The unit of work on the tracker: one file, or one issue.
 _Avoid_: task, item, story
 
 **Parent ticket**:
-The ticket another ticket is part of. It holds the design its children are slices of, and is ruled whole, with them.
+The ticket another ticket is part of. It holds the design its children are parts of, and is ruled whole, with them.
 _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
-A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket.
+A ticket that is part of another, built and reviewed on its own, and ruled with its parent ticket.
 _Avoid_: subtask, sub-ticket, step, hinge
 
 **Ticket context**:

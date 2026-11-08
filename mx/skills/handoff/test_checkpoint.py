@@ -8,7 +8,9 @@ The seam is the script, run as Claude Code runs a command hook: the event's JSON
 state directory and the marks in the environment, and what it prints read as the hook's output.
 The oracle is the ticket [A long session hears where its context stands](../../../agent/tickets/context-checkpoints.md):
 a session crossing a mark is told once per mark, by the mechanism and not by a rule it remembers;
-a dispatched worker, a print-mode session and a subagent are told nothing; after /clear a fresh
+a print-mode session and a subagent are told nothing; a dispatched worker is told once, at its own
+mark, which its contract acts on (`agent/tickets/tickets-cut-by-independent-context.md`: a long
+build hands off at 400k tokens instead of compacting); after /clear a fresh
 session in a project whose agent repo holds a continuation the cleared session wrote is handed the
 handoff skill's pickup line, and one with no such handoff is handed nothing.
 """
@@ -24,6 +26,7 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent / "checkpoint.py"
 SKILL = Path(__file__).resolve().parent / "SKILL.md"
 HOOKS = Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
+WORKER_CONTRACT = Path(__file__).resolve().parents[1] / "dispatch" / "worker-prompt.md"
 
 
 def turn(kind: str, **usage: int) -> str:
@@ -35,7 +38,7 @@ def turn(kind: str, **usage: int) -> str:
 
 
 def hook(tmp_path: Path, mode: str, event: dict, *args: str, **env: str) -> subprocess.CompletedProcess:
-    clean = {k: v for k, v in os.environ.items() if k not in ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED", "MX_CONTEXT_CHECKPOINTS")}
+    clean = {k: v for k, v in os.environ.items() if k not in ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED", "MX_CONTEXT_CHECKPOINTS", "MX_WORKER_CHECKPOINT")}
     return subprocess.run([str(SCRIPT), mode, *args], input=json.dumps(event), capture_output=True, text=True, timeout=60,
                           env={**clean, "XDG_STATE_HOME": str(tmp_path / "state"), **env})
 
@@ -133,15 +136,41 @@ def test_an_assistant_line_cut_by_a_read_block_boundary_is_read_whole(tmp_path: 
     assert "stands at 550k" in context(hook(tmp_path, "checkpoint", event(transcript)))
 
 
-def test_a_worker_a_print_mode_session_and_a_subagent_hear_nothing(tmp_path: Path) -> None:
+def test_a_print_mode_session_and_a_subagent_hear_nothing(tmp_path: Path) -> None:
     transcript = tmp_path / "s1.jsonl"
     transcript.write_text(turn("assistant", cache_read_input_tokens=650_000))
-    assert context(hook(tmp_path, "checkpoint", event(transcript), DISPATCH_WORKLOG=str(tmp_path / "log"))) == ""
     assert context(hook(tmp_path, "checkpoint", event(transcript), CLAUDE_CODE_SESSION_ATTENDED="0")) == ""
     assert context(hook(tmp_path, "checkpoint", {**event(transcript), "agent_id": "a1", "agent_type": "Explore"})) == ""
     assert not (tmp_path / "state" / "mx" / "checkpoints").exists(), "nothing was recorded for a session that was not told"
-    assert [l["why"] for l in logged(tmp_path)] == ["dispatched worker", "unattended session", "subagent"]
+    assert [l["why"] for l in logged(tmp_path)] == ["unattended session", "subagent"]
     assert "past the second" in context(hook(tmp_path, "checkpoint", event(transcript))), "the session's own thread still hears it"
+
+
+def test_a_worker_is_told_once_at_its_own_mark_and_pointed_at_its_contract(tmp_path: Path) -> None:
+    """A worker runs in print mode, so the worklog its runner sets is what tells it from an
+    unattended session; its one mark is lower than a session's first."""
+    worker = {"DISPATCH_WORKLOG": str(tmp_path / "log"), "CLAUDE_CODE_SESSION_ATTENDED": "0"}
+    transcript = tmp_path / "s1.jsonl"
+    transcript.write_text(turn("assistant", cache_read_input_tokens=399_000))
+    assert context(hook(tmp_path, "checkpoint", event(transcript), **worker)) == ""
+
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=401_000))
+    note = context(hook(tmp_path, "checkpoint", event(transcript), **worker))
+    assert note.startswith("Context checkpoint: this worker's context stands at 401k tokens, past its mark (400k)."), note
+    pointed = note.split("under ")[-1].strip('".')
+    assert f"**{pointed}**" in WORKER_CONTRACT.read_text(), f"the note points at {pointed!r}, which the contract does not name"
+
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=650_000))
+    assert context(hook(tmp_path, "checkpoint", event(transcript), **worker)) == "", "a worker has one mark, said once"
+
+
+def test_a_workers_mark_comes_from_the_environment_so_a_demo_can_cross_one(tmp_path: Path) -> None:
+    worker = {"DISPATCH_WORKLOG": str(tmp_path / "log"), "MX_WORKER_CHECKPOINT": "20000"}
+    transcript = tmp_path / "s1.jsonl"
+    transcript.write_text(turn("assistant", cache_read_input_tokens=19_000))
+    assert context(hook(tmp_path, "checkpoint", event(transcript), **worker)) == ""
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=25_000))
+    assert "past its mark (20k)" in context(hook(tmp_path, "checkpoint", event(transcript), **worker))
 
 
 def test_a_transcript_with_no_assistant_message_or_none_at_all_says_nothing(tmp_path: Path) -> None:

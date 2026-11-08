@@ -3,8 +3,9 @@
 # status line.
 # Usage: run-worker.sh <message-file> <slug> <model> <run> [session-id]
 #   message-file  the ticket message, or resume guidance; sent on the first attempt only
-#   slug          the ticket this worker holds: its report is agent/show/<slug>/report.md,
-#                 committed in the agent repo this pane's worktree holds at `agent`
+#   slug          the ticket this worker holds: its report is agent/show/<slug>/report.md, and
+#                 a handoff it writes instead agent/show/<slug>/handoff.md, committed in the
+#                 agent repo this pane's worktree holds at `agent`
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) and INT (a Ctrl-C in the pane) end the run: the status line then
@@ -23,9 +24,10 @@
 #                             this script); its own default unless set
 # A replacement runner (DISPATCH_RUNNER, staged as runner-<slug>) owes dispatch-ctl the same: these
 # arguments and that environment; worker-prompt.md from its directory in the worker's system
-# prompt, where a worker's whole contract lives; no retry once the worker has committed its report;
-# <run>.log created beside itself within seconds of starting; and, as its last act, <run>.status
-# there, one key=value line with `session=` and `report=`, written on TERM too, with exit=stopped.
+# prompt, where a worker's whole contract lives; no retry once the worker has committed its report
+# or a handoff; <run>.log created beside itself within seconds of starting; and, as its last act,
+# <run>.status there, one key=value line with `session=`, `report=` and `handoff=`, written on TERM
+# too, with exit=stopped.
 set -u
 
 message=$1
@@ -41,14 +43,14 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
 if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 # Every attempt runs through it, so a run nobody logged cannot happen quietly.
 model_runs=$here/model-runs
 if [ ! -f "$model_runs" ]; then
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "no model-runs beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -56,7 +58,7 @@ fi
 # it none of the skills its contract names exist.
 plugin=${DISPATCH_PLUGIN_DIR:-}
 if [ -z "$plugin" ]; then
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "DISPATCH_PLUGIN_DIR unset, so no mx plugin to give the worker" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -65,7 +67,7 @@ fi
 rules=$plugin/skills/session-page/RULES.md
 asking_rule=$(awk '/^## What the user decides$/ { on = 1; print; next } on && /^#{1,2} / { exit } on' "$rules" 2> /dev/null)
 if [ -z "$asking_rule" ]; then
-    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
         "no '## What the user decides' section in $rules; is this host's mx older than the dispatcher's?" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -95,6 +97,11 @@ export MX_RUN=$run_id
 # the worker writes anything then reads as the unfinished run it is.
 was_reported=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)
 reported() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)" != "$was_reported" ]; }
+# A worker past its context mark commits a handoff instead of a report and stops: finished for this
+# round as much as a reported one, and for the orchestrator to resume or hand to a fresh worker.
+# This round's, as with the report: a worker that took over from a handoff starts with it there.
+was_handed_off=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/handoff.md" 2> /dev/null)
+handed_off() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/handoff.md" 2> /dev/null)" != "$was_handed_off" ]; }
 # The models this round's turns of the session transcript answered in, comma-separated: <model> is
 # an alias the host's claude resolves, so what ran is read off the run, not the command line. `-`
 # is a round no model answered, `?` one whose transcript or `jq` is missing. This round's, as with
@@ -197,6 +204,7 @@ for attempt in $(seq 1 $max_attempts); do
     [ -n "$stopped" ] && break
     # The report is the worker's finished signal, so a crash after it is a crash with the work done.
     reported && break
+    handed_off && break
     [ "$rc" -eq 0 ] && [ -z "$has_agent_repo" ] && break
     if [ "$rc" -eq 0 ] && [ -n "$early_stopped" ]; then
         printf '%s runner: attempt %s exited 0 with no report again, taken as the worker'"'"'s own stop\n' \
@@ -221,5 +229,6 @@ done
 [ -n "$stopped" ] && rc=stopped
 # Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
 # a report to import.
-printf 'attempts=%s exit=%s report=%s session=%s models=%s\n' \
-    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" "$(models)" > "$here/$run_id.status"
+printf 'attempts=%s exit=%s report=%s handoff=%s session=%s models=%s\n' \
+    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$(handed_off && echo yes || echo no)" "$session" "$(models)" \
+    > "$here/$run_id.status"
