@@ -221,6 +221,10 @@ with sync_playwright() as pw:
             page.keyboard.press("c")
             page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
             out["hovered"][target] = [seen_hint, page.evaluate("navigator.clipboard.readText()")]
+        page.hover(args["in_page"])
+        out["hint_in_page"] = hint()
+        page.keyboard.press("c")
+        out["toast_in_page"] = page.text_content("#toast")
         page.mouse.move(5, 5)
         out["hint_away"] = hint()
         page.keyboard.press("c")
@@ -788,14 +792,15 @@ def test_a_turn_copies_as_its_markdown_by_its_button_and_by_y(rendered: tuple[Pa
 def test_c_copies_the_link_or_code_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
     """Every link and code span shows the key that copies it while the pointer is on it, and c copies
     it: a path written as code as the turn shows it, `:line` and all; other code, inline or a fenced
-    block, as its text short of the newline that ends it; a URL as it is; a link to a file on this
-    machine as that file's path. With the pointer elsewhere c copies nothing and says so, and a link
-    Tab focused takes the key without the pointer."""
+    block, as its text short of the newline that ends it; a URL as it is, the pointer on code inside
+    its link too; a link to a file on this machine as that file's path. A link to a place on the page,
+    or the pointer elsewhere, copies nothing and says so, and a link Tab focused takes the key
+    without the pointer."""
     page, root = rendered
     record = page.parent / "turns" / "04.md"
     url = "https://example.org/a?b=1"
     block = "make test BASE=master\nmake check"
-    details = (f"See `{ARTEFACTS[0]}:3`, run `make test-all`, read {url} and [the plan]({ARTEFACTS[1]}).\n\n"
+    details = (f"See `{ARTEFACTS[0]}:3`, run `make test-all`, read {url}, [`T-12`]({url}12), [the plan]({ARTEFACTS[1]}) and [turn 03](#t03).\n\n"
                f"```sh\n{block}\n```\n\n")
     record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\n{details}", 1))
     page.write_text(render_session(page.parent, transcript))
@@ -803,11 +808,13 @@ def test_c_copies_the_link_or_code_under_the_pointer(rendered: tuple[Path, Path]
         "#t04 a.path": f"{ARTEFACTS[0]}:3",
         '#t04 code:text-is("make test-all")': "make test-all",
         f'#t04 a:text-is("{url}")': url,
+        '#t04 a code:text-is("T-12")': f"{url}12",
         '#t04 a:text-is("the plan")': str(root / ARTEFACTS[1]),
         "#t04 .code pre": block,
     }
-    seen = probe(page, "copy-under-pointer", targets=list(expected))
+    seen = probe(page, "copy-under-pointer", targets=list(expected), in_page='#t04 a:text-is("turn 03")')
     assert seen["hovered"] == {target: ["c copy", text] for target, text in expected.items()}
+    assert seen["hint_in_page"] is None and seen["toast_in_page"] == "no link or code under the pointer"
     assert seen["hint_away"] is None, "the hint stayed after the pointer left"
     assert seen["toast"] == "no link or code under the pointer"
     assert seen["copied_focused"] == f"{ARTEFACTS[0]}:3"

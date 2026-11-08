@@ -583,8 +583,8 @@ document.addEventListener("click", (e) => {
 // c copies the link or code under the pointer, or the link Tab focused: a path written as code as the turn
 // shows it, `:line` and all, since a click opens the file and the browser's own copy gives its file:// URL;
 // any other link its target, a file on this machine as its path; code its text, short of the newline that
-// ends a block. A link to a place on the page copies nothing. A link wins over code inside it, so a
-// ticket's tag copies the same wherever the pointer sits on it.
+// ends a block. A link to a place on the page copies nothing of its own, only code inside it. A link out wins
+// over code inside it, so a ticket's tag copies the same wherever the pointer sits on it.
 const LINK = "a.path, a[href]:not([href^='#'])"
 const copyable = (el) => el && el.closest ? el.closest(LINK) || el.closest("pre, code") : null
 const copyText = (el) => {
