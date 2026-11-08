@@ -307,7 +307,7 @@ with sync_playwright() as pw:
         # the size each turn's prompts show on their folded line, as far as the reader sees it
         context, page = open_page(args["width"], 800)
         out["sizes"] = page.evaluate('''[...document.querySelectorAll(".said > summary .count .size")]
-            .filter((el) => el.checkVisibility()).map((el) => el.textContent)''')
+            .filter((el) => el.checkVisibility()).map((el) => [el.querySelector("use").getAttribute("href"), el.textContent])''')
     elif scenario == "layout":
         # P3, P7, P8 at one width: the panes, the control at both ends of the turns, the band's rows
         width = args["width"]
@@ -880,7 +880,7 @@ def test_a_prompt_shows_its_size_at_a_wide_window_and_in_the_hub_sidebar(rendere
     """session-page-keys-and-sizes: each prompt shows its size, in a wide window and at the hub sidebar's width."""
     page, _ = rendered
     sizes = probe(page, "prompt_size", width=width)["sizes"]
-    assert sizes and all(re.fullmatch(r"\d+(\.\d[kM])?", s) for s in sizes), sizes
+    assert sizes and all(glyph == "#g-in" and re.fullmatch(r"\d+(\.\d[kM])?", s) for glyph, s in sizes), sizes
 
 
 @pytest.mark.parametrize("width", WIDTHS)

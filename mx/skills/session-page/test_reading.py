@@ -621,6 +621,14 @@ def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(wor
     assert amounts(head) == [("in", str(before.consumed_tokens + 321)), ("out", str(before.produced_tokens + 9))]
     spent = re.search(r'<span class="spent".*?</span></span>', head, re.S).group(0)
     assert text_of(spent).split() == [str(before.consumed_tokens + 321), str(before.produced_tokens + 9)], "no word or separator beside the counts"
+    assert f"consumed {before.consumed_tokens + 321:,} tokens, {before.consumed_bytes + 17:,} bytes" in html.unescape(spent), "the detail, on hover"
+    assert f"produced {before.produced_tokens + 9:,} tokens, {before.produced_bytes + 22:,} bytes" in html.unescape(spent), "the detail, on hover"
+    plain = render_session(worked_example, transcript, now=NOW)
+    turn_04 = re.search(r'<details class="turn[^"]*" id="t04".*?</details>', plain, re.S).group(0)
+    counted = re.findall(r'<span data-tip="(\d+ messages)">(.*?</span>)</span>', turn_04)
+    n = len(SAMPLE["04"])
+    assert [(tip, amounts(shown)) for tip, shown in counted] == [(f"{n} messages", [("messages", str(n))])], \
+        "turn 04's prompts, counted behind the glyph that says what is counted"
     sizes = [(html.unescape(tip), amounts(shown)) for tip, shown in re.findall(r'<span class="v-meta size" data-tip="([^"]*)">(.*?</span>)</span>', page)]
     assert ("15 bytes, ≈4 tokens", [("in", "4")]) in sizes, "13 characters, two of them two bytes each"
 

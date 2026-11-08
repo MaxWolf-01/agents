@@ -554,6 +554,7 @@ document.addEventListener("pointermove", (e) => {
   if (!el) return
   tipFor = el
   tipTimer = setTimeout(() => {
+    if (!el.isConnected) return  // the log drew its steps again under the pointer
     tipBox.textContent = el.dataset.tip
     const r = el.getBoundingClientRect(), w = tipBox.offsetWidth
     tipBox.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`
