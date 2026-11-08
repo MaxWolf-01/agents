@@ -440,6 +440,22 @@ with sync_playwright() as pw:
                 out["saved"] = page.evaluate("window.saved.at(-1)")
                 out["after"] = inner.evaluate(SHOWN)
                 out["reviewing_after"] = inner.evaluate("window.waitingReviewing()")
+            if args.get("elsewhere"):
+                # what the hub tab does when another browser changes the staging: the kept doc moves, and the page is told
+                told = lambda doc: (page.evaluate("(d) => { window.kept = d; window.restaged = false }", doc),
+                                    inner.evaluate("window.waitingChanged()"), page.wait_for_function("window.restaged", timeout=10000))
+                told(args["elsewhere"])
+                out["told"] = inner.evaluate(SHOWN)
+                inner.focus("#open-questions .card:not([hidden])")
+                page.keyboard.press("n")
+                page.keyboard.type("mine")
+                told(args["while_noting"])
+                out["noting"] = inner.evaluate("document.querySelector('.note-in').value")
+                page.keyboard.press("Enter")
+                out["noted"] = inner.evaluate(SHOWN)
+                out["saved"] = page.evaluate("window.saved.at(-1)")
+                told(args["emptied"])
+                out["emptied"] = inner.evaluate(SHOWN)
         finally:
             server.shutdown()
     elif scenario == "tables":
@@ -593,11 +609,11 @@ def hub_tab(page: Path, kept: dict) -> str:
     under way would be, and hands the page back the lines it sent, the box's own words after them."""
     tab = page.parent / "tab.html"
     tab.write_text("""<!doctype html><meta charset="utf-8"><script>
-window.saved = []; window.sent = null; window.words = "and go";
+window.saved = []; window.sent = null; window.words = "and go"; window.kept = KEPT;
 window.hubWaiting = {
   holds: () => true,
   restaged: () => { window.restaged = true },
-  load: async () => ({ ok: true, staged: KEPT }),
+  load: async () => ({ ok: true, staged: window.kept }),
   save: async (w, doc) => { window.saved.push(doc); return { ok: true } },
   words: () => window.words,
   send: async (w) => {
@@ -1095,6 +1111,19 @@ def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_se
     after = seen["after"]
     assert (after["tally"], after["ticks"], after["card"], after["where"]) == (" · 1 staged · 1 sent", 3, "A1", "1 of 3 · do"), after
     assert after["inBand"] and after["scroll"] == 0, after
+
+
+def test_a_change_staged_in_another_browser_shows_without_a_reload_and_leaves_a_note_being_typed(waiting_page: Path) -> None:
+    """Told that another browser changed the staging, the page shows what the hub now holds. A note being typed stays as
+    typed, the other browser's pick on that item taken beside it; and a staging the hub dropped empties the cards."""
+    doc = lambda staged: {"staged": staged, "seen": [], "sent": {}}
+    seen = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=hub_tab(waiting_page, doc({})),
+                 elsewhere=doc({"Q1": {"pick": "b"}}), while_noting=doc({"Q1": {"pick": "a", "note": "theirs"}}), emptied=None)
+    assert seen["loaded"]["tally"] == "", seen["loaded"]
+    assert (seen["told"]["card"], seen["told"]["staged"], seen["told"]["tally"]) == ("Q1", "staged: b · Wait for the first review", " · 1 staged"), seen["told"]
+    assert seen["noting"] == "mine", seen
+    assert seen["saved"]["staged"] == {"Q1": {"pick": "a", "note": "mine"}}, seen["saved"]
+    assert (seen["emptied"]["staged"], seen["emptied"]["tally"]) == ("", ""), seen["emptied"]
 
 
 def test_a_sent_item_comes_back_once_a_turn_ended_after_its_send(waiting_page: Path) -> None:
