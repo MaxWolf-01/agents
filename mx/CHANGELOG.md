@@ -1,3 +1,8 @@
+## 1.0.114
+
+- feat(house-style): the UI principles from max's steering, for anything drawn for him
+  Sixteen principles mined from weeks of max's steering on dashboards, boards and hubs now live in /mx:house-style and /mx:show: habits that hold for anything drawn, rules for apps in PARTS.md (controls behave like controls, nothing moves unless the user moved it, direct controls, answer at once, keyboard first with keys shown on demand), icons for actions with styled tooltips, an "on" switch filled, labels in sentence case, and a page that opens on what it is for. The agent drives what it built the way max would before showing it, and a UI change is shown running or deployed. render-lint gains a `--narrow` flag for a narrow and a 150% zoom render, off by default because it costs more than a couple of seconds.
+
 ## 1.0.113
 
 - feat(workflow): tickets cut by independent context, workers hand off at 400k, review is two reviewers
