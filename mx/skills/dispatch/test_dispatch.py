@@ -402,7 +402,13 @@ def run_worker(state: Path, *args: str, claude: str = "", run_id: str = "run-1",
     install and DISPATCH_EFFORT unset, unless `env` says otherwise; a None in it unsets the variable."""
     tmp_path = state.parent
     bin_dir = tmp_path / "bin"
-    (bin_dir / "claude").write_text(claude or FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude-stub").write_text(claude or FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude-stub").chmod(0o755)
+    # A model run that exits 0 has ended its turn, which a real claude reports as a result event;
+    # without one, model-runs takes the run for one that never answered.
+    (bin_dir / "claude").write_text(
+        f'#!/bin/sh\n"{bin_dir / "claude-stub"}" "$@" || exit $?\n'
+        'case " $* " in *" -p "*) echo \'{"type": "result", "subtype": "success"}\' ;; esac\n')
     (bin_dir / "claude").chmod(0o755)
     environ = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
     environ.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
