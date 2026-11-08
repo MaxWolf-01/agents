@@ -3048,7 +3048,7 @@ def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) ->
     assert "replacement: built warm-preset" in log.read_text()
     record = (state / "manifest").read_text().split("\t")
     assert record[0] == "dispatch-lamp-warm-preset", record
-    assert record[-1].strip() == f"{state}/runner-warm-preset", record
+    assert record[3] == f"{state}/runner-warm-preset", record
 
 
 @pytest.mark.full_path

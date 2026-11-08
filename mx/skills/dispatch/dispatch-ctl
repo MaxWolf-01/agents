@@ -9,29 +9,27 @@
 #                 cuts the ticket's missing branches and worktrees, sets a new
 #                 worktree up, updates claude, and starts the worker in the
 #                 tmux session dispatch-<repo>-<slug> on `dispatch prompt`'s
-#                 message. --effort overrides DISPATCH_EFFORT;
-#                 --cpu-weight, 100 to 10000, weighs the worker among its
-#                 user's workers. A --repo sits at <place> inside the worktree,
-#                 or beside it as <name>-<slug> when <place> is empty. Exit 1:
-#                 no mx plugin here, the setup failed (its tail printed), the
-#                 run is still running, or a listed repo this spawn drops
-#                 carries work; 3: every slot held (`host-slots`).
+#                 message. --cpu-weight, 100 to 10000, weighs the worker
+#                 among its user's workers. A --repo sits at <place> inside
+#                 the worktree, or beside it as <name>-<slug> when <place> is
+#                 empty. Exit 1: no mx plugin here, the setup failed (its tail
+#                 printed), the run still runs, or a listed repo this spawn
+#                 drops carries work; 3: every slot held (`host-slots`).
 # wait <slug> [--stall SECS] [--deadline SECS]
 #                 prints the run's probe line once it ends. Exit 0 exited, 1
 #                 gone, 2 worklog silent for --stall, 5 --deadline passed; the
 #                 worker runs on.
 # stop <slug>     ends the run, resumably: worktrees and branches stay.
 # resume <slug> <model> [--effort <level>] [--cpu-weight <n>]
-#                 the run's conversation on `dispatch prompt`'s guidance,
-#                 at its last round's effort unless given one;
-#                 options and exit 3 as at a spawn. Exit 1: still running,
-#                 or gone with no session id.
+#                 the run's conversation on `dispatch prompt`'s guidance, by
+#                 default at its last round's effort; options and exit 3 as at
+#                 a spawn. Exit 1: still running, or gone with no session id.
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the runner's status line, or `gone`: the
 #                 runner died without one (a killed pane, a reboot).
 #                 report=yes|handoff=yes: this round committed its report|handoff.
 # log <slug> [lines]
-#                 the status line and the worklog's last lines, 20 by default.
+#                 the status line and the worklog's last lines, default 20.
 # cleanup <slug> [--force]
 #                 kills the pane and the worker's `job`s, removes the ticket's
 #                 worktrees and branches, forgets the run. Exit 1, nothing
@@ -43,8 +41,7 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto;
 #                             bypassPermissions where ~/HOST.md is isolated)
-#   DISPATCH_EFFORT           the worker's effort (default medium, or at a
-#                             resume its last round's)
+#   DISPATCH_EFFORT           the worker's effort (default medium)
 #   DISPATCH_PLUGIN_DIR       the mx install a worker loads, else the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
