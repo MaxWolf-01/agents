@@ -601,7 +601,7 @@ def reply(at: str, id: str, block: dict, input: int, cached: int, output: int) -
 def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
     """session-page-keys-and-sizes: a turn shows the tokens and bytes it consumed and produced; a reply's tokens count
     once, as its last block's entry has them, however many entries its blocks take; the model consumes a prompt and a
-    tool's result, and produces its thinking, its text and a tool's request. A prompt shows its tokens, its bytes on
+    tool's result, and produces its thinking, its text and a tool's request. A prompt shows its bytes, its tokens on
     hover. session-page-sizes-drawn-cleanly: each count follows a glyph that says what it counts, words and separators
     gone."""
     worked = with_work(
@@ -630,7 +630,7 @@ def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(wor
     assert [(tip, amounts(shown)) for tip, shown in counted] == [(f"{n} messages", [("messages", str(n))])], \
         "turn 04's prompts, counted behind the glyph that says what is counted"
     sizes = [(html.unescape(tip), amounts(shown)) for tip, shown in re.findall(r'<span class="v-meta size" data-tip="([^"]*)">(.*?</span>)</span>', page)]
-    assert ("15 bytes, ≈4 tokens", [("in", "4")]) in sizes, "13 characters, two of them two bytes each"
+    assert ("15 bytes, ≈4 tokens", [("in", "15 B")]) in sizes, "13 characters, two of them two bytes each"
 
 
 def amounts(html_text: str) -> list[tuple[str, str]]:

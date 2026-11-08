@@ -60,6 +60,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 @keyframes copied-tip { 0% { opacity: 0; margin-top: 0; } 15%, 70% { opacity: 1; margin-top: -0.4rem; } 100% { opacity: 0; margin-top: -0.7rem; } }
 /* under the path the pointer or the focus is on, the key that copies it */
 .key-hint { position: fixed; z-index: 15; padding: 0.1rem 0.4rem; border: 1px solid var(--edge); border-radius: 4px; background: var(--ground); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); white-space: nowrap; pointer-events: none; }
+.key-hint kbd { font-size: 0.66rem; }
 /* a size's detail, under it after half a second of hover (page.js), over the tool-call log */
 .tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(26rem, calc(100vw - 1rem)); box-sizing: border-box; padding: 0.4rem 0.65rem;
   border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground); color: var(--body);
@@ -68,7 +69,6 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 /* a count after the glyph that says what it counts: what the model consumed or produced, a prompt's messages */
 .amount { display: inline-flex; align-items: center; gap: 0.2em; white-space: nowrap; }
 .glyph { width: 1.05em; height: 1.05em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.key-hint kbd { font-size: 0.66rem; }
 /* a control's key over it, while Ctrl+Alt is held (page.js) */
 .key-over { position: fixed; z-index: 60; translate: -50% -50%; padding: 0.05rem 0.35rem; border: 1px solid var(--accent); border-radius: 4px;
   background: var(--ground); color: var(--accent); font: 500 0.72rem/1.4 var(--font-mono); white-space: nowrap; pointer-events: none; }

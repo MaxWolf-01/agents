@@ -1784,6 +1784,11 @@ def amount(glyph: str, count: str) -> str:
     return f'<span class="amount"><svg class="glyph" aria-hidden="true"><use href="#g-{glyph}"/></svg>{count}</span>'
 
 
+def size(n: int) -> str:
+    """A count of bytes, in decimal units, as log.js's `size` writes it."""
+    return f"{n} B" if n < 1000 else f"{n / 1000:.1f} kB" if n < 999_950 else f"{n / 1e6:.1f} MB"
+
+
 def tokens(n: int) -> str:
     """A count of tokens, short."""
     return f"{n}" if n < 1000 else f"{n / 1000:.1f}k" if n < 999_950 else f"{n / 1e6:.1f}M"
@@ -1792,12 +1797,7 @@ def tokens(n: int) -> str:
 def about_tokens(text: str) -> str:
     """The tokens a text comes to, estimated at four characters each, as log.js's `about` estimates them: the API counts
     a text's tokens only as part of a request."""
-    return f"≈{guess_tokens(text):,} tokens"
-
-
-def guess_tokens(text: str) -> int:
-    """Four characters to a token, rounded up, as log.js's `guess` counts them."""
-    return -(-len(text) // 4)
+    return f"≈{-(-len(text) // 4):,} tokens"
 
 
 def ended(r: Row) -> str:
@@ -1837,10 +1837,10 @@ def peer(s: Sent) -> str:
 
 
 def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> str:
-    """Messages behind one click, each whole, its paragraphs and line breaks kept, and its size in tokens, its bytes on
+    """Messages behind one click, each whole, its paragraphs and line breaks kept, and its size in bytes, its tokens on
     hover."""
     weigh = lambda text: (f'<span class="v-meta size" data-tip="{len(text.encode()):,} bytes, {about_tokens(text)}">'
-                          f'{amount("in", tokens(guess_tokens(text)))}</span>')
+                          f'{amount("in", size(len(text.encode())))}</span>')
     parts = "".join(
         '<div class="msg">' + (weigh(m) if len(messages) > 1 else "") + "".join(f"<p>{esc(p.strip()).replace(chr(10), '<br>')}</p>"
                                       for p in re.split(r"\n[ \t]*\n+", m) if p.strip()) + "</div>"
