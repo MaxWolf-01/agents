@@ -94,12 +94,12 @@ def scratch(root: Path, repo: str, base: str) -> Path:
 
 
 def spawned(d: Path, slug: str, *, at: int | None = None) -> str:
-    """A run in the manifest, as `dispatch-ctl spawn` leaves it: name, run id, worktree, runner."""
+    """A run in the manifest, as `dispatch-ctl spawn` leaves it: name, run id, worktree, runner, effort."""
     repo = (d / "config").read_text().split("repo=")[1].split("\n")[0]
     name = f"dispatch-{repo}-{slug}"
     run = f"{name}-{at or int(time.time())}"
     with (d / "manifest").open("a") as f:
-        f.write(f"{name}\t{run}\t/nowhere/{repo}-{slug}\t{d / 'run-worker.sh'}\n")
+        f.write(f"{name}\t{run}\t/nowhere/{repo}-{slug}\t{d / 'run-worker.sh'}\tmedium\n")
     return run
 
 

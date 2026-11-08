@@ -21,9 +21,9 @@
 #                 worker runs on.
 # stop <slug>     ends the run, resumably: worktrees and branches stay.
 # resume <slug> <model> [--effort <level>] [--cpu-weight <n>]
-#                 the run's conversation on `dispatch prompt`'s guidance, by
-#                 default at its last round's effort; options and exit 3 as at
-#                 a spawn. Exit 1: still running, or gone with no session id.
+#                 the run's conversation on `dispatch prompt`'s guidance;
+#                 options and exit 3 as at a spawn. Exit 1: still running,
+#                 or gone with no session id.
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the runner's status line, or `gone`: the
 #                 runner died without one (a killed pane, a reboot).
@@ -41,7 +41,8 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto;
 #                             bypassPermissions where ~/HOST.md is isolated)
-#   DISPATCH_EFFORT           the worker's effort (default medium)
+#   DISPATCH_EFFORT           the worker's effort (default medium; at a
+#                             resume, its last round's)
 #   DISPATCH_PLUGIN_DIR       the mx install a worker loads, else the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
