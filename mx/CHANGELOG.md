@@ -1,3 +1,10 @@
+## 1.0.113
+
+- feat(workflow): tickets cut by independent context, workers hand off at 400k, review is two reviewers
+  Large work now stays with one worker unless a part is independent of the rest, because each split loses context and needs coordinating. A worker whose context passes 400k tokens commits a handoff and stops, and the orchestrator resumes it or starts a fresh worker from the handoff. Code review drops its four separate reviewers and light mode for two reviewers: one reads the diff for correctness, spec and standards, and one mutates code and runs the tests. Scripts using the old review options switch to `--reviewers` or `--effort`.
+- fix(model-runs): a run with no result says why and never passes for an answer
+  The wrapper that runs Claude and logs each call now exits 1 when Claude exits 0 without reporting a result. Before, plain text such as "Not logged in" came back as a successful answer. Log entries for runs with no result keep the last 2 KB of Claude's stdout and stderr; callers see Claude's stderr only once it has ended.
+
 ## 1.0.112
 
 - dispatch and tracker accept rounds merged through team PRs, reset rounds, re-cut parents and no-code tickets
