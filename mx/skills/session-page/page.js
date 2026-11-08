@@ -539,6 +539,31 @@ const byNumber = (e) => {
   return true
 }
 
+// ---- tooltips
+
+// An element's `data-tip` shows below it after half a second of hover, centred on it and kept inside the window: an
+// overlay fixed to the window, so a pane that clips its overflow cannot cut it off.
+const tipBox = Object.assign(document.createElement("div"), { className: "tip", role: "tooltip" })
+document.body.append(tipBox)
+let tipFor = null, tipTimer = null
+const hideTip = () => { clearTimeout(tipTimer); tipFor = null; tipBox.classList.remove("on") }
+document.addEventListener("pointermove", (e) => {
+  const el = e.target.closest && e.target.closest("[data-tip]")
+  if (el === tipFor) return
+  hideTip()
+  if (!el) return
+  tipFor = el
+  tipTimer = setTimeout(() => {
+    tipBox.textContent = el.dataset.tip
+    const r = el.getBoundingClientRect(), w = tipBox.offsetWidth
+    tipBox.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`
+    tipBox.style.top = `${r.bottom + 6}px`
+    tipBox.classList.add("on")
+  }, 500)
+})
+document.addEventListener("pointerout", (e) => { if (!e.relatedTarget) hideTip() })
+document.addEventListener("scroll", hideTip, true)
+
 // ---- copying
 
 // "copied" rises over the element a click copied, and fades

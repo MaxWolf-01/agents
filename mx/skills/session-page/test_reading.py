@@ -601,8 +601,9 @@ def reply(at: str, id: str, block: dict, input: int, cached: int, output: int) -
 def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
     """session-page-keys-and-sizes: a turn shows the tokens and bytes it consumed and produced; a reply's tokens count
     once, as its last block's entry has them, however many entries its blocks take; the model consumes a prompt and a
-    tool's result, and produces its thinking, its text and a tool's request. A prompt shows its bytes, its tokens on
-    hover."""
+    tool's result, and produces its thinking, its text and a tool's request. A prompt shows its tokens, its bytes on
+    hover. session-page-sizes-drawn-cleanly: each count follows a glyph that says what it counts, words and separators
+    gone."""
     worked = with_work(
         transcript, tmp_path / "t.jsonl",
         json.dumps({"type": "user", "timestamp": "2026-09-22T22:04:00Z", "message": {"role": "user", "content": "Größer, bitte"}}),
@@ -617,9 +618,16 @@ def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(wor
             after.consumed_bytes - before.consumed_bytes, after.produced_bytes - before.produced_bytes) == (321, 9, 17, 22)
     page = render_session(worked_example, worked, now=NOW)
     head = re.search(r'<details class="turn[^"]*" id="t03".*?</summary>', page, re.S).group(0)
-    assert f"in {before.consumed_tokens + 321} tok" in text_of(head)
-    sizes = [(html.unescape(title), text_of(shown)) for title, shown in re.findall(r'<span class="v-meta size" title="([^"]*)">(.*?)</span>', page)]
-    assert ("≈4 tokens", "15 B") in sizes, "13 characters, two of them two bytes each"
+    assert amounts(head) == [("in", str(before.consumed_tokens + 321)), ("out", str(before.produced_tokens + 9))]
+    spent = re.search(r'<span class="spent".*?</span></span>', head, re.S).group(0)
+    assert text_of(spent).split() == [str(before.consumed_tokens + 321), str(before.produced_tokens + 9)], "no word or separator beside the counts"
+    sizes = [(html.unescape(tip), amounts(shown)) for tip, shown in re.findall(r'<span class="v-meta size" data-tip="([^"]*)">(.*?</span>)</span>', page)]
+    assert ("15 bytes, ≈4 tokens", [("in", "4")]) in sizes, "13 characters, two of them two bytes each"
+
+
+def amounts(html_text: str) -> list[tuple[str, str]]:
+    """Each count in a piece of the page, after the glyph that says what it counts."""
+    return re.findall(r'<use href="#g-(\w+)"/></svg>([^<]*)</span>', html_text)
 
 
 def test_work_after_a_message_no_record_answers_yet_is_on_no_turn(worked_example: Path, transcript: Path, tmp_path: Path) -> None:

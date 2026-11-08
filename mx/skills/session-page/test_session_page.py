@@ -122,7 +122,7 @@ def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path
     page = render_session(worked_example, transcript, now=NOW)
     ids = re.findall(r'\bid="([^"]+)"', page)
     assert [i for i in set(ids) if ids.count(i) > 1] == []
-    assert sorted({target for target in re.findall(r'href="#([^"]+)"', page)} - set(ids)) == []
+    assert sorted({target for target in re.findall(r'href="#([\w-]+)"', page)} - set(ids)) == []
 
 
 @settings(deadline=None)  # an example writes a session directory and renders it twice
