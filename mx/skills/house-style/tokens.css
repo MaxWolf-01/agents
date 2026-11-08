@@ -129,7 +129,7 @@
     line-height: 1.6;
   }
 
-  /* The monospace line: dates, counts, provenance, field labels. Lowercase. */
+  /* The monospace line: dates, counts, provenance, field labels. */
   .v-meta {
     font-family: var(--font-mono);
     font-size: 0.8125rem;

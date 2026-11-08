@@ -1,14 +1,19 @@
 # Parts
 
-How each part wears the tokens; `demo.html` renders every line, and its stylesheet carries the heights and paddings, which are the project's to change.
+How each part wears the tokens; `demo.html` renders every part that has a look, and its stylesheet carries the heights and paddings, which are the project's to change.
 
 - **Page**: one column, `--page` wide, air at the sides. The header is a row with a hairline under it. A page opens with `v-title`, a `v-meta` line, and a `v-lead` in muted.
-- **Divider**: a hairline, or a lowercase `v-meta` word with the hairline running on from it.
+- **Divider**: a hairline, or a `v-meta` word with the hairline running on from it.
 - **Link**: in running text, accent with a 1px underline at 40% accent that fills on hover; in chrome (nav, back, next), muted text that turns accent on hover.
+- **Control**: anything clickable looks and behaves like a control. It answers hover, its on and off states differ at a glance, and an action is a button, never a bare click zone.
 - **Button**: quiet (hairline, body ink) is the default; solid (accent fill, ground text) for the one primary action on the page; ghost (muted text) for the rest. Hover turns the accent; radius `--radius`; disabled at 45% opacity.
-- **Pill**: a lowercase mono word in a hairline capsule, the only fully rounded shape; active is accent fill with ground text. A filter row is pills that stay visible, so three words on the page beat a dropdown that hides two.
+- **Icon**: every action carries one, from the project's one icon set ([Lucide](https://lucide.dev) where it has none), in the ink of its control. A word joins the icon only where the icon alone would be a guess; what the action does is in its tooltip.
+- **Tooltip**: an overlay just below its control, centred on it, after half a second of hover. Its content is written for the reader, not a name repeated: several lines where the meaning needs them, with the key, an icon or a small graphic where that says it faster.
+- **Keys**: every action has a key, read from the project's config where it keeps one, and moving through a list is vim-shaped (`j`/`k`). The keys show while Alt is held, each in a small mono chip beside its control, and nowhere otherwise. Enter confirms the highlighted choice and Ctrl+Enter submits; no key shadows one the page underneath already takes.
+- **Choice**: every option visible at once. Two buttons beat a mode switch, a few good presets beat a raw slider, and a door opens the thing itself rather than a menu holding it.
+- **Pill**: a mono word in a hairline capsule, the only fully rounded shape; active is accent fill with ground text. A filter row is pills that stay visible, so three words on the page beat a dropdown that hides two.
 - **Input, textarea, select**: hairline on `ground-2`, radius `--radius`, focus turns the border accent. Label and hint are `v-meta`; an error is `v-meta` in accent-2.
-- **Switch**: a hairline track and a hollow dot; checked is an accent dot on a wash track. A filled track would be the loudest thing on the page.
+- **Switch**: a hairline track and a hollow dot; checked is an accent-filled track with a ground dot, so on reads from across the page.
 - **Scheme toggle**: one icon in muted at the right end of the header row, a sun by day and a moon by night, accent on hover; no label and no switch. It sets `data-theme` on the root.
 - **Table**: a rule under the head, hairlines between rows, nothing vertical. Heads are `v-meta`; numbers `v-num`, right-aligned. A table wider than the measure leaves the column and takes the page width at full size; a head that still wraps wants fewer columns, since `v-meta` has one size and does not step down.
 - **Note**: a 2px bar on the left (edge; accent-2 for caution), `v-small` muted text, and a `v-meta` title only when the note has a name.
@@ -20,7 +25,8 @@ How each part wears the tokens; `demo.html` renders every line, and its styleshe
 - **Chart**: `dataviz` picks the form and the house paints it. Grid lines are edge, the baseline muted, the data body ink, and the one series that carries the point accent with the wash under it. Three or more series take `series-1` onward, in order, each labelled where its line ends or beside its marks, since the five are muted and by night green and purple sit close; past five, fold the rest into "other" or split the chart, and a scatter takes the first three only. A series that carries the point still takes the accent, and the others keep their slots.
 - **Two-valued data** (hit and miss, added and removed): the first value sits on `wash`, the second on accent-2 at 18%, its line number or marker in accent-2 at weight 500. Green and red stay outside the palette, for the one case where a convention outranks it, such as a diff.
 - **Diagram**: the figure skin in `/mx:show`'s `SVG-FIGURES.md`.
-- **Motion**: colour transitions at 150ms, overlays fade at 200ms, nothing else moves.
+- **Motion**: colour transitions at 150ms, overlays fade in place at 200ms, nothing else moves. Nothing shifts the layout as it appears, and a jump is instant, the place it lands on marked by a brief wash.
+- **Loading**: the page appears at once and a slow part arrives when it is ready, in a place held for it; a key acts in the page before the server confirms it.
 - **Focus**: a 2px accent outline, 3px off the element.
 
 ## Tailwind v4

@@ -6,8 +6,11 @@
 """Find text that escapes, crowds or overlaps its box in a rendered HTML page.
 
 Opens each address in a tab of its own, in one headless Chromium context at the given
-width, and measures every text element against its box. Findings are geometric, so a
-clean run means nothing sticks out or collides, not that the page looks good.
+width, and measures every text element against its box. With --narrow it then measures the
+same tab twice more: as the window at 150% zoom, which lays the page out in width/1.5 CSS
+pixels, and at 700px; a finding already made at an earlier width is not repeated at a later
+one. Findings are geometric, so a clean run means nothing sticks out or collides, not that the
+page looks good.
 
 Kinds, by severity:
 - escapes: an SVG text runs past the rect it starts in, or past the SVG itself;
@@ -50,6 +53,7 @@ finding, so a run holding both exits 2.
 Examples:
 
     render-lint figure.html
+    render-lint app.html --narrow              # also at 150% zoom and at 700px
     render-lint page.html?theme=night#row-3    # a query and a fragment go on the address
     render-lint figure.html --crops /tmp/lint  # a PNG per finding, to look at
     render-lint board.html --cache ~/.cache/mx/page-cache  # the CDN answered from disk after the first run
@@ -283,12 +287,16 @@ class Args:
     """HTML files to check. A query string and a fragment may follow the path (page.html?theme=night#row-3)."""
     width: int = 1400
     """Viewport width in CSS pixels; the page gets the height it asks for."""
+    narrow: bool = False
+    """Also measure each page at width/1.5 (the window at 150% zoom) and at 700px, in the same tab,
+    narrowest last; a width not narrower than --width is skipped."""
     pad: float = 6.0
     """Clearance in pixels an SVG text needs from its rect's edge before it counts as tight."""
     settle: float = 0.25
     """Seconds between readings of the page's geometry; three that agree mean it is at rest."""
     patience: float = 20.0
-    """Seconds a page gets to load and come to rest before it is reported unmeasurable."""
+    """Seconds a page gets to load and come to rest, and again to come to rest at each later width,
+    before it is reported unmeasurable."""
     crops: Path | None = None
     """Directory for one PNG per finding, the finding's box with a margin around it."""
     cache: Path | None = None
@@ -296,7 +304,7 @@ class Args:
     (page_cache.py says how). A copy is never refreshed, so a page linking an address whose content
     moves is measured against the day it was first fetched."""
     json: bool = False
-    """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts off what the boxes inside it left showing."""
+    """Emit findings as a JSON array. Schema: [{"file": str, "width": int, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts off what the boxes inside it left showing."""
 
 
 def main(args: Args) -> None:
@@ -331,7 +339,7 @@ def main(args: Args) -> None:
         for f in findings:
             by = f"{f['by']}px" if f["kind"] not in ("overlap", "unmeasurable") else ""
             crop = f"  {f['crop']}" if f["crop"] else ""
-            print(f"{f['file']}: {f['kind']:12} {f['where']:9} {by:>8}  {f['el']}  {f['text']!r}{crop}")
+            print(f"{f['file']} {f['width']}px: {f['kind']:12} {f['where']:9} {by:>8}  {f['el']}  {f['text']!r}{crop}")
         fatal = sum(f["kind"] not in SOFT for f in findings)
         print(f"{len(findings)} findings, {fatal} fatal", file=sys.stderr)
     if any(f["kind"] == "unmeasurable" for f in findings):
@@ -340,10 +348,11 @@ def main(args: Args) -> None:
 
 
 def measure(page: Page, spec: Path, args: Args) -> list[dict]:
-    """One address, in a tab of its own: at rest, in a window as tall as the page, at the top.
+    """One address, in a tab of its own, at each width: at rest, in a window as tall as the page, at
+    the top. A later width resizes the same tab rather than loading the page again.
 
-    The patience is the page's, not each wait's: the load, the two rests and the scroll share one
-    deadline."""
+    The patience is each width's, not each wait's: the rests and the scroll at one width share one
+    deadline, and the load shares the first width's."""
     from playwright.sync_api import TimeoutError
 
     head, mark, fragment = str(spec).partition("#")
@@ -357,29 +366,46 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
     try:
         page.goto(url, timeout=args.patience * 1000)
     except TimeoutError:
-        return [unmeasurable(f"still loading after {args.patience:g}s")]
-    still = at_rest(page, loading, args, until)
-    if still:
-        page.set_viewport_size({"width": args.width, "height": page.evaluate("document.documentElement.scrollHeight")})
+        return [unmeasurable(args.width, f"still loading after {args.patience:g}s")]
+    found: list[dict] = []
+    made: set[tuple] = set()
+    narrower = sorted({w for w in (round(args.width / 1.5), 700) if w < args.width}, reverse=True)
+    for n, width in enumerate([args.width, *(narrower if args.narrow else [])]):
+        if n:
+            # The window keeps the last width's height, so a page that is as tall here costs one rest.
+            until = time.monotonic() + args.patience
+            page.set_viewport_size({"width": width, "height": page.viewport_size["height"]})
         still = at_rest(page, loading, args, until)
-    if still:
-        # instant, because a page set to scroll smoothly would still be travelling on the next call
-        page.evaluate("scrollTo({top: 0, left: 0, behavior: 'instant'})")
-        still = at_rest(page, loading, args, until)
-    if not still:
-        return [unmeasurable(f"still {'loading' if loading else 'moving'} after {args.patience:g}s")]
-    found = page.evaluate(MEASURE, args.pad)
-    if args.crops:
-        for n, f in enumerate(found, start=1):
-            b, m = f["box"], 24
-            out = args.crops / f"{Path(path).stem}-{n:02d}-{f['kind']}.png"
-            page.screenshot(path=str(out), full_page=True, clip={"x": max(0, b["x"] - m), "y": max(0, b["y"] - m), "width": b["w"] + 2 * m, "height": b["h"] + 2 * m})
-            f["crop"] = str(out)
+        tall = page.evaluate("document.documentElement.scrollHeight")
+        if still and tall != page.viewport_size["height"]:
+            page.set_viewport_size({"width": width, "height": tall})
+            still = at_rest(page, loading, args, until)
+        if still and page.evaluate("scrollX || scrollY"):
+            # instant, because a page set to scroll smoothly would still be travelling on the next call
+            page.evaluate("scrollTo({top: 0, left: 0, behavior: 'instant'})")
+            still = at_rest(page, loading, args, until)
+        if not still:
+            return [*found, unmeasurable(width, f"still {'loading' if loading else 'moving'} after {args.patience:g}s")]
+        here = page.evaluate(MEASURE, args.pad)
+        for f in [f for f in here if same(f) not in made]:
+            f["width"] = width
+            if args.crops:
+                b, m = f["box"], 24
+                out = args.crops / f"{Path(path).stem}-{len(found) + 1:02d}-{f['kind']}.png"
+                page.screenshot(path=str(out), full_page=True, clip={"x": max(0, b["x"] - m), "y": max(0, b["y"] - m), "width": b["w"] + 2 * m, "height": b["h"] + 2 * m})
+                f["crop"] = str(out)
+            found.append(f)
+        made |= {same(f) for f in here}
     return found
 
 
-def unmeasurable(why: str) -> dict:
-    return {"kind": "unmeasurable", "where": "page", "el": "", "by": 0, "text": why, "box": {"x": 0, "y": 0, "w": 0, "h": 0}}
+def same(finding: dict) -> tuple:
+    """What makes two findings at different widths one."""
+    return finding["kind"], finding["where"], finding["el"], finding["text"]
+
+
+def unmeasurable(width: int, why: str) -> dict:
+    return {"width": width, "kind": "unmeasurable", "where": "page", "el": "", "by": 0, "text": why, "box": {"x": 0, "y": 0, "w": 0, "h": 0}}
 
 
 def at_rest(page: Page, loading: set, args: Args, until: float) -> bool:

@@ -24,6 +24,10 @@ address' fragment slides under fixed chrome is no finding, while the same chrome
 the page is one; and an opaque card drawn over a text hides it, where two texts nothing covers
 collide in plain sight.
 
+With --narrow the same page is measured again as the window at 150% zoom and at 700px: a row that
+fits the window and not the narrow page escapes only there, and once, however many of the narrower
+widths it escapes.
+
 A page that loads a script from a server is measured with the script, and with --cache it is
 measured with the script after the server stops answering: a server that hangs holds a page without
 its copy unmeasurable, and one with its copy not at all. With the network cut off and no copy, the
@@ -196,6 +200,27 @@ def test_the_same_line_in_a_box_wide_enough_passes(tmp_path):
     code, findings = lint(tmp_path, '<div style="width:400px;white-space:nowrap">A title far too long for it</div>')
     assert findings == []
     assert code == 0
+
+
+def row(width: int) -> str:
+    """A row of the page's own width holding one piece of text `width` pixels wide."""
+    return f'<div style="white-space:nowrap"><span style="display:inline-block;width:{width}px">A row {width}px wide</span></div>'
+
+
+def test_a_row_that_fits_the_window_escapes_the_narrow_page_only_when_asked_to_look(tmp_path):
+    """800px fits a 1400px window and the same window at 150% zoom, which lays out 933px, and does
+    not fit 700px."""
+    assert lint(tmp_path, row(800)) == (0, [])
+    code, findings = lint(tmp_path, row(800), "--narrow")
+    assert [(f["kind"], f["width"]) for f in findings] == [("escapes", 700)]
+    assert code == 1
+
+
+def test_a_row_too_wide_at_zoom_is_reported_once_at_the_first_width_it_escapes(tmp_path):
+    """1000px escapes 933px and 700px alike, and is one finding."""
+    code, findings = lint(tmp_path, row(1000), "--narrow")
+    assert [(f["kind"], f["width"]) for f in findings] == [("escapes", 933)]
+    assert code == 1
 
 
 def test_two_labels_drawn_over_each_other_collide(tmp_path):

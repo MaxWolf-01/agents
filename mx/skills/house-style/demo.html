@@ -60,6 +60,23 @@
     .button.ghost:hover { border-color: transparent; color: var(--accent); }
     .button:disabled { opacity: 0.45; pointer-events: none; }
 
+    .tools { display: flex; gap: 1.5rem; }
+    .tool { position: relative; }
+    .icon-button { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid transparent; border-radius: var(--radius); background: none; color: var(--muted); cursor: pointer; transition: color 150ms, border-color 150ms; }
+    .icon-button:hover, .icon-button:focus-visible { border-color: var(--edge); color: var(--accent); }
+    .icon-button svg { width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    /* The tooltip waits half a second of hover, then fades in place below its button. It
+       leaves the layout while hidden, so its width never counts as its button's overflow. */
+    .tip { position: absolute; z-index: 2; top: calc(100% + 0.375rem); left: 50%; translate: -50% 0; display: none; gap: 0.25rem; width: max-content; max-width: 15rem; padding: 0.5rem 0.75rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground); opacity: 0; pointer-events: none; transition: opacity 200ms, display 200ms allow-discrete; }
+    .tip p { margin: 0; }
+    .tip p:first-child { color: var(--strong); }
+    .tool:hover .tip, .icon-button:focus-visible + .tip { display: grid; opacity: 1; transition: opacity 200ms 500ms, display 0s 500ms allow-discrete; }
+    @starting-style { .tool:hover .tip, .icon-button:focus-visible + .tip { opacity: 0; } }
+    /* A key chip shows only while Alt is held, right beside its button, in the gap the row
+       keeps for it, so nothing shifts. */
+    .key { position: absolute; top: 50%; left: 100%; translate: 0.125rem -50%; display: none; }
+    .keys .key { display: block; }
+
     .pill { padding: 0.125rem 0.75rem; border: 1px solid var(--edge); border-radius: 999px; background: none; font: 400 0.8125rem/1.5 var(--font-mono); color: var(--muted); cursor: pointer; transition: color 150ms, border-color 150ms, background-color 150ms; }
     .pill:hover { border-color: var(--accent); color: var(--accent); }
     .pill.active { background: var(--accent); border-color: var(--accent); color: var(--ground); }
@@ -77,9 +94,9 @@
 
     .switch { display: inline-flex; align-items: center; height: 1.25rem; width: 2.25rem; padding: 3px; box-sizing: border-box; border: 1px solid var(--edge); border-radius: 999px; background: none; cursor: pointer; transition: border-color 150ms, background-color 150ms; }
     .switch:hover, .switch[aria-checked="true"] { border-color: var(--accent); }
-    .switch[aria-checked="true"] { background: var(--wash); }
+    .switch[aria-checked="true"] { background: var(--accent); }
     .switch i { display: block; width: 0.75rem; height: 0.75rem; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--muted) 70%, transparent); box-sizing: border-box; transition: transform 150ms, background-color 150ms, border-color 150ms; }
-    .switch[aria-checked="true"] i { transform: translateX(1rem); border-color: var(--accent); background: var(--accent); }
+    .switch[aria-checked="true"] i { transform: translateX(1rem); border-color: var(--ground); background: var(--ground); }
 
     table { width: 100%; border-collapse: collapse; text-align: left; }
     thead { border-bottom: 1px solid var(--edge); }
@@ -109,6 +126,7 @@
     .nodes { display: flex; gap: 0.5rem; }
     .node { flex: 1; border: 1px solid var(--muted); border-radius: var(--radius); background: var(--ground-2); padding: 0.25rem 0.625rem; }
     .node.accent { border-color: var(--accent); color: var(--accent); }
+    pre.frame { overflow-x: auto; }
     pre.data { padding: 0.5rem 0; }
     pre.data span { display: block; padding: 0 1rem; }
     pre.data b { font-weight: 400; color: var(--muted); display: inline-block; width: 3em; }
@@ -191,7 +209,7 @@
           <p class="v-small muted measure">A rule under the head, hairlines between rows, nothing vertical. The table is held together by alignment, and the hairline appears only where two rows would otherwise touch.</p>
         </div>
         <div class="stack">
-          <p class="v-h3">labels lowercase</p>
+          <p class="v-h3">labels in sentence case</p>
           <div class="cluster">
             <button class="pill active">caryophyllaceae</button>
             <button class="pill">gentianaceae</button>
@@ -203,7 +221,7 @@
             <input class="input" placeholder="initials" value="M. W.">
             <span class="v-meta">as written on the sheet</span>
           </div>
-          <p class="v-small muted measure">Field labels, filters, table heads and the meta line are the mono in lowercase. Small type in capitals shouts.</p>
+          <p class="v-small muted measure">Field labels, filters, table heads and the meta line are the mono in sentence case. Small type in capitals shouts.</p>
         </div>
       </div>
       <div class="stack" style="margin-top: 3rem">
@@ -237,6 +255,26 @@
             <span class="v-small muted">pressed</span>
             <button class="switch" role="switch" aria-checked="true" aria-label="pressed" onclick="this.setAttribute('aria-checked', this.getAttribute('aria-checked') !== 'true')"><i></i></button>
           </label>
+          <div class="field">
+            <span class="v-meta">actions: hover one, or hold alt</span>
+            <div class="tools">
+            <div class="tool">
+              <button class="icon-button" aria-label="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+              <div class="tip" role="tooltip"><p class="v-small">search <kbd>/</kbd></p><p class="v-small muted">Find a sheet by its name, family or collector.</p></div>
+              <kbd class="key">/</kbd>
+            </div>
+            <div class="tool">
+              <button class="icon-button" aria-label="copy citation"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+              <div class="tip" role="tooltip"><p class="v-small">copy citation <kbd>y</kbd></p><p class="v-small muted">The sheet's citation in the herbarium's own form, ready to paste.</p></div>
+              <kbd class="key">y</kbd>
+            </div>
+            <div class="tool">
+              <button class="icon-button" aria-label="remove sheet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+              <div class="tip" role="tooltip"><p class="v-small">remove sheet <kbd>d</kbd></p><p class="v-small muted">Takes the sheet off this list; the record itself stays.</p></div>
+              <kbd class="key">d</kbd>
+            </div>
+            </div>
+          </div>
           <div class="note">
             <p class="v-meta">in the margin</p>
             <p class="v-small muted">An aside: one bar, one colour, and a title only when the note has a name worth printing.</p>
@@ -371,6 +409,11 @@
       }
     }
     set(dark)
+
+    const keys = (on) => root.classList.toggle("keys", on)
+    addEventListener("keydown", (e) => { if (e.key === "Alt") { e.preventDefault(); keys(true) } })
+    addEventListener("keyup", (e) => { if (e.key === "Alt") keys(false) })
+    addEventListener("blur", () => keys(false))
   </script>
 </body>
 </html>
