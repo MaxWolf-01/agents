@@ -580,28 +580,37 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".copy-turn")
   if (b) { e.preventDefault(); copyTurn(b.closest("[data-block]")) }
 })
-// a click on a path opens the file, and the browser's own copy gives its file:// URL, so c copies
-// the path under the pointer, or the one Tab focused, as the turn shows it
-const pathLink = (el) => el && el.closest && el.closest("a.path")
-const pathAt = () => document.querySelector("a.path:hover") || pathLink(document.activeElement)
+// c copies the link or code under the pointer, or the link Tab focused: a path written as code as the turn
+// shows it, `:line` and all, since a click opens the file and the browser's own copy gives its file:// URL;
+// any other link its target, a file on this machine as its path; code its text, short of the newline that
+// ends a block. A link to a place on the page copies nothing. A link wins over code inside it, so a
+// ticket's tag copies the same wherever the pointer sits on it.
+const LINK = "a.path, a[href]:not([href^='#'])"
+const copyable = (el) => el && el.closest ? el.closest(LINK) || el.closest("pre, code") : null
+const copyText = (el) => {
+  if (!el.matches("a") || el.matches(".path")) return el.textContent.replace(/\n$/, "")
+  const url = new URL(el.href)
+  return url.protocol === "file:" ? decodeURIComponent(url.pathname) : el.href
+}
+const copyableAt = () => copyable([...document.querySelectorAll(":hover")].at(-1)) || copyable(document.activeElement)
 let hint = null
 const hideHint = () => { if (hint) { hint.remove(); hint = null } }
-const showHint = (a) => {
-  if (hint && hint.path === a) return
+const showHint = (el) => {
+  if (hint && hint.over === el) return
   hideHint()
-  const r = [...a.getClientRects()].at(-1)  // under the last line of a path that wraps
-  hint = Object.assign(document.createElement("span"), { className: "key-hint", path: a, innerHTML: "<kbd>c</kbd> copy" })
+  const r = [...el.getClientRects()].at(-1)  // under the last line of a link that wraps
+  hint = Object.assign(document.createElement("span"), { className: "key-hint", over: el, innerHTML: "<kbd>c</kbd> copy" })
   Object.assign(hint.style, { left: `${r.left}px`, top: `${r.bottom + 4}px` })
   document.body.append(hint)
 }
 // mousemove rather than mouseover, so the hint a scroll took away comes back with the pointer's next move
-document.addEventListener("mousemove", (e) => { const a = pathLink(e.target); if (a) showHint(a) })
+document.addEventListener("mousemove", (e) => { const el = copyable(e.target); if (el) showHint(el) })
 document.addEventListener("mouseout", (e) => {
-  const a = pathLink(e.target)
-  if (a && !a.contains(e.relatedTarget) && document.activeElement !== a) hideHint()
+  const el = copyable(e.target)
+  if (el && !el.contains(e.relatedTarget) && document.activeElement !== el) hideHint()
 })
-document.addEventListener("focusin", (e) => { const a = pathLink(e.target); if (a) showHint(a) })
-document.addEventListener("focusout", (e) => { const a = pathLink(e.target); if (a && !a.matches(":hover")) hideHint() })
+document.addEventListener("focusin", (e) => { const el = copyable(e.target); if (el) showHint(el) })
+document.addEventListener("focusout", (e) => { const el = copyable(e.target); if (el && !el.matches(":hover")) hideHint() })
 addEventListener("scroll", hideHint, { capture: true, passive: true })
 
 // ---- the keys
@@ -664,7 +673,7 @@ document.addEventListener("keydown", (e) => {
     case "R": copy(); break
     case "y": copyTurn(focused || blocks[0]); break
     case "Y": if (blocks.length) { write(sources.session); say("copied the session as markdown") } else say("no turn yet"); break
-    case "c": { const a = pathAt(); if (a) write(a.textContent, a); else say("no path under the pointer"); break }
+    case "c": { const el = copyableAt(); if (el) write(copyText(el), el); else say("no link or code under the pointer"); break }
     default: {
       if (!/^[1-9]$/.test(e.key)) return
       const turn = focused && focused.matches("details.turn") ? focused : turns[0]

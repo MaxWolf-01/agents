@@ -206,21 +206,27 @@ with sync_playwright() as pw:
         page.keyboard.press("Y")
         out["M"], out["M_toast"] = clipboard(), page.text_content("#toast")
 
-    elif scenario == "copy-path":
+    elif scenario == "copy-under-pointer":
         context, page = open_page(1280, 800)
         context.grant_permissions(["clipboard-read", "clipboard-write"])
         hint = lambda: page.evaluate("document.querySelector('.key-hint')?.textContent ?? null")
-        page.hover("#t04 a.path")
-        out["hint"] = hint()
-        page.keyboard.press("c")
-        page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
-        out["copied"] = page.evaluate("navigator.clipboard.readText()")
+        out["hovered"] = {}
+        for target in args["targets"]:
+            page.evaluate("navigator.clipboard.writeText('')")
+            # a scroll takes the hint away, so the target is brought into view, and its scroll event has fired, first
+            page.locator(target).scroll_into_view_if_needed()
+            page.evaluate("new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
+            page.hover(target)
+            seen_hint = hint()
+            page.keyboard.press("c")
+            page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
+            out["hovered"][target] = [seen_hint, page.evaluate("navigator.clipboard.readText()")]
         page.mouse.move(5, 5)
         out["hint_away"] = hint()
         page.keyboard.press("c")
         out["toast"] = page.text_content("#toast")
         page.evaluate("navigator.clipboard.writeText('')")
-        page.focus("#t04 a.path")
+        page.focus(args["targets"][0])
         page.keyboard.press("c")
         page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
         out["copied_focused"] = page.evaluate("navigator.clipboard.readText()")
@@ -779,19 +785,31 @@ def test_a_turn_copies_as_its_markdown_by_its_button_and_by_y(rendered: tuple[Pa
     assert seen["M_toast"] == "copied the session as markdown"
 
 
-def test_c_copies_the_path_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
-    """A path's link shows the key that copies it while the pointer is on it, and c copies the path
-    as the turn shows it, `:line` and all; with the pointer elsewhere c copies nothing and says so,
-    and a path Tab focused takes the key without the pointer."""
-    page, _ = rendered
+def test_c_copies_the_link_or_code_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
+    """Every link and code span shows the key that copies it while the pointer is on it, and c copies
+    it: a path written as code as the turn shows it, `:line` and all; other code, inline or a fenced
+    block, as its text short of the newline that ends it; a URL as it is; a link to a file on this
+    machine as that file's path. With the pointer elsewhere c copies nothing and says so, and a link
+    Tab focused takes the key without the pointer."""
+    page, root = rendered
     record = page.parent / "turns" / "04.md"
-    record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\nSee `{ARTEFACTS[0]}:3`.\n\n", 1))
+    url = "https://example.org/a?b=1"
+    block = "make test BASE=master\nmake check"
+    details = (f"See `{ARTEFACTS[0]}:3`, run `make test-all`, read {url} and [the plan]({ARTEFACTS[1]}).\n\n"
+               f"```sh\n{block}\n```\n\n")
+    record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\n{details}", 1))
     page.write_text(render_session(page.parent, transcript))
-    seen = probe(page, "copy-path")
-    assert seen["hint"] == "c copy", f"no hint under the hovered path: {seen['hint']}"
-    assert seen["copied"] == f"{ARTEFACTS[0]}:3"
+    expected = {
+        "#t04 a.path": f"{ARTEFACTS[0]}:3",
+        '#t04 code:text-is("make test-all")': "make test-all",
+        f'#t04 a:text-is("{url}")': url,
+        '#t04 a:text-is("the plan")': str(root / ARTEFACTS[1]),
+        "#t04 .code pre": block,
+    }
+    seen = probe(page, "copy-under-pointer", targets=list(expected))
+    assert seen["hovered"] == {target: ["c copy", text] for target, text in expected.items()}
     assert seen["hint_away"] is None, "the hint stayed after the pointer left"
-    assert seen["toast"] == "no path under the pointer"
+    assert seen["toast"] == "no link or code under the pointer"
     assert seen["copied_focused"] == f"{ARTEFACTS[0]}:3"
 
 

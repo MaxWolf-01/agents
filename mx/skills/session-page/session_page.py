@@ -1300,7 +1300,7 @@ KEYS = [
     ("y", "copy the turn's markdown, the newest turn's where none is picked"),
     ("Y", "copy the whole session's markdown"),
     ("R", "copy the resume command"),
-    ("c", "copy the path under the pointer"),
+    ("c", "copy the link or code under the pointer"),
     ("?", "this list"),
     ("Ctrl Alt", "held: each control's key, over it"),
 ]
