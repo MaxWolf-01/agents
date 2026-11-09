@@ -933,6 +933,30 @@ def test_an_artefact_waits_until_a_line_of_the_users_message_names_it(tmp_path: 
     assert re.search(r'<li class="seen"[^>]*>.*?The six PR texts, reworded', timeline) and "devops#2" in timeline
 
 
+def test_a_record_retires_an_artefact_by_its_path_and_a_batch_sweeps_nothing(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought, max's D4: an artefact leaves the tasks when a later record names
+    its path under `superseded:`, to why it is moot, and the turn says so; the timeline keeps it. A
+    batch that names neither artefact leaves both waiting. A link again after the retirement waits
+    again, and a path no earlier turn linked is refused at its line."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    write_transcript(transcript, ["Lint the repo", "Reword the message", "Q1: a\nA3: done"])
+    looks = lambda: [s.link.text for _, s in view_of(directory, transcript).looks]
+    assert looks() == ["The six PR texts, reworded", "devops#2"], "a batch swept an artefact away"
+    (directory / "turns" / "03.md").write_text(
+        "---\ndate: 2026-10-30\nsuperseded:\n  agent/show/lint/texts.html: you reviewed the texts on GitHub\n---\n\n# Pushed\n")
+    assert looks() == ["devops#2"]
+    page = render_session(directory, transcript, now=NOW)
+    assert "texts.html retired: you reviewed the texts on GitHub" in text_of(sections_of(page)["03"])
+    assert "The six PR texts, reworded" in elements(page, "a02")["a02"], "the timeline keeps a retired artefact"
+    (directory / "turns" / "04.md").write_text(
+        "---\ndate: 2026-10-31\n---\n\n# Reworded again\n\n## Links\n\n- [The texts, third take](agent/show/lint/texts.html): again\n")
+    assert looks() == ["devops#2", "The texts, third take"]
+    (directory / "turns" / "05.md").write_text("---\ndate: 2026-11-01\nsuperseded:\n  agent/show/lint/nope.html: moot\n---\n\n# Typo\n")
+    with pytest.raises(RecordError, match="nope.html is no artefact an earlier turn linked") as refused:
+        view_of(directory, transcript)
+    assert str(refused.value).startswith(f"{directory / 'turns' / '05.md'}:4: ")
+
+
 def test_a_to_do_superseded_by_a_question_is_refused_as_a_to_do_supersedes_only_a_to_do(tmp_path: Path) -> None:
     """A1 is listed in turn 01 and Q1 asked there, so only the rule that a to-do's replacement is a to-do
     refuses turn 02's `A1: Q1`."""

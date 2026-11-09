@@ -570,6 +570,8 @@ class Turn:
     # letter or the user's own words, and to the tag of the one that replaced it
     answered: dict[str, str] = field(default_factory=dict)
     superseded: dict[str, str] = field(default_factory=dict)
+    # the artefacts this turn's frontmatter retired from what the user is to look at, by path, to why or what replaced it
+    retired: dict[str, str] = field(default_factory=dict)
 
     @property
     def key(self) -> str:
@@ -665,6 +667,10 @@ def read_turn(path: Path) -> Turn:
         if not isinstance(table, dict):
             raise RecordError(path, line_of(path, name), f"{name}: a mapping of question tags, like `Q1: a`")
         tables[name] = {str(tag): str(value) for tag, value in table.items()}
+        if name == "superseded":
+            # an artefact a later turn made moot, by its path as a turn linked it, to why or to what replaced it
+            retired = {key: value for key, value in tables[name].items() if not TAG.fullmatch(key) and not TICKET_QUESTION.fullmatch(key)}
+            tables[name] = {key: value for key, value in tables[name].items() if key not in retired}
         for tag in tables[name]:
             if TICKET_QUESTION.fullmatch(tag):
                 raise RecordError(path, line_of(path, tag), f"{name}: {tag} is a ticket's question, which clears once its ticket "
@@ -683,6 +689,7 @@ def read_turn(path: Path) -> Turn:
         todos=read_todos(path, *sections["To do"]) if "To do" in sections else (),
         links=read_links(path, *sections["Links"]) if "Links" in sections else (),
         details=sections.get("Details", (0, ""))[1],
+        retired=retired,
         **tables,
     )
 
@@ -1134,6 +1141,13 @@ def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = (), plan: t
             if todo.tag in asked:
                 raise RecordError(turn.path, None, f"{todo.tag} was already listed in turn {asked[todo.tag]:02d}")
             asked[todo.tag] = turn.number
+    linked: set[str] = set()
+    for turn in turns:
+        for artefact in turn.retired:
+            if artefact not in linked:
+                raise RecordError(turn.path, line_of(turn.path, artefact), f"superseded: {artefact} is no artefact an earlier turn linked, "
+                                                                           "by the path its ## Links wrote")
+        linked.update(link.path for link in turn.artefacts)
     for turn in turns:
         for old, new in turn.superseded.items():
             if new not in asked:
@@ -1447,9 +1461,11 @@ def open_todos(session: Session) -> list[tuple[Turn, ToDo]]:
 def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
     """The artefacts waiting for the user to look at, oldest first: every one a turn linked until a
     line of the user's message names it, as the page's batch does once they marked it seen or noted
-    it. An artefact two turns linked waits once, under the later."""
+    it, or a later turn's `superseded:` retires it. An artefact two turns linked waits once, under
+    the later, and one linked again after it left waits again."""
+    retired = {path: t.number for t in session.turns for path in t.retired}
     found = {s.artefact: (t, s) for t in session.turns for s in shown_links(t, session.root, session.directory)
-             if s.artefact and not seen_since(session.looked, s.link.path, t)}
+             if s.artefact and not seen_since(session.looked, s.link.path, t) and retired.get(s.link.path, 0) <= t.number}
     return list(found.values())
 
 
@@ -2170,10 +2186,11 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> s
 
 
 def answers(t: Turn) -> str:
-    """What this turn settled: the user's answers, then the questions it replaced."""
+    """What this turn settled: the user's answers, then the questions it replaced, then the artefacts it retired."""
     answered = ", ".join(f'<a href="#{tag.lower()}">{tag}</a> {esc(value)}' for tag, value in t.answered.items())
     replaced = [f'<a href="#{old.lower()}">{old}</a> replaced by <a href="#{new.lower()}">{new}</a>' for old, new in t.superseded.items()]
-    bits = ([f"your answers {answered}"] if answered else []) + replaced
+    retired = [f'{esc(Path(file_part(path)).name)} retired: {esc(why)}' for path, why in t.retired.items()]
+    bits = ([f"your answers {answered}"] if answered else []) + replaced + retired
     return f'<p class="v-meta answers">{" · ".join(bits)}</p>' if bits else ""
 
 
