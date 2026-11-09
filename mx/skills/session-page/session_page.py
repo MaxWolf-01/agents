@@ -1750,7 +1750,7 @@ def artefact(s: Shown, cls: str) -> str:
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
-KINDS = {"decide": "to decide", "do": "to do", "look": "to look at"}
+KINDS = {"decide": "to decide", "do": "to do"}
 
 
 def svg(d: str, size: int = 16) -> str:
@@ -1780,9 +1780,7 @@ ICONS = {
     "image": svg('<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>', 15),
     "page": svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>', 15),
     "file": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', 15),
-    "link": svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>', 15),
     "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
-    "tasks": svg('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>', 18),
 }
 # What an artefact is, by its path, as its icon says: (the icon, its name in the tooltip).
 TYPES = (
@@ -1860,12 +1858,11 @@ def tasks_column(v: View) -> str:
 
 def step_row(step: PlanStep, depth: int) -> str:
     """A plan step: its state's icon, its words, what runs it and what to look at for it."""
-    state = "wait" if step.state == "wait" else step.state
     jobs = "".join(f'<span class="t-job v-meta"{tip("Runs in the background" + chr(10) + "whether or not a turn does")}>{ICONS["term"]}{esc(j)}</span>'
                    for j in step.jobs)
     see = "".join(f'<a class="ib" href="{esc(href(path))}" target="_blank" rel="noopener" {ARTEFACT}="{esc(resolved(path, ROOT.get(), DIRECTORY.get()))}"'
                   f'{tip(artefact_type(path)[1] + chr(10) + path)}>{ICONS[artefact_type(path)[0]]}</a>' for path in step.see)
-    return (f'<div class="t-task {state}" style="--d:{depth}"><span class="si"{tip(STATE_TIPS.get(state, ""))}>{ICONS.get(state, ICONS["next"])}</span>'
+    return (f'<div class="t-task {step.state}" style="--d:{depth}"><span class="si"{tip(STATE_TIPS[step.state])}>{ICONS[step.state]}</span>'
             f'<span class="t-txt">{inline(step.text)}</span>{jobs}{see}</div>')
 
 

@@ -227,10 +227,8 @@ button.id:hover { color: var(--accent); }
 .card-main { min-width: 0; }
 .card h3 { max-width: var(--measure); font-size: 1.22rem; }
 .card h3 a.open { color: var(--accent); }
-.card.seen h3 a.open { color: var(--muted); }
 .card .from { margin-top: 0.15rem; }
 .card .from a { text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; }
-.card .path { margin-top: 0.4rem; }
 .card .blind-test { margin-top: 0.5rem; }
 .card .blind-test a { color: var(--accent); }
 .q-detail { margin-top: 0.35rem; max-width: var(--measure); }
@@ -240,7 +238,6 @@ button.id:hover { color: var(--accent); }
 .opttab tr[data-option] { cursor: pointer; }
 .opttab tr:last-child td { border-bottom: 0; }
 .opttab td.k { width: 2rem; font-family: var(--font-mono); color: var(--muted); }
-.opttab tr.pick td.k { color: var(--strong); font-weight: 500; }
 .opttab tr.chosen td { background: var(--wash); }
 .opttab tr.chosen td.k { color: var(--accent); }
 .opttab td.l, .opttab td.g, .opttab td.c { color: var(--muted); width: 22%; font-size: 0.93em; }
@@ -279,9 +276,7 @@ button.id:hover { color: var(--accent); }
 .opts { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
 .opts li { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); }
 .opts .k { color: var(--muted); padding-top: 0.08rem; }
-.opts .pick .k { color: var(--strong); font-weight: 500; }
 .tag { font: 400 0.75rem/1 var(--font-mono); color: var(--muted); margin-left: 0.6rem; white-space: nowrap; }
-.opts .pick .tag:not(.you), .opttab .pick .tag { color: var(--body); }
 .tag.you { color: var(--accent); }
 .why { margin-top: 0.65rem; color: var(--muted); max-width: var(--measure); }
 .why .v-meta, .free .v-meta { margin-right: 0.35rem; }

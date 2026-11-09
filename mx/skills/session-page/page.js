@@ -474,7 +474,6 @@ if (working) { poll(); setInterval(poll, 4000) }
 
 // ---- a phone: the turns, or the tasks and the timeline, one at a time; the bar's button flips them
 const viewToggle = document.getElementById("view-toggle")
-const narrow = matchMedia("(max-width: 44rem)")
 const setView = (view) => {
   document.body.dataset.view = view
   viewToggle.setAttribute("aria-pressed", view === "tasks")
