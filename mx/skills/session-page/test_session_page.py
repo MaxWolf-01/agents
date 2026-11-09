@@ -47,6 +47,11 @@ def waiting(page: View) -> list[str]:
     return [q.handle for _, q in page.waiting]
 
 
+def waiting_and_cards(page: str) -> str:
+    """What waits on the user, as the page draws it: the tasks column and the dialog of their cards."""
+    return elements(page, QUESTIONS)[QUESTIONS] + elements(page, "card-dialog")["card-dialog"]
+
+
 # ---- sessions to render -----------------------------------------------------
 
 
@@ -163,7 +168,7 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text("")
     assert waiting(view_of(directory, transcript)) == ["Q1"]
-    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    top = waiting_and_cards(render_session(directory, transcript, now=NOW))
     assert f'href="{(tmp_path / "agent/show/refusals/blind-q1.html").as_uri()}"' in top
     assert "my pick" not in text_of(top)
 
@@ -220,7 +225,7 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     lets it go the same way."""
     directory, transcript = ticket_session(tmp_path, f"- [Q1] **One page or two?**\n  - (a) One. *my pick*\n  - (b) Two.\n- [{TWO_MAIN} D5]")
     assert waiting(view_of(directory, transcript)) == ["Q1", f"{TWO_MAIN} D5"]
-    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    top = waiting_and_cards(render_session(directory, transcript, now=NOW))
     assert "Sync on every commit, or on a timer?" in text_of(top) and "A timer batches" in text_of(top)
     links = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
     assert len(links) == 2, "the handle links from its row and from its card"
@@ -881,7 +886,7 @@ def test_every_icon_in_the_tasks_says_what_it_is_in_the_styled_tooltip(tmp_path:
     directory, transcript = todo_session(tmp_path, transcript_turns=True)
     (directory / "plan").write_text("doing Lint | job a subagent | see agent/show/lint/texts.html\nnext Post | waits A3\n")
     tasks = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
-    listed = tasks[:tasks.index('id="card-dialog"')]
+    listed = tasks
     icons = re.findall(r"<(?:button|a|span)\b[^>]*>\s*(?:<span class=\"spin\">)?<svg", listed)
     assert icons and all("data-tip=" in i for i in icons), [i for i in icons if "data-tip=" not in i]
     assert "title=" not in "".join(icons)

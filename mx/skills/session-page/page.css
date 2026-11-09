@@ -136,11 +136,11 @@ main.panes:has(.tasks.folded) { grid-template-columns: minmax(0, 1fr) auto var(-
 .column a.artefact:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 /* the control to the newest turn, marked while a turn has arrived that the reader has not reached */
-.newest { display: inline-flex; align-items: center; gap: 0.35rem; height: 1.6rem; padding: 0 0.45rem; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--muted); font: 400 0.72rem/1 var(--font-mono); white-space: nowrap; cursor: pointer; transition: color 150ms, border-color 150ms; }
+.newest { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.6rem; padding: 0; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--muted); font: 400 0.72rem/1 var(--font-mono); white-space: nowrap; cursor: pointer; transition: color 150ms, border-color 150ms; }
 .newest:hover { color: var(--accent); border-color: var(--accent); }
 .newest .dot { display: none; width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--accent); }
 .newest.fresh { color: var(--accent); border-color: var(--accent); }
-.newest.fresh .dot { display: inline-block; }
+.newest.fresh .dot { display: inline-block; position: absolute; top: -0.2rem; right: -0.2rem; }
 .bar .newest { display: none; }
 
 .intro { flex: none; padding: 1rem var(--pad) 0.85rem; border-bottom: 1px solid var(--edge); }

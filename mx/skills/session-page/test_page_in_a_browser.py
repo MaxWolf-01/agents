@@ -44,7 +44,7 @@ ARTEFACTS = (
 )
 # The widths the hub shows a session page at, the first being a wide window's, where the turns still
 # have room beside the tasks and the timeline, the last a phone's, where one view shows at a time.
-WIDTHS = (2400, 1240, 900, 530)
+WIDTHS = (2400, 1920, 1240, 900, 530)
 
 PROBE = r"""
 import json, os, shutil, sys
@@ -68,7 +68,7 @@ CONTROL = '''(() => {
   if (!n) return null
   const r = n.getBoundingClientRect()
   return {inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, fresh: n.classList.contains("fresh"),
-          text: n.textContent}
+          text: n.getAttribute("aria-label"), tip: n.dataset.tip}
 })()'''
 
 with sync_playwright() as pw:
@@ -155,6 +155,7 @@ with sync_playwright() as pw:
         out["o"] = page.evaluate(OPEN)
         page.keyboard.press("o")
         out["oo"] = page.evaluate(OPEN)
+        settle(page)  # the pane's scroll after o reflowed the turns would take the keys away as they show
         OVER = '[...document.querySelectorAll(".key-over")].map((k) => k.textContent)'
         page.keyboard.down("Control")
         page.keyboard.down("Alt")
@@ -447,6 +448,13 @@ with sync_playwright() as pw:
           return {words: box(row.children[1]), leads: box(row.querySelector("td.l")), gives: box(row.querySelector("td.g")), costs: box(row.querySelector("td.c")),
                   card: box(document.querySelector("#q1 .card-main")), labelled: getComputedStyle(row.querySelector("td.g"), "::before").content,
                   shown: !document.getElementById("card-dialog").hidden} })()'''))
+        WINDOW = '''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right} }
+          const at = (x, y) => document.elementFromPoint(x, y)?.closest("#card-dialog") !== null
+          return {dialog: box(document.getElementById("card-dialog")), card: box(document.querySelector(".d-card")), width: innerWidth, height: innerHeight,
+                  covers: [at(2, innerHeight / 2), at(innerWidth - 2, innerHeight / 2), at(innerWidth / 2, innerHeight - 2)]} })()'''
+        out["card_window"] = page.evaluate(WINDOW)
+        page.keyboard.press("r")
+        out["review_window"] = page.evaluate(WINDOW)
     elif scenario == "framed":
         # the page in a frame of a hub tab: what it staged comes from the hub, every change goes back to it, and the
         # send is the hub's, after which the lines it sent leave the tasks
@@ -1227,6 +1235,11 @@ def test_a_questions_options_read_at_every_width(waiting_page: Path, width: int)
     seen = probe(waiting_page, "options", width=width)
     words, leads, gives, costs = seen["words"], seen["leads"], seen["gives"], seen["costs"]
     assert seen["shown"], "the row's tag did not open its card"
+    for which in ("card_window", "review_window"):
+        at = seen[which]
+        assert (at["dialog"]["left"], at["dialog"]["top"], at["dialog"]["right"], at["dialog"]["bottom"]) == (0, 0, at["width"], at["height"]), at
+        assert all(at["covers"]), f"{which}: the backdrop does not cover the whole page: {at}"
+        assert abs((at["card"]["left"] + at["card"]["right"]) / 2 - at["width"] / 2) < 2, f"{which}: the card is not centred: {at}"
     if width <= 704:
         assert words["bottom"] <= leads["top"] + 1 and leads["bottom"] <= gives["top"] + 1 and gives["bottom"] <= costs["top"] + 1, seen
         assert words["right"] - words["left"] >= 0.8 * (seen["card"]["right"] - seen["card"]["left"]) and "gives" in seen["labelled"], seen

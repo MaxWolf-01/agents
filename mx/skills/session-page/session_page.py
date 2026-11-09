@@ -1649,6 +1649,7 @@ def assemble(v: View, now: datetime) -> str:
   <div class="side">{tasks_column(v)}{column(v.rows, session)}
   </div>
 </main>
+{card_dialog(v)}
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script type="application/json" id="sources">{sources(v)}</script>
@@ -1739,9 +1740,10 @@ def newest_control(rows: tuple[Row, ...]) -> str:
     is no turn."""
     if not rows:
         return ""
-    label = rows[0].key if isinstance(rows[0].turn, Turn) else "chat"
-    return (f'<button class="newest" data-newest aria-keyshortcuts="N" title="the newest turn">'
-            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span></button>')
+    label = f"turn {rows[0].key}" if isinstance(rows[0].turn, Turn) else "a chat turn"
+    return (f'<button class="newest" data-newest aria-keyshortcuts="N" aria-label="the newest turn, {label}"'
+            f'{tip(f"The newest turn: {label}" + chr(10) + "Takes the turns there; N does too.")}>'
+            f'<span class="dot" aria-hidden="true"></span>{ICONS["newest"]}</button>')
 
 
 def opening_key(s: Shown) -> str:
@@ -1788,6 +1790,7 @@ ICONS = {
     "file": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', 15),
     "turns": svg('<path d="M4 6h16M4 12h16M4 18h10"/>', 18),
     "tasks": svg('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>', 18),
+    "newest": svg('<path d="M17 18 12 13l-5 5"/><path d="M17 11 12 6l-5 5"/>'),
     "up": svg('<path d="m18 15-6-6-6 6"/>'),
     "down": svg('<path d="m6 9 6 6 6-6"/>'),
     "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
@@ -1830,8 +1833,7 @@ def tasks_column(v: View) -> str:
     """The tasks, in the order the user should look at them: what needs them, each call and to-do
     under the plan step it holds up, those no step names first; the artefacts to look at; what is in
     flight; what comes next. The plan's steps are drawn as the plan nests them, a step the user holds
-    up at the top level. Every item's card waits in the column's dialog, which page.js opens; the
-    review of the batch shows there too."""
+    up at the top level. Every item's card waits in the page's dialog (`card_dialog`)."""
     open_rows = {q.handle: decide_row(t, q) for t, q in v.waiting} | {d.tag: todo_row(t, d) for t, d in v.todos}
     named = {tag for step in walk(v.session.plan) if step.state != "done" for tag in step.waits}
     sections: dict[str, list[str]] = {"needs": [row for handle, row in open_rows.items() if handle not in named], "doing": [], "next": []}
@@ -1858,16 +1860,22 @@ def tasks_column(v: View) -> str:
             + (f'<div class="t-gap"></div><div class="t-label v-meta">to look at</div>{"".join(looks)}' if looks else "")
             + f'<div class="t-gap"></div>{working}{"".join(sections["doing"])}'
             + (f'<div class="t-gap"></div>{"".join(sections["next"])}' if sections["next"] else ""))
-    cards = [decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
     count = len(v.waiting) + len(v.todos)
     return f"""
     <section class="tasks{'' if count or looks else ' quiet'}" id="{QUESTIONS}" aria-labelledby="tasks-title" tabindex="-1">
       <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.") if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}>{ICONS["up"].replace('class="ico"', 'class="ico when-open"')}{ICONS["down"].replace('class="ico"', 'class="ico when-folded"')}</button></div>
       <div class="t-list">{body}</div>
-      <div class="card-dialog" id="card-dialog" hidden><div class="d-card">{"".join(cards)}
-        <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
-      </div></div>
     </section>"""
+
+
+def card_dialog(v: View) -> str:
+    """The cards of the tasks' questions and to-dos and the review of the batch, one at a time over
+    the whole window (page.js): a child of the page, since the tasks column, which clips and fades
+    what scrolls in it, would hold a dialog inside its own edges."""
+    cards = [decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
+    return f"""<div class="card-dialog" id="card-dialog" hidden><div class="d-card">{"".join(cards)}
+  <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
+</div></div>"""
 
 
 def step_row(step: PlanStep, depth: int) -> str:

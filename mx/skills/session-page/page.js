@@ -448,7 +448,8 @@ const rowAct = (row, act) => {
   else if (act === "seen") see(h)
   else toggle(h, "act", act)
 }
-if (waiting) waiting.addEventListener("click", (e) => {
+// the tasks' clicks and the dialog's, which sits outside the column over the whole window
+const onTasks = (e) => {
   const t = e.target, k = t.closest("[data-key]"), row = t.closest(".t-row"), act = t.closest("[data-act]"), c = t.closest(".card")
   if (t === dialog) { closeDialog(); return }
   if (k) { e.preventDefault(); bandKey(k.dataset.key); return }
@@ -461,7 +462,8 @@ if (waiting) waiting.addEventListener("click", (e) => {
   if (option && c) { const r = rows.find((x) => x.dataset.card === c.id); toggle(r.dataset.handle, "pick", option.dataset.option); return }
   // a row's tag or words open its card; a link in it, an artefact's or a ticket's, opens what it names
   if (row && !t.closest("a:not(.qt), button, input")) { e.preventDefault(); if (!openCard(items().indexOf(row))) focusRow(items().indexOf(row)) }
-}, true)
+}
+if (waiting) [waiting, dialog].forEach((el) => el.addEventListener("click", onTasks, true))
 draw()
 
 // ---- a turn under way: the tasks say so while one runs. The page is a file the hub reloads as each
