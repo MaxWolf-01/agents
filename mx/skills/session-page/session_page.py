@@ -1771,12 +1771,17 @@ def chat_row(r: Row) -> str:
 
 
 def spent(s: Spent | None) -> str:
-    """What a turn consumed and produced, in tokens, each spelled out on hover with its bytes."""
+    """What a turn's requests took in tokens, by the rate each kind is billed at: input read from the cache, input
+    the cache did not hold (written to it or not), and output. On hover, the split and the bytes."""
     if s is None:
         return ""
-    tip = (f"consumed {s.consumed_tokens:,} tokens, {s.consumed_bytes:,} bytes: every request's input, and the prompts and tool results read\n"
-           f"produced {s.produced_tokens:,} tokens, {s.produced_bytes:,} bytes: the text, thinking and tool requests written")
-    return f'<span class="spent" data-tip="{esc(tip)}">{amount("in", tokens(s.consumed_tokens))}{amount("out", tokens(s.produced_tokens))}</span>'
+    uncached = s.cache_write_tokens + s.input_tokens
+    tip = (f"cached input: {s.cache_read_tokens:,} tokens\n"
+           f"uncached input: {uncached:,} tokens, {s.cache_write_tokens:,} written to the cache\n"
+           f"output: {s.output_tokens:,} tokens\n"
+           f"bytes: {s.consumed_bytes:,} read, {s.produced_bytes:,} written")
+    return (f'<span class="spent" data-tip="{esc(tip)}">{amount("cached", tokens(s.cache_read_tokens))}'
+            f'{amount("read", tokens(uncached))}{amount("wrote", tokens(s.output_tokens))}</span>')
 
 
 def amount(glyph: str, count: str) -> str:
@@ -1840,7 +1845,7 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> s
     """Messages behind one click, each whole, its paragraphs and line breaks kept, and its size in bytes, its tokens on
     hover."""
     weigh = lambda text: (f'<span class="v-meta size" data-tip="{len(text.encode()):,} bytes, {about_tokens(text)}">'
-                          f'{amount("in", size(len(text.encode())))}</span>')
+                          f'{size(len(text.encode()))}</span>')
     parts = "".join(
         '<div class="msg">' + (weigh(m) if len(messages) > 1 else "") + "".join(f"<p>{esc(p.strip()).replace(chr(10), '<br>')}</p>"
                                       for p in re.split(r"\n[ \t]*\n+", m) if p.strip()) + "</div>"
@@ -1977,12 +1982,18 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
-# What a size counts, drawn once as Lucide's icons and used by every size on the page and in its log: what the model
-# consumed (arrow-down-to-line), what it produced (arrow-up-from-line), and a prompt's messages (messages-square).
+# What a count is of, drawn once as Lucide's icons and used by the page and its log alike: tokens read from the prompt
+# cache (database), anything else the model read (book-open), what it wrote (sparkles), and a prompt's messages
+# (messages-square).
 GLYPHS = (
     '<svg width="0" height="0" style="position:absolute" aria-hidden="true">'
-    '<symbol id="g-in" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></symbol>'
-    '<symbol id="g-out" viewBox="0 0 24 24"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></symbol>'
+    '<symbol id="g-cached" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/>'
+    '<path d="M3 12A9 3 0 0 0 21 12"/></symbol>'
+    '<symbol id="g-read" viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 '
+    '5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>'
+    '<symbol id="g-wrote" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 '
+    '0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 '
+    '0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol>'
     '<symbol id="g-messages" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/>'
     '<path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol></svg>'
 )
