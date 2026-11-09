@@ -1427,7 +1427,7 @@ KEYS = [
     ("Enter", "on an item: open its card, where [ ] move between the cards and Esc goes back"),
     ("a b c", "on a question: pick that option"),
     ("d x", "on a to-do: done, dismissed"),
-    ("o s", "on an artefact: open it, mark it seen; it leaves once the batch is sent"),
+    ("o O s", "on an artefact: open it, open it in a new tab, mark it seen; it leaves once the batch is sent"),
     ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on an item: clear what is staged"),
     ("q", "fold or show the tasks"),

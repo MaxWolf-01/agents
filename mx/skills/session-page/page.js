@@ -431,9 +431,10 @@ const bandKey = (key) => {
   }
   const h = row.dataset.handle, kind = row.dataset.kind
   if (key === "Enter") { if (!open && !openCard(at) && kind === "look") row.querySelector("a.open").click(); return true }
-  if (key === "o") {
+  if (key === "o" || key === "O") {
     const link = kind === "look" ? row.querySelector("a.open") : cardOf(row) && cardOf(row).querySelector("a.open")
-    if (link) link.click()
+    // a shift click is what the hub takes for "in a browser tab of its own"
+    if (link) link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: key === "O" }))
     return true
   }
   if (!loaded && /^[a-z]$/.test(key)) { say("what you staged is still being read"); return true }
