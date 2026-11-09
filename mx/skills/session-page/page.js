@@ -475,8 +475,9 @@ if (working) { poll(); setInterval(poll, 4000) }
 // ---- a phone: the turns, or the tasks and the timeline, one at a time; the bar's button flips them
 const viewToggle = document.getElementById("view-toggle")
 const setView = (view) => {
+  // the button shows where it goes
   document.body.dataset.view = view
-  viewToggle.setAttribute("aria-pressed", view === "tasks")
+  viewToggle.setAttribute("aria-label", view === "tasks" ? "the turns" : "the tasks and the timeline")
 }
 setView("tasks")
 viewToggle.addEventListener("click", () => setView(document.body.dataset.view === "turns" ? "tasks" : "turns"))
@@ -638,7 +639,7 @@ document.addEventListener("scroll", hideTip, true)
 
 // A tag's preview is a tooltip too: the renderer writes it as the link's title, which the browser
 // would show in its own plain box, late.
-document.querySelectorAll("a.qualified[title], a.tag-link[title]").forEach((a) => { a.dataset.tip = a.title; a.removeAttribute("title") })
+document.querySelectorAll("a.qualified[title]").forEach((a) => { a.dataset.tip = a.title; a.removeAttribute("title") })
 
 // ---- copying
 

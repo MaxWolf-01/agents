@@ -12,7 +12,7 @@ A turn that delivers something, in order:
 
 A question still open when the session ends leaves the page for a ticket, since every question on the board belongs to a ticket: a grilling's as the child tickets `/mx:grilling` files, any other as one of the questions of the ticket it concerns (`/mx:tracker`), or a proposed ticket where no ticket holds it.
 
-Everything put to the user is a session `Qn`, a worker's or a ticket's question too: the `Qn` is written for what the user knows now, and a `- Ticket: <slug> D3` sub-item names the ticket it was asked for. A ticket's `Dn`s are its audit log and specification, read by agents. When the user answers such a `Qn`, record the answer on its ticket (`/mx:tracker`, how a ruling is recorded); the `Qn` clears with the answer, or once the ticket records the ruling.
+Everything put to the user is a session `Qn`, a worker's or a ticket's question too: the `Qn` is written for what the user knows now, and a `- Ticket: <slug> D3` sub-item names the ticket it was asked for. A ticket's `Dn`s are its audit log and specification, read by agents. When the user answers such a `Qn`, record the answer on its ticket (`/mx:tracker`, Questions: `tracker rule`); the `Qn` clears with the answer, or once the ticket records the ruling.
 
 ## The turn record
 

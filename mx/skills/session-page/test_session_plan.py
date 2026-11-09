@@ -16,7 +16,7 @@ def test_a_plan_reads_as_steps_nested_by_indent_with_what_each_names(tmp_path: P
         "\n"
         "Rename the status, a line with no state | owner max\n")
     assert read_plan(tmp_path) == (
-        PlanStep("done", "Merge the heavy-work line", ("Q14",), ("agent/diffviews/heavy.html",), under=(
+        PlanStep("done", "Merge the heavy-work line", settles=("Q14",), see=("agent/diffviews/heavy.html",), under=(
             PlanStep("wait", "Enforce placement beyond it?", ("Q27",), under=(PlanStep("next", "Write the hook"),)),)),
         PlanStep("doing", "Collect the denials", jobs=("a local subagent",)),
         PlanStep("next", "Rename the status, a line with no state | owner max"),

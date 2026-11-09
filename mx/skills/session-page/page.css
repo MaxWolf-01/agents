@@ -359,6 +359,7 @@ a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
    timeline. The control to the newest turn moves into the bar, and each turn carries a button to its
    tool calls, which no key reaches there. */
 .view-toggle { display: none; }
+body[data-view="turns"] .view-toggle .to-turns, body[data-view="tasks"] .view-toggle .to-tasks { display: none; }
 @media (max-width: 44rem) {
   :root { --pad: 1.1rem; }
   main.panes { grid-template-columns: minmax(0, 1fr); }

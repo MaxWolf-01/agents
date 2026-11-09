@@ -29,9 +29,8 @@ TAG = re.compile(r"[QA]\d+")
 class PlanStep:
     state: State
     text: str
-    # The questions and to-dos it names, under `waits` or `settles`: while it is open they hold it
-    # up, and once it is done they leave the page, settled by what the step did.
-    names: tuple[str, ...] = ()
+    waits: tuple[str, ...] = ()  # the questions and to-dos that hold it up while it is open
+    settles: tuple[str, ...] = ()  # those its going done answers, as `waits` ones do too once it is done
     see: tuple[str, ...] = ()  # artefacts to look at for it, paths as a turn record's links take them
     jobs: tuple[str, ...] = ()  # what runs it in the background, in words
     under: tuple["PlanStep", ...] = ()
@@ -57,25 +56,26 @@ def read_plan(directory: Path) -> tuple[PlanStep, ...]:
 
 
 def built(level: list[tuple[PlanStep, list]]) -> tuple[PlanStep, ...]:
-    return tuple(PlanStep(s.state, s.text, s.names, s.see, s.jobs, built(children)) for s, children in level)
+    return tuple(PlanStep(s.state, s.text, s.waits, s.settles, s.see, s.jobs, built(children)) for s, children in level)
 
 
 def step_of(line: str) -> PlanStep:
     head, *fields = line.split(" | ")
     first, _, rest = head.partition(" ")
     state, text = (first, rest.strip()) if first in STATES else ("next", head)
-    names, see, jobs = [], [], []
+    named: dict[str, list[str]] = {"waits": [], "settles": []}
+    see, jobs = [], []
     for f in fields:
         keyword, _, value = f.strip().partition(" ")
-        if keyword in ("waits", "settles"):
-            names += TAG.findall(value)
+        if keyword in named:
+            named[keyword] += TAG.findall(value)
         elif keyword == "see":
             see += value.split()
         elif keyword == "job":
             jobs.append(value.strip())
         else:
             text = f"{text} | {f}"
-    return PlanStep(state, text, tuple(names), tuple(see), tuple(jobs))  # type: ignore[arg-type]
+    return PlanStep(state, text, tuple(named["waits"]), tuple(named["settles"]), tuple(see), tuple(jobs))  # type: ignore[arg-type]
 
 
 def walk(steps: tuple[PlanStep, ...]):

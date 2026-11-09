@@ -632,7 +632,8 @@ class Session:
     log: dict[str, tuple["Step", ...]] = field(default_factory=dict)  # each turn's steps, by the id of its block (`worked_for`)
     spent: dict[str, "Spent"] = field(default_factory=dict)  # what each turn consumed and produced, by the id of its block, as `log` divides it
     plan: tuple[PlanStep, ...] = ()  # the session's plan (`session_plan`), its steps in the file's order
-    looked: frozenset[str] = frozenset()  # the paths of the artefacts a line of the user's message named: seen, or a note on it
+    # each artefact path a line of the user's message named (seen, or a note on it), with when the newest such line was said
+    looked: dict[str, datetime] = field(default_factory=dict)
 
 
 # ---- reading the records ----------------------------------------------------
@@ -1143,7 +1144,7 @@ def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = (), plan: t
             if tag in asked and tag not in settled and (written[asked[tag]] is None or written[asked[tag]] < at):
                 settled[tag] = Settled("answered", value, None)
     for step in walk(plan):
-        for tag in step.names if step.state == "done" else ():
+        for tag in (*step.waits, *step.settles) if step.state == "done" else ():
             if tag in asked and tag not in settled:
                 settled[tag] = Settled("done", step.text, None)
     return settled
@@ -1393,7 +1394,7 @@ def log_script(session: "Session") -> str:
 
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 DIRECTORY: ContextVar[Path | None] = ContextVar("DIRECTORY", default=None)  # the directory of the session being rendered
-LOOKED: ContextVar[frozenset[str]] = ContextVar("LOOKED", default=frozenset())  # Session.looked, of the session being rendered
+LOOKED: ContextVar[dict[str, datetime]] = ContextVar("LOOKED", default={})  # Session.looked, of the session being rendered
 # the hover preview of each question and to-do of the session being rendered, by its tag (`own_previews`)
 OWN: ContextVar[dict[str, str]] = ContextVar("OWN", default={})
 AGENT = tracker.TICKETS.parent  # the agent repo, from the repo root
@@ -1447,18 +1448,25 @@ def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
     line of the user's message names it, as the page's batch does once they marked it seen or noted
     it. An artefact two turns linked waits once, under the later."""
     found = {s.artefact: (t, s) for t in session.turns for s in shown_links(t, session.root, session.directory)
-             if s.artefact and s.link.path not in session.looked}
+             if s.artefact and not seen_since(session.looked, s.link.path, t)}
     return list(found.values())
+
+
+def seen_since(looked: dict[str, datetime], path: str, turn: Turn) -> bool:
+    """Whether a line of the user's named `path` after `turn` linked it: a page rebuilt at its path and
+    linked again waits again."""
+    said = looked.get(path)
+    return said is not None and (turn.written is None or said > turn.written)
 
 
 ARTEFACT_LINE = re.compile(r"^(\S+): *\S", re.M)
 
 
-def looked_at(turns: list[Turn], messages: list[tuple[datetime, str]]) -> frozenset[str]:
+def looked_at(turns: list[Turn], messages: list[tuple[datetime, str]]) -> dict[str, datetime]:
     """The paths of the turns' artefacts that a line of the user's messages names, in the form the
-    page's batch sends: `<path>: seen`, or a note on it."""
+    page's batch sends (`<path>: seen`, or a note on it), each with when it was last named."""
     paths = {link.path for t in turns for link in t.artefacts}
-    return frozenset(m.group(1) for _, text in messages for m in ARTEFACT_LINE.finditer(text) if m.group(1) in paths)
+    return {m.group(1): at for at, text in sorted(messages, key=lambda m: m[0]) for m in ARTEFACT_LINE.finditer(text) if m.group(1) in paths}
 
 
 def own_previews(session: Session) -> dict[str, str]:
@@ -1617,7 +1625,7 @@ def assemble(v: View, now: datetime) -> str:
 {GLYPHS}
 <header class="bar">
   <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
-  <button class="icon view-toggle" id="view-toggle" aria-controls="{QUESTIONS}" aria-pressed="true" aria-label="the turns" data-tip="The turns\nor the tasks and the timeline">{ICONS["note"]}</button>
+  <button class="icon view-toggle" id="view-toggle" aria-controls="{QUESTIONS}" aria-label="the turns"><span class="to-turns">{ICONS["turns"]}</span><span class="to-tasks">{ICONS["tasks"]}</span></button>
   <button class="log-toggle v-meta" id="log-toggle" aria-controls="log" aria-expanded="false" aria-keyshortcuts="l" data-src="{LOG}?{now:%Y%m%d%H%M%S%f}" data-live="{LIVE}" title="the focused turn's tool calls" aria-label="the focused turn's tool calls"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
@@ -1714,13 +1722,13 @@ def chat_group(r: Row) -> str:
 def timeline_row(r: Row) -> str:
     """What follows a turn's number in the timeline: its headline, then its artefacts."""
     headline = esc(strip_tags(inline(r.turn.headline)))
-    items = "".join(f'<li{seen_mark(s)}>{opening_key(s)}{type_icon(s.link.path)}{artefact(s, "artefact")}</li>' for s in r.artefacts)
+    items = "".join(f'<li{seen_mark(s, r.turn)}>{opening_key(s)}{type_icon(s.link.path)}{artefact(s, "artefact")}</li>' for s in r.artefacts)
     return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
 
 
-def seen_mark(s: Shown) -> str:
+def seen_mark(s: Shown, turn: Turn) -> str:
     """An artefact the user marked seen and sent, as the timeline marks it."""
-    return f' class="seen"{tip("You looked at it" + chr(10) + "and the agent was told")}' if s.link.path in LOOKED.get() else ""
+    return f' class="seen"{tip("You looked at it" + chr(10) + "and the agent was told")}' if seen_since(LOOKED.get(), s.link.path, turn) else ""
 
 
 def newest_control(rows: tuple[Row, ...]) -> str:
@@ -1750,9 +1758,6 @@ def artefact(s: Shown, cls: str) -> str:
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
-KINDS = {"decide": "to decide", "do": "to do"}
-
-
 def svg(d: str, size: int = 16) -> str:
     return (f'<svg class="ico" viewBox="0 0 24 24" width="{size}" height="{size}" fill="none" stroke="currentColor" stroke-width="1.7" '
             f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{d}</svg>')
@@ -1780,11 +1785,13 @@ ICONS = {
     "image": svg('<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>', 15),
     "page": svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>', 15),
     "file": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', 15),
+    "turns": svg('<path d="M4 6h16M4 12h16M4 18h10"/>', 18),
+    "tasks": svg('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>', 18),
     "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
 }
 # What an artefact is, by its path, as its icon says: (the icon, its name in the tooltip).
 TYPES = (
-    (re.compile(r"(^|/)diffviews/|review", re.I), "review", "Review page"),
+    (re.compile(r"(^|/)diffviews/[^/]*\.html?$|review[^/]*\.html?$", re.I), "review", "Review page"),
     (re.compile(r"\.md$", re.I), "markdown", "Markdown"),
     (re.compile(r"\.(png|jpe?g|gif|webp|svg)$", re.I), "image", "Image"),
     (re.compile(r"\.html?$|^https?:", re.I), "page", "Page"),
@@ -1823,15 +1830,19 @@ def tasks_column(v: View) -> str:
     up at the top level. Every item's card waits in the column's dialog, which page.js opens; the
     review of the batch shows there too."""
     open_rows = {q.handle: decide_row(t, q) for t, q in v.waiting} | {d.tag: todo_row(t, d) for t, d in v.todos}
-    named = {tag for step in walk(v.session.plan) if step.state != "done" for tag in step.names}
+    named = {tag for step in walk(v.session.plan) if step.state != "done" for tag in step.waits}
     sections: dict[str, list[str]] = {"needs": [row for handle, row in open_rows.items() if handle not in named], "doing": [], "next": []}
+    drawn: set[str] = set()  # a call two steps wait on is drawn under the first
 
     def visit(step: PlanStep, parent: str | None, depth: int) -> None:
-        held = [open_rows[t] for t in step.names if t in open_rows]
+        held = [open_rows[t] for t in dict.fromkeys(step.waits) if t in open_rows and t not in drawn]
+        drawn.update(t for t in step.waits if t in open_rows)
         section = None if step.state == "done" else "needs" if held else "doing" if step.state == "doing" else "next"
         depth = depth + 1 if section is not None and section == parent and section != "needs" else 0
         if section:
-            sections[section].append(step_row(step, depth) + "".join(held))
+            # a step whose calls were all answered waits on nothing, whatever the plan still says
+            shown = replace(step, state="next") if step.state == "wait" and not held else step
+            sections[section].append(step_row(shown, depth) + "".join(held))
         for under in step.under:
             visit(under, section, depth)
 
@@ -1914,14 +1925,13 @@ def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: 
     of its context, and the keys that act on it. `handle` is what the batch names it by; `noted` is
     what n gives it, a note, or the answer itself where it offers no option to pick; `data`, the
     card's further `data-` attributes, which page.js reads."""
-    word = KINDS[kind].removeprefix("to ")
-    attributes = "".join(f' data-{name}="{esc(value)}"' for name, value in {"handle": handle, "kind": kind, "kind-word": word, **(data or {})}.items())
+    attributes = "".join(f' data-{name}="{esc(value)}"' for name, value in {"handle": handle, "kind": kind, **(data or {})}.items())
     return f"""
 <article class="card {cls}" id="{anchor}"{attributes} tabindex="-1">
   <span class="rail v-num">{rail}</span>
   <div class="card-main">
     <h3 class="v-h2">{headline}</h3>
-    <p class="v-meta from">{word} · {meta}</p>
+    <p class="v-meta from">{kind} · {meta}</p>
     <div class="card-body">{body}</div>
     <p class="keys-row v-meta">{keys}<span><kbd>n</kbd> {noted}</span><span><kbd>u</kbd> clear</span><span><kbd>[</kbd> <kbd>]</kbd> items</span><span><kbd>r</kbd> review</span></p>
     <p class="staged v-small" hidden></p>
