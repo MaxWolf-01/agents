@@ -385,13 +385,8 @@ const bandKey = (key) => {
   if (!loaded && /^[a-z]$|^Enter$/.test(key)) { say("what you staged is still being read"); return true }
   if (kind === "decide" && key.length === 1 && (c.dataset.options || "").includes(key)) { toggle(h, "pick", key); return true }
   switch (key) {
-    case "Enter": case "p":
-      // Enter on a to-do's card is swallowed, so it does not open or close the focused turn
-      if (kind !== "decide") return key === "Enter"
-      if (!c.dataset.pick) { say(`${c.querySelector(".rail").textContent} carries no pick: answer it with n`); return true }
-      if (key === "p") toggle(h, "pick", c.dataset.pick)
-      else stage(h, { pick: c.dataset.pick })
-      return true
+    // Enter on a card is swallowed, so it does not open or close the focused turn
+    case "Enter": return true
     case "d": case "x": if (kind !== "do") return false; toggle(h, "act", key === "d" ? "done" : "dismissed"); return true
     case "s": if (kind !== "look") return false; see(h); return true
     case "n": note(c); return true

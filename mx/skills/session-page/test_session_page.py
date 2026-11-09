@@ -241,6 +241,49 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     assert "no longer a question of its ticket" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
 
 
+ASKED_FOR_THE_TICKET = f"""- [Q2] **Sync on every commit?** The checkouts drift in between.
+  - Ticket: {TWO_MAIN} D5
+  - (a) On every commit
+    - Leads to: a hook in both checkouts
+    - Gives: never out of step
+  - (b) On a timer
+    - Leads to: a unit on each host
+    - Costs: an hour out of step
+  - Recap: what drifted last week
+    - the board
+    - two tickets
+  - [The drift, drawn](agent/show/drift.html): which files"""
+
+
+def test_a_question_put_for_a_ticket_is_a_session_question_until_its_ticket_records_the_ruling(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: everything put to the user is a session Qn, a ticket's question
+    with its ticket handle beside it, a link with the ticket's question as its preview. The card
+    carries what it leans on, the recap and the artefact, and each option what it leads to, gives
+    and costs. It clears with an answer line like any Qn, or once the ticket records the ruling,
+    which its turn then shows under the Qn's own tag."""
+    directory, transcript = ticket_session(tmp_path, ASKED_FOR_THE_TICKET)
+    assert waiting(view_of(directory, transcript)) == ["Q2"]
+    card = elements(render_session(directory, transcript, now=NOW), "q2")["q2"]
+    (link,) = [attrs for attrs, text in anchors(card) if text == f"{TWO_MAIN} D5"]
+    assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
+    assert "<li>the board</li>" in card and "what drifted last week" in text_of(card)
+    assert any(text == "The drift, drawn" for _, text in anchors(card))
+    rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
+    assert rows == [["", "option", "leads to", "gives", "costs"],
+                    ["a", "On every commit", "a hook in both checkouts", "never out of step", ""],
+                    ["b", "On a timer", "a unit on each host", "", "an hour out of step"]]
+
+    ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
+    ticket.write_text(TICKET.replace("immediate.\n", "immediate.\n  - Ruled 2026-10-24: on every commit.\n"))
+    assert waiting(view_of(directory, transcript)) == []
+    turn = sections_of(render_session(directory, transcript, now=NOW))["01"]
+    assert 'id="q2"' in turn and "ruled 2026-10-24" in text_of(turn)
+
+    ticket.write_text(TICKET)
+    write_transcript(transcript, ["Sync the checkouts", "Q2: b"])
+    assert waiting(view_of(directory, transcript)) == []
+
+
 def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
     """`fewer-workflow-concepts`' tag rule: a ticket's question, detail entry, property and
     assumption, a retro entry, and another session's question, named in prose by their qualified
@@ -795,13 +838,14 @@ def test_a_line_of_the_users_message_in_the_pages_form_settles_its_item(tmp_path
 
 
 def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
-    """The floor D3 sets: each option a row, its gives and costs in columns of their own, the pick
-    marked; an option that names no cost leaves its cell empty."""
+    """The floor D3 sets: each option a row, its gives and costs in columns of their own; an option
+    that names no cost leaves its cell empty. An older record's pick mark shows nowhere: no option
+    is marked as the agent's."""
     directory, transcript = todo_session(tmp_path, transcript_turns=True)
     card = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
     rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
     assert rows == [["", "option", "gives", "costs"],
-                    ["a", "Push now my pick", "#4 and #5 carry the rule today", "their old SHAs stop resolving"],
+                    ["a", "Push now", "#4 and #5 carry the rule today", "their old SHAs stop resolving"],
                     ["b", "Wait for the first review", "a reviewer sees one history", ""]]
 
 

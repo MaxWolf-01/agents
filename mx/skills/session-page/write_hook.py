@@ -62,7 +62,7 @@ MOVED = ("{written} is in the agent repo, where session records went before mx k
 def decide(hook: dict, directory: Path | None) -> Decision:
     """What to tell the agent after the write the hook JSON describes, over the session directory."""
     import turn_review
-    from session_page import SESSIONS, RecordError, agent_repo_of, check_links, check_references, check_ticket_questions, left_alone, read_session, written_this_turn
+    from session_page import SESSIONS, RecordError, agent_repo_of, check_current_forms, check_links, check_references, check_ticket_questions, left_alone, read_session, written_this_turn
     from stop_hook import END
 
     if unread := left_alone():
@@ -90,10 +90,11 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("allow", "records parse")
     if turn.path.resolve() == written:
         try:
+            check_current_forms(turn.path)
             check_ticket_questions(session.root, turn)
             check_links(session.root, session.directory, turn)
         except RecordError as e:
-            return Decision("send back", "ticket question not open or link to nothing",
+            return Decision("send back", "retired form, ticket question not open or link to nothing",
                             f"{e}\nFix the record and carry on with the turn; then {END}, as you would have without this error.")
     if turn_review.reviewed_since(session.id, session.began):
         return Decision("allow", "record reviewed this turn")

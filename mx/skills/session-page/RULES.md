@@ -10,7 +10,9 @@ A turn that delivers something, in order:
 2. **The session record**, with the first turn record: `session.md`, its H1 alone, one that names the session's subject the way an email subject line does (the area of the project and the things worked on, by name). Until it exists, the page takes the title Claude Code keeps for the session. The H1 is rewritten when the session's scope moves, and a turn that rewrites it has it reviewed with its record.
 3. **The turn record**, below, written with the Write tool, since the page pairs the record with the user's message by that call. Revise it where a finding holds, and end the turn once it is final. Everything the user needs is in the record, so nothing follows it in the chat: what waits on them stays at the page's top until a later record clears it, a call under Questions, a thing to do under To do, an artifact under Links.
 
-A question still open when the session ends leaves the page for a ticket, since every question on the board belongs to a ticket: a grilling's as the child tickets `/mx:grilling` files, any other as one of the questions of the ticket it concerns (`/mx:tracker`), or a proposed ticket where no ticket holds it. A question is tagged where it lives: `Qn` on the session page, `Dn` in a ticket.
+A question still open when the session ends leaves the page for a ticket, since every question on the board belongs to a ticket: a grilling's as the child tickets `/mx:grilling` files, any other as one of the questions of the ticket it concerns (`/mx:tracker`), or a proposed ticket where no ticket holds it.
+
+Everything put to the user is a session `Qn`, a worker's or a ticket's question too: the `Qn` is written for what the user knows now, and a `- Ticket: <slug> D3` sub-item names the ticket it was asked for. A ticket's `Dn`s are its audit log and specification, read by agents. When the user answers such a `Qn`, record the answer on its ticket (`/mx:tracker`, how a ruling is recorded); the `Qn` clears with the answer, or once the ticket records the ruling.
 
 ## The turn record
 
@@ -32,16 +34,24 @@ superseded:
 ## Questions
 
 - [Q7] **The decision, as a question** the part of the design it would change
-  - (a) The option recommended *my pick*
+  - (a) One option
+    - Leads to: what deciding it this way sets going
     - Gives: what taking it gets the user
     - Costs: what taking it gives up
   - (b) The other option
-  - Why: the argument for the pick
-- [two-main-checkouts-synced-by-git D5]
+  - Recap: what the question leans on, whole
+    - a list, a table or a quoted draft, indented under it
+  - [The render of each option](agent/show/<slug>/options.html): what to compare
+- [Q8] **A worker's question, as the user would ask it** the part of the design it would change
+  - Ticket: two-main-checkouts-synced-by-git D5
+  - (a) One option
+  - (b) The other option
 
 ## To do
 
-- [A3] **What the user does, outside the session** what it unblocks, and where its material is ([text](#t07))
+- [A3] **What the user does, outside the session** what it unblocks
+  - Recap: what they need to do it, whole
+  - [Its material](agent/show/<slug>/review.html): what to look at there
 
 ## Links
 
@@ -54,12 +64,13 @@ A few lines of plain markdown: what the reader needs beyond the headline and the
 
 - The **headline** is what the hub shows under the session's title as its status, and the first line of the Stop hook's message in the terminal, so it is the line read most often without the page. Where a skill fixes how a headline opens (`/mx:wrap` opens on its verdict), that opening is part of the record's shape.
 - `date` is the day the turn ends. `answered` maps each question whose answer this turn received in other words than its answer line to the option's letter, or to the user's own words where the answer was neither option, and each to-do the user reported on to what they said (`done`, `dismissed`, their words); `superseded` maps a question or to-do to the one that replaced it. A question or to-do named in either table leaves the top of the page.
-- **Questions** holds only the calls the user must make, which *What the user decides* below sets out. A question that passes names what they asked for and the change you would make to it, with at least two options you would defend and your pick marked; where the options differ in what the user would see, the question links the render of each (`/mx:show`, What a reader can be shown) and is asked once it exists. Tags run `Q1`, `Q2`, … across the whole session. An option's `Gives:` and `Costs:` sub-items are the columns of the table the page lays its options out in; an option leaves out the one it has nothing for. What a question leans on beyond its detail line (a draft it asks about, a list, a table) goes in Details, and the question links it with `[text](#tNN)`. A call the user need not make is a line of Details, or a call mark in the ticket it shapes, and nothing asks the user to acknowledge it. A ticket's question is put to the user as its bare handle: the page reads its words from the ticket and clears it once the ticket records the ruling. A **blind** question carries one sub-item, `- Blind: <path of its test page>`, in place of options and a Why: the page (`blind-test`) holds the options and your pick, if you made one, until the user reveals them, and the answer the user pastes back clears it.
-- **To do** holds what the user has to do outside the session for the work to go on: a review, a message to post, a command only they can run. Tags run `A1`, `A2`, … across the whole session. A to-do waits at the top until a later record clears it, so a turn lists one once, and a to-do that changed gets a new tag and supersedes the old.
+- **Questions** holds only the calls the user must make, which *What the user decides* below sets out. A question that passes names what they asked for and the change you would make to it, with at least two options you would defend, none marked as yours; where the options differ in what the user would see, the question links the render of each (`/mx:show`, What a reader can be shown) and is asked once it exists. Tags run `Q1`, `Q2`, … across the whole session. An option's `Leads to:`, `Gives:` and `Costs:` sub-items are the columns of the table the page lays its options out in; an option leaves out the one it has nothing for. Writing them is also the test of the question: one whose options lead to the same place, or cost nothing either way, is a call that is yours to make. A call the user need not make is a line of Details, or a call mark in the ticket it shapes, and nothing asks the user to acknowledge it. A **blind** question carries one sub-item, `- Blind: <path of its test page>`, in place of options: the page (`blind-test`) holds the options and your pick, if you made one, until the user reveals them, and the answer the user pastes back clears it.
+- **To do** holds what the user has to do outside the session for the work to go on: a review, a message to post, a command only they can run. Tags run `A1`, `A2`, … across the whole session. A to-do waits at the top until it clears, so a turn lists one once, and a to-do that changed gets a new tag and supersedes the old.
+- A question's or a to-do's card is all the user reads of it, so it carries everything it leans on: a `- Recap:` sub-item, whose lines indented under it are markdown (a draft it asks about, a list, a table), and the artefacts it needs as link sub-items, `- [text](path): note`, written as a Links item is. A card that sends the user to a turn instead comes back as the record is written.
 - **Links** are the artifacts this turn made or moved, each a path and a note on why to open it. The path is from the repo root; `show/<file>` for one in the session's own `show/`; absolute for one in another repo. A link to a file that does not exist comes back as the record is written. As the turn ends, the Stop hook hands every one but a ticket file to `claude-browser`, which puts it on the hub.
 - **Details** says what the reader needs beyond the headline and the links, and never retells what an artifact shows.
-- Anything the record points at is a link. A path on this machine written as code opens the file; `[text](#t07)` opens turn 07 and `[text](#q3)` shows question Q3, so a question at the top links the turn whose Details it leans on. A tag naming something outside the page is qualified by its home (`<ticket> P3`, `retro F1`, `review <range> S13`, another session's `<first 8 of its id> Q3`), which the page links.
-- The user works through what waits on the page and sends it as one message, a line per item: `Q7: a`, an option's letter, or their words where they picked none; `A3: done` or `A3: dismissed`; `<ticket> D5: their words`, a ruling for its ticket (`/mx:tracker`); `<artifact path>: their note`. A line may end on a note after a comma, and their own words follow the lines. A line in that form settles its item as the message lands, whether or not a record follows; the next record's `answered:` carries an answer in other words.
+- Anything the record points at is a link. A path on this machine written as code opens the file; `[text](#t07)` opens turn 07 and `[text](#q3)` shows question Q3. A tag naming something outside the page is qualified by its home (`<ticket> P3`, `retro F1`, `review <range> S13`, another session's `<first 8 of its id> Q3`), which the page links.
+- The user works through what waits on the page and sends it as one message, a line per item: `Q7: a`, an option's letter, or their words where they picked none; `A3: done` or `A3: dismissed`; `<artifact path>: seen` for an artefact they looked at, or their note on it. A line may end on a note after a comma, and their own words follow the lines. A line in that form settles its item as the message lands, whether or not a record follows; the next record's `answered:` carries an answer in other words.
 - A section with nothing in it is left out. The user's own message is read from the transcript, so the record never quotes it.
 
 ## What the user decides

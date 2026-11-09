@@ -40,6 +40,7 @@ import re
 import shlex
 import shutil
 import sys
+import textwrap
 import urllib.parse
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
@@ -320,9 +321,9 @@ def held_in_tickets(turns: list[Turn], tickets: Path) -> list[Turn]:
     latest = {q.handle: t.number for t in turns for q in t.questions if isinstance(q, TicketQuestion)}
 
     def held(q: Question | TicketQuestion) -> Question | TicketQuestion:
-        if not isinstance(q, TicketQuestion):
+        if isinstance(q, Question) and not q.ticket:
             return q
-        named = resolve(q.ticket, q.tag)
+        named = resolve(*q.ticket.split()) if isinstance(q, Question) else resolve(q.ticket, q.tag)
         return replace(q, named=named if named and named.kind == "question" else None)
 
     return [replace(t, questions=tuple(held(q) for q in t.questions if not isinstance(q, TicketQuestion) or latest[q.handle] == t.number))
@@ -435,32 +436,46 @@ class RecordError(Exception):
 
 @dataclass(frozen=True)
 class Option:
-    """One answer a question offers, as a sub-item under it."""
+    """One answer a question offers, as a sub-item under it, with what taking it leads to, gives
+    and costs, each from a sub-item of its own where it has one."""
 
     letter: str
     text: str
-    picked: bool  # the agent's own pick, which the record marks
-    gives: str = ""  # what taking it gives, from its `- Gives:` sub-item, where it has one
-    costs: str = ""  # what taking it costs, from its `- Costs:` sub-item
+    gives: str = ""
+    costs: str = ""
+    leads: str = ""  # what deciding it this way sets going: the work, the change, the next question
 
 
 @dataclass(frozen=True)
 class Question:
     """One `- [Qn] **headline** detail` item under a turn's `## Questions`: a call only the user
-    can make. It clears through the frontmatter of the turn that received the answer."""
+    can make. It clears through the user's answer line, a later turn's frontmatter, a plan step
+    that names it going done, or, for one put to the user for a ticket, the ticket recording the
+    ruling."""
 
     tag: str  # Q1, Q2, ... the session's running sequence
     headline: str  # the bold sentence the page shows
     detail: str  # the rest of the item, as written
     options: tuple[Option, ...] = ()
-    why: str = ""  # the `- Why:` sub-item under the options, where the question carries one
+    why: str = ""  # the `- Why:` sub-item an older record carries, its argument for the pick it marked
     # A blind question's test page (`blind-test`), from the repo root or absolute: the page holds its
     # options and the agent's pick, if any, so the question carries neither.
     blind: str = ""
+    recap: str = ""  # markdown: what the question leans on, from its `- Recap:` sub-item, which the card shows whole
+    links: tuple["Link", ...] = ()  # the artefacts it leans on, its link sub-items
+    ticket: str = ""  # `<slug> D2`, where the question is a ticket's or a worker's, put to the user as this Qn
+    # the ticket's question as the tracker held it when the session was read (`held_in_tickets`);
+    # None where there is no ticket, or it holds the question no longer
+    named: qualified.Named | None = None
 
     @property
     def handle(self) -> str:
         return self.tag
+
+    @property
+    def ruled(self) -> bool:
+        """Whether its ticket settled it: ruled it, retired it, or holds the question no longer."""
+        return bool(self.ticket) and not (self.named is not None and self.named.open)
 
 
 @dataclass(frozen=True)
@@ -491,13 +506,15 @@ class TicketQuestion:
 @dataclass(frozen=True)
 class ToDo:
     """One `- [An] **headline** detail` item under a turn's `## To do`: something the user has to do
-    outside the session. Like a question, it waits at the top until a later turn's frontmatter
-    clears it: `answered` once the user says how it went, `superseded` where a changed to-do
-    replaces it."""
+    outside the session. Like a question, it waits at the top until it clears: `answered` once the
+    user says how it went, `superseded` where a changed to-do replaces it, or a plan step naming it
+    going done."""
 
     tag: str  # A1, A2, ... the session's running sequence, beside the questions'
     headline: str
     detail: str = ""
+    recap: str = ""  # markdown, from its `- Recap:` sub-item, as a question's
+    links: tuple["Link", ...] = ()  # the artefacts it leans on, its link sub-items
 
     @property
     def handle(self) -> str:
@@ -745,19 +762,22 @@ def check_links(root: Path, directory: Path, turn: "Turn") -> None:
 
 
 def check_ticket_questions(root: Path, turn: "Turn") -> None:
-    """Every ticket's question the turn's record puts to the user is one its ticket holds open.
-    Checked on the record the turn writes, never on an older one or as the page renders, since a
-    ticket's question is ruled, and its ticket retired, long after the record that asked it."""
+    """Every ticket's question the turn's record puts to the user, as a `Ticket:` sub-item, is one
+    its ticket holds open. Checked on the record the turn writes, never on an older one or as the
+    page renders, since a ticket's question is ruled, and its ticket retired, long after the record
+    that asked it."""
     lines = turn.path.read_text().split("\n")
-    for c in (q for q in turn.questions if isinstance(q, TicketQuestion) and not q.open):
-        n = next((n for n, line in enumerate(lines, start=1) if line.startswith(f"- [{c.handle}]")), None)
-        if not (root / ticket_path(c.ticket)).is_file():
-            raise RecordError(turn.path, n, f"{c.handle}: the tracker holds no ticket {c.ticket}")
-        if c.named is None:
-            raise RecordError(turn.path, n, f"{c.handle}: {c.ticket} asks no question {c.tag} under its ## Questions")
-        if c.named.done:
-            raise RecordError(turn.path, n, f"{c.handle}: {c.ticket} is done, so its open questions wait on nobody")
-        raise RecordError(turn.path, n, f"{c.handle} was ruled {c.named.ruled} ({c.named.answer}), so it waits on nobody")
+    for q in (q for q in turn.questions if isinstance(q, Question) and q.ticket and q.ruled):
+        slug, tag = q.ticket.split()
+        n = next((n for n, line in enumerate(lines, start=1) if TICKET.fullmatch(line.strip().removeprefix("- "))
+                  and q.ticket in line), None)
+        if not (root / ticket_path(slug)).is_file():
+            raise RecordError(turn.path, n, f"{q.ticket}: the tracker holds no ticket {slug}")
+        if q.named is None:
+            raise RecordError(turn.path, n, f"{q.ticket}: {slug} asks no question {tag} under its ## Questions")
+        if q.named.done:
+            raise RecordError(turn.path, n, f"{q.ticket}: {slug} is done, so its open questions wait on nobody")
+        raise RecordError(turn.path, n, f"{q.ticket} was ruled {q.named.ruled} ({q.named.answer}), so it waits on nobody")
 
 
 def read_record(path: Path, allowed: set[str], sections: set[str]) -> tuple[dict, str, dict[str, tuple[int, str]]]:
@@ -844,27 +864,73 @@ TICKET_QUESTION = re.compile(rf"({tracker.SLUG.pattern}) (D\d+)")  # a ticket's 
 TICKET_QUESTION_ITEM = re.compile(rf"- \[{TICKET_QUESTION.pattern}\](.*)")
 SUB_ITEM = re.compile(r"\s{2,}- (.*)")
 OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
-PICK = re.compile(r"\s*\*my pick\*\s*")
+PICK = re.compile(r"\s*\*my pick\*\s*")  # an older record's mark of the agent's pick, which the page no longer shows
 WHY = re.compile(r"Why:\s*(.*)")
 BLIND = re.compile(r"Blind:\s*(\S+)")
-GIVES_COSTS = re.compile(r"(Gives|Costs):\s*(.*)")
+TICKET = re.compile(rf"Ticket:\s*{TICKET_QUESTION.pattern}\s*")
+OPTION_PARTS = {"Gives": "gives", "Costs": "costs", "Leads to": "leads"}
+OPTION_PART = re.compile(f"({'|'.join(OPTION_PARTS)}):\\s*(.*)")
+RECAP = re.compile(r"Recap:\s*(.*)")
+LINK_TEXT = r"\[(.+?)\]\(([^()\s]+)\)(?::\s*(.*))?\s*"
+LEANED_ON = re.compile(LINK_TEXT)  # an artefact an item leans on, as a sub-item of it
+
+
+def leaned_on(path: Path, n: int, item: dict, sub: str, indent: int) -> dict | None:
+    """The part a `- Recap:` or a link sub-item adds to `item`, a question or a to-do, or None where
+    `sub` is neither. A recap keeps its lines, so a list or a quote under it renders as one."""
+    if r := RECAP.fullmatch(sub):
+        if item["recap"] is not None:
+            raise RecordError(path, n, f"a second Recap: under {item['tag']}")
+        item["recap"] = {"text": r.group(1), "lines": [], "dash": indent}
+        return item["recap"]
+    if m := LEANED_ON.fullmatch(sub):
+        if m.group(2).startswith("../"):
+            raise RecordError(path, n, f"{m.group(2)} is neither a path from the repo root nor an absolute one")
+        part = {"text": m.group(3) or "", "link": (m.group(1), m.group(2))}
+        item["links"].append(part)
+        return part
+    return None
+
+
+def continued(part: dict, line: str) -> None:
+    """A line indented deeper than `part`'s `-`, added to it: a recap keeps it as a line of its
+    markdown, anything else joins its text."""
+    if "lines" in part:
+        part["lines"].append(line)
+    else:
+        part["text"] = f"{part['text']} {line.strip()}".strip()
+
+
+def recap_of(item: dict) -> str:
+    if item["recap"] is None:
+        return ""
+    r = item["recap"]
+    return "\n".join([r["text"], textwrap.dedent("\n".join(r["lines"]))]).strip()
+
+
+def links_of(item: dict) -> tuple["Link", ...]:
+    return tuple(Link(*part["link"], part["text"]) for part in item["links"])
 
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question | TicketQuestion, ...]:
-    """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
-    and at most one `Why: text`, as sub-items; a line indented deeper than an item's `-` continues it.
-    An option may carry a `Gives: text` and a `Costs: text` sub-item of its own, which the page lays
-    out as the columns of the question's table of options.
-    A blind question carries one `Blind: path` sub-item, its test page, and nothing else. A line back
+    """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two, as
+    sub-items, and what the question leans on: a `Recap: text`, whose deeper lines are its
+    markdown, and `[text](path): note` links, its artefacts. An option may carry `Leads to:`,
+    `Gives:` and `Costs:` sub-items of its own, which the page lays out as the columns of the
+    question's table of options. A `Ticket: <slug> D3` sub-item puts the ticket's question to the
+    user as this one. A line indented deeper than an item's `-` continues it.
+    A blind question carries one `Blind: path` sub-item, its test page, and no options. A line back
     at the question's indent once its sub-items began is refused: markdown would show it under the
-    question, but continuing the last sub-item would put it inside that option. A ticket's
-    question is `- [<ticket> D3]` alone, since its words live in its ticket; what the ticket holds
-    under it is read by `read_session`."""
+    question, but continuing the last sub-item would put it inside that option.
+    An older record's forms still read: `*my pick*` on an option, dropped; `Why: text`; and a
+    ticket's question as `- [<ticket> D3]` alone, whose words live in its ticket (`read_session`)."""
     items: list[dict | TicketQuestion] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
     dash = 0  # the indent of that part's `-`, which a continuation line goes deeper than
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
+            if part is not None and "lines" in part:
+                part["lines"].append("")
             continue
         indent = len(line) - len(line.lstrip())
         if m := TICKET_QUESTION_ITEM.fullmatch(line):
@@ -877,20 +943,22 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
             raise RecordError(path, n, f"{items[-1].handle} is a ticket's question: its options and detail live in its ticket, not here")
         elif m := QUESTION_ITEM.fullmatch(line):
             part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None,
-                    "blind": None, "line": n}
+                    "blind": None, "ticket": None, "recap": None, "links": [], "line": n}
             items.append(part)
             dash = 0
         elif line.startswith("- "):
-            raise RecordError(path, n, "a question is `- [Q7] **headline** detail`, or `- [<ticket> D3]` for a ticket's question")
+            raise RecordError(path, n, "a question is `- [Q7] **headline** detail`")
         elif not items:
             raise RecordError(path, n, "text before the first question")
-        elif (m := SUB_ITEM.fullmatch(line)) and (gc := GIVES_COSTS.fullmatch(m.group(1))):
-            options, key = items[-1]["options"], gc.group(1).lower()
+        elif part is not None and "lines" in part and indent > part["dash"]:
+            continued(part, line)
+        elif (m := SUB_ITEM.fullmatch(line)) and (op := OPTION_PART.fullmatch(m.group(1))):
+            options, key = items[-1]["options"], OPTION_PARTS[op.group(1)]
             if not options or indent <= options[-1]["dash"]:
-                raise RecordError(path, n, f"{gc.group(1)}: goes under an option, indented deeper than its `- (a)`")
+                raise RecordError(path, n, f"{op.group(1)}: goes under an option, indented deeper than its `- (a)`")
             if key in options[-1]:
-                raise RecordError(path, n, f"a second {gc.group(1)}: under option ({options[-1]['letter']}) of {items[-1]['tag']}")
-            part = options[-1][key] = {"text": gc.group(2)}
+                raise RecordError(path, n, f"a second {op.group(1)}: under option ({options[-1]['letter']}) of {items[-1]['tag']}")
+            part = options[-1][key] = {"text": op.group(2)}
             dash = indent
         elif m := SUB_ITEM.fullmatch(line):
             item, dash = items[-1], indent
@@ -907,13 +975,21 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
                 if b.group(1).startswith("../"):
                     raise RecordError(path, n, f"{b.group(1)} is neither a path from the repo root nor an absolute one")
                 item["blind"], part = b.group(1), None
+            elif t := TICKET.fullmatch(m.group(1)):
+                if item["ticket"] is not None:
+                    raise RecordError(path, n, f"a second Ticket: under {item['tag']}")
+                item["ticket"], part = qualified.handle(t.group(1), t.group(2)), None
+            elif (leaned := leaned_on(path, n, item, m.group(1), indent)) is not None:
+                part = leaned
             else:
-                raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Why: text` or `Blind: path`")
+                raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Recap: text`, a link "
+                                           "`[text](path): note`, `Ticket: <slug> D3` or `Blind: path`")
         elif line.startswith(" ") and part is not None and indent > dash:
-            part["text"] = f"{part['text']} {line.strip()}".strip()
+            continued(part, line)
         elif line.startswith(" ") and indent <= dash:
             raise RecordError(path, n, f"text under {items[-1]['tag']} after its sub-items, which would show inside the last one; "
-                                       f"what a question leans on beyond its detail line goes in ## Details, which the question links as [text](#t{int(path.stem):02d})")
+                                       "what a question leans on beyond its detail line goes in a `- Recap:` sub-item, "
+                                       "its lines indented under it")
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
     questions: list[Question | TicketQuestion] = []
@@ -921,22 +997,21 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
         if isinstance(item, TicketQuestion):
             questions.append(item)
             continue
+        leans = {"recap": recap_of(item), "links": links_of(item), "ticket": item["ticket"] or ""}
         if item["blind"] is not None:
             if item["options"] or item["why"] is not None:
-                raise RecordError(path, item["line"], f"{item['tag']} is blind: its options, pick and why live in its test page, not here")
-            questions.append(Question(item["tag"], item["headline"], item["text"], blind=item["blind"]))
+                raise RecordError(path, item["line"], f"{item['tag']} is blind: its options and why live in its test page, not here")
+            questions.append(Question(item["tag"], item["headline"], item["text"], blind=item["blind"], **leans))
             continue
         letters = [o["letter"] for o in item["options"]]
         if len(set(letters)) != len(letters):
             raise RecordError(path, item["line"], f"{item['tag']} repeats an option letter")
-        options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(), bool(PICK.search(o["text"])),
-                               o.get("gives", {}).get("text", ""), o.get("costs", {}).get("text", "")) for o in item["options"])
+        options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(),
+                               **{key: o.get(key, {}).get("text", "") for key in OPTION_PARTS.values()}) for o in item["options"])
         if len(options) < 2:
             raise RecordError(path, item["line"], f"{item['tag']} offers {len(options)} option{'s' * (len(options) != 1)}; a question offers at least two, `(a) text` sub-items")
-        if sum(o.picked for o in options) != 1:
-            raise RecordError(path, item["line"], f"{item['tag']} marks {'no option' if not any(o.picked for o in options) else 'more than one option'} *my pick*; it marks one")
         why = item["why"]["text"] if item["why"] else ""
-        questions.append(Question(item["tag"], item["headline"], item["text"], options, why))
+        questions.append(Question(item["tag"], item["headline"], item["text"], options, why, **leans))
     return tuple(questions)
 
 
@@ -944,25 +1019,59 @@ TODO_ITEM = re.compile(r"- \[(A\d+)\] \*\*(.+?)\*\*(?:\s+(.*))?")
 
 
 def read_todos(path: Path, start: int, text: str) -> tuple[ToDo, ...]:
-    """`- [A2] **headline** detail` items; an indented line continues the detail. A to-do carries no
-    sub-items: what it leans on goes in ## Details, which it links."""
-    todos: list[list[str]] = []
+    """`- [A2] **headline** detail` items; an indented line continues the detail. What a to-do leans
+    on is its sub-items, as a question's: a `Recap: text` and `[text](path): note` links."""
+    items: list[dict] = []
+    part: dict | None = None
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
+            if part is not None and "lines" in part:
+                part["lines"].append("")
             continue
+        indent = len(line) - len(line.lstrip())
         if m := TODO_ITEM.fullmatch(line):
-            todos.append([m.group(1), m.group(2), m.group(3) or ""])
-        elif SUB_ITEM.fullmatch(line) and todos:
-            raise RecordError(path, n, f"{todos[-1][0]} is a to-do, which takes no sub-items; what it leans on goes in ## Details, "
-                                       f"which it links as [text](#t{int(path.stem):02d})")
-        elif line.startswith(" ") and todos:
-            todos[-1][2] = f"{todos[-1][2]} {line.strip()}".strip()
+            part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "recap": None, "links": [], "dash": 0}
+            items.append(part)
+        elif items and part is not None and "lines" in part and indent > part["dash"]:
+            continued(part, line)
+        elif items and (m := SUB_ITEM.fullmatch(line)):
+            part = leaned_on(path, n, items[-1], m.group(1), indent)
+            if part is None:
+                raise RecordError(path, n, f"{items[-1]['tag']} is a to-do, whose sub-items are what it leans on: "
+                                           "a `Recap: text` and links `[text](path): note`")
+            part.setdefault("dash", indent)
+        elif line.startswith(" ") and part is not None:
+            continued(part, line)
         else:
             raise RecordError(path, n, "a to-do is `- [A2] **what the user does** detail`")
-    return tuple(ToDo(*todo) for todo in todos)
+    return tuple(ToDo(i["tag"], i["headline"], i["text"], recap_of(i), links_of(i)) for i in items)
 
 
-LINK_ITEM = re.compile(r"- \[(.+?)\]\(([^()\s]+)\)(?::\s*(.*))?\s*")
+TURN_LINK = re.compile(r"\]\(#t\d+\)")
+
+
+def check_current_forms(path: Path) -> None:
+    """The record a turn writes uses only the forms a record is written in now, and its questions
+    and to-dos carry what they lean on rather than link a turn for it. Checked as a record is
+    written, never as the page renders, since a record is never edited and older ones predate the
+    forms."""
+    section = ""
+    for n, line in enumerate(path.read_text().split("\n"), start=1):
+        if heading := re.match(r"##\s+(.+?)\s*$", line):
+            section = heading.group(1)
+        if section == "Questions" and PICK.search(line):
+            raise RecordError(path, n, "no option is marked as yours: the user reads a marked option as one they already "
+                                       "picked. Drop *my pick*; what each option leads to, gives and costs is the argument")
+        if section == "Questions" and TICKET_QUESTION_ITEM.fullmatch(line):
+            raise RecordError(path, n, "a ticket's question is put to the user as a question of the session's own, written for "
+                                       "what they know now: `- [Q8] **the question** detail` with a `- Ticket: <slug> D3` sub-item")
+        if section in ("Questions", "To do") and TURN_LINK.search(line):
+            raise RecordError(path, n, "a card at the top carries everything it leans on, rather than send the user to a turn: "
+                                       "a `- Recap:` sub-item with its lines indented under it, and its artefacts as link "
+                                       "sub-items `- [text](path): note`")
+
+
+LINK_ITEM = re.compile(f"- {LINK_TEXT}")
 
 
 def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
@@ -1286,7 +1395,6 @@ KEYS = [
     ("[ ]", "what waits on you: the keys go to its card, where [ ] move between the items"),
     ("q", "show or fold what waits on you"),
     ("a b c", "on a question's card: pick that option"),
-    ("Enter p", "on a question's card: take the agent's pick"),
     ("d x", "on a to-do's card: done, dismissed"),
     ("o s", "on an artefact's card: open it, mark it seen; seen stays on the page"),
     ("n", "on a card: a note, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
@@ -1329,9 +1437,9 @@ def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
 
 
 def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
-    """Whether the question waits on the user: a ticket's while its ticket holds it open, the
-    session's own until a later turn answers or supersedes it."""
-    return q.open if isinstance(q, TicketQuestion) else q.tag not in settled
+    """Whether the question waits on the user: one put to them for a ticket while its ticket holds
+    it open, and the session's own until it is settled (`settle`)."""
+    return q.open if isinstance(q, TicketQuestion) else q.tag not in settled and not q.ruled
 
 
 def page(session: Session, now: datetime) -> str:
@@ -1647,9 +1755,10 @@ def asked_in(turn: Turn, verb: str = "asked") -> str:
 
 
 def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
-    """A question waiting on the user: its options as a table of what each gives and costs, the
-    agent's pick marked. A ticket's question has its words from its ticket and is answered in words;
-    a blind one opens its test page, which holds its options."""
+    """A question waiting on the user: its options as a table of what each leads to, gives and
+    costs, then what it leans on. One put to them for a ticket names that ticket beside its tag;
+    an older record's bare ticket handle has its words from its ticket and is answered in words; a
+    blind one opens its test page, which holds its options."""
     if isinstance(q, TicketQuestion):
         detail = f'<p class="q-detail">{inline(q.named.detail)}</p>' if q.named and q.named.detail else ""
         return card(cls="ticket", anchor=ticket_question_anchor(q), handle=q.handle, kind="decide", rail=q.tag,
@@ -1658,29 +1767,40 @@ def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
                     keys="<span><kbd>o</kbd> open the ticket</span>" if q.named else "")
     detail = f'<p class="q-detail">{inline(q.detail)}</p>' if q.detail else ""
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
+    meta = (f"{for_ticket(q)} · " if q.ticket else "") + asked_in(turn)
     if q.blind:
         test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get()), None)
         return card(cls="blind", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
-                    meta=asked_in(turn), body=f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>',
+                    meta=meta, body=f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>{leaned(q)}',
                     keys="<span><kbd>o</kbd> open the test</span>", noted="the answer the test gave you")
-    pick = next(o for o in q.options if o.picked)
     letters = "".join(o.letter for o in q.options)
-    keys = (f'<span>{" ".join(f"<kbd>{o.letter}</kbd>" for o in q.options)} pick that option</span>'
-            f'<span><kbd>↵</kbd> <kbd>p</kbd> the pick, {pick.letter}</span>')
+    keys = f'<span>{" ".join(f"<kbd>{o.letter}</kbd>" for o in q.options)} pick that option</span>'
     return card(cls="question", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
-                meta=asked_in(turn), body=detail + option_table(q) + why, keys=keys, data={"options": letters, "pick": pick.letter})
+                meta=meta, body=detail + option_table(q) + why + leaned(q), keys=keys, data={"options": letters})
+
+
+def for_ticket(q: Question) -> str:
+    """The ticket a question was put to the user for, its handle a link to the ticket with the
+    question as the ticket holds it as its preview."""
+    slug, tag = q.ticket.split()
+    return ticket_link(TicketQuestion(slug, tag, q.named))
+
+
+def leaned(item: Question | ToDo) -> str:
+    """What a question or a to-do leans on, on its card: its recap, then its artefacts."""
+    recap = f'<div class="recap prose">{block(item.recap)}</div>' if item.recap else ""
+    shown = [Shown(link, href(link.path), resolved(link.path, ROOT.get(), DIRECTORY.get()), None) for link in item.links]
+    return recap + links(tuple(shown))
 
 
 def option_table(q: Question) -> str:
-    """The question's options, one row each, with the columns of what each gives and costs where any
-    option says."""
-    split = any(o.gives or o.costs for o in q.options)
-    head = "<th></th><th>option</th>" + ("<th>gives</th><th>costs</th>" if split else "")
-    picked = (' class="pick"', '<span class="tag">my pick</span>')
+    """The question's options, one row each, with the columns of what each leads to, gives and
+    costs where any option says."""
+    columns = [(key, key.replace("leads", "leads to")) for key in ("leads", "gives", "costs") if any(getattr(o, key) for o in q.options)]
+    head = "<th></th><th>option</th>" + "".join(f"<th>{name}</th>" for _, name in columns)
     rows = "".join(
-        f'<tr data-option="{o.letter}"{picked[0] if o.picked else ""}><td class="k">{o.letter}</td>'
-        f'<td>{inline(o.text)}{picked[1] if o.picked else ""}</td>'
-        + (f'<td class="g">{inline(o.gives)}</td><td class="c">{inline(o.costs)}</td>' if split else "") + "</tr>"
+        f'<tr data-option="{o.letter}"><td class="k">{o.letter}</td><td>{inline(o.text)}</td>'
+        + "".join(f'<td class="{key[0]}">{inline(getattr(o, key))}</td>' for key, _ in columns) + "</tr>"
         for o in q.options)
     return f'<table class="opttab"><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>'
 
@@ -1688,7 +1808,7 @@ def option_table(q: Question) -> str:
 def todo_card(turn: Turn, d: ToDo) -> str:
     detail = f'<p class="q-detail">{inline(d.detail)}</p>' if d.detail else ""
     return card(cls="todo", anchor=d.tag.lower(), handle=d.handle, kind="do", rail=d.tag, headline=inline(d.headline),
-                meta=asked_in(turn, "listed"), body=detail, keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
+                meta=asked_in(turn, "listed"), body=detail + leaned(d), keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
 
 
 def look_card(turn: Turn, s: Shown, n: int) -> str:
@@ -1730,9 +1850,8 @@ def options(q: Question, answer: str | None = None) -> str:
     items = []
     for o in q.options:
         state = "chosen" if answer == o.letter else "passed" if answer else ""
-        tags = ('<span class="tag you">your answer</span>' if answer == o.letter else "") + (
-            '<span class="tag">my pick</span>' if o.picked else "")
-        items.append(f'<li class="{" ".join(c for c in ("pick" if o.picked else "", state) if c)}">'
+        tags = '<span class="tag you">your answer</span>' if answer == o.letter else ""
+        items.append(f'<li class="{state}">'
                      f'<span class="k v-num">{o.letter}</span><span>{inline(o.text)}{tags}</span></li>')
     return f'<ol class="opts">{"".join(items)}</ol>'
 
@@ -1740,7 +1859,9 @@ def options(q: Question, answer: str | None = None) -> str:
 def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     t = r.turn
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
-    asked = "".join(asked_ticket_question(q) if isinstance(q, TicketQuestion) else asked_question(q, settled[q.tag])
+    asked = "".join(asked_ticket_question(q) if isinstance(q, TicketQuestion)
+                    else asked_question(q, settled[q.tag]) if q.tag in settled
+                    else asked_ticket_question(TicketQuestion(*q.ticket.split(), q.named), q.tag)
                     for q in t.questions if not waits(q, settled))
     asked += "".join(cleared_todo(d, settled[d.tag]) for d in t.todos if d.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
@@ -1907,9 +2028,10 @@ def cleared_todo(d: ToDo, how: Settled) -> str:
             f'<div><p class="aq-h">{inline(d.headline)}</p><p class="v-meta">to do · {said}</p></div></div>')
 
 
-def asked_ticket_question(c: TicketQuestion) -> str:
+def asked_ticket_question(c: TicketQuestion, tag: str = "") -> str:
     """A ticket's question this turn put to the user that waits no longer: its ruling, as the ticket
-    records it, or that the ticket holds it no more."""
+    records it, or that the ticket holds it no more. `tag` is the session's own tag it was put
+    under, where it has one."""
     if c.named is None:
         said = f'<p class="v-meta">{esc(c.handle)} is no longer a question of its ticket</p>'
     elif c.named.ruled is None:
@@ -1918,8 +2040,8 @@ def asked_ticket_question(c: TicketQuestion) -> str:
         said = (f'<p class="v-small free"><span class="v-meta">ruling</span> {inline(c.named.answer)}</p>'
                 f'<p class="v-meta">ruled {esc(c.named.ruled)} in {ticket_link(c)}</p>')
     return f"""
-<div class="aq answered" id="{ticket_question_anchor(c)}">
-  <span class="k v-num">{c.tag}</span>
+<div class="aq answered" id="{tag.lower() or ticket_question_anchor(c)}">
+  <span class="k v-num">{tag or c.tag}</span>
   <div>
     <p class="aq-h">{inline(c.headline)}</p>
     {said}
