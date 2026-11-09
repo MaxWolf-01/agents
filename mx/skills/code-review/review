@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One code review's mechanics: two `claude -p` reviewers, each on the prompt
 # composed from the templates in prompts/, each leaving a report the caller
-# reads. `read` reads the diff, its correctness, the spec and the standards in
-# turn; `tests` runs the suite under mutations. `/mx:code-review` is the
+# reads. `read` reads the diff, its correctness, the spec, the standards and
+# what should not exist in turn; `tests` runs the suite under mutations. `/mx:code-review` is the
 # judgment around it: which fixed point, where the spec is, what effort, and
 # what to do with the findings.
 #
@@ -260,7 +260,7 @@ render() { # <reviewer>
     local id
     id=$(finding_id "$name") || exit 1
     case $name in
-        read) parts="preamble read correctness${spec:+ spec} standards"
+        read) parts="preamble read correctness${spec:+ spec} standards grug"
               sources_block=$standards
               # Full messages: the author's account of the work, as
               # orientation over the diff.
