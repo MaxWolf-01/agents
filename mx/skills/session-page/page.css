@@ -186,6 +186,7 @@ button.id:hover { color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .t-gap { height: 0.9rem; }
 .tasks.folded > :not(.t-head) { display: none; }
+.tasks.folded { padding-bottom: 0; }
 .tasks.folded .when-open, .tasks:not(.folded) .when-folded { display: none; }
 .t-task[hidden] { display: none; }
 .t-label { padding: 0.2rem 0 0.15rem; }
@@ -223,7 +224,8 @@ button.id:hover { color: var(--accent); }
 .column li .t-type { padding: 0; margin-right: 0.3rem; vertical-align: -2px; }
 .column li { grid-template-columns: 1.3rem auto minmax(0, 1fr); }
 .column li.seen a.artefact, .column li.seen-staged a.artefact { color: var(--muted); }
-.column li.seen::after, .column li.seen-staged::after { content: "✓"; grid-column: 3; color: var(--accent); font-size: 0.75rem; }
+.column li:is(.seen, .seen-staged) .t-type svg { display: none; }
+.column li:is(.seen, .seen-staged) .t-type::before { content: "✓"; display: inline-block; width: 15px; color: var(--accent); }
 .turn-log { display: none; }
 .card { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); font-size: 0.92rem; }
 .card[hidden] { display: none; }
