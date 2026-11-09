@@ -79,8 +79,10 @@ body { display: flex; flex-direction: column; overflow: hidden; }
    button shows the turns or that column. */
 main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--tasks) var(--column); }
 .side { display: contents; }
+main.panes:has(.tasks.folded) { grid-template-columns: minmax(0, 1fr) auto var(--column); }
 @media (max-width: 73.75rem) {
   main.panes { grid-template-columns: minmax(0, 1fr) var(--tasks); }
+  main.panes:has(.tasks.folded) { grid-template-columns: minmax(0, 1fr) var(--tasks); }
   .side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--edge); }
   .side .tasks { flex: 0 1 auto; max-height: 60%; border-left: 0; border-bottom: 1px solid var(--edge); }
   .side .column { flex: 1 1 0; border-left: 0; }
@@ -183,6 +185,8 @@ button.id:hover { color: var(--accent); }
 .spin { display: inline-flex; animation: spin 2.4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .t-gap { height: 0.9rem; }
+.tasks.folded > :not(.t-head) { display: none; }
+.tasks.folded .when-open, .tasks:not(.folded) .when-folded { display: none; }
 .t-task[hidden] { display: none; }
 .t-label { padding: 0.2rem 0 0.15rem; }
 .t-row { display: grid; grid-template-columns: 2.9rem minmax(0, 1fr) auto auto; align-items: start; gap: 0.5rem; min-height: 2.6rem; padding: 0.4rem 0.45rem; margin: 0 -0.45rem; border-radius: var(--radius); font-size: 0.93rem; line-height: 1.35; cursor: pointer; }

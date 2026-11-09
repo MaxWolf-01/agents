@@ -1416,6 +1416,7 @@ KEYS = [
     ("o s", "on an artefact: open it, mark it seen; it leaves once the batch is sent"),
     ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on an item: clear what is staged"),
+    ("q", "fold or show the tasks"),
     ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back"),
     ("1 to 9", "open the turn's nth artefact"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's; "
@@ -1787,6 +1788,8 @@ ICONS = {
     "file": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', 15),
     "turns": svg('<path d="M4 6h16M4 12h16M4 18h10"/>', 18),
     "tasks": svg('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>', 18),
+    "up": svg('<path d="m18 15-6-6-6 6"/>'),
+    "down": svg('<path d="m6 9 6 6 6-6"/>'),
     "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
 }
 # What an artefact is, by its path, as its icon says: (the icon, its name in the tooltip).
@@ -1859,7 +1862,7 @@ def tasks_column(v: View) -> str:
     count = len(v.waiting) + len(v.todos)
     return f"""
     <section class="tasks{'' if count or looks else ' quiet'}" id="{QUESTIONS}" aria-labelledby="tasks-title" tabindex="-1">
-      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.") if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}</div>
+      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.") if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}><span class="when-open">{ICONS["up"]}</span><span class="when-folded">{ICONS["down"]}</span></button></div>
       <div class="t-list">{body}</div>
       <div class="card-dialog" id="card-dialog" hidden><div class="d-card">{"".join(cards)}
         <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>

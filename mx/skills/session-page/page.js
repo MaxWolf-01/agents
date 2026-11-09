@@ -355,6 +355,16 @@ const openReview = () => {
   review.focus({ preventScroll: true })
 }
 
+// q and the head's chevron fold the tasks to their head, which gives the timeline their room
+const foldButton = document.getElementById("fold-tasks")
+const fold = (on = !waiting.classList.contains("folded")) => {
+  waiting.classList.toggle("folded", on)
+  foldButton.setAttribute("aria-expanded", !on)
+  foldButton.setAttribute("aria-label", on ? "show the tasks" : "fold the tasks")
+  foldButton.dataset.tip = on ? "Show the tasks" : "Fold the tasks\nThe timeline gets the room."
+  refade()
+}
+
 // a note on the row, in a field under it, or in the open card's
 const note = (row) => {
   const h = row.dataset.handle, c = open && cardOf(row)
@@ -444,6 +454,7 @@ if (waiting) waiting.addEventListener("click", (e) => {
   if (k) { e.preventDefault(); bandKey(k.dataset.key); return }
   if (act && act.dataset.act === "work") { openCard(Math.max(0, items().findIndex((r) => r.dataset.card))); return }
   if (act && act.dataset.act === "review") { openReview(); return }
+  if (act && act.dataset.act === "fold") { fold(); return }
   if (row && act) { e.preventDefault(); rowAct(row, act.dataset.act); return }
   if (row && t.closest(".pill")) { at = items().indexOf(row); toggle(row.dataset.handle, "pick", t.closest(".pill").dataset.pick); return }
   const option = t.closest("tr[data-option]")
@@ -541,6 +552,7 @@ const place = () => {
     cur: blocks[cur] ? blocks[cur].id : null,
     seen,
     card: open && current() ? current().dataset.card : null,
+    folded: !!waiting && waiting.classList.contains("folded"),
   }
 }
 const save = () => { try { sessionStorage.setItem(KEY, JSON.stringify(place())) } catch {} }
@@ -554,7 +566,7 @@ const restore = (s) => {
   const follows = s.caughtUp && blocks.length > 0 && blocks[0].id !== s.newest
   cur = s.cur && !follows ? blocks.findIndex((b) => b.id === s.cur) : -1
   mark()
-  if (waiting) pending = s.card
+  if (waiting) { pending = s.card; fold(!!s.folded) }
   const anchor = s.anchor && document.getElementById(s.anchor)
   const go = () => { pane.scrollTop = follows || s.top || !anchor ? 0 : offsetIn(anchor) + s.into; reach() }
   go()
@@ -768,7 +780,8 @@ document.addEventListener("keydown", (e) => {
     case "N": toNewest(); break
     case "n": if (current()) note(current()); else say("no item in focus: ] picks one"); break
     case "t": if (numbers.length) { typed = ""; say("turn …", true) } break
-    case "[": case "]": if (items().length) focusRow(at < 0 ? 0 : at); break
+    case "[": case "]": if (items().length) { fold(false); focusRow(at < 0 ? 0 : at) } break
+    case "q": if (waiting) fold(); break
     case "r": if (waiting) openReview(); break
     case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "o": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }

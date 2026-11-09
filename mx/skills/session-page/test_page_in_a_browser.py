@@ -355,6 +355,17 @@ with sync_playwright() as pw:
             .map((e) => e.id || e.className)''')
         page.keyboard.press("]")
         out["row_heights_focused"] = page.evaluate(geometry)["rows"]
+        page.keyboard.press("Escape")
+        page.keyboard.press("q")
+        FOLD = '''(() => ({list: document.querySelector("#open-questions .t-list").checkVisibility(),
+            head: document.querySelector("#open-questions .t-head").checkVisibility(),
+            column: document.getElementById("artefacts").getBoundingClientRect().top}))()'''
+        out["folded"] = page.evaluate(FOLD)
+        page.reload()
+        page.evaluate("document.fonts.ready")
+        out["folded_reloaded"] = page.evaluate(FOLD)
+        page.click("#fold-tasks")
+        out["shown"] = page.evaluate(FOLD)
     elif scenario == "crowded":
         # the row ] goes to among many, each with a card longer than a screen, and the card Enter opens on it
         context, page = open_page(args["width"], 800)
@@ -796,7 +807,7 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["resume_inline"], "the resume control is not on the title's meta line"
     resume = f"cd /home/max/repos/github/MaxWolf-01/agents && claude --resume {SESSION}"
     assert (seen["resume_clicked"], seen["resume_keyed"]) == (resume, resume)
-    for keys in ("N", "n", "t 0 7", "[ ]", "r", "c", "y", "Y", "R", "l", "o", "O", "Ctrl Alt"):
+    for keys in ("N", "n", "t 0 7", "[ ]", "q", "r", "c", "y", "Y", "R", "l", "o", "O", "Ctrl Alt"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
     assert (seen["o"], seen["oo"]) == ([True] * 4, [False] * 4), "o opens every turn, then closes every turn"
     assert {"l", "?", "R", "N", "r"} <= set(seen["held"]), f"Ctrl+Alt held shows each control's key over it: {seen['held']}"
@@ -969,6 +980,12 @@ def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: i
     assert seen["control_bottom"] and seen["control_bottom"]["inView"], f"P3 at the bottom: {seen['control_bottom']}"
     assert seen["timeline_at_end"] and seen["timeline_at_top"] == 0, "G and g g take the timeline to its ends"
     assert seen["row_heights_focused"] == seen["top"]["rows"], "a row changed height as it took the focus"
+    if width > 704:
+        folded, shown = seen["folded"], seen["shown"]
+        assert not folded["list"] and folded["head"] and not seen["folded_reloaded"]["list"], "q folds the tasks to their head, and a reload keeps it"
+        assert shown["list"], "the chevron shows the tasks again"
+        if width < 1180:
+            assert folded["column"] < shown["column"], "folded, the tasks give the timeline their room"
     for moment in ("top", "bottom"):
         at = seen[moment]
         tasks, pane, column = at["tasks"], at["pane"], at["column"]
