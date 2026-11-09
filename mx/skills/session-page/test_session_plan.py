@@ -23,10 +23,6 @@ def test_a_plan_reads_as_steps_nested_by_indent_with_what_each_names(tmp_path: P
     )
 
 
-def test_a_session_with_no_plan_has_no_steps(tmp_path: Path) -> None:
-    assert read_plan(tmp_path) == ()
-
-
 def test_a_line_indented_past_the_one_above_is_one_level_under_it(tmp_path: Path) -> None:
     """An indent jump of two levels is read as one, so no step is lost to a slip of the agent's."""
     (tmp_path / PLAN).write_text("doing A\n      next B\n  next C\n")

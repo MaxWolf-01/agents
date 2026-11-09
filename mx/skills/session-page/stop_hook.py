@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import turn_review  # noqa: E402
 from live_hook import LIVE  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
+    PAGE, Question, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
     open_todos, read_session, write_page, make_session_directory, note_account, session_directory, strip_tags,
     written_this_turn,
 )
@@ -82,6 +82,10 @@ END = (
     "what waits on them, so what the user needs goes in the record"
 )
 UNPARSED = f"Fix the record, then {END}, as you would have without this error. The page renders once every record parses."
+UNRECORDED = (
+    "The user answered {answered}, put to them for a ticket, and the ticket holds it open still. Record each "
+    f"answer on its ticket (`tracker rule`), then {END}."
+)
 OUTSIDE_WRITE = (
     "This turn wrote {record} without the Write tool, so the page pairs the user's message with no turn. "
     f"Write it again with Write, then {END}."
@@ -120,6 +124,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         session = read_session(directory, Path(hook["transcript_path"]))
     except RecordError as e:
         return Decision("send back", "record does not parse", f"{e}\n{UNPARSED}")
+    if (unrecorded := answered_for_tickets(session)) and not hook.get("stop_hook_active"):
+        return Decision("send back", "ticket question answered, unrecorded", UNRECORDED.format(answered=", ".join(unrecorded)))
     turn = written_this_turn(session)
     outside = written_outside_write(session) if turn is None else None
     if outside and not hook.get("stop_hook_active"):
@@ -135,6 +141,14 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", **rendered)
+
+
+def answered_for_tickets(session: Session) -> list[str]:
+    """Each question put to the user for a ticket that their answer settled while its ticket holds it
+    open, as `Q8 (<ticket> D5)`: the page clears it on the answer, the ticket only once it is recorded."""
+    return [f"{q.tag} ({q.ticket})" for t in session.turns for q in t.questions
+            if isinstance(q, Question) and q.ticket and q.named is not None and q.named.open
+            and q.tag in session.settled and session.settled[q.tag].how == "answered"]
 
 
 def shown(asked: tuple[str, ...]) -> str:

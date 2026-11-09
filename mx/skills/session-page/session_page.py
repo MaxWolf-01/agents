@@ -2366,7 +2366,7 @@ def tagged(children: list[Token]) -> list[Token]:
             out.append(token)
         elif token.type == "text":
             out += split_tags(token.content)
-        elif (whole := named_by(TAGGED.fullmatch(token.content))) is not None:
+        elif not OWN_TAG.fullmatch(token.content) and (whole := named_by(TAGGED.fullmatch(token.content))) is not None:
             out += linked(whole, [token])
         elif (after is not None and after.type == "text" and (tail := TAG_AFTER.match(after.content))
               and (found := named_by(TAGGED.fullmatch(token.content + tail.group()))) is not None):

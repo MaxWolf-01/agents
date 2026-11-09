@@ -671,6 +671,31 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
     assert (worked_example / PAGE).read_text() != stale_page
 
 
+def test_an_answer_to_a_question_put_for_a_ticket_goes_back_once_until_the_ticket_records_it(
+    worked_example: Path, unrecorded: Path, run: Callable[[dict], None], capsys: pytest.CaptureFixture,
+) -> None:
+    """what-waits-on-you-rethought: a Qn put for a ticket clears on the user's answer, so the turn
+    that receives it is sent back, once, to record it on the ticket; once the ticket holds the
+    ruling, the turn ends as any other."""
+    ticket = worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md"
+    ticket.write_text("---\nstatus: open\n---\n\n# Two\n\n## Brief\n\nB.\n\n## Acceptance criteria\n\n- [ ] It.\n\n"
+                      "## Questions\n\n- [D5] **Sync on every commit?** Or a timer.\n")
+    asked = worked_example / "turns" / "04.md"
+    asked.write_text(asked.read_text().replace("## Questions\n\n", "## Questions\n\n- [Q8] **Sync?**\n  - Ticket: two-main-checkouts D5\n"
+                                               "  - (a) Yes\n  - (b) No\n", 1))
+    record = worked_example / "turns" / "05.md"
+    record.write_text("---\ndate: 2026-09-24\nanswered:\n  Q8: a\n---\n\n# Synced on every commit\n")
+    with_write(unrecorded, "Write", record)
+    run(payload(worked_example, unrecorded))
+    said = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "Q8 (two-main-checkouts D5)" in said and "tracker rule" in said
+    run(payload(worked_example, unrecorded, stop_hook_active=True))
+    assert shown(capsys), "a turn sent back once ends the second time"
+    ticket.write_text(ticket.read_text().replace("Or a timer.\n", "Or a timer.\n  - Ruled 2026-09-24: on every commit.\n"))
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys)
+
+
 # ---- the line under the turn ------------------------------------------------
 
 ANSWERS_Q7 = "---\ndate: 2026-09-23\nanswered:\n  Q7: a\n---\n\n# Round 4\n\n## Details\n\nThe light review it is.\n"

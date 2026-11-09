@@ -59,7 +59,8 @@ def test_the_turn_record_the_rules_give_the_agent_parses(tmp_path: Path) -> None
     turn = session_page.read_turn(record)
     assert turn.headline and turn.details and turn.links and turn.answered and turn.superseded
     question, cited = turn.questions
-    assert len(question.options) >= 2 and all(o.leads and o.gives and o.costs for o in question.options[:1])
+    full, *rest = question.options
+    assert rest and full.leads and full.gives and full.costs, "the example's first option shows all three parts an option takes"
     assert question.recap and question.links and turn.todos[0].recap and turn.todos[0].links
     assert cited.ticket and not question.ticket, "a ticket's question put to the user as a session Qn"
     session_page.check_current_forms(record)

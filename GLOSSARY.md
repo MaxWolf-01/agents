@@ -173,11 +173,11 @@ The stretch of a context window within which reasoning stays sharp; the limit is
 _Avoid_: context budget, token budget
 
 **Session page**:
-The one page a session's answers live on: its turns beside its tasks, what waits on the user and where the work stands, and its timeline.
+The one page a session's answers live on, and where the user sees what waits on them and where the work stands.
 _Avoid_: session artifact, transcript, notebook, log
 
 **Session plan**:
-A session's steps, one line each, which its page draws as its tasks and which settles a question when the step naming it is done.
+The steps a session keeps of its own work: where it stands, and what waits on what.
 _Avoid_: todo list, backlog, plan (bare, where a ticket's plan could be meant)
 
 **Session work**:
