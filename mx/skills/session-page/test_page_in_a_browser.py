@@ -442,6 +442,14 @@ with sync_playwright() as pw:
         context, page = open_page(args["width"], 900)
         if page.locator("#view-toggle").is_visible() and page.evaluate("document.body.dataset.view") != "tasks":
             page.click("#view-toggle")
+        # n's note field on the first row, against the column's content box
+        page.keyboard.press("]")
+        page.keyboard.press("n")
+        out["note"] = page.evaluate('''(() => { const t = document.getElementById("open-questions"), s = getComputedStyle(t)
+          const r = t.getBoundingClientRect(), f = document.querySelector("#open-questions .t-note").getBoundingClientRect()
+          const row = t.querySelector(".t-row").getBoundingClientRect()
+          return {left: f.left, right: f.right, inner: [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)], row: [row.left, row.right]} })()''')
+        page.keyboard.press("Escape")
         page.click("#open-questions .t-row .qt")
         out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right} }
           const row = document.querySelector("#q1 tr[data-option]")
@@ -1235,6 +1243,9 @@ def test_a_questions_options_read_at_every_width(waiting_page: Path, width: int)
     seen = probe(waiting_page, "options", width=width)
     words, leads, gives, costs = seen["words"], seen["leads"], seen["gives"], seen["costs"]
     assert seen["shown"], "the row's tag did not open its card"
+    note = seen["note"]
+    assert note["inner"][0] - 1 <= note["left"] and note["right"] <= note["inner"][1] + 1, f"the note field leaves the column's content: {note}"
+    assert note["right"] - note["left"] >= note["inner"][1] - note["inner"][0] - 2, f"the note field is not the column's width: {note}"
     for which in ("card_window", "review_window"):
         at = seen[which]
         assert (at["dialog"]["left"], at["dialog"]["top"], at["dialog"]["right"], at["dialog"]["bottom"]) == (0, 0, at["width"], at["height"]), at

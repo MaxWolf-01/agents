@@ -212,7 +212,8 @@ button.id:hover { color: var(--accent); }
 .seen-btn:hover { color: var(--accent); border-color: var(--accent); }
 .seen-btn.on { background: var(--accent); border-color: var(--accent); color: var(--ground); }
 .seen-btn .ico { width: 14px; height: 14px; }
-.t-note { margin: 0.2rem 0 0.4rem 2.9rem; width: calc(100% - 2.9rem); }
+/* a row's note field, under the row and as wide as the column's content, lined up with the row's left edge */
+.note-in.t-note { margin: 0.2rem 0 0.4rem; width: 100%; }
 .tasks.quiet .t-gap:first-child { display: none; }
 /* a question's or a to-do's card, over the page: one at a time, with the review of the batch in its place */
 .card-dialog { position: fixed; inset: 0; z-index: 8; display: grid; place-items: start center; padding: 6vh 1rem 1rem; background: color-mix(in srgb, var(--strong) 35%, transparent); overflow-y: auto; }
