@@ -387,12 +387,13 @@ def test_a_record_putting_to_the_user_a_ticket_question_its_ticket_does_not_hold
     (tickets / "two-main-checkouts.md").write_text(TICKET_ASKING)
     (tickets / "done-checkouts.md").write_text(TICKET_ASKING.replace("status: open", "status: done"))
     record = worked_example / "turns" / "04.md"
-    text = record.read_text().replace("## Questions\n\n", f"## Questions\n\n- [{handle}]\n", 1)
+    text = record.read_text().replace("*my pick*", "").replace(
+        "## Questions\n\n", f"## Questions\n\n- [Q8] **Sync?**\n  - Ticket: {handle}\n  - (a) Yes\n  - (b) No\n", 1)
     assert text != record.read_text(), "record 04 asks a question of its own"
     monkeypatch.setattr(turn_review, "review", unreachable)
     record.write_text(text)
     answer = run(wrote(record, writing))
-    assert answer.startswith(f"{record}:{text.splitlines().index(f'- [{handle}]') + 1}: ") and said in answer
+    assert answer.startswith(f"{record}:{text.splitlines().index(f'  - Ticket: {handle}') + 1}: ") and said in answer
     assert END in answer
 
     monkeypatch.setattr(turn_review, "review", reviewer())
@@ -434,9 +435,45 @@ def test_a_ticket_question_ruled_while_its_turn_runs_leaves_the_turns_later_writ
     ticket = worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md"
     ticket.write_text(TICKET_ASKING.replace("Or on a timer.\n", "Or on a timer.\n  - Ruled 2026-10-21: on every commit.\n"))
     record = worked_example / "turns" / "04.md"
-    record.write_text(record.read_text().replace("## Questions\n\n", "## Questions\n\n- [two-main-checkouts D1]\n", 1))
+    record.write_text(record.read_text().replace(
+        "## Questions\n\n", "## Questions\n\n- [Q8] **Sync?**\n  - Ticket: two-main-checkouts D1\n  - (a) Yes\n  - (b) No\n", 1))
     monkeypatch.setattr(turn_review, "review", reviewer())
     assert run(wrote(worked_example / "session.md", transcript, "Edit")) == ""
+
+
+RETIRED = {
+    "an option marked as the agent's pick": (
+        "- [Q8] **Sync?**\n  - (a) Yes *my pick*\n  - (b) No\n", 2, "no option is marked as yours"),
+    "a ticket's question put as its bare handle": (
+        "- [two-main-checkouts D1]\n", 1, "`- Ticket: <slug> D3` sub-item"),
+    "a question sending the user to a turn for what it leans on": (
+        "- [Q8] **Cut [these lines](#t03)?**\n  - (a) Yes\n  - (b) No\n", 1, "carries everything it leans on"),
+}
+CURRENT = "- [Q8] **Cut these lines?**\n  - (a) Yes\n  - (b) No\n  - Recap: the lines\n    - one\n    - two\n"
+
+
+@pytest.mark.parametrize("asked, line, said", RETIRED.values(), ids=RETIRED)
+def test_a_record_written_in_a_retired_form_goes_back_with_what_replaced_it(
+    asked: str, line: int, said: str, worked_example: Path, writing: Path, run: Callable[[dict], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """what-waits-on-you-rethought: no option is marked as the agent's, everything put to the user
+    is a session Qn, and a card carries what it leans on. Older records keep reading (the worked
+    example marks its picks), so only the record the turn writes is checked; the same question in
+    the current form passes."""
+    tickets = worked_example.parents[2] / "agent" / "tickets"
+    (tickets / "two-main-checkouts.md").write_text(TICKET_ASKING)
+    record = worked_example / "turns" / "04.md"
+    text = record.read_text().replace("*my pick*", "")
+    at = text.splitlines().index("## Questions") + 2
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text.replace("## Questions\n\n", f"## Questions\n\n{asked}", 1))
+    answer = run(wrote(record, writing))
+    assert answer.startswith(f"{record}:{at + line}: ") and said in answer and END in answer
+
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    record.write_text(text.replace("## Questions\n\n", f"## Questions\n\n{CURRENT}", 1))
+    assert run(wrote(record, writing, "Edit")) == ""
 
 
 @pytest.mark.parametrize("text, line, said", TICKET_QUESTION_UNPARSEABLE.values(), ids=TICKET_QUESTION_UNPARSEABLE)

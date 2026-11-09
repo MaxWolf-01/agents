@@ -30,7 +30,7 @@ import end_hook
 from session_checks import project_of
 from session_page import PAGE, agent_repo_of
 
-RECORDS = ["session.md", "turns/01.md", "turns/02.md", "turns/03.md", "turns/04.md"]  # the worked example's
+RECORDS = ["plan", "session.md", "turns/01.md", "turns/02.md", "turns/03.md", "turns/04.md"]  # the worked example's
 
 
 def git(where: Path, *args: str) -> str:
@@ -255,6 +255,7 @@ def test_a_session_with_no_records_commits_nothing(
 ) -> None:
     """A session that never wrote a record: its directory holds at most the page."""
     (worked_example / "session.md").unlink()
+    (worked_example / "plan").unlink()
     shutil.rmtree(worked_example / "turns")
     head = git(agent, "rev-parse", "HEAD")
     assert [entry["why"] for entry in end()] == ["no records"]

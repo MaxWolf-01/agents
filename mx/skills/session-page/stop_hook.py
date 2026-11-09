@@ -15,11 +15,11 @@ calls showed in while it ran (`live_hook.LIVE`).
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
-A render opens each artefact that this turn's record links with `claude-browser`, where the host
-has one, and tells it the session through MX_ORIGIN_SESSION. A ticket file is not an artefact, so
-it never opens. The page itself opens only where no container hub answers, and only on the render
-that writes it first, since a repeat would be another tab: the hub finds a session's page on disk
-and reloads it once it is written anew. Each open is a line of the log saying what came of it.
+A render opens no artefact: the page lists what the turn linked among its tasks, and the user opens
+each from there. The page itself opens, with `claude-browser` told the session through
+MX_ORIGIN_SESSION, only where no container hub answers, and only on the render that writes it
+first, since a repeat would be another tab: the hub finds a session's page on disk and reloads it
+once it is written anew. The open is a line of the log saying what came of it.
 
 A turn whose answer is on the page ends without a chat message of its own, so a render whose turn
 wrote a record shows the user, as a `systemMessage`, what the terminal reads in its place: the
@@ -47,8 +47,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import turn_review  # noqa: E402
 from live_hook import LIVE  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
-    open_todos, read_session, write_page, make_session_directory, note_account, resolved, session_directory, strip_tags,
+    PAGE, Question, RecordError, Session, Turn, carry_earlier_records, chat_path, chat_record, inline, left_alone, open_questions,
+    open_todos, read_session, write_page, make_session_directory, note_account, session_directory, strip_tags,
     written_this_turn,
 )
 
@@ -66,7 +66,6 @@ class Decision:
     headline: str = ""  # the record's headline, the first line a render's turn that wrote a record shows
     shown: str = ""  # the line under the headline, up to the link `main` adds
     waiting: tuple[str, ...] = ()  # the lines under it, one per open question or to-do
-    artefacts: tuple[str, ...] = ()  # the file or URL of each artefact the record this turn wrote links
 
 
 # The container hub's half of the contract, which the dotfiles' `container-hub --help` names: the
@@ -83,6 +82,10 @@ END = (
     "what waits on them, so what the user needs goes in the record"
 )
 UNPARSED = f"Fix the record, then {END}, as you would have without this error. The page renders once every record parses."
+UNRECORDED = (
+    "The user answered {answered}, put to them for a ticket, and the ticket holds it open still. Record each "
+    f"answer on its ticket (`tracker rule`), then {END}."
+)
 OUTSIDE_WRITE = (
     "This turn wrote {record} without the Write tool, so the page pairs the user's message with no turn. "
     f"Write it again with Write, then {END}."
@@ -106,7 +109,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       is written first as a chat turn (`session_page.CHAT`), which takes no
       number of the agent's records; `main` creates the session's directory for it where there is
       none yet. Where this turn wrote a record, the render comes with the lines the user sees in place
-      of a chat message (`headline`, `shown`, short of its link, and `waiting`) and the record's artefacts, and where that
+      of a chat message (`headline`, `shown`, short of its link, and `waiting`), and where that
       record was reviewed, the records as the turn ended are logged beside the review, so the log
       pairs a draft with its revision.
     """
@@ -121,6 +124,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         session = read_session(directory, Path(hook["transcript_path"]))
     except RecordError as e:
         return Decision("send back", "record does not parse", f"{e}\n{UNPARSED}")
+    if (unrecorded := answered_for_tickets(session)) and not hook.get("stop_hook_active"):
+        return Decision("send back", "ticket question answered, unrecorded", UNRECORDED.format(answered=", ".join(unrecorded)))
     turn = written_this_turn(session)
     outside = written_outside_write(session) if turn is None else None
     if outside and not hook.get("stop_hook_active"):
@@ -131,11 +136,19 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if turn is None:
         return Decision("render", "no record written this turn")
     asked = waiting(session)
-    rendered = {"headline": plain(turn.headline), "shown": shown(asked), "waiting": asked, "artefacts": linked(session, turn)}
+    rendered = {"headline": plain(turn.headline), "shown": shown(asked), "waiting": asked}
     if not turn_review.reviewed_since(session.id, session.began):
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", **rendered)
+
+
+def answered_for_tickets(session: Session) -> list[str]:
+    """Each question put to the user for a ticket that their answer settled while its ticket holds it
+    open, as `Q8 (<ticket> D5)`: the page clears it on the answer, the ticket only once it is recorded."""
+    return [f"{q.tag} ({q.ticket})" for t in session.turns for q in t.questions
+            if isinstance(q, Question) and q.ticket and q.named is not None and q.named.open
+            and q.tag in session.settled and session.settled[q.tag].how == "answered"]
 
 
 def shown(asked: tuple[str, ...]) -> str:
@@ -195,12 +208,6 @@ def hub_unit(session_id: str) -> str:
     return url + HUB_UNIT.format(session=session_id) if isinstance(url, str) and url else ""
 
 
-def linked(session: Session, turn: Turn) -> tuple[str, ...]:
-    """What the turn's artefacts open, each file or URL once, resolved as the page's artefact column
-    resolves a link: two links into sections of one page open it once."""
-    return tuple(dict.fromkeys(resolved(link.path, session.root, session.directory) for link in turn.artefacts))
-
-
 def written_outside_write(session: Session) -> Turn | None:
     """The newest record the transcript never writes whose file changed since this turn began:
     one written through the shell. Its modification time names it in a send-back and decides
@@ -248,8 +255,6 @@ def main() -> None:
         opened = ("not opened: the hub shows it" if unit
                   else open_in_browser(str(directory / PAGE), session_id) if first else "not reopened: no hub answers")
         turn_review.log(session_id, opened=opened, page=str(directory / PAGE))
-        for artefact in decision.artefacts:
-            turn_review.log(session_id, opened=open_in_browser(artefact, session_id), artefact=artefact)
         if decision.shown:
             line = f"{decision.shown} · {unit or (directory / PAGE).as_uri()}"
             print(json.dumps({"systemMessage": "\n".join((decision.headline, line, *decision.waiting))}))

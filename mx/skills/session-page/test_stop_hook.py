@@ -314,7 +314,7 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
     hook = payload(worked_example, transcript)
     (worked_example / PAGE).write_text(stale_page)
     run(hook)
-    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "session.md", "tool-calls.js", "turns"]
+    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "plan", "session.md", "tool-calls.js", "turns"]
     assert (worked_example / "index.html").read_text() != stale_page
 
 
@@ -363,66 +363,19 @@ def test_the_page_opens_on_the_first_render_where_no_hub_answers_and_never_where
     assert said[opens:] == [(page, why)] * (3 - opens)
 
 
-# Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
-# for them, from the repo root the session's directory sits under: a path from the root joined to
-# it, a path under `show/` joined to the session's directory, an absolute or `~` path as it is, a URL
-# as it is, and a fragment dropped, as the hub finds a
-# page by its file, so a page opens once however many of its sections are linked. A ticket file
-# is no artefact (session-pages-feed-the-hub#P2) and is handed none.
-RECORD_LINKS = {
-    "a page from the repo root": (["- [The spec](agent/show/x/spec.html): this round's"], ["{root}/agent/show/x/spec.html"]),
-    "an artefact of the session's own": (["- [The rule](show/rule.html)"], ["{directory}/show/rule.html"]),
-    "a section of a page": (["- [P1](agent/show/x/spec.html#p1)"], ["{root}/agent/show/x/spec.html"]),
-    "two sections of one page": (["- [P1](agent/show/x/spec.html#p1)", "- [P2](agent/show/x/spec.html#p2)"],
-                                 ["{root}/agent/show/x/spec.html"]),
-    "a file outside the repo": (["- [The figure](/srv/figures/fig.svg)"], ["/srv/figures/fig.svg"]),
-    "a file under home": (["- [Notes](~/notes/fig.html)"], ["{home}/notes/fig.html"]),
-    "a URL": (["- [The run](http://127.0.0.1:8000/run?step=3)"], ["http://127.0.0.1:8000/run?step=3"]),
-    "a ticket file": (["- [The ticket](agent/tickets/session-page.md)"], []),
-    "a ticket file in another repo": (["- [The ticket](/srv/other/agent/tickets/one-hub-tab.md#d2)"], []),
-    "several at once": (
-        ["- [Pages](agent/show/x/pages.html): which page carries what", "- [The diff](agent/show/x/diff.html)",
-         "- [The ticket](agent/tickets/session-page.md)"],
-        ["{root}/agent/show/x/pages.html", "{root}/agent/show/x/diff.html"]),
-    "no links": ([], []),
-}
-
-
-@pytest.mark.parametrize("links, handed", RECORD_LINKS.values(), ids=RECORD_LINKS)
-def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_sessions(
-    links: list[str], handed: list[str], worked_example: Path, unrecorded: Path, browser: Path,
-    capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path, tmp_path: Path,
+def test_a_render_opens_no_artefact_the_turns_record_links(
+    worked_example: Path, unrecorded: Path, browser: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+    attended: Path,
 ) -> None:
-    """session-pages-feed-the-hub#P1, at the Stop hook's input: the record this turn wrote, its
-    links in, and the `claude-browser` calls out, each told the session, beside the page's own on
-    its first render. The log says what came of each."""
+    """what-waits-on-you-rethought: an artefact opens only when the user opens it from the page's
+    tasks, so the render hands `claude-browser` the page alone, on its first render with no hub."""
     record = worked_example / "turns" / "05.md"
-    record.write_text(RECORD_05 + ("\n## Links\n\n" + "\n".join(links) + "\n" if links else ""))
+    record.write_text(RECORD_05 + "\n## Links\n\n- [The figure](/srv/figures/fig.svg)\n- [The spec](agent/show/x/spec.html)\n")
     with_write(unrecorded, "Write", record)
     run(payload(worked_example, unrecorded))
     assert shown(capsys)
-    root = tmp_path  # the worked example's project
-    expected = [path.format(root=root, home=Path.home(), directory=worked_example) for path in handed]
-    calls = opened(browser, len(expected) + 1)
-    assert sorted(calls) == sorted([(worked_example.name, str(worked_example / PAGE))] + [(worked_example.name, path) for path in expected])
-    assert [(entry["artefact"], entry["opened"].startswith("started ")) for entry in logged(attended, "artefact")] == [
-        (path, True) for path in expected]
-
-
-def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not_reopen(
-    worked_example: Path, unrecorded: Path, transcript: Path, browser: Path, run: Callable[[dict], None],
-    attended: Path,
-) -> None:
-    """stop-hook-opens-the-turns-artefacts' D4 leaves a turn's artefacts out of it: with no hub, a
-    render after the first hands `claude-browser` the artefact its turn linked and not the page."""
-    run(payload(worked_example, transcript))
-    first = len(opened(browser, sum(entry["opened"].startswith("started ") for entry in logged(attended, "opened"))))
-    record = worked_example / "turns" / "05.md"
-    record.write_text(RECORD_05 + "\n## Links\n\n- [The figure](/srv/figures/fig.svg)\n")
-    with_write(unrecorded, "Write", record)
-    run(payload(worked_example, unrecorded))
-    assert opened(browser, first + 1)[first:] == [(worked_example.name, "/srv/figures/fig.svg")]
-    assert [entry["opened"] for entry in logged(attended, "page")][-1] == "not reopened: no hub answers"
+    assert opened(browser, 1) == [(worked_example.name, str(worked_example / PAGE))]
+    assert logged(attended, "artefact") == []
 
 
 def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
@@ -430,15 +383,11 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     run: Callable[[dict], None], attended: Path, tmp_path: Path,
 ) -> None:
     """A page on disk that this hook did not write, a render of an older version say, is rendered
-    over and, with no hub, not opened again; the turn's artefacts still open, and the hook's message
-    still shows."""
+    over and, with no hub, not opened again, and the hook's message still shows."""
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
     assert (worked_example / PAGE).read_text() != stale_page
     assert [entry["opened"] for entry in logged(attended, "page")] == ["not reopened: no hub answers"]
-    assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
-        str(tmp_path / "agent/show/session-page/round-3" / page)
-        for page in ("pages.html", "spec.html")]
     assert link_line(shown(capsys)) == f"session page · waiting on you · {(worked_example / PAGE).as_uri()}"
 
 
@@ -720,6 +669,31 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
     run(payload(worked_example, turn, reply=reply, stop_hook_active=again))
     shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
+
+
+def test_an_answer_to_a_question_put_for_a_ticket_goes_back_once_until_the_ticket_records_it(
+    worked_example: Path, unrecorded: Path, run: Callable[[dict], None], capsys: pytest.CaptureFixture,
+) -> None:
+    """what-waits-on-you-rethought: a Qn put for a ticket clears on the user's answer, so the turn
+    that receives it is sent back, once, to record it on the ticket; once the ticket holds the
+    ruling, the turn ends as any other."""
+    ticket = worked_example.parents[2] / "agent" / "tickets" / "two-main-checkouts.md"
+    ticket.write_text("---\nstatus: open\n---\n\n# Two\n\n## Brief\n\nB.\n\n## Acceptance criteria\n\n- [ ] It.\n\n"
+                      "## Questions\n\n- [D5] **Sync on every commit?** Or a timer.\n")
+    asked = worked_example / "turns" / "04.md"
+    asked.write_text(asked.read_text().replace("## Questions\n\n", "## Questions\n\n- [Q8] **Sync?**\n  - Ticket: two-main-checkouts D5\n"
+                                               "  - (a) Yes\n  - (b) No\n", 1))
+    record = worked_example / "turns" / "05.md"
+    record.write_text("---\ndate: 2026-09-24\nanswered:\n  Q8: a\n---\n\n# Synced on every commit\n")
+    with_write(unrecorded, "Write", record)
+    run(payload(worked_example, unrecorded))
+    said = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "Q8 (two-main-checkouts D5)" in said and "tracker rule" in said
+    run(payload(worked_example, unrecorded, stop_hook_active=True))
+    assert shown(capsys), "a turn sent back once ends the second time"
+    ticket.write_text(ticket.read_text().replace("Or a timer.\n", "Or a timer.\n  - Ruled 2026-09-24: on every commit.\n"))
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys)
 
 
 # ---- the line under the turn ------------------------------------------------

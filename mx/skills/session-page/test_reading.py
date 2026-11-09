@@ -332,8 +332,8 @@ def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line(
 
 def test_a_block_under_a_question_after_its_options_is_refused_and_told_where_it_goes(tmp_path: Path) -> None:
     """session-page-question-continuation-lands-on-last-option: a draft quoted at the question's
-    indent after its options once rendered inside the last option; it is refused, pointing at
-    Details, while a line wrapped deeper than an option's `-` still continues that option."""
+    indent after its options once rendered inside the last option; it is refused, pointing at a
+    Recap, while a line wrapped deeper than an option's `-` still continues that option."""
     record = tmp_path / "07.md"
     question = ("---\ndate: 2026-10-23\n---\n\n# Thomas's roles comment\n\n## Questions\n\n"
                 "- [Q20] **Post this reply on Thomas's roles comment?**\n"
@@ -341,7 +341,7 @@ def test_a_block_under_a_question_after_its_options_is_refused_and_told_where_it
     record.write_text(question)
     assert [o.text for o in read_turn(record).questions[0].options] == ["As written below.", "With your changes."]
     record.write_text(f"{question}\n  > Done across the stack.\n")
-    with pytest.raises(RecordError, match=re.escape("goes in ## Details, which the question links as [text](#t07)")) as refused:
+    with pytest.raises(RecordError, match=re.escape("goes in a `- Recap:` sub-item")) as refused:
         read_turn(record)
     assert str(refused.value).startswith(f"{record}:14: text under Q20 after its sub-items")
 

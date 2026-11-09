@@ -40,6 +40,7 @@ import re
 import shlex
 import shutil
 import sys
+import textwrap
 import urllib.parse
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
@@ -61,6 +62,7 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 import qualified  # noqa: E402  what a ticket's qualified tag names, which the page shows its questions by and links
 from steps import Spent, Step, shown, spent_of, steps_of  # noqa: E402  the tool calls each turn made, as the log shows them, and what it spent
 from live_hook import LIVE  # noqa: E402  the turn under way's tool calls, which the log polls
+from session_plan import PlanStep, read_plan, walk  # noqa: E402  the session's plan, which the tasks column draws
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 # The turns' tool calls, beside the page as a script setting `window.toolCalls`, which the page
@@ -277,7 +279,8 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     written = written_at(entries, directory, turns)
     turns = [replace(t, written=written.get(t.number)) for t in turns]
     spoken = said(entries)
-    settled = settle(turns, spoken)
+    plan = read_plan(directory)
+    settled = settle(turns, spoken, plan)
     timeline = in_order(turns, chats)
     times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
@@ -308,6 +311,8 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         others=others,
         log=work,
         spent=spent,
+        plan=plan,
+        looked=looked_at(turns, spoken),
     )
 
 
@@ -320,9 +325,9 @@ def held_in_tickets(turns: list[Turn], tickets: Path) -> list[Turn]:
     latest = {q.handle: t.number for t in turns for q in t.questions if isinstance(q, TicketQuestion)}
 
     def held(q: Question | TicketQuestion) -> Question | TicketQuestion:
-        if not isinstance(q, TicketQuestion):
+        if isinstance(q, Question) and not q.ticket:
             return q
-        named = resolve(q.ticket, q.tag)
+        named = resolve(*q.ticket.split()) if isinstance(q, Question) else resolve(q.ticket, q.tag)
         return replace(q, named=named if named and named.kind == "question" else None)
 
     return [replace(t, questions=tuple(held(q) for q in t.questions if not isinstance(q, TicketQuestion) or latest[q.handle] == t.number))
@@ -435,32 +440,46 @@ class RecordError(Exception):
 
 @dataclass(frozen=True)
 class Option:
-    """One answer a question offers, as a sub-item under it."""
+    """One answer a question offers, as a sub-item under it, with what taking it leads to, gives
+    and costs, each from a sub-item of its own where it has one."""
 
     letter: str
     text: str
-    picked: bool  # the agent's own pick, which the record marks
-    gives: str = ""  # what taking it gives, from its `- Gives:` sub-item, where it has one
-    costs: str = ""  # what taking it costs, from its `- Costs:` sub-item
+    gives: str = ""
+    costs: str = ""
+    leads: str = ""  # what deciding it this way sets going: the work, the change, the next question
 
 
 @dataclass(frozen=True)
 class Question:
     """One `- [Qn] **headline** detail` item under a turn's `## Questions`: a call only the user
-    can make. It clears through the frontmatter of the turn that received the answer."""
+    can make. It clears through the user's answer line, a later turn's frontmatter, a plan step
+    that names it going done, or, for one put to the user for a ticket, the ticket recording the
+    ruling."""
 
     tag: str  # Q1, Q2, ... the session's running sequence
     headline: str  # the bold sentence the page shows
     detail: str  # the rest of the item, as written
     options: tuple[Option, ...] = ()
-    why: str = ""  # the `- Why:` sub-item under the options, where the question carries one
+    why: str = ""  # the `- Why:` sub-item an older record carries, its argument for the pick it marked
     # A blind question's test page (`blind-test`), from the repo root or absolute: the page holds its
     # options and the agent's pick, if any, so the question carries neither.
     blind: str = ""
+    recap: str = ""  # markdown: what the question leans on, from its `- Recap:` sub-item, which the card shows whole
+    links: tuple["Link", ...] = ()  # the artefacts it leans on, its link sub-items
+    ticket: str = ""  # `<slug> D2`, where the question is a ticket's or a worker's, put to the user as this Qn
+    # the ticket's question as the tracker held it when the session was read (`held_in_tickets`);
+    # None where there is no ticket, or it holds the question no longer
+    named: qualified.Named | None = None
 
     @property
     def handle(self) -> str:
         return self.tag
+
+    @property
+    def ruled(self) -> bool:
+        """Whether its ticket settled it: ruled it, retired it, or holds the question no longer."""
+        return bool(self.ticket) and not (self.named is not None and self.named.open)
 
 
 @dataclass(frozen=True)
@@ -491,13 +510,15 @@ class TicketQuestion:
 @dataclass(frozen=True)
 class ToDo:
     """One `- [An] **headline** detail` item under a turn's `## To do`: something the user has to do
-    outside the session. Like a question, it waits at the top until a later turn's frontmatter
-    clears it: `answered` once the user says how it went, `superseded` where a changed to-do
-    replaces it."""
+    outside the session. Like a question, it waits at the top until it clears: `answered` once the
+    user says how it went, `superseded` where a changed to-do replaces it, or a plan step naming it
+    going done."""
 
     tag: str  # A1, A2, ... the session's running sequence, beside the questions'
     headline: str
     detail: str = ""
+    recap: str = ""  # markdown, from its `- Recap:` sub-item, as a question's
+    links: tuple["Link", ...] = ()  # the artefacts it leans on, its link sub-items
 
     @property
     def handle(self) -> str:
@@ -549,6 +570,8 @@ class Turn:
     # letter or the user's own words, and to the tag of the one that replaced it
     answered: dict[str, str] = field(default_factory=dict)
     superseded: dict[str, str] = field(default_factory=dict)
+    # the artefacts this turn's frontmatter retired from what the user is to look at, by path, to why or what replaced it
+    retired: dict[str, str] = field(default_factory=dict)
 
     @property
     def key(self) -> str:
@@ -580,9 +603,10 @@ class Chat:
 @dataclass(frozen=True)
 class Settled:
     """How a question left the top: answered with `value`, or superseded by the question `value`
-    names, in turn `turn`, or, where `turn` is None, by a line of the user's message."""
+    names, in turn `turn`, or, where `turn` is None, by a line of the user's message; or `done`,
+    by the plan step `value` naming it going done."""
 
-    how: Literal["answered", "superseded"]
+    how: Literal["answered", "superseded", "done"]
     value: str
     turn: int | None
 
@@ -609,6 +633,9 @@ class Session:
     others: dict[str, Path] = field(default_factory=dict)  # those sessions' directories, by id, which hold their pages
     log: dict[str, tuple["Step", ...]] = field(default_factory=dict)  # each turn's steps, by the id of its block (`worked_for`)
     spent: dict[str, "Spent"] = field(default_factory=dict)  # what each turn consumed and produced, by the id of its block, as `log` divides it
+    plan: tuple[PlanStep, ...] = ()  # the session's plan (`session_plan`), its steps in the file's order
+    # each artefact path a line of the user's message named (seen, or a note on it), with when the newest such line was said
+    looked: dict[str, datetime] = field(default_factory=dict)
 
 
 # ---- reading the records ----------------------------------------------------
@@ -640,6 +667,10 @@ def read_turn(path: Path) -> Turn:
         if not isinstance(table, dict):
             raise RecordError(path, line_of(path, name), f"{name}: a mapping of question tags, like `Q1: a`")
         tables[name] = {str(tag): str(value) for tag, value in table.items()}
+        if name == "superseded":
+            # an artefact a later turn made moot, by its path as a turn linked it, to why or to what replaced it
+            retired = {key: value for key, value in tables[name].items() if not TAG.fullmatch(key) and not TICKET_QUESTION.fullmatch(key)}
+            tables[name] = {key: value for key, value in tables[name].items() if key not in retired}
         for tag in tables[name]:
             if TICKET_QUESTION.fullmatch(tag):
                 raise RecordError(path, line_of(path, tag), f"{name}: {tag} is a ticket's question, which clears once its ticket "
@@ -658,6 +689,7 @@ def read_turn(path: Path) -> Turn:
         todos=read_todos(path, *sections["To do"]) if "To do" in sections else (),
         links=read_links(path, *sections["Links"]) if "Links" in sections else (),
         details=sections.get("Details", (0, ""))[1],
+        retired=retired,
         **tables,
     )
 
@@ -745,19 +777,22 @@ def check_links(root: Path, directory: Path, turn: "Turn") -> None:
 
 
 def check_ticket_questions(root: Path, turn: "Turn") -> None:
-    """Every ticket's question the turn's record puts to the user is one its ticket holds open.
-    Checked on the record the turn writes, never on an older one or as the page renders, since a
-    ticket's question is ruled, and its ticket retired, long after the record that asked it."""
+    """Every ticket's question the turn's record puts to the user, as a `Ticket:` sub-item, is one
+    its ticket holds open. Checked on the record the turn writes, never on an older one or as the
+    page renders, since a ticket's question is ruled, and its ticket retired, long after the record
+    that asked it."""
     lines = turn.path.read_text().split("\n")
-    for c in (q for q in turn.questions if isinstance(q, TicketQuestion) and not q.open):
-        n = next((n for n, line in enumerate(lines, start=1) if line.startswith(f"- [{c.handle}]")), None)
-        if not (root / ticket_path(c.ticket)).is_file():
-            raise RecordError(turn.path, n, f"{c.handle}: the tracker holds no ticket {c.ticket}")
-        if c.named is None:
-            raise RecordError(turn.path, n, f"{c.handle}: {c.ticket} asks no question {c.tag} under its ## Questions")
-        if c.named.done:
-            raise RecordError(turn.path, n, f"{c.handle}: {c.ticket} is done, so its open questions wait on nobody")
-        raise RecordError(turn.path, n, f"{c.handle} was ruled {c.named.ruled} ({c.named.answer}), so it waits on nobody")
+    for q in (q for q in turn.questions if isinstance(q, Question) and q.ticket and q.ruled):
+        slug, tag = q.ticket.split()
+        n = next((n for n, line in enumerate(lines, start=1) if TICKET.fullmatch(line.strip().removeprefix("- "))
+                  and q.ticket in line), None)
+        if not (root / ticket_path(slug)).is_file():
+            raise RecordError(turn.path, n, f"{q.ticket}: the tracker holds no ticket {slug}")
+        if q.named is None:
+            raise RecordError(turn.path, n, f"{q.ticket}: {slug} asks no question {tag} under its ## Questions")
+        if q.named.done:
+            raise RecordError(turn.path, n, f"{q.ticket}: {slug} is done, so its open questions wait on nobody")
+        raise RecordError(turn.path, n, f"{q.ticket} was ruled {q.named.ruled} ({q.named.answer}), so it waits on nobody")
 
 
 def read_record(path: Path, allowed: set[str], sections: set[str]) -> tuple[dict, str, dict[str, tuple[int, str]]]:
@@ -844,27 +879,73 @@ TICKET_QUESTION = re.compile(rf"({tracker.SLUG.pattern}) (D\d+)")  # a ticket's 
 TICKET_QUESTION_ITEM = re.compile(rf"- \[{TICKET_QUESTION.pattern}\](.*)")
 SUB_ITEM = re.compile(r"\s{2,}- (.*)")
 OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
-PICK = re.compile(r"\s*\*my pick\*\s*")
+PICK = re.compile(r"\s*\*my pick\*\s*")  # an older record's mark of the agent's pick, which the page no longer shows
 WHY = re.compile(r"Why:\s*(.*)")
 BLIND = re.compile(r"Blind:\s*(\S+)")
-GIVES_COSTS = re.compile(r"(Gives|Costs):\s*(.*)")
+TICKET = re.compile(rf"Ticket:\s*{TICKET_QUESTION.pattern}\s*")
+OPTION_PARTS = {"Gives": "gives", "Costs": "costs", "Leads to": "leads"}
+OPTION_PART = re.compile(f"({'|'.join(OPTION_PARTS)}):\\s*(.*)")
+RECAP = re.compile(r"Recap:\s*(.*)")
+LINK_TEXT = r"\[(.+?)\]\(([^()\s]+)\)(?::\s*(.*))?\s*"
+LEANED_ON = re.compile(LINK_TEXT)  # an artefact an item leans on, as a sub-item of it
+
+
+def leaned_on(path: Path, n: int, item: dict, sub: str, indent: int) -> dict | None:
+    """The part a `- Recap:` or a link sub-item adds to `item`, a question or a to-do, or None where
+    `sub` is neither. A recap keeps its lines, so a list or a quote under it renders as one."""
+    if r := RECAP.fullmatch(sub):
+        if item["recap"] is not None:
+            raise RecordError(path, n, f"a second Recap: under {item['tag']}")
+        item["recap"] = {"text": r.group(1), "lines": [], "dash": indent}
+        return item["recap"]
+    if m := LEANED_ON.fullmatch(sub):
+        if m.group(2).startswith("../"):
+            raise RecordError(path, n, f"{m.group(2)} is neither a path from the repo root nor an absolute one")
+        part = {"text": m.group(3) or "", "link": (m.group(1), m.group(2))}
+        item["links"].append(part)
+        return part
+    return None
+
+
+def continued(part: dict, line: str) -> None:
+    """A line indented deeper than `part`'s `-`, added to it: a recap keeps it as a line of its
+    markdown, anything else joins its text."""
+    if "lines" in part:
+        part["lines"].append(line)
+    else:
+        part["text"] = f"{part['text']} {line.strip()}".strip()
+
+
+def recap_of(item: dict) -> str:
+    if item["recap"] is None:
+        return ""
+    r = item["recap"]
+    return "\n".join([r["text"], textwrap.dedent("\n".join(r["lines"]))]).strip()
+
+
+def links_of(item: dict) -> tuple["Link", ...]:
+    return tuple(Link(*part["link"], part["text"]) for part in item["links"])
 
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question | TicketQuestion, ...]:
-    """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
-    and at most one `Why: text`, as sub-items; a line indented deeper than an item's `-` continues it.
-    An option may carry a `Gives: text` and a `Costs: text` sub-item of its own, which the page lays
-    out as the columns of the question's table of options.
-    A blind question carries one `Blind: path` sub-item, its test page, and nothing else. A line back
+    """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two, as
+    sub-items, and what the question leans on: a `Recap: text`, whose deeper lines are its
+    markdown, and `[text](path): note` links, its artefacts. An option may carry `Leads to:`,
+    `Gives:` and `Costs:` sub-items of its own, which the page lays out as the columns of the
+    question's table of options. A `Ticket: <slug> D3` sub-item puts the ticket's question to the
+    user as this one. A line indented deeper than an item's `-` continues it.
+    A blind question carries one `Blind: path` sub-item, its test page, and no options. A line back
     at the question's indent once its sub-items began is refused: markdown would show it under the
-    question, but continuing the last sub-item would put it inside that option. A ticket's
-    question is `- [<ticket> D3]` alone, since its words live in its ticket; what the ticket holds
-    under it is read by `read_session`."""
+    question, but continuing the last sub-item would put it inside that option.
+    An older record's forms still read: `*my pick*` on an option, dropped; `Why: text`; and a
+    ticket's question as `- [<ticket> D3]` alone, whose words live in its ticket (`read_session`)."""
     items: list[dict | TicketQuestion] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
     dash = 0  # the indent of that part's `-`, which a continuation line goes deeper than
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
+            if part is not None and "lines" in part:
+                part["lines"].append("")
             continue
         indent = len(line) - len(line.lstrip())
         if m := TICKET_QUESTION_ITEM.fullmatch(line):
@@ -877,20 +958,22 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
             raise RecordError(path, n, f"{items[-1].handle} is a ticket's question: its options and detail live in its ticket, not here")
         elif m := QUESTION_ITEM.fullmatch(line):
             part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None,
-                    "blind": None, "line": n}
+                    "blind": None, "ticket": None, "recap": None, "links": [], "line": n}
             items.append(part)
             dash = 0
         elif line.startswith("- "):
-            raise RecordError(path, n, "a question is `- [Q7] **headline** detail`, or `- [<ticket> D3]` for a ticket's question")
+            raise RecordError(path, n, "a question is `- [Q7] **headline** detail`")
         elif not items:
             raise RecordError(path, n, "text before the first question")
-        elif (m := SUB_ITEM.fullmatch(line)) and (gc := GIVES_COSTS.fullmatch(m.group(1))):
-            options, key = items[-1]["options"], gc.group(1).lower()
+        elif part is not None and "lines" in part and indent > part["dash"]:
+            continued(part, line)
+        elif (m := SUB_ITEM.fullmatch(line)) and (op := OPTION_PART.fullmatch(m.group(1))):
+            options, key = items[-1]["options"], OPTION_PARTS[op.group(1)]
             if not options or indent <= options[-1]["dash"]:
-                raise RecordError(path, n, f"{gc.group(1)}: goes under an option, indented deeper than its `- (a)`")
+                raise RecordError(path, n, f"{op.group(1)}: goes under an option, indented deeper than its `- (a)`")
             if key in options[-1]:
-                raise RecordError(path, n, f"a second {gc.group(1)}: under option ({options[-1]['letter']}) of {items[-1]['tag']}")
-            part = options[-1][key] = {"text": gc.group(2)}
+                raise RecordError(path, n, f"a second {op.group(1)}: under option ({options[-1]['letter']}) of {items[-1]['tag']}")
+            part = options[-1][key] = {"text": op.group(2)}
             dash = indent
         elif m := SUB_ITEM.fullmatch(line):
             item, dash = items[-1], indent
@@ -907,13 +990,21 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
                 if b.group(1).startswith("../"):
                     raise RecordError(path, n, f"{b.group(1)} is neither a path from the repo root nor an absolute one")
                 item["blind"], part = b.group(1), None
+            elif t := TICKET.fullmatch(m.group(1)):
+                if item["ticket"] is not None:
+                    raise RecordError(path, n, f"a second Ticket: under {item['tag']}")
+                item["ticket"], part = qualified.handle(t.group(1), t.group(2)), None
+            elif (leaned := leaned_on(path, n, item, m.group(1), indent)) is not None:
+                part = leaned
             else:
-                raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Why: text` or `Blind: path`")
+                raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Recap: text`, a link "
+                                           "`[text](path): note`, `Ticket: <slug> D3` or `Blind: path`")
         elif line.startswith(" ") and part is not None and indent > dash:
-            part["text"] = f"{part['text']} {line.strip()}".strip()
+            continued(part, line)
         elif line.startswith(" ") and indent <= dash:
             raise RecordError(path, n, f"text under {items[-1]['tag']} after its sub-items, which would show inside the last one; "
-                                       f"what a question leans on beyond its detail line goes in ## Details, which the question links as [text](#t{int(path.stem):02d})")
+                                       "what a question leans on beyond its detail line goes in a `- Recap:` sub-item, "
+                                       "its lines indented under it")
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
     questions: list[Question | TicketQuestion] = []
@@ -921,22 +1012,21 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question | Ticket
         if isinstance(item, TicketQuestion):
             questions.append(item)
             continue
+        leans = {"recap": recap_of(item), "links": links_of(item), "ticket": item["ticket"] or ""}
         if item["blind"] is not None:
             if item["options"] or item["why"] is not None:
-                raise RecordError(path, item["line"], f"{item['tag']} is blind: its options, pick and why live in its test page, not here")
-            questions.append(Question(item["tag"], item["headline"], item["text"], blind=item["blind"]))
+                raise RecordError(path, item["line"], f"{item['tag']} is blind: its options and why live in its test page, not here")
+            questions.append(Question(item["tag"], item["headline"], item["text"], blind=item["blind"], **leans))
             continue
         letters = [o["letter"] for o in item["options"]]
         if len(set(letters)) != len(letters):
             raise RecordError(path, item["line"], f"{item['tag']} repeats an option letter")
-        options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(), bool(PICK.search(o["text"])),
-                               o.get("gives", {}).get("text", ""), o.get("costs", {}).get("text", "")) for o in item["options"])
+        options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(),
+                               **{key: o.get(key, {}).get("text", "") for key in OPTION_PARTS.values()}) for o in item["options"])
         if len(options) < 2:
             raise RecordError(path, item["line"], f"{item['tag']} offers {len(options)} option{'s' * (len(options) != 1)}; a question offers at least two, `(a) text` sub-items")
-        if sum(o.picked for o in options) != 1:
-            raise RecordError(path, item["line"], f"{item['tag']} marks {'no option' if not any(o.picked for o in options) else 'more than one option'} *my pick*; it marks one")
         why = item["why"]["text"] if item["why"] else ""
-        questions.append(Question(item["tag"], item["headline"], item["text"], options, why))
+        questions.append(Question(item["tag"], item["headline"], item["text"], options, why, **leans))
     return tuple(questions)
 
 
@@ -944,25 +1034,59 @@ TODO_ITEM = re.compile(r"- \[(A\d+)\] \*\*(.+?)\*\*(?:\s+(.*))?")
 
 
 def read_todos(path: Path, start: int, text: str) -> tuple[ToDo, ...]:
-    """`- [A2] **headline** detail` items; an indented line continues the detail. A to-do carries no
-    sub-items: what it leans on goes in ## Details, which it links."""
-    todos: list[list[str]] = []
+    """`- [A2] **headline** detail` items; an indented line continues the detail. What a to-do leans
+    on is its sub-items, as a question's: a `Recap: text` and `[text](path): note` links."""
+    items: list[dict] = []
+    part: dict | None = None
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
+            if part is not None and "lines" in part:
+                part["lines"].append("")
             continue
+        indent = len(line) - len(line.lstrip())
         if m := TODO_ITEM.fullmatch(line):
-            todos.append([m.group(1), m.group(2), m.group(3) or ""])
-        elif SUB_ITEM.fullmatch(line) and todos:
-            raise RecordError(path, n, f"{todos[-1][0]} is a to-do, which takes no sub-items; what it leans on goes in ## Details, "
-                                       f"which it links as [text](#t{int(path.stem):02d})")
-        elif line.startswith(" ") and todos:
-            todos[-1][2] = f"{todos[-1][2]} {line.strip()}".strip()
+            part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "recap": None, "links": [], "dash": 0}
+            items.append(part)
+        elif items and part is not None and "lines" in part and indent > part["dash"]:
+            continued(part, line)
+        elif items and (m := SUB_ITEM.fullmatch(line)):
+            part = leaned_on(path, n, items[-1], m.group(1), indent)
+            if part is None:
+                raise RecordError(path, n, f"{items[-1]['tag']} is a to-do, whose sub-items are what it leans on: "
+                                           "a `Recap: text` and links `[text](path): note`")
+            part.setdefault("dash", indent)
+        elif line.startswith(" ") and part is not None:
+            continued(part, line)
         else:
             raise RecordError(path, n, "a to-do is `- [A2] **what the user does** detail`")
-    return tuple(ToDo(*todo) for todo in todos)
+    return tuple(ToDo(i["tag"], i["headline"], i["text"], recap_of(i), links_of(i)) for i in items)
 
 
-LINK_ITEM = re.compile(r"- \[(.+?)\]\(([^()\s]+)\)(?::\s*(.*))?\s*")
+TURN_LINK = re.compile(r"\]\(#t\d+\)")
+
+
+def check_current_forms(path: Path) -> None:
+    """The record a turn writes uses only the forms a record is written in now, and its questions
+    and to-dos carry what they lean on rather than link a turn for it. Checked as a record is
+    written, never as the page renders, since a record is never edited and older ones predate the
+    forms."""
+    section = ""
+    for n, line in enumerate(path.read_text().split("\n"), start=1):
+        if heading := re.match(r"##\s+(.+?)\s*$", line):
+            section = heading.group(1)
+        if section == "Questions" and PICK.search(line):
+            raise RecordError(path, n, "no option is marked as yours: the user reads a marked option as one they already "
+                                       "picked. Drop *my pick*; what each option leads to, gives and costs is the argument")
+        if section == "Questions" and TICKET_QUESTION_ITEM.fullmatch(line):
+            raise RecordError(path, n, "a ticket's question is put to the user as a question of the session's own, written for "
+                                       "what they know now: `- [Q8] **the question** detail` with a `- Ticket: <slug> D3` sub-item")
+        if section in ("Questions", "To do") and TURN_LINK.search(line):
+            raise RecordError(path, n, "a card at the top carries everything it leans on, rather than send the user to a turn: "
+                                       "a `- Recap:` sub-item with its lines indented under it, and its artefacts as link "
+                                       "sub-items `- [text](path): note`")
+
+
+LINK_ITEM = re.compile(f"- {LINK_TEXT}")
 
 
 def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
@@ -989,12 +1113,14 @@ def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
 ANSWER_LINE = re.compile(rf"^({TAG.pattern}): *(\S.*?)\s*$", re.M)
 
 
-def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = ()) -> dict[str, Settled]:
+def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = (), plan: tuple[PlanStep, ...] = ()) -> dict[str, Settled]:
     """How each question and to-do that left the top left it: from later turns' frontmatter, then
     from each line of the user's `messages` that answers an item still open in the page's form
-    (`ANSWER_LINE`), once a turn has asked it. A record wins over a line, since it can word an
-    answer the line did not. A tag no earlier turn asked, or one a record already settled, does not
-    parse."""
+    (`ANSWER_LINE`), once a turn has asked it, then from each step of the `plan` that is done and
+    names it, which settles what happened rather than an answer: a merge, a worker's result. A
+    record wins over a line, since it can word an answer the line did not. A tag no earlier turn
+    asked, or one a record already settled, does not parse; the plan is read as it stands, so a tag
+    it names that no turn asked settles nothing."""
     asked: dict[str, int] = {}
     settled: dict[str, Settled] = {}
     for turn in turns:
@@ -1015,6 +1141,13 @@ def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = ()) -> dict
             if todo.tag in asked:
                 raise RecordError(turn.path, None, f"{todo.tag} was already listed in turn {asked[todo.tag]:02d}")
             asked[todo.tag] = turn.number
+    linked: set[str] = set()
+    for turn in turns:
+        for artefact in turn.retired:
+            if artefact not in linked:
+                raise RecordError(turn.path, line_of(turn.path, artefact), f"superseded: {artefact} is no artefact an earlier turn linked, "
+                                                                           "by the path its ## Links wrote")
+        linked.update(link.path for link in turn.artefacts)
     for turn in turns:
         for old, new in turn.superseded.items():
             if new not in asked:
@@ -1024,6 +1157,10 @@ def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = ()) -> dict
         for tag, value in ANSWER_LINE.findall(text):
             if tag in asked and tag not in settled and (written[asked[tag]] is None or written[asked[tag]] < at):
                 settled[tag] = Settled("answered", value, None)
+    for step in walk(plan):
+        for tag in (*step.waits, *step.settles) if step.state == "done" else ():
+            if tag in asked and tag not in settled:
+                settled[tag] = Settled("done", step.text, None)
     return settled
 
 
@@ -1271,6 +1408,9 @@ def log_script(session: "Session") -> str:
 
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 DIRECTORY: ContextVar[Path | None] = ContextVar("DIRECTORY", default=None)  # the directory of the session being rendered
+LOOKED: ContextVar[dict[str, datetime]] = ContextVar("LOOKED", default={})  # Session.looked, of the session being rendered
+# the hover preview of each question and to-do of the session being rendered, by its tag (`own_previews`)
+OWN: ContextVar[dict[str, str]] = ContextVar("OWN", default={})
 AGENT = tracker.TICKETS.parent  # the agent repo, from the repo root
 # what a qualified tag names, in the agent repo of the page being rendered (`qualified.cites`)
 NAMES: ContextVar[Callable[[re.Match], qualified.Cited | None] | None] = ContextVar("NAMES", default=None)
@@ -1279,19 +1419,19 @@ KEYS = [
     ("j k", "next, previous turn"),
     ("Enter", "open or close the turn"),
     ("o", "open or close every turn"),
-    ("g g", "top"),
-    ("G", "last turn"),
-    ("n", "the newest turn"),
+    ("g g", "the top turn, the timeline at its top"),
+    ("G", "the last turn, the timeline at its end"),
+    ("N", "the newest turn"),
     ("t 0 7", "turn 07, by the number it shows"),
-    ("[ ]", "what waits on you: the keys go to its card, where [ ] move between the items"),
-    ("q", "show or fold what waits on you"),
-    ("a b c", "on a question's card: pick that option"),
-    ("Enter p", "on a question's card: take the agent's pick"),
-    ("d x", "on a to-do's card: done, dismissed"),
-    ("o s", "on an artefact's card: open it, mark it seen; seen stays on the page"),
-    ("n", "on a card: a note, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
-    ("u", "on a card: clear what is staged"),
-    ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back to the cards"),
+    ("[ ]", "the previous, next item of the tasks: the keys below act on it; [ on the first takes the tasks to their top"),
+    ("Enter", "on an item: open its card, where [ ] move between the cards and Esc goes back"),
+    ("a b c", "on a question: pick that option"),
+    ("d x", "on a to-do: done, dismissed"),
+    ("o s", "on an artefact: open it, mark it seen; it leaves once the batch is sent"),
+    ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
+    ("u", "on an item: clear what is staged"),
+    ("q", "fold or show the tasks"),
+    ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back"),
     ("1 to 9", "open the turn's nth artefact"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's; "
           "with them open, k on the newest turn goes on to the turn under way's"),
@@ -1319,27 +1459,58 @@ def open_todos(session: Session) -> list[tuple[Turn, ToDo]]:
 
 
 def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
-    """The artefacts waiting for the user to look at, oldest first: those the turns written since the
-    user last spoke linked, the turn holding their last message included (a chat turn may hold it),
-    every turn's where the transcript holds no message of theirs. An artefact two of those turns
-    linked waits once, under the later."""
-    since = [t for t in session.turns if session.spoke is None or (t.written is not None and t.written > session.spoke)]
-    found = {s.artefact: (t, s) for t in since for s in shown_links(t, session.root, session.directory) if s.artefact}
+    """The artefacts waiting for the user to look at, oldest first: every one a turn linked until a
+    line of the user's message names it, as the page's batch does once they marked it seen or noted
+    it, or a later turn's `superseded:` retires it. An artefact two turns linked waits once, under
+    the later, and one linked again after it left waits again."""
+    retired = {path: t.number for t in session.turns for path in t.retired}
+    found = {s.artefact: (t, s) for t in session.turns for s in shown_links(t, session.root, session.directory)
+             if s.artefact and not seen_since(session.looked, s.link.path, t) and retired.get(s.link.path, 0) <= t.number}
     return list(found.values())
 
 
+def seen_since(looked: dict[str, datetime], path: str, turn: Turn) -> bool:
+    """Whether a line of the user's named `path` after `turn` linked it: a page rebuilt at its path and
+    linked again waits again."""
+    said = looked.get(path)
+    return said is not None and (turn.written is None or said > turn.written)
+
+
+ARTEFACT_LINE = re.compile(r"^(\S+): *\S", re.M)
+
+
+def looked_at(turns: list[Turn], messages: list[tuple[datetime, str]]) -> dict[str, datetime]:
+    """The paths of the turns' artefacts that a line of the user's messages names, in the form the
+    page's batch sends (`<path>: seen`, or a note on it), each with when it was last named."""
+    paths = {link.path for t in turns for link in t.artefacts}
+    return {m.group(1): at for at, text in sorted(messages, key=lambda m: m[0]) for m in ARTEFACT_LINE.finditer(text) if m.group(1) in paths}
+
+
+def own_previews(session: Session) -> dict[str, str]:
+    """What a bare `Q7` or `A3` in the page's text shows on hover: its headline, and whether it waits."""
+    def state(tag: str) -> str:
+        how = session.settled.get(tag)
+        return (" · waiting" if how is None else f" · answered {how.value}" if how.how == "answered"
+                else f" · replaced by {how.value}" if how.how == "superseded" else f" · settled by the plan: {how.value}")
+    items = [i for t in session.turns for i in (*t.questions, *t.todos) if not isinstance(i, TicketQuestion)]
+    return {i.tag: f"{i.tag} · {strip_tags(inline(i.headline, paths=False))}{state(i.tag)}" for i in items}
+
+
 def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
-    """Whether the question waits on the user: a ticket's while its ticket holds it open, the
-    session's own until a later turn answers or supersedes it."""
-    return q.open if isinstance(q, TicketQuestion) else q.tag not in settled
+    """Whether the question waits on the user: one put to them for a ticket while its ticket holds
+    it open, and the session's own until it is settled (`settle`)."""
+    return q.open if isinstance(q, TicketQuestion) else q.tag not in settled and not q.ruled
 
 
 def page(session: Session, now: datetime) -> str:
     """The session page, with every path a record writes resolved from the session's repo root."""
     root, names, directory = ROOT.set(session.root), NAMES.set(qualified.cites(session.root / AGENT)), DIRECTORY.set(session.directory)
+    looked, own = LOOKED.set(session.looked), OWN.set(own_previews(session))
     try:
         return assemble(view(session), now)
     finally:
+        LOOKED.reset(looked)
+        OWN.reset(own)
         ROOT.reset(root)
         NAMES.reset(names)
         DIRECTORY.reset(directory)
@@ -1447,7 +1618,6 @@ def when(t: Turn | Chat) -> str:
 
 def assemble(v: View, now: datetime) -> str:
     session = v.session
-    top = band(v)
     body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
     name = (f'<span class="sep">|</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
@@ -1472,7 +1642,7 @@ def assemble(v: View, now: datetime) -> str:
 {GLYPHS}
 <header class="bar">
   <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
-  <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
+  <button class="icon view-toggle" id="view-toggle" aria-controls="{QUESTIONS}" aria-label="the turns"><span class="to-turns">{ICONS["turns"]}</span><span class="to-tasks">{ICONS["tasks"]}</span></button>
   <button class="log-toggle v-meta" id="log-toggle" aria-controls="log" aria-expanded="false" aria-keyshortcuts="l" data-src="{LOG}?{now:%Y%m%d%H%M%S%f}" data-live="{LIVE}" title="the focused turn's tool calls" aria-label="the focused turn's tool calls"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
@@ -1485,14 +1655,17 @@ def assemble(v: View, now: datetime) -> str:
     <section class="intro">
       <h1 class="v-title">{title}</h1>{handoffs(session)}
       <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="resume" id="resume" data-cmd="{esc(v.resume)}" aria-keyshortcuts="R" title="copy: {esc(v.resume)}">copy resume command</button></p>
-    </section>{top}
+    </section>
     <div class="pane" id="turns-pane">
       <section class="turns" aria-label="turns">
         {body}
       </section>
     </div>
-  </div>{column(v.rows, session)}
+  </div>
+  <div class="side">{tasks_column(v)}{column(v.rows, session)}
+  </div>
 </main>
+{card_dialog(v)}
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script type="application/json" id="sources">{sources(v)}</script>
@@ -1567,8 +1740,13 @@ def chat_group(r: Row) -> str:
 def timeline_row(r: Row) -> str:
     """What follows a turn's number in the timeline: its headline, then its artefacts."""
     headline = esc(strip_tags(inline(r.turn.headline)))
-    items = "".join(f"<li>{opening_key(s)}{artefact(s, 'artefact')}</li>" for s in r.artefacts)
+    items = "".join(f'<li{seen_mark(s, r.turn)}>{opening_key(s)}{type_icon(s.link.path)}{artefact(s, "artefact")}</li>' for s in r.artefacts)
     return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
+
+
+def seen_mark(s: Shown, turn: Turn) -> str:
+    """An artefact the user marked seen and sent, as the timeline marks it."""
+    return f' class="seen"{tip("You looked at it" + chr(10) + "and the agent was told")}' if seen_since(LOOKED.get(), s.link.path, turn) else ""
 
 
 def newest_control(rows: tuple[Row, ...]) -> str:
@@ -1578,9 +1756,10 @@ def newest_control(rows: tuple[Row, ...]) -> str:
     is no turn."""
     if not rows:
         return ""
-    label = rows[0].key if isinstance(rows[0].turn, Turn) else "chat"
-    return (f'<button class="newest" data-newest aria-keyshortcuts="n" title="the newest turn">'
-            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span></button>')
+    label = f"turn {rows[0].key}" if isinstance(rows[0].turn, Turn) else "a chat turn"
+    return (f'<button class="newest" data-newest aria-keyshortcuts="N" aria-label="the newest turn, {label}"'
+            f'{tip(f"The newest turn: {label}" + chr(10) + "Takes the turns there; N does too.")}>'
+            f'<span class="dot" aria-hidden="true"></span>{ICONS["newest"]}</button>')
 
 
 def opening_key(s: Shown) -> str:
@@ -1598,27 +1777,173 @@ def artefact(s: Shown, cls: str) -> str:
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
-KINDS = {"decide": "to decide", "do": "to do", "look": "to look at"}
+def svg(d: str, size: int = 16) -> str:
+    return (f'<svg class="ico" viewBox="0 0 24 24" width="{size}" height="{size}" fill="none" stroke="currentColor" stroke-width="1.7" '
+            f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{d}</svg>')
 
 
-def band(v: View) -> str:
-    """What waits on the user, at the top: one card per item, one shown at a time (page.js), the
-    questions first, then the to-dos, then the artefacts to look at; above the cards a tick per
-    item, and the review of the batch, which page.js fills, after them. Nothing where nothing waits."""
-    cards = ([decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
-             + [look_card(t, s, n) for n, (t, s) in enumerate(v.looks, start=1)])
-    if not cards:
-        return ""
-    counts = {"decide": len(v.waiting), "do": len(v.todos), "look": len(v.looks)}
-    heading = " · ".join(f"{n} {KINDS[kind]}" for kind, n in counts.items() if n)
+# Lucide's paths (ISC licence), the set the prototype of this column was drawn with.
+ICONS = {
+    "check": svg('<path d="M20 6 9 17l-5-5"/>'),
+    "x": svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+    "wait": svg('<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>'
+                '<path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>', 15),
+    "next": svg('<circle cx="12" cy="12" r="9"/>', 15),
+    "doing": '<span class="spin">' + svg('<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/>'
+                                         '<path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>', 15) + "</span>",
+    "open": svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
+    "note": svg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    "send": svg('<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/>'
+                '<path d="m21.854 2.147-10.94 10.939"/>'),
+    "eye": svg('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
+    "play": svg('<polygon points="6 3 20 12 6 21 6 3"/>'),
+    "term": svg('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>', 13),
+    "review": svg('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>', 15),
+    "markdown": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/>'
+                    '<path d="M16 13H8"/><path d="M16 17H8"/>', 15),
+    "image": svg('<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>', 15),
+    "page": svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>', 15),
+    "file": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', 15),
+    "turns": svg('<path d="M4 6h16M4 12h16M4 18h10"/>', 18),
+    "tasks": svg('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>', 18),
+    "newest": svg('<path d="M17 18 12 13l-5 5"/><path d="M17 11 12 6l-5 5"/>'),
+    "up": svg('<path d="m18 15-6-6-6 6"/>'),
+    "down": svg('<path d="m6 9 6 6 6-6"/>'),
+    "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
+}
+# What an artefact is, by its path, as its icon says: (the icon, its name in the tooltip).
+TYPES = (
+    (re.compile(r"(^|/)diffviews/[^/]*\.html?$|review[^/]*\.html?$", re.I), "review", "Review page"),
+    (re.compile(r"\.md$", re.I), "markdown", "Markdown"),
+    (re.compile(r"\.(png|jpe?g|gif|webp|svg)$", re.I), "image", "Image"),
+    (re.compile(r"\.html?$|^https?:", re.I), "page", "Page"),
+)
+
+
+def artefact_type(path: str) -> tuple[str, str]:
+    """The icon an artefact's path gives it, and what that icon names; a file of no other type is a file."""
+    return next(((icon, name) for pattern, icon, name in TYPES if pattern.search(file_part(path))), ("file", "File"))
+
+
+def type_icon(path: str) -> str:
+    icon, name = artefact_type(path)
+    return f'<span class="t-type" data-tip="{name}">{ICONS[icon]}</span>'
+
+
+def tip(text: str) -> str:
+    """A `data-tip` attribute: the styled tooltip page.js shows, its first line as its title."""
+    return f' data-tip="{esc(text)}"'
+
+
+def button(icon: str, key: str, act: str, says: str, cls: str = "") -> str:
+    """A control of the tasks column: an icon, the key that does the same, and the tooltip that says both."""
+    return (f'<button type="button" class="ib {cls}" data-act="{act}" aria-keyshortcuts="{key}" '
+            f'aria-label="{esc(says.split(chr(10))[0])}"{tip(says)}>{ICONS[icon]}</button>')
+
+
+STATE_TIPS = {"wait": "Waits on you\nThe calls under it hold it up.", "doing": "In flight\nUnder way now.",
+              "next": "Next\nNothing needed from you yet."}
+
+
+def tasks_column(v: View) -> str:
+    """The tasks, in the order the user should look at them: what needs them, each call and to-do
+    under the plan step it holds up, those no step names first; the artefacts to look at; what is in
+    flight; what comes next. The plan's steps are drawn as the plan nests them, a step the user holds
+    up at the top level. Every item's card waits in the page's dialog (`card_dialog`)."""
+    open_rows = {q.handle: decide_row(t, q) for t, q in v.waiting} | {d.tag: todo_row(t, d) for t, d in v.todos}
+    named = {tag for step in walk(v.session.plan) if step.state != "done" for tag in step.waits}
+    sections: dict[str, list[str]] = {"needs": [row for handle, row in open_rows.items() if handle not in named], "doing": [], "next": []}
+    drawn: set[str] = set()  # a call two steps wait on is drawn under the first
+
+    def visit(step: PlanStep, parent: str | None, depth: int) -> None:
+        held = [open_rows[t] for t in dict.fromkeys(step.waits) if t in open_rows and t not in drawn]
+        drawn.update(t for t in step.waits if t in open_rows)
+        section = None if step.state == "done" else "needs" if held else "doing" if step.state == "doing" else "next"
+        depth = depth + 1 if section is not None and section == parent and section != "needs" else 0
+        if section:
+            # a step whose calls were all answered waits on nothing, whatever the plan still says
+            shown = replace(step, state="next") if step.state == "wait" and not held else step
+            sections[section].append(step_row(shown, depth) + "".join(held))
+        for under in step.under:
+            visit(under, section, depth)
+
+    for step in v.session.plan:
+        visit(step, None, -1)
+    looks = [look_row(t, s) for t, s in v.looks]
+    working = (f'<div class="t-task doing" id="working" hidden><span class="si"{tip(STATE_TIPS["doing"])}>{ICONS["doing"]}</span>'
+               '<span class="t-txt">A turn is running</span></div>')
+    body = ("".join(sections["needs"])
+            + (f'<div class="t-gap"></div><div class="t-label v-meta">to look at</div>{"".join(looks)}' if looks else "")
+            + f'<div class="t-gap"></div>{working}{"".join(sections["doing"])}'
+            + (f'<div class="t-gap"></div>{"".join(sections["next"])}' if sections["next"] else ""))
+    count = len(v.waiting) + len(v.todos)
     return f"""
-    <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
-      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {heading}<span class="tally" id="tally"></span></h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold</button></div>
-      <div class="ticks" id="ticks" aria-label="every item, the ones staged filled"></div>
-      <div class="cards">{"".join(cards)}
-      </div>
-      <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
+    <section class="tasks{'' if count or looks else ' quiet'}" id="{QUESTIONS}" aria-labelledby="tasks-title" tabindex="-1">
+      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.") if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}>{ICONS["up"].replace('class="ico"', 'class="ico when-open"')}{ICONS["down"].replace('class="ico"', 'class="ico when-folded"')}</button></div>
+      <div class="t-list">{body}</div>
     </section>"""
+
+
+def card_dialog(v: View) -> str:
+    """The cards of the tasks' questions and to-dos and the review of the batch, one at a time over
+    the whole window (page.js): a child of the page, since the tasks column, which clips and fades
+    what scrolls in it, would hold a dialog inside its own edges."""
+    cards = [decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
+    return f"""<div class="card-dialog" id="card-dialog" hidden><div class="d-card">{"".join(cards)}
+  <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
+</div></div>"""
+
+
+def step_row(step: PlanStep, depth: int) -> str:
+    """A plan step: its state's icon, its words, what runs it and what to look at for it."""
+    jobs = "".join(f'<span class="t-job v-meta"{tip("Runs in the background" + chr(10) + "whether or not a turn does")}>{ICONS["term"]}{esc(j)}</span>'
+                   for j in step.jobs)
+    see = "".join(f'<a class="ib" href="{esc(href(path))}" target="_blank" rel="noopener" {ARTEFACT}="{esc(resolved(path, ROOT.get(), DIRECTORY.get()))}"'
+                  f'{tip(artefact_type(path)[1] + chr(10) + path)}>{ICONS[artefact_type(path)[0]]}</a>' for path in step.see)
+    return (f'<div class="t-task {step.state}" style="--d:{depth}"><span class="si"{tip(STATE_TIPS[step.state])}>{ICONS[step.state]}</span>'
+            f'<span class="t-txt">{inline(step.text)}</span>{jobs}{see}</div>')
+
+
+def item_row(handle: str, kind: str, card: str, tag: str, headline: str, picks: str, data: str = "") -> str:
+    """One item of the tasks column: its tag, which opens its card, its headline, its note, and what
+    picks an answer for it. Its height stays the same whatever has the focus."""
+    return (f'<div class="t-row" data-handle="{esc(handle)}" data-kind="{kind}" data-card="{card}"{data}>'
+            f'<a class="qt v-num" href="#{card}">{tag}</a><span class="t-h">{headline}</span>'
+            f'<span class="t-acts">{button("note", "n", "note", "Add a note" + chr(10) + "n works from anywhere on the page.")}</span>'
+            f'<span class="t-pick">{picks}</span></div>')
+
+
+def decide_row(turn: Turn, q: Question | TicketQuestion) -> str:
+    if isinstance(q, TicketQuestion):
+        return item_row(q.handle, "decide", ticket_question_anchor(q), esc(q.tag), f"{ticket_link(q)} {strip_links(inline(q.headline))}", "")
+    pills = "".join(f'<button type="button" class="pill" data-pick="{o.letter}" aria-keyshortcuts="{o.letter}"'
+                    f'{tip(chr(10).join([strip_tags(inline(o.text))] + [f"{name}: {strip_tags(inline(getattr(o, key)))}" for key, name in (("leads", "Leads to"), ("gives", "Gives"), ("costs", "Costs")) if getattr(o, key)]))}>'
+                    f'{o.letter}</button>' for o in q.options)
+    ticket = f" {for_ticket(q)}" if q.ticket else ""
+    return item_row(q.handle, "decide", q.tag.lower(), q.tag, strip_links(inline(q.headline)) + ticket, pills,
+                    f' data-options="{"".join(o.letter for o in q.options)}"')
+
+
+def todo_row(turn: Turn, d: ToDo) -> str:
+    picks = (button("check", "d", "done", "Done" + chr(10) + "The batch tells the agent.")
+             + button("x", "x", "dismissed", "Dismiss it" + chr(10) + "It leaves the list when you send."))
+    return item_row(d.handle, "do", d.tag.lower(), d.tag, strip_links(inline(d.headline)), picks)
+
+
+def look_row(turn: Turn, s: Shown) -> str:
+    """An artefact to look at: it opens only when the user opens it, and leaves once they marked it
+    seen and sent the batch."""
+    return (f'<div class="t-row art" data-handle="{esc(s.link.path)}" data-kind="look">{type_icon(s.link.path)}'
+            f'<span class="t-h">{artefact(s, "art-title open")}</span>'
+            f'<span class="t-acts">{button("note", "n", "note", "Add a note on it")}'
+            f'<a class="ib" href="{esc(s.href)}" target="_blank" rel="noopener" aria-keyshortcuts="o" aria-label="open it"{tip("Open it" + chr(10) + "Nothing opens by itself.")}>{ICONS["open"]}</a></span>'
+            f'<span class="t-pick"><button type="button" class="seen-btn" data-act="seen" aria-pressed="false" aria-keyshortcuts="s"'
+            f'{tip("Mark it seen" + chr(10) + "It leaves this list when you send, and the agent is told.")}>{ICONS["eye"]}<span>Mark seen</span></button></span></div>')
+
+
+def strip_links(html_text: str) -> str:
+    """Inline HTML with its links taken out, their text kept: a row's headline is one click target."""
+    return re.sub(r"</?a\b[^>]*>", "", html_text)
 
 
 def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: str, meta: str, body: str, keys: str,
@@ -1627,14 +1952,13 @@ def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: 
     of its context, and the keys that act on it. `handle` is what the batch names it by; `noted` is
     what n gives it, a note, or the answer itself where it offers no option to pick; `data`, the
     card's further `data-` attributes, which page.js reads."""
-    word = KINDS[kind].removeprefix("to ")
-    attributes = "".join(f' data-{name}="{esc(value)}"' for name, value in {"handle": handle, "kind": kind, "kind-word": word, **(data or {})}.items())
+    attributes = "".join(f' data-{name}="{esc(value)}"' for name, value in {"handle": handle, "kind": kind, **(data or {})}.items())
     return f"""
 <article class="card {cls}" id="{anchor}"{attributes} tabindex="-1">
   <span class="rail v-num">{rail}</span>
   <div class="card-main">
     <h3 class="v-h2">{headline}</h3>
-    <p class="v-meta from">{word} · {meta}</p>
+    <p class="v-meta from">{kind} · {meta}</p>
     <div class="card-body">{body}</div>
     <p class="keys-row v-meta">{keys}<span><kbd>n</kbd> {noted}</span><span><kbd>u</kbd> clear</span><span><kbd>[</kbd> <kbd>]</kbd> items</span><span><kbd>r</kbd> review</span></p>
     <p class="staged v-small" hidden></p>
@@ -1647,9 +1971,10 @@ def asked_in(turn: Turn, verb: str = "asked") -> str:
 
 
 def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
-    """A question waiting on the user: its options as a table of what each gives and costs, the
-    agent's pick marked. A ticket's question has its words from its ticket and is answered in words;
-    a blind one opens its test page, which holds its options."""
+    """A question waiting on the user: its options as a table of what each leads to, gives and
+    costs, then what it leans on. One put to them for a ticket names that ticket beside its tag;
+    an older record's bare ticket handle has its words from its ticket and is answered in words; a
+    blind one opens its test page, which holds its options."""
     if isinstance(q, TicketQuestion):
         detail = f'<p class="q-detail">{inline(q.named.detail)}</p>' if q.named and q.named.detail else ""
         return card(cls="ticket", anchor=ticket_question_anchor(q), handle=q.handle, kind="decide", rail=q.tag,
@@ -1658,29 +1983,40 @@ def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
                     keys="<span><kbd>o</kbd> open the ticket</span>" if q.named else "")
     detail = f'<p class="q-detail">{inline(q.detail)}</p>' if q.detail else ""
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
+    meta = (f"{for_ticket(q)} · " if q.ticket else "") + asked_in(turn)
     if q.blind:
         test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get()), None)
         return card(cls="blind", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
-                    meta=asked_in(turn), body=f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>',
+                    meta=meta, body=f'{detail}<p class="blind-test">blind · {artefact(test, "link open")}</p>{leaned(q)}',
                     keys="<span><kbd>o</kbd> open the test</span>", noted="the answer the test gave you")
-    pick = next(o for o in q.options if o.picked)
     letters = "".join(o.letter for o in q.options)
-    keys = (f'<span>{" ".join(f"<kbd>{o.letter}</kbd>" for o in q.options)} pick that option</span>'
-            f'<span><kbd>↵</kbd> <kbd>p</kbd> the pick, {pick.letter}</span>')
+    keys = f'<span>{" ".join(f"<kbd>{o.letter}</kbd>" for o in q.options)} pick that option</span>'
     return card(cls="question", anchor=q.tag.lower(), handle=q.handle, kind="decide", rail=q.tag, headline=inline(q.headline),
-                meta=asked_in(turn), body=detail + option_table(q) + why, keys=keys, data={"options": letters, "pick": pick.letter})
+                meta=meta, body=detail + option_table(q) + why + leaned(q), keys=keys, data={"options": letters})
+
+
+def for_ticket(q: Question) -> str:
+    """The ticket a question was put to the user for, its handle a link to the ticket with the
+    question as the ticket holds it as its preview."""
+    slug, tag = q.ticket.split()
+    return ticket_link(TicketQuestion(slug, tag, q.named))
+
+
+def leaned(item: Question | ToDo) -> str:
+    """What a question or a to-do leans on, on its card: its recap, then its artefacts."""
+    recap = f'<div class="recap prose">{block(item.recap)}</div>' if item.recap else ""
+    shown = [Shown(link, href(link.path), resolved(link.path, ROOT.get(), DIRECTORY.get()), None) for link in item.links]
+    return recap + links(tuple(shown))
 
 
 def option_table(q: Question) -> str:
-    """The question's options, one row each, with the columns of what each gives and costs where any
-    option says."""
-    split = any(o.gives or o.costs for o in q.options)
-    head = "<th></th><th>option</th>" + ("<th>gives</th><th>costs</th>" if split else "")
-    picked = (' class="pick"', '<span class="tag">my pick</span>')
+    """The question's options, one row each, with the columns of what each leads to, gives and
+    costs where any option says."""
+    columns = [(key, key.replace("leads", "leads to")) for key in ("leads", "gives", "costs") if any(getattr(o, key) for o in q.options)]
+    head = "<th></th><th>option</th>" + "".join(f"<th>{name}</th>" for _, name in columns)
     rows = "".join(
-        f'<tr data-option="{o.letter}"{picked[0] if o.picked else ""}><td class="k">{o.letter}</td>'
-        f'<td>{inline(o.text)}{picked[1] if o.picked else ""}</td>'
-        + (f'<td class="g">{inline(o.gives)}</td><td class="c">{inline(o.costs)}</td>' if split else "") + "</tr>"
+        f'<tr data-option="{o.letter}"><td class="k">{o.letter}</td><td>{inline(o.text)}</td>'
+        + "".join(f'<td class="{key[0]}">{inline(getattr(o, key))}</td>' for key, _ in columns) + "</tr>"
         for o in q.options)
     return f'<table class="opttab"><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>'
 
@@ -1688,16 +2024,7 @@ def option_table(q: Question) -> str:
 def todo_card(turn: Turn, d: ToDo) -> str:
     detail = f'<p class="q-detail">{inline(d.detail)}</p>' if d.detail else ""
     return card(cls="todo", anchor=d.tag.lower(), handle=d.handle, kind="do", rail=d.tag, headline=inline(d.headline),
-                meta=asked_in(turn, "listed"), body=detail, keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
-
-
-def look_card(turn: Turn, s: Shown, n: int) -> str:
-    """An artefact the turns since the user last spoke linked. Seen is the page's own mark, sent to
-    nobody; a note on it goes with the batch, under the path the record wrote."""
-    note = f'<p class="q-detail">{inline(s.link.note)}</p>' if s.link.note else ""
-    return card(cls="look", anchor=f"look-{turn.key}-{n}", handle=s.link.path, kind="look", rail=f"L{n}", headline=artefact(s, "link open"),
-                meta=asked_in(turn, "linked"), body=f'{note}<p class="v-meta path">{esc(s.link.path)}</p>',
-                keys="<span><kbd>o</kbd> open</span><span><kbd>s</kbd> seen</span>")
+                meta=asked_in(turn, "listed"), body=detail + leaned(d), keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
 
 
 def ticket_question_anchor(c: TicketQuestion) -> str:
@@ -1730,9 +2057,8 @@ def options(q: Question, answer: str | None = None) -> str:
     items = []
     for o in q.options:
         state = "chosen" if answer == o.letter else "passed" if answer else ""
-        tags = ('<span class="tag you">your answer</span>' if answer == o.letter else "") + (
-            '<span class="tag">my pick</span>' if o.picked else "")
-        items.append(f'<li class="{" ".join(c for c in ("pick" if o.picked else "", state) if c)}">'
+        tags = '<span class="tag you">your answer</span>' if answer == o.letter else ""
+        items.append(f'<li class="{state}">'
                      f'<span class="k v-num">{o.letter}</span><span>{inline(o.text)}{tags}</span></li>')
     return f'<ol class="opts">{"".join(items)}</ol>'
 
@@ -1740,14 +2066,16 @@ def options(q: Question, answer: str | None = None) -> str:
 def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     t = r.turn
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
-    asked = "".join(asked_ticket_question(q) if isinstance(q, TicketQuestion) else asked_question(q, settled[q.tag])
+    asked = "".join(asked_ticket_question(q) if isinstance(q, TicketQuestion)
+                    else asked_question(q, settled[q.tag]) if q.tag in settled
+                    else asked_ticket_question(TicketQuestion(*q.ticket.split(), q.named), q.tag)
                     for q in t.questions if not waits(q, settled))
     asked += "".join(cleared_todo(d, settled[d.tag]) for d in t.todos if d.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
 <details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
   <summary class="head">
-    <span class="rail v-num">{r.key}{COPY_TURN}</span>
+    <span class="rail v-num">{r.key}{COPY_TURN}{LOG_TURN}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
     <span class="v-meta date">{esc(r.when)}{spent(r.spent)}</span>{chips(r)}
   </summary>
@@ -1763,7 +2091,7 @@ def chat_row(r: Row) -> str:
     nothing to open or close."""
     return f"""
 <article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
-  <span class="rail v-meta">chat{COPY_TURN}</span>
+  <span class="rail v-meta">chat{COPY_TURN}{LOG_TURN}</span>
   <div class="chat-head">{you(r)}{"".join(map(peer, r.turn.sent))}</div>
   <span class="v-meta date">{esc(r.when)}{spent(r.spent)}</span>
   <div class="reply prose">{block(r.turn.reply)}</div>
@@ -1858,10 +2186,11 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> s
 
 
 def answers(t: Turn) -> str:
-    """What this turn settled: the user's answers, then the questions it replaced."""
+    """What this turn settled: the user's answers, then the questions it replaced, then the artefacts it retired."""
     answered = ", ".join(f'<a href="#{tag.lower()}">{tag}</a> {esc(value)}' for tag, value in t.answered.items())
     replaced = [f'<a href="#{old.lower()}">{old}</a> replaced by <a href="#{new.lower()}">{new}</a>' for old, new in t.superseded.items()]
-    bits = ([f"your answers {answered}"] if answered else []) + replaced
+    retired = [f'{esc(Path(file_part(path)).name)} retired: {esc(why)}' for path, why in t.retired.items()]
+    bits = ([f"your answers {answered}"] if answered else []) + replaced + retired
     return f'<p class="v-meta answers">{" · ".join(bits)}</p>' if bits else ""
 
 
@@ -1880,6 +2209,9 @@ def asked_question(q: Question, how: Settled) -> str:
     if how.how == "superseded":
         return (f'<div class="aq superseded" {anchor}><span class="k v-num">{q.tag}</span><div><p class="aq-h">{inline(q.headline)}</p>'
                 f'<p class="v-meta">replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}</p></div></div>')
+    if how.how == "done":
+        return (f'<div class="aq answered" {anchor}><span class="k v-num">{q.tag}</span><div><p class="aq-h">{inline(q.headline)}</p>'
+                f'<p class="v-meta">settled by the plan: {inline(how.value)}</p></div></div>')
     picked = how.value.split(",", 1)[0].strip()
     letter = picked if any(o.letter == picked for o in q.options) else None
     free = "" if how.value == letter else f'<p class="v-small free"><span class="v-meta">your answer</span> {esc(how.value)}</p>'
@@ -1902,14 +2234,16 @@ def where(how: Settled, verb: str) -> str:
 def cleared_todo(d: ToDo, how: Settled) -> str:
     """A to-do this turn listed that waits no longer: how the user said it went, or the to-do that replaced it."""
     said = (f'replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}' if how.how == "superseded"
+            else f'settled by the plan: {inline(how.value)}' if how.how == "done"
             else f'{esc(how.value)} · {where(how, "cleared")}')
     return (f'<div class="aq {how.how}" id="{d.tag.lower()}"><span class="k v-num">{d.tag}</span>'
             f'<div><p class="aq-h">{inline(d.headline)}</p><p class="v-meta">to do · {said}</p></div></div>')
 
 
-def asked_ticket_question(c: TicketQuestion) -> str:
+def asked_ticket_question(c: TicketQuestion, tag: str = "") -> str:
     """A ticket's question this turn put to the user that waits no longer: its ruling, as the ticket
-    records it, or that the ticket holds it no more."""
+    records it, or that the ticket holds it no more. `tag` is the session's own tag it was put
+    under, where it has one."""
     if c.named is None:
         said = f'<p class="v-meta">{esc(c.handle)} is no longer a question of its ticket</p>'
     elif c.named.ruled is None:
@@ -1918,8 +2252,8 @@ def asked_ticket_question(c: TicketQuestion) -> str:
         said = (f'<p class="v-small free"><span class="v-meta">ruling</span> {inline(c.named.answer)}</p>'
                 f'<p class="v-meta">ruled {esc(c.named.ruled)} in {ticket_link(c)}</p>')
     return f"""
-<div class="aq answered" id="{ticket_question_anchor(c)}">
-  <span class="k v-num">{c.tag}</span>
+<div class="aq answered" id="{tag.lower() or ticket_question_anchor(c)}">
+  <span class="k v-num">{tag or c.tag}</span>
   <div>
     <p class="aq-h">{inline(c.headline)}</p>
     {said}
@@ -2007,6 +2341,8 @@ COPY_CODE = f'<button class="copy-code" type="button" aria-label="copy the code"
 # which goes from turn to turn.
 COPY_TURN = (f'<button class="copy-turn" type="button" tabindex="-1" aria-label="copy the turn\'s markdown" '
              f'aria-keyshortcuts="y" title="copy the turn\'s markdown (y)">{COPY_ICON}</button>')
+# where no key reaches it, on a phone, the turn's tool calls are this button's (page.js)
+LOG_TURN = f'<button class="turn-log" type="button" tabindex="-1" aria-label="this turn\'s tool calls">{ICONS["log"]}</button>'
 
 
 def with_copy(rule: Callable):
@@ -2029,7 +2365,9 @@ def links_in_line(state, silent: bool) -> bool:
 # Another session's question, qualified by the first eight characters of that session's id, as its
 # page's bar shows them: `e5ca76dc Q3`.
 SESSION_QUESTION = re.compile(r"(?<![\w/.-])(?P<session>[0-9a-f]{8}) (?P<question>Q\d+)\b")
-TAGGED = re.compile(f"{qualified.QUALIFIED.pattern}|{SESSION_QUESTION.pattern}")
+# A question or to-do of the page's own session, by its bare tag, last, so a qualified tag wins where one starts.
+OWN_TAG = re.compile(r"(?<![\w/.-])(?P<own>[QA]\d+)\b")
+TAGGED = re.compile(f"{qualified.QUALIFIED.pattern}|{SESSION_QUESTION.pattern}|{OWN_TAG.pattern}")
 # What follows a ticket's slug, or a session's id, written as code: `` `<ticket>` D6 ``.
 TAG_AFTER = re.compile(qualified.TAG_AFTER)
 
@@ -2056,7 +2394,7 @@ def tagged(children: list[Token]) -> list[Token]:
             out.append(token)
         elif token.type == "text":
             out += split_tags(token.content)
-        elif (whole := named_by(TAGGED.fullmatch(token.content))) is not None:
+        elif not OWN_TAG.fullmatch(token.content) and (whole := named_by(TAGGED.fullmatch(token.content))) is not None:
             out += linked(whole, [token])
         elif (after is not None and after.type == "text" and (tail := TAG_AFTER.match(after.content))
               and (found := named_by(TAGGED.fullmatch(token.content + tail.group()))) is not None):
@@ -2089,6 +2427,9 @@ def named_by(m: re.Match | None) -> tuple[str | None, str] | None:
     names nothing, and no link where what it named no longer exists."""
     if m is None:
         return None
+    if m["own"]:
+        preview = OWN.get().get(m["own"])
+        return (f"#{m['own'].lower()}", preview) if preview else None
     if m["session"]:
         return session_question(m["session"], m["question"])
     found = NAMES.get()(m)
