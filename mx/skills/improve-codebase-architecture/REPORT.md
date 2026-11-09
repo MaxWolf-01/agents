@@ -1,18 +1,9 @@
 # Report
 
-What the page carries; `/mx:show` builds it, slug `architecture-review-<date>`.
+The page exists so the user can rule on each candidate without opening the code, and keep a working picture of the system while doing so. `/mx:show` builds it, slug `architecture-review-<date>`; `PAGES.md` and `SVG-FIGURES.md` there hold layouts and figure forms that have worked. The page is right when:
 
-- **Header**: repo name, date, and a legend for the diagram marks (module, seam, leakage, deep module). The candidates follow directly.
-- **One card per candidate**, in order of impact, related cards next to each other, titled with the deepening it proposes ("Collapse the Order intake pipeline"): impact as one line, then strength and dependency category as badges; the files; problem and solution in one sentence each; benefits as bullets of six words or fewer, each named in glossary terms (_"locality: bugs concentrate in one module"_, _"leverage: one interface, N call sites"_); an ADR conflict as a callout; a related candidate as one line saying how, linking its card. The before/after diagram is the centrepiece: if it needs a paragraph to be understood, redraw the diagram.
-
-## Diagrams
-
-Before and after side by side. Pick the form that fits each candidate, and vary it across the page:
-
-- **Graph**: calls and dependencies with the leaking edges marked, when the point is "X calls Y calls Z, and look at the mess"; a sequence diagram when the point is round-trips ("before: 6, after: 1").
-- **Mass diagram**: per module, one rectangle for the interface and one for the implementation. Shallow: nearly the same height. Deep: a short interface over a tall implementation.
-- **Cross-section**: the layers a call passes through, as stacked bands. Before: many thin layers, each doing little. After: one thick band named for the consolidated responsibility.
-- **Call-graph collapse**: before, a tree of calls as nested boxes; after, one box with the now-internal calls faded inside it.
-- **Deep module**: the after as one thick-bordered module with its internals greyed out.
-- Anything else that makes sense (see `/mx:show` for examples).
-
+- Each candidate tells the user what would change, what it buys, what it costs and how sure the scan is, in the glossary's words.
+- Its order says what to take first, by impact, with related candidates side by side and how they relate said.
+- Wherever structure moves, before and after are drawn, and each figure reads without a paragraph beside it.
+- A candidate that contradicts an ADR says so where it cannot be missed.
+- Every field the scan gave a candidate is on the page, or one click from it.

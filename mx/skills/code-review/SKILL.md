@@ -5,7 +5,7 @@ description: "Review the changes since a fixed point (a commit, branch or tag). 
 
 Review of the diff between `HEAD` and a fixed point, by two reviewers:
 
-- **read** reads the diff, one pass per question, each pass opening its own sources only once the last is done: **correctness** (does the change work, without breaking callers, contracts, or edge cases?), **spec** (does it faithfully implement the originating ticket / issue / spec?), then **standards** (does it conform to the repo's documented standards and the smell baseline?).
+- **read** reads the diff, one pass per question, each pass opening its own sources only once the last is done: **correctness** (does the change work, without breaking callers, contracts, or edge cases?), **spec** (does it faithfully implement the originating ticket / issue / spec?), then **standards** (does it conform to the repo's documented standards and the smell baseline?), then **grug** (what in the diff should not exist?).
 - **tests** runs the suite under mutations: do the tests the diff touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? It is the one reviewer that executes the tip under review, and it runs where the diff touches a test.
 
 Their reports are read by the session or worker that owns the branch (step 5). [`review`](review) runs them (step 4).

@@ -19,7 +19,7 @@ Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it
 - **Dismissed**: the finding leaves Findings, or the candidate Candidates, for a line under Dismissed.
 - **Amended**: the finding is rewritten as he said, and its History gains `amended by max <date>: "<his words>"`.
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
-- **A candidate the report lacks**, ruled in a session's own architecture review, enters it with its verdict under the next id: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
+- **A candidate the report lacks**, from a session's own architecture scan, enters it under the next id, with its verdict where max ruled on it: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
 
 What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
 
