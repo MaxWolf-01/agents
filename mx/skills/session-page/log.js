@@ -30,7 +30,7 @@
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
   const secs = (a, b) => (a && b ? Math.max(0, (Date.parse(b) - Date.parse(a)) / 1000) : null)
   // sizes as session_page.py's `size`, `about_tokens` and `amount` write them: bytes in decimal units after the glyph
-  // that says which way they went, tokens estimated at four characters each
+  // that says whether the model read or wrote them, tokens estimated at four characters each
   const bytes = (text) => new TextEncoder().encode(text).length
   const size = (n) => (n < 1000 ? `${n} B` : n < 999950 ? `${(n / 1000).toFixed(1)} kB` : `${(n / 1e6).toFixed(1)} MB`)
   const guess = (text) => Math.ceil([...text].length / 4)
@@ -133,11 +133,12 @@
     : [...b.querySelector(".date").childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join("")
   let shownFor = null
 
-  // what a step consumed and produced, as the model sees it: a call's result read, its request or a thought written
+  // what a step wrote and read, as the model sees it: a thought or a call's request written, and the call's result read
   const spent = (s) => {
     const made = s.kind === "thinking" ? s.output : JSON.stringify(s.input), read = s.kind === "thinking" ? "" : s.output || ""
-    const title = `${read ? `consumed ${bytes(read).toLocaleString("en")} bytes, ${about(read)}: the result\n` : ""}produced ${bytes(made).toLocaleString("en")} bytes, ${about(made)}: ${s.kind === "thinking" ? "the thought" : "the request"}`
-    return `<span class="size" data-tip="${esc(title)}">${read ? amount("in", size(bytes(read))) : ""}${amount("out", size(bytes(made)))}</span>`
+    const line = (what, text) => `${what}: ${bytes(text).toLocaleString("en")} bytes, ${about(text)}`
+    const tip = s.kind === "thinking" ? line("the thought it wrote", made) : `${line("the request it wrote", made)}${read ? `\n${line("the result it read", read)}` : ""}`
+    return `<span class="size" data-tip="${esc(tip)}">${amount("wrote", size(bytes(made)))}${read ? amount("read", size(bytes(read))) : ""}</span>`
   }
   const running = (s) => `<span class="took running" data-at="${esc(s.at)}">${took(secs(s.at, new Date().toISOString()))}…</span>`
   const step = (s, n) => s.kind === "thinking"

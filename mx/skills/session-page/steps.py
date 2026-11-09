@@ -7,7 +7,7 @@ live hook imports this on every tool call.
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 
 
@@ -55,17 +55,19 @@ def steps_of(entries: list[dict]) -> list[Step]:
 class Spent:
     """What a turn, or one piece of it, consumed and produced, as the model sees it: it consumes a
     prompt and a tool's result, and produces its text, its thinking and a tool's request. The
-    tokens are the API's own count, the bytes the UTF-8 size of the text."""
+    tokens are the API's own count, one field for each kind it bills at its own rate; the bytes
+    are the UTF-8 size of the text."""
 
     at: datetime
-    consumed_tokens: int = 0  # every input token a request was billed for, the cached ones included
-    produced_tokens: int = 0
+    cache_read_tokens: int = 0  # input a request found in the prompt cache
+    cache_write_tokens: int = 0  # input a request wrote to the cache
+    input_tokens: int = 0  # input a request neither read from the cache nor wrote to it
+    output_tokens: int = 0
     consumed_bytes: int = 0
     produced_bytes: int = 0
 
     def __add__(self, other: "Spent") -> "Spent":
-        return Spent(min(self.at, other.at), self.consumed_tokens + other.consumed_tokens, self.produced_tokens + other.produced_tokens,
-                     self.consumed_bytes + other.consumed_bytes, self.produced_bytes + other.produced_bytes)
+        return Spent(min(self.at, other.at), *(getattr(self, f.name) + getattr(other, f.name) for f in fields(self)[1:]))
 
 
 def spent_of(entries: list[dict]) -> list[Spent]:
@@ -91,8 +93,7 @@ def spent_of(entries: list[dict]) -> list[Spent]:
                 usage[reply] = (usage.get(reply, (at,))[0], message["usage"])
     for at, u in usage.values():
         count = lambda key: u.get(key) if isinstance(u.get(key), int) else 0
-        out.append(Spent(at, consumed_tokens=count("input_tokens") + count("cache_creation_input_tokens") + count("cache_read_input_tokens"),
-                         produced_tokens=count("output_tokens")))
+        out.append(Spent(at, count("cache_read_input_tokens"), count("cache_creation_input_tokens"), count("input_tokens"), count("output_tokens")))
     return sorted(out, key=lambda s: s.at)
 
 
