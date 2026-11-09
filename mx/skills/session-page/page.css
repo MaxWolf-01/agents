@@ -78,12 +78,12 @@ body { display: flex; flex-direction: column; overflow: hidden; }
    and scrolling on its own. Narrower, the tasks sit over the timeline in one column; on a phone the bar's
    button shows the turns or that column. */
 main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--tasks) var(--column); }
-.rail { display: contents; }
+.side { display: contents; }
 @media (max-width: 73.75rem) {
   main.panes { grid-template-columns: minmax(0, 1fr) var(--tasks); }
-  .rail { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--edge); }
-  .rail .tasks { flex: 0 1 auto; max-height: 60%; border-left: 0; border-bottom: 1px solid var(--edge); }
-  .rail .column { flex: 1 1 0; border-left: 0; }
+  .side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--edge); }
+  .side .tasks { flex: 0 1 auto; max-height: 60%; border-left: 0; border-bottom: 1px solid var(--edge); }
+  .side .column { flex: 1 1 0; border-left: 0; }
 }
 .left { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size;
   --gutter: max(var(--pad), (100cqw - var(--page)) / 2); --text: min(var(--measure), 100cqw - 2 * var(--gutter) - var(--rail)); }
@@ -367,11 +367,10 @@ a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
 @media (max-width: 44rem) {
   :root { --pad: 1.1rem; }
   main.panes { grid-template-columns: minmax(0, 1fr); }
-  body[data-view="tasks"] .left, body[data-view="turns"] .rail { display: none; }
-  .rail { border-left: 0; }
-  .rail .tasks { max-height: none; flex: 0 0 auto; overflow: visible; }
-  .rail { overflow-y: auto; }
-  .rail .column { flex: none; overflow: visible; }
+  body[data-view="tasks"] .left, body[data-view="turns"] .side { display: none; }
+  .side { border-left: 0; overflow-y: auto; }
+  .side .tasks { max-height: none; flex: 0 0 auto; overflow: visible; }
+  .side .column { flex: none; overflow: visible; }
   .column-head .newest { display: none; }
   .bar .newest, .view-toggle { display: inline-flex; }
   .card { grid-template-columns: 2.1rem minmax(0, 1fr); }

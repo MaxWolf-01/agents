@@ -1624,7 +1624,7 @@ def assemble(v: View, now: datetime) -> str:
       </section>
     </div>
   </div>
-  <div class="rail">{tasks_column(v)}{column(v.rows, session)}
+  <div class="side">{tasks_column(v)}{column(v.rows, session)}
   </div>
 </main>
 {help_dialog()}

@@ -233,17 +233,20 @@ const read = !waiting ? Promise.resolve()
 window.waitingBatch = () => (loaded ? batch() : "")
 window.waitingStaged = () => (loaded ? items().filter((r) => goes(r.dataset.handle)).length + orphans().length : 0)
 window.waitingSent = (text) => read.then(() => {
-  const sent = new Set(text.split("\n")), now = Date.now()
+  const sent = new Set(text.split("\n")), now = Date.now(), keys = inBand()
   for (const h of new Set([...Object.keys(state.staged), ...state.seen])) if (sent.has(line(h))) {
     if (handles.has(h)) state.sent[h] = now
     delete state.staged[h]
     state.seen = state.seen.filter((x) => x !== h)
   }
   persist()
+  // back to the first item still waiting, the keys kept in the tasks where the review had them
   reviewing = false
   open = false
-  at = Math.min(at, items().length - 1)
+  at = 0
   draw()
+  waiting.scrollTop = 0
+  if (keys) waiting.focus({ preventScroll: true })
 })
 // the review is open: the box's Enter sends what it shows, the batch with the box's words below it
 window.waitingReviewing = () => reviewing
