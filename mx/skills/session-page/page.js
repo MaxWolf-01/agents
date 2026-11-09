@@ -424,6 +424,11 @@ const bandKey = (key) => {
   }
   if (key === "r") { openReview(); return true }
   if (!row) return false
+  if (open && /^[1-9]$/.test(key)) {
+    const link = cardOf(row) && cardOf(row).querySelectorAll(".links a")[key - 1]
+    if (link) link.click()
+    return true
+  }
   const h = row.dataset.handle, kind = row.dataset.kind
   if (key === "Enter") { if (!open && !openCard(at) && kind === "look") row.querySelector("a.open").click(); return true }
   if (key === "o") {
