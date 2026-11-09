@@ -1,6 +1,6 @@
 ---
 name: github
-description: "Writing to GitHub under max's name: issues to projects he doesn't maintain, PR titles and bodies, and his yes before any of it is published. Use when a dependency, tool or service turns out broken, undocumented or wrong and its maintainers should hear about it; when opening a PR, at work or in open source; when closing out a PR's review; when rewriting the PRs `gh stack submit` opened."
+description: "Writing to GitHub under the user's name: issues to projects they don't maintain, PR titles and bodies. Use when a dependency, tool or service turns out broken, undocumented or wrong and its maintainers should hear about it; when opening a PR, at work or in open source; when closing out a PR's review; when rewriting the PRs `gh stack submit` opened."
 argument-hint: "[what to write, and where]"
 ---
 
@@ -35,17 +35,9 @@ Three claims, each load-bearing: where the text came from, that its content was 
 
 ## Publishing
 
-Nothing goes out without max's yes on the rendered text:
-
-1. **Read the body as a stranger would, for what it discloses**, on any repo others can read. Hostnames, paths, usernames, tokens, internal URLs, a stack trace carrying any of those, and the subtler kind, where the shape of a setup or the reason for a question says more about max than he'd choose to publish. Redact to the minimum that still makes the point.
-2. **Show max** what would be published, the title with it, rendered the way its destination renders it, and open it for him:
-
-   ```console
-   gh api -X POST /markdown -f mode=gfm -f context=<owner/repo> \
-       -f text="$(cat <file>)" > <file>.html
-   ```
-
-   `mode=gfm` with the repo as `context` is what resolves `#123` and `@name`; the default mode leaves them as text.
-3. **His explicit yes.** Then publish the title and file he saw, with the command its companion names, and report the URL back.
+For most routine work filing an issue or PR is absolutely fine to do without the user's explicit yes beforehand; preferrably create draft PRs/issues on the remote and set them to ready once the user has seen them. Only irreversible actions like tagging someone in a PR, or putting sensitive information on a PR, require the user's explicit yes.
+1. **Read the body as a stranger would, for what it discloses**, on any repo others can read. Hostnames, paths, usernames, tokens, internal URLs, a stack trace carrying any of those, and the subtler kind, where the shape of a setup or the reason for a question says more about the user than they'd choose to publish. Redact to the minimum that still makes the point.
+2. **Show the user** by opening the draft PR/issue
+   Alternatively, for edge cases / uncertain issues: `gh api -X POST /markdown -f mode=gfm -f context=<owner/repo> -f text="$(cat <file>)" > <file>.html`; `mode=gfm` with the repo as `context` is what resolves `#123` and `@name`; the default mode leaves them as text.
 
 A wording change after the yes is a new text, and it goes through the gate again.
