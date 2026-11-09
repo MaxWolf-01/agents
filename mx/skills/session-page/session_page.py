@@ -62,6 +62,7 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 import qualified  # noqa: E402  what a ticket's qualified tag names, which the page shows its questions by and links
 from steps import Spent, Step, shown, spent_of, steps_of  # noqa: E402  the tool calls each turn made, as the log shows them, and what it spent
 from live_hook import LIVE  # noqa: E402  the turn under way's tool calls, which the log polls
+from session_plan import PLAN, PlanStep, read_plan, walk  # noqa: E402  the session's plan, which the tasks column draws
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 # The turns' tool calls, beside the page as a script setting `window.toolCalls`, which the page
@@ -278,7 +279,8 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     written = written_at(entries, directory, turns)
     turns = [replace(t, written=written.get(t.number)) for t in turns]
     spoken = said(entries)
-    settled = settle(turns, spoken)
+    plan = read_plan(directory)
+    settled = settle(turns, spoken, plan)
     timeline = in_order(turns, chats)
     times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
@@ -309,6 +311,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         others=others,
         log=work,
         spent=spent,
+        plan=plan,
     )
 
 
@@ -597,9 +600,10 @@ class Chat:
 @dataclass(frozen=True)
 class Settled:
     """How a question left the top: answered with `value`, or superseded by the question `value`
-    names, in turn `turn`, or, where `turn` is None, by a line of the user's message."""
+    names, in turn `turn`, or, where `turn` is None, by a line of the user's message; or `done`,
+    by the plan step `value` naming it going done."""
 
-    how: Literal["answered", "superseded"]
+    how: Literal["answered", "superseded", "done"]
     value: str
     turn: int | None
 
@@ -626,6 +630,7 @@ class Session:
     others: dict[str, Path] = field(default_factory=dict)  # those sessions' directories, by id, which hold their pages
     log: dict[str, tuple["Step", ...]] = field(default_factory=dict)  # each turn's steps, by the id of its block (`worked_for`)
     spent: dict[str, "Spent"] = field(default_factory=dict)  # what each turn consumed and produced, by the id of its block, as `log` divides it
+    plan: tuple[PlanStep, ...] = ()  # the session's plan (`session_plan`), its steps in the file's order
 
 
 # ---- reading the records ----------------------------------------------------
@@ -1098,12 +1103,14 @@ def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
 ANSWER_LINE = re.compile(rf"^({TAG.pattern}): *(\S.*?)\s*$", re.M)
 
 
-def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = ()) -> dict[str, Settled]:
+def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = (), plan: tuple[PlanStep, ...] = ()) -> dict[str, Settled]:
     """How each question and to-do that left the top left it: from later turns' frontmatter, then
     from each line of the user's `messages` that answers an item still open in the page's form
-    (`ANSWER_LINE`), once a turn has asked it. A record wins over a line, since it can word an
-    answer the line did not. A tag no earlier turn asked, or one a record already settled, does not
-    parse."""
+    (`ANSWER_LINE`), once a turn has asked it, then from each step of the `plan` that is done and
+    names it, which settles what happened rather than an answer: a merge, a worker's result. A
+    record wins over a line, since it can word an answer the line did not. A tag no earlier turn
+    asked, or one a record already settled, does not parse; the plan is read as it stands, so a tag
+    it names that no turn asked settles nothing."""
     asked: dict[str, int] = {}
     settled: dict[str, Settled] = {}
     for turn in turns:
@@ -1133,6 +1140,10 @@ def settle(turns: list[Turn], messages: list[tuple[datetime, str]] = ()) -> dict
         for tag, value in ANSWER_LINE.findall(text):
             if tag in asked and tag not in settled and (written[asked[tag]] is None or written[asked[tag]] < at):
                 settled[tag] = Settled("answered", value, None)
+    for step in walk(plan):
+        for tag in step.names if step.state == "done" else ():
+            if tag in asked and tag not in settled:
+                settled[tag] = Settled("done", step.text, None)
     return settled
 
 
@@ -2001,6 +2012,9 @@ def asked_question(q: Question, how: Settled) -> str:
     if how.how == "superseded":
         return (f'<div class="aq superseded" {anchor}><span class="k v-num">{q.tag}</span><div><p class="aq-h">{inline(q.headline)}</p>'
                 f'<p class="v-meta">replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}</p></div></div>')
+    if how.how == "done":
+        return (f'<div class="aq answered" {anchor}><span class="k v-num">{q.tag}</span><div><p class="aq-h">{inline(q.headline)}</p>'
+                f'<p class="v-meta">settled by the plan: {inline(how.value)}</p></div></div>')
     picked = how.value.split(",", 1)[0].strip()
     letter = picked if any(o.letter == picked for o in q.options) else None
     free = "" if how.value == letter else f'<p class="v-small free"><span class="v-meta">your answer</span> {esc(how.value)}</p>'
@@ -2023,6 +2037,7 @@ def where(how: Settled, verb: str) -> str:
 def cleared_todo(d: ToDo, how: Settled) -> str:
     """A to-do this turn listed that waits no longer: how the user said it went, or the to-do that replaced it."""
     said = (f'replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}' if how.how == "superseded"
+            else f'settled by the plan: {inline(how.value)}' if how.how == "done"
             else f'{esc(how.value)} · {where(how, "cleared")}')
     return (f'<div class="aq {how.how}" id="{d.tag.lower()}"><span class="k v-num">{d.tag}</span>'
             f'<div><p class="aq-h">{inline(d.headline)}</p><p class="v-meta">to do · {said}</p></div></div>')

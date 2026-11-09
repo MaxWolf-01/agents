@@ -32,3 +32,6 @@ record and before the first it gives the next, and placed in order by that time.
 takes a record's write time from that call. The session the fixture was trimmed from wrote all
 four records at once, after the fact, so its own write calls would pair every message with
 record 01.
+
+`session/plan` is not the sample's: it is the plan that session would have kept, written for the
+fixture once sessions kept one (`session_plan.py`).

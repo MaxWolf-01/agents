@@ -1,0 +1,4 @@
+done  Two axes, and a page per session | settles Q1 Q2 Q3
+done  How a turn reaches the page | settles Q4 Q6
+wait  What reviews a turn's own prose | waits Q7
+  next  The spec's own page | see agent/show/session-page/round-3/spec.html

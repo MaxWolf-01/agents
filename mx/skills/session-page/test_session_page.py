@@ -837,6 +837,24 @@ def test_a_line_of_the_users_message_in_the_pages_form_settles_its_item(tmp_path
     assert "on second thought" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
 
 
+def test_a_question_leaves_the_top_once_the_plan_step_naming_it_is_done(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought, max's Q3: a question settled by what happened, a merge on his
+    review comment, leaves once the plan step naming it goes done, with no answer line. While the
+    step is open it waits; a done step naming a tag no turn asked settles nothing, and the turn
+    that asked shows what settled it."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "plan").write_text("doing Force-push devops | waits Q1\n  next Post the message | waits A3\n")
+    v = view_of(directory, transcript)
+    assert waiting(v) == ["Q1"] and [d.handle for _, d in v.todos] == ["A3"]
+
+    (directory / "plan").write_text("# the plan\ndone Force-pushed #4 and #5 | settles Q1 Q9\n  done Posted it | waits A3\n")
+    v = view_of(directory, transcript)
+    assert waiting(v) == [] and v.todos == ()
+    page = render_session(directory, transcript, now=NOW)
+    assert "settled by the plan: Force-pushed #4 and #5" in text_of(sections_of(page)["01"])
+    assert "settled by the plan: Posted it" in text_of(sections_of(page)["02"])
+
+
 def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
     """The floor D3 sets: each option a row, its gives and costs in columns of their own; an option
     that names no cost leaves its cell empty. An older record's pick mark shows nowhere: no option

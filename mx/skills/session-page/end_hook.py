@@ -5,7 +5,7 @@
 # ///
 """SessionEnd hook: a session's records reach the agent repo's history as the session ends.
 
-It reads the SessionEnd hook JSON on stdin, copies the session's `session.md` and `turns/`, with the
+It reads the SessionEnd hook JSON on stdin, copies the session's `session.md`, `turns/` and `plan`, with the
 artefacts of its own work under `show/`, from its directory, which is outside every checkout, into
 `sessions/<id>/` of the agent repo the directory names, so that they stand there as they stand in
 the directory, a file it no longer holds removed, and commits them there, in a commit holding those
@@ -36,9 +36,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import ARTEFACTS, SESSIONS, agent_repo_of, left_alone, session_directory  # noqa: E402
+from session_page import ARTEFACTS, PLAN, SESSIONS, agent_repo_of, left_alone, session_directory  # noqa: E402
 
-RECORDS = ("session.md", "turns")  # what a session's directory holds that its history keeps
+RECORDS = ("session.md", "turns", PLAN)  # what a session's directory holds that its history keeps
 LOCK_WAIT = 5.0  # seconds the child waits out another process holding the agent repo's index lock
 
 

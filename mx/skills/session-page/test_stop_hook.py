@@ -314,7 +314,7 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
     hook = payload(worked_example, transcript)
     (worked_example / PAGE).write_text(stale_page)
     run(hook)
-    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "session.md", "tool-calls.js", "turns"]
+    assert sorted(path.name for path in worked_example.iterdir()) == ["agent-repo", "index.html", "plan", "session.md", "tool-calls.js", "turns"]
     assert (worked_example / "index.html").read_text() != stale_page
 
 
