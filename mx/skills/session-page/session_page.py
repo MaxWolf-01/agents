@@ -1427,12 +1427,12 @@ KEYS = [
     ("Enter", "on an item: open its card, where [ ] move between the cards and Esc goes back"),
     ("a b c", "on a question: pick that option"),
     ("d x", "on a to-do: done, dismissed"),
-    ("o s", "on an artefact: open it, mark it seen; it leaves once the batch is sent"),
+    ("o O s", "on an artefact: open it, open it in a new tab, mark it seen; it leaves once the batch is sent"),
     ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on an item: clear what is staged"),
     ("q", "fold or show the tasks"),
     ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back"),
-    ("1 to 9", "open the turn's nth artefact"),
+    ("1 to 9", "open the turn's nth artefact, or the open card's"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's; "
           "with them open, k on the newest turn goes on to the turn under way's"),
     ("O", "open or close every step of the open tool calls"),
@@ -1740,7 +1740,7 @@ def chat_group(r: Row) -> str:
 def timeline_row(r: Row) -> str:
     """What follows a turn's number in the timeline: its headline, then its artefacts."""
     headline = esc(strip_tags(inline(r.turn.headline)))
-    items = "".join(f'<li{seen_mark(s, r.turn)}>{opening_key(s)}{type_icon(s.link.path)}{artefact(s, "artefact")}</li>' for s in r.artefacts)
+    items = "".join(f'<li{seen_mark(s, r.turn)}>{opening_key(s)}<span class="tl-art">{type_icon(s.link.path)}{artefact(s, "artefact")}</span></li>' for s in r.artefacts)
     return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
 
 
@@ -2005,7 +2005,7 @@ def for_ticket(q: Question) -> str:
 def leaned(item: Question | ToDo) -> str:
     """What a question or a to-do leans on, on its card: its recap, then its artefacts."""
     recap = f'<div class="recap prose">{block(item.recap)}</div>' if item.recap else ""
-    shown = [Shown(link, href(link.path), resolved(link.path, ROOT.get(), DIRECTORY.get()), None) for link in item.links]
+    shown = [Shown(link, href(link.path), resolved(link.path, ROOT.get(), DIRECTORY.get()), n if n <= 9 else None) for n, link in enumerate(item.links, 1)]
     return recap + links(tuple(shown))
 
 

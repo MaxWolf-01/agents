@@ -223,7 +223,9 @@ button.id:hover { color: var(--accent); }
 .card .links { margin-top: 0.8rem; }
 /* the timeline: an artefact's type before it, and one the user looked at marked */
 .column li .t-type { padding: 0; margin-right: 0.3rem; vertical-align: -2px; }
-.column li { grid-template-columns: 1.3rem auto minmax(0, 1fr); }
+/* the type and the link one cell, which the mark the hub puts before the link joins */
+.column .tl-art { display: flex; align-items: baseline; gap: 0.25rem; min-width: 0; }
+.column .tl-art a.artefact { flex: 1; min-width: 0; }
 .column li.seen a.artefact, .column li.seen-staged a.artefact { color: var(--muted); }
 .column li:is(.seen, .seen-staged) .t-type svg { display: none; }
 .column li:is(.seen, .seen-staged) .t-type::before { content: "✓"; display: inline-block; width: 15px; color: var(--accent); }

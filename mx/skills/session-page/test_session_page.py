@@ -121,6 +121,14 @@ def test_the_hub_finds_an_artefact_by_its_attribute_and_the_column_by_its_id() -
     assert (ARTEFACT, COLUMN) == ("data-artefact", "artefacts")
 
 
+def test_a_timeline_artefact_is_one_cell_after_its_key(worked_example: Path, transcript: Path) -> None:
+    """The hub puts its mark right before an artefact's link and sizes the row by a mark that is the row's own child, so
+    the type icon and the link sit in one cell of their own: beside them, a mark would push the link into a sliver."""
+    page = render_session(worked_example, transcript, now=NOW)
+    column = page[page.index('id="artefacts"'):]
+    assert re.search(r'<li[^>]*><kbd class="n">1</kbd><span class="tl-art">.*?<a class="artefact"', column, re.S)
+
+
 def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path, transcript: Path) -> None:
     """The ids the checks find a turn and a question by are the ones the page's own links jump to,
     and each names one part: an anchor that breaks, or a part shown twice, fails here."""
