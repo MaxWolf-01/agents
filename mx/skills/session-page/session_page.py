@@ -1394,6 +1394,8 @@ def log_script(session: "Session") -> str:
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 DIRECTORY: ContextVar[Path | None] = ContextVar("DIRECTORY", default=None)  # the directory of the session being rendered
 LOOKED: ContextVar[frozenset[str]] = ContextVar("LOOKED", default=frozenset())  # Session.looked, of the session being rendered
+# the hover preview of each question and to-do of the session being rendered, by its tag (`own_previews`)
+OWN: ContextVar[dict[str, str]] = ContextVar("OWN", default={})
 AGENT = tracker.TICKETS.parent  # the agent repo, from the repo root
 # what a qualified tag names, in the agent repo of the page being rendered (`qualified.cites`)
 NAMES: ContextVar[Callable[[re.Match], qualified.Cited | None] | None] = ContextVar("NAMES", default=None)
@@ -1459,6 +1461,16 @@ def looked_at(turns: list[Turn], messages: list[tuple[datetime, str]]) -> frozen
     return frozenset(m.group(1) for _, text in messages for m in ARTEFACT_LINE.finditer(text) if m.group(1) in paths)
 
 
+def own_previews(session: Session) -> dict[str, str]:
+    """What a bare `Q7` or `A3` in the page's text shows on hover: its headline, and whether it waits."""
+    def state(tag: str) -> str:
+        how = session.settled.get(tag)
+        return (" · waiting" if how is None else f" · answered {how.value}" if how.how == "answered"
+                else f" · replaced by {how.value}" if how.how == "superseded" else f" · settled by the plan: {how.value}")
+    items = [i for t in session.turns for i in (*t.questions, *t.todos) if not isinstance(i, TicketQuestion)]
+    return {i.tag: f"{i.tag} · {strip_tags(inline(i.headline, paths=False))}{state(i.tag)}" for i in items}
+
+
 def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
     """Whether the question waits on the user: one put to them for a ticket while its ticket holds
     it open, and the session's own until it is settled (`settle`)."""
@@ -1468,11 +1480,12 @@ def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
 def page(session: Session, now: datetime) -> str:
     """The session page, with every path a record writes resolved from the session's repo root."""
     root, names, directory = ROOT.set(session.root), NAMES.set(qualified.cites(session.root / AGENT)), DIRECTORY.set(session.directory)
-    looked = LOOKED.set(session.looked)
+    looked, own = LOOKED.set(session.looked), OWN.set(own_previews(session))
     try:
         return assemble(view(session), now)
     finally:
         LOOKED.reset(looked)
+        OWN.reset(own)
         ROOT.reset(root)
         NAMES.reset(names)
         DIRECTORY.reset(directory)
@@ -2317,7 +2330,9 @@ def links_in_line(state, silent: bool) -> bool:
 # Another session's question, qualified by the first eight characters of that session's id, as its
 # page's bar shows them: `e5ca76dc Q3`.
 SESSION_QUESTION = re.compile(r"(?<![\w/.-])(?P<session>[0-9a-f]{8}) (?P<question>Q\d+)\b")
-TAGGED = re.compile(f"{qualified.QUALIFIED.pattern}|{SESSION_QUESTION.pattern}")
+# A question or to-do of the page's own session, by its bare tag, last, so a qualified tag wins where one starts.
+OWN_TAG = re.compile(r"(?<![\w/.-])(?P<own>[QA]\d+)\b")
+TAGGED = re.compile(f"{qualified.QUALIFIED.pattern}|{SESSION_QUESTION.pattern}|{OWN_TAG.pattern}")
 # What follows a ticket's slug, or a session's id, written as code: `` `<ticket>` D6 ``.
 TAG_AFTER = re.compile(qualified.TAG_AFTER)
 
@@ -2377,6 +2392,9 @@ def named_by(m: re.Match | None) -> tuple[str | None, str] | None:
     names nothing, and no link where what it named no longer exists."""
     if m is None:
         return None
+    if m["own"]:
+        preview = OWN.get().get(m["own"])
+        return (f"#{m['own'].lower()}", preview) if preview else None
     if m["session"]:
         return session_question(m["session"], m["question"])
     found = NAMES.get()(m)

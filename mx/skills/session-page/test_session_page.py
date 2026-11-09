@@ -855,6 +855,32 @@ def test_a_question_leaves_the_top_once_the_plan_step_naming_it_is_done(tmp_path
     assert "settled by the plan: Posted it" in text_of(sections_of(page)["02"])
 
 
+def test_a_bare_tag_of_the_sessions_own_links_its_item_with_a_preview(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: every tag on the page is a link with a hover preview, the
+    session's own Q1 and A3 too: to the item on the page, its headline and whether it waits as the
+    preview. A tag the session never asked, and one inside code, stay text."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "turns" / "03.md").write_text(
+        "---\ndate: 2026-10-30\n---\n\n# Waiting\n\n## Details\n\nQ1 still waits, A3 too; Q9 is no tag here, nor `Q1`.\n")
+    links = {text: attrs for attrs, text in anchors(sections_of(render_session(directory, transcript, now=NOW))["03"])}
+    assert links["Q1"]["href"] == "#q1" and links["Q1"]["title"] == "Q1 · Force-push devops #4 and #5 now? · waiting"
+    assert links["A3"]["href"] == "#a3" and links["A3"]["title"].startswith("A3 · Post one #coding message")
+    assert "Q9" not in links
+
+
+def test_every_icon_in_the_tasks_says_what_it_is_in_the_styled_tooltip(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: an icon in the tasks column carries the page's own tooltip, never
+    the browser's; an artefact's icon names its type."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "plan").write_text("doing Lint | job a subagent | see agent/show/lint/texts.html\nnext Post | waits A3\n")
+    tasks = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    listed = tasks[:tasks.index('id="card-dialog"')]
+    icons = re.findall(r"<(?:button|a|span)\b[^>]*>\s*(?:<span class=\"spin\">)?<svg", listed)
+    assert icons and all("data-tip=" in i for i in icons), [i for i in icons if "data-tip=" not in i]
+    assert "title=" not in "".join(icons)
+    assert re.search(r'class="t-type" data-tip="Page"', listed), "an html artefact's icon says it is a page"
+
+
 def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
     """The floor D3 sets: each option a row, its gives and costs in columns of their own; an option
     that names no cost leaves its cell empty. An older record's pick mark shows nowhere: no option
