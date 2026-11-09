@@ -317,7 +317,7 @@ with sync_playwright() as pw:
         # the size each turn's prompts show on their folded line, as far as the reader sees it
         context, page = open_page(args["width"], 800)
         out["sizes"] = page.evaluate('''[...document.querySelectorAll(".said > summary .count .size")]
-            .filter((el) => el.checkVisibility()).map((el) => el.textContent)''')
+            .filter((el) => el.checkVisibility()).map((el) => [el.querySelector("use").getAttribute("href"), el.textContent])''')
     elif scenario == "layout":
         # P3, P7, P8 at one width: the panes, the control at both ends of the turns, the band's rows
         width = args["width"]
@@ -484,7 +484,14 @@ with sync_playwright() as pw:
             page.evaluate(f"(verb) => ({STEP})(verb).querySelector('button').click()", verb)
             return page.evaluate(f'''(verb) => [...({STEP})(verb).querySelectorAll(".detail pre")].map((p) => ({{lang: p.dataset.lang,
                 cls: p.className, text: p.textContent, lit: !!p.querySelector("[class^=hljs-]"), more: !!p.nextElementSibling?.matches(".more")}}))''', verb)
-        out["bash_size"] = page.evaluate(f"({STEP})('ran').querySelector('.size').textContent")
+        out["bash_size"] = page.evaluate(f'''[...({STEP})('ran').querySelectorAll('.size .amount')]
+            .map((a) => [a.querySelector('use').getAttribute('href'), a.textContent])''')
+        page.evaluate(f"({STEP})('ran').querySelector('.size').scrollIntoView()")
+        page.mouse.move(*page.evaluate(f'''(() => {{ const r = ({STEP})('ran').querySelector('.size').getBoundingClientRect()
+            return [r.left + r.width / 2, r.top + r.height / 2] }})()'''))
+        page.wait_for_selector(".tip.on", timeout=5000)
+        out["bash_tip"] = page.evaluate("document.querySelector('.tip.on').textContent")
+        page.mouse.move(0, 0)
         out["bash"], out["edit"], out["read"] = opened("ran"), opened("edited"), opened("read")
         out["read_whole"] = page.evaluate(f'''(() => {{ const s = ({STEP})("read"); s.querySelector(".more").click()
             return s.querySelector(".detail pre").textContent.length }})()''')
@@ -898,7 +905,7 @@ def test_a_prompt_shows_its_size_at_a_wide_window_and_in_the_hub_sidebar(rendere
     """session-page-keys-and-sizes: each prompt shows its size in bytes, in a wide window and at the hub sidebar's width."""
     page, _ = rendered
     sizes = probe(page, "prompt_size", width=width)["sizes"]
-    assert sizes and all(re.fullmatch(r"\d+(\.\d)? k?B", s) for s in sizes), sizes
+    assert sizes and all(glyph == "#g-in" and re.fullmatch(r"\d+(\.\d)? [kM]?B", s) for glyph, s in sizes), sizes
 
 
 @pytest.mark.parametrize("width", WIDTHS)
@@ -999,7 +1006,7 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     opens the newest turn's calls in order, one line each, and the log follows j and k. A Bash call
     shows its command highlighted as shell, an Edit its old and new text as a diff highlighted by
     the file's extension, a long Read is cut short, its line numbers dropped, and shows whole on
-    demand. Thinking shows where the transcript kept its text. A call shows the bytes it consumed and produced. Esc
+    demand. Thinking shows where the transcript kept its text. A call shows the bytes it consumed and produced, its tokens on hover. Esc
     closes it, the control opens it, l closes it."""
     page, _ = rendered
     write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
@@ -1013,7 +1020,8 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert [s for s in seen["after_jj"]["steps"] if s[0] == "thinking"] == [["thinking", "The grid wants a leading word."]]
     bash, ran = seen["bash"]
     assert (bash["lang"], bash["text"], bash["lit"], ran["text"]) == ("bash", "make test BASE=master", True, "321 passed")
-    assert seen["bash_size"] == "in ≈3 tok 10 B · out ≈17 tok 65 B", "the result it consumed and the request it produced, as compact JSON"
+    assert seen["bash_size"] == [["#g-in", "10 B"], ["#g-out", "65 B"]], "the result it consumed and the request it produced, as compact JSON"
+    assert seen["bash_tip"] == "consumed 10 bytes, ≈3 tokens: the result\nproduced 65 bytes, ≈17 tokens: the request", "the detail, on hover"
     old, new, _ = seen["edit"]
     assert (old["cls"], old["lang"], old["text"], old["lit"]) == ("code del", "css", ".bar { color: red; }", True)
     assert (new["cls"], new["lang"], new["text"], new["lit"]) == ("code add", "css", ".bar { color: green; }", True)

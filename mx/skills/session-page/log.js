@@ -29,13 +29,13 @@
   const icon = (k) => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k] || ICON.other}</svg>`
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
   const secs = (a, b) => (a && b ? Math.max(0, (Date.parse(b) - Date.parse(a)) / 1000) : null)
-  // sizes as session_page.py's `size`, `tokens` and `about_tokens` write them: bytes in decimal units, tokens short or
-  // estimated at four characters each
+  // sizes as session_page.py's `size`, `about_tokens` and `amount` write them: bytes in decimal units after the glyph
+  // that says which way they went, tokens estimated at four characters each
   const bytes = (text) => new TextEncoder().encode(text).length
   const size = (n) => (n < 1000 ? `${n} B` : n < 999950 ? `${(n / 1000).toFixed(1)} kB` : `${(n / 1e6).toFixed(1)} MB`)
   const guess = (text) => Math.ceil([...text].length / 4)
   const about = (text) => `≈${guess(text).toLocaleString("en")} tokens`
-  const short = (n) => (n < 1000 ? `${n}` : n < 999950 ? `${(n / 1000).toFixed(1)}k` : `${(n / 1e6).toFixed(1)}M`)
+  const amount = (glyph, count) => `<span class="amount"><svg class="glyph" aria-hidden="true"><use href="#g-${glyph}"/></svg>${count}</span>`
   const took = (s) => (s == null ? "" : s < 1 ? "<1s" : s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`)
 
   // ---- loading, once: the steps and the highlighter, each a script; a highlighter that fails to load leaves the code plain
@@ -126,18 +126,18 @@
   const label = (b) => {
     if (b === LIVE) return `<span class="pulse" aria-hidden="true"></span>under way <span class="hl">· ${esc(window.liveCalls.prompt || "no prompt")}</span>`
     if (!b) return "no turn yet"
-    const [name, about] = b.matches("details.turn") ? [`turn ${b.id.slice(1)}`, b.querySelector(".hl").textContent]
-      : ["chat turn", b.querySelector(".date").textContent]
-    return `${esc(name)} <span class="hl">· ${esc(about)}</span>`
+    return `${esc(b.matches("details.turn") ? `turn ${b.id.slice(1)}` : "chat turn")} <span class="hl">· ${esc(gist(b))}</span>`
   }
+  // a turn's headline, or a chat turn's date without the sizes beside it
+  const gist = (b) => b.matches("details.turn") ? b.querySelector(".hl").textContent
+    : [...b.querySelector(".date").childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join("")
   let shownFor = null
 
   // what a step consumed and produced, as the model sees it: a call's result read, its request or a thought written
   const spent = (s) => {
     const made = s.kind === "thinking" ? s.output : JSON.stringify(s.input), read = s.kind === "thinking" ? "" : s.output || ""
     const title = `${read ? `consumed ${bytes(read).toLocaleString("en")} bytes, ${about(read)}: the result\n` : ""}produced ${bytes(made).toLocaleString("en")} bytes, ${about(made)}: ${s.kind === "thinking" ? "the thought" : "the request"}`
-    const both = (text) => `≈${short(guess(text))} tok ${size(bytes(text))}`
-    return `<span class="size" title="${esc(title)}">${read ? `in ${both(read)} · ` : ""}out ${both(made)}</span>`
+    return `<span class="size" data-tip="${esc(title)}">${read ? amount("in", size(bytes(read))) : ""}${amount("out", size(bytes(made)))}</span>`
   }
   const running = (s) => `<span class="took running" data-at="${esc(s.at)}">${took(secs(s.at, new Date().toISOString()))}…</span>`
   const step = (s, n) => s.kind === "thinking"
@@ -163,7 +163,7 @@
       : "no tool calls for this turn"
     panel.innerHTML = `
       <div class="log-head">
-        <span class="which" title="${esc(shownFor === LIVE ? window.liveCalls.prompt || "" : shownFor ? shownFor.querySelector(".hl, .date").textContent : "")}">${label(shownFor)}</span>
+        <span class="which" title="${esc(shownFor === LIVE ? window.liveCalls.prompt || "" : shownFor ? gist(shownFor) : "")}">${label(shownFor)}</span>
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
         ${steps.some((s) => s.kind !== "thinking") ? '<button type="button" class="all" data-all aria-keyshortcuts="O">open all</button>' : ""}
       </div>

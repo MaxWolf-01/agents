@@ -61,6 +61,14 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 /* under the link or code the pointer or the focus is on, the key that copies it */
 .key-hint { position: fixed; z-index: 15; padding: 0.1rem 0.4rem; border: 1px solid var(--edge); border-radius: 4px; background: var(--ground); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); white-space: nowrap; pointer-events: none; }
 .key-hint kbd { font-size: 0.66rem; }
+/* a size's detail, under it after half a second of hover (page.js), over the tool-call log */
+.tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(26rem, calc(100vw - 1rem)); box-sizing: border-box; padding: 0.4rem 0.65rem;
+  border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground); color: var(--body);
+  font: 400 0.72rem/1.5 var(--font-mono); white-space: pre-line; pointer-events: none; visibility: hidden; opacity: 0; transition: opacity 200ms; }
+.tip.on { visibility: visible; opacity: 1; }
+/* a count after the glyph that says what it counts: what the model consumed or produced, a prompt's messages */
+.amount { display: inline-flex; align-items: center; gap: 0.2em; white-space: nowrap; }
+.glyph { width: 1.05em; height: 1.05em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* a control's key over it, while Ctrl+Alt is held (page.js) */
 .key-over { position: fixed; z-index: 60; translate: -50% -50%; padding: 0.05rem 0.35rem; border: 1px solid var(--accent); border-radius: 4px;
   background: var(--ground); color: var(--accent); font: 500 0.72rem/1.4 var(--font-mono); white-space: nowrap; pointer-events: none; }
@@ -239,7 +247,7 @@ button.id:hover { color: var(--accent); }
 .turn > summary:hover .hl { color: var(--accent); }
 .turn > summary .date { white-space: nowrap; }
 /* what the turn consumed and produced, under its date */
-.blk .date .spent { display: block; text-align: right; font-size: 0.68rem; opacity: 0.8; }
+.blk .date .spent { display: flex; justify-content: flex-end; gap: 0.7em; font-size: 0.68rem; opacity: 0.8; }
 .said-text .msg > .size { display: block; margin-bottom: 0.35rem; }
 .turn > summary .chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; margin-top: 0.55rem; }
 .turn[open] > summary .chips { display: none; }
@@ -271,7 +279,7 @@ button.id:hover { color: var(--accent); }
 .said.peer > summary .who { color: var(--body); }
 .said > summary .preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 0.92em; }
 .said[open] > summary .preview { visibility: hidden; }
-.said > summary .count { white-space: nowrap; }
+.said > summary .count { display: inline-flex; gap: 0.7em; white-space: nowrap; }
 .said-text { margin: 0.5rem 0 0.25rem; padding-left: 1.1rem; border-left: 2px solid var(--edge); max-width: var(--measure); font-size: 0.95em; overflow-wrap: anywhere; }
 .said-text p + p { margin-top: 0.7em; }
 .said-text .msg + .msg { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px dashed var(--edge); }
@@ -321,7 +329,7 @@ a.path:hover, a.qualified:hover { text-decoration-color: var(--accent); }
   .turn > summary .date { grid-column: 2; }
   .turn.chat { grid-template-columns: var(--rail) minmax(0, 1fr); }
   .turn.chat .date { grid-column: 2; }
-  .blk .date .spent { text-align: left; }
+  .blk .date .spent { justify-content: flex-start; }
   .said > summary .count .lead { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

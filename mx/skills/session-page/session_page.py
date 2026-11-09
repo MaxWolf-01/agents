@@ -1469,6 +1469,7 @@ def assemble(v: View, now: datetime) -> str:
 <script>{THEME}</script>
 </head>
 <body>
+{GLYPHS}
 <header class="bar">
   <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
@@ -1770,13 +1771,17 @@ def chat_row(r: Row) -> str:
 
 
 def spent(s: Spent | None) -> str:
-    """What a turn consumed and produced, tokens and bytes, each spelled out on hover."""
+    """What a turn consumed and produced, in tokens, each spelled out on hover with its bytes."""
     if s is None:
         return ""
-    title = (f"consumed {s.consumed_tokens:,} tokens, {s.consumed_bytes:,} bytes: every request's input, and the prompts and tool results read\n"
-             f"produced {s.produced_tokens:,} tokens, {s.produced_bytes:,} bytes: the text, thinking and tool requests written")
-    return (f'<span class="spent" title="{esc(title)}">in {tokens(s.consumed_tokens)} tok {size(s.consumed_bytes)}'
-            f' · out {tokens(s.produced_tokens)} tok {size(s.produced_bytes)}</span>')
+    tip = (f"consumed {s.consumed_tokens:,} tokens, {s.consumed_bytes:,} bytes: every request's input, and the prompts and tool results read\n"
+           f"produced {s.produced_tokens:,} tokens, {s.produced_bytes:,} bytes: the text, thinking and tool requests written")
+    return f'<span class="spent" data-tip="{esc(tip)}">{amount("in", tokens(s.consumed_tokens))}{amount("out", tokens(s.produced_tokens))}</span>'
+
+
+def amount(glyph: str, count: str) -> str:
+    """A count after the glyph that says what it counts, one of `GLYPHS`, as log.js's `amount` draws it."""
+    return f'<span class="amount"><svg class="glyph" aria-hidden="true"><use href="#g-{glyph}"/></svg>{count}</span>'
 
 
 def size(n: int) -> str:
@@ -1822,19 +1827,20 @@ def you(r: Row) -> str:
     messages = r.turn.messages
     if not messages:
         return ""
-    lead = f"{len(messages)} messages · " if len(messages) > 1 else ""
+    lead = f'<span data-tip="{len(messages)} messages">{amount("messages", str(len(messages)))}</span>' if len(messages) > 1 else ""
     return message_block("said you", "you", messages, lead)
 
 
 def peer(s: Sent) -> str:
     """A message another session sent, behind one click, under that session's name."""
-    return message_block("said peer", s.name, (s.text,), "another session · ")
+    return message_block("said peer", s.name, (s.text,), "another session")
 
 
 def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> str:
     """Messages behind one click, each whole, its paragraphs and line breaks kept, and its size in bytes, its tokens on
     hover."""
-    weigh = lambda text: f'<span class="v-meta size" title="{about_tokens(text)}">{size(len(text.encode()))}</span>'
+    weigh = lambda text: (f'<span class="v-meta size" data-tip="{len(text.encode()):,} bytes, {about_tokens(text)}">'
+                          f'{amount("in", size(len(text.encode())))}</span>')
     parts = "".join(
         '<div class="msg">' + (weigh(m) if len(messages) > 1 else "") + "".join(f"<p>{esc(p.strip()).replace(chr(10), '<br>')}</p>"
                                       for p in re.split(r"\n[ \t]*\n+", m) if p.strip()) + "</div>"
@@ -1971,6 +1977,15 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
+# What a size counts, drawn once as Lucide's icons and used by every size on the page and in its log: what the model
+# consumed (arrow-down-to-line), what it produced (arrow-up-from-line), and a prompt's messages (messages-square).
+GLYPHS = (
+    '<svg width="0" height="0" style="position:absolute" aria-hidden="true">'
+    '<symbol id="g-in" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></symbol>'
+    '<symbol id="g-out" viewBox="0 0 24 24"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></symbol>'
+    '<symbol id="g-messages" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/>'
+    '<path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol></svg>'
+)
 COPY_ICON = (
     '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" '
     'stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>'
