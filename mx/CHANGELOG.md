@@ -1,3 +1,12 @@
+## 1.0.115
+
+- Session page sizes drawn as icons and counts
+  Sizes on the session page are a count behind an icon, down for what the model consumed and up for what it produced, replacing text like "in ≈3 tok 10 B · out ≈17 tok 65 B". Turns show the API's exact tokens; prompts and tool calls show exact bytes. Hovering half a second opens a styled tooltip with both figures, drawn above panes that would clip it. Multi-message prompts show their count behind a messages icon.
+- Session page copies any link or code on c
+  On the session page the c key now copies any link or code under the pointer or any link focused with Tab, where it used to copy only file paths. A web link copies its URL, a link to a local file its path, and code its text. The "c copy" hint appears on everything copyable.
+- A resumed dispatch worker keeps its round's effort
+  When the dispatch tool resumes a worker, the worker now keeps the effort of its previous round instead of falling back to medium. An explicit --effort or DISPATCH_EFFORT still overrides it, and that level carries into later resumes. Fresh spawns default to medium, as do resumes of runs started before the manifest recorded effort.
+
 ## 1.0.114
 
 - feat(house-style): the UI principles from max's steering, for anything drawn for him
