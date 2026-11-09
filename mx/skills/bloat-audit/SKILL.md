@@ -10,7 +10,7 @@ source file has been cleared or flagged; a file only skimmed is a file not
 yet audited. Rank findings biggest cut first.
 
 Tags you can orient by and use in commit body and explainers:
-- `delete:` dead code, unused flexibility, speculative feature, noops, comment/docs bloat. Replacement: nothing.
+- `delete:` dead code, unused flexibility, speculative feature, noops, comment/docs bloat, superfluous tests. Replacement: nothing. `../code-review/SMELLS.md` and `../code-review/TEST-SMELLS.md` name the common offenders.
 - `stdlib:` hand-rolled thing the standard library ships. Name the function.
 - `native:` dependency or code doing what the platform already does. Name the feature.
 - `yagni:` abstraction with one implementation, config nobody sets, dead flags and config, layer with one caller.

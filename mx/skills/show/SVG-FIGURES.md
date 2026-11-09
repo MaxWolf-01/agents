@@ -165,6 +165,7 @@ Everything else is layout convention, a few lines each.
 - **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in the house's `series-1` onward, at 0.18 fill opacity.
 - **Gantt**: tasks as rows, bars on a date axis, dependencies as thin elbows. 12 tasks max.
 - **Exploded view**: one physical thing with its parts pulled apart along the axis they assemble on, each labelled outside the part on a leader line.
+- **A module's depth, before and after** (a deepening): side by side, and varied across a page of them. A **mass diagram** gives each module one rectangle for the interface and one for the implementation: shallow is nearly the same height, deep a short interface over a tall implementation. A **cross-section** stacks the layers a call passes through: many thin bands become one thick band named for the responsibility. A **call-graph collapse** nests a tree of calls as boxes, and after shows one box with the now-internal calls faded inside it. A **graph** marks the leaking edges when the point is who calls whom.
 
 ---
 

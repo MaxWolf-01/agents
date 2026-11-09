@@ -11,6 +11,10 @@ An HTML page as the artifact: side-by-side panels, an interactive figure, prose 
 - Quality floor: usable at 700px wide, visible keyboard focus, `prefers-reduced-motion` honoured, both schemes with the toggle.
 - Selector specificity: one class per block, no element selectors that can cancel a class's spacing.
 
+## Layouts that have worked
+
+**Candidates to rule on** (`/mx:improve-codebase-architecture`): a legend for the figure marks, then one card per candidate, titled with what it proposes. Impact as one line, strength and category as badges, the files, problem and solution in a sentence each, benefits as bullets of six words or fewer, an ADR conflict as a callout. The before and after figure is the card's centrepiece.
+
 ## Ruled out
 
 The default-page kit: a hero with a big number and a small label, gradient washes, identical rounded cards with the same soft shadow, `→` appended to links, tinted near-black standing in for black, entrance fades on every section. The house's mono meta lines, lowercase labels and legend strip are not on this list: they are the skin, chosen, and they stay.
