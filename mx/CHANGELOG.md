@@ -1,3 +1,12 @@
+## 1.0.116
+
+- Review asks what should not exist, and the architecture scan runs without a report
+  Code review's read reviewer gains a fourth pass asking what in a diff should not exist. /mx:improve-codebase-architecture stops after writing its candidates down, builds its HTML report or grills only when the user asks, and its scan, which the periodic retro inherits, also asks what could be removed whole. Its report rules become five conditions a page must meet, with the card layout and module-depth figures moved to /mx:show. /mx:bloat-audit counts superfluous tests among its deletions and points at both smell lists. test_following_draws_what_ps_prints no longer compares the seconds of an age, which ticked between its two reads under load and failed two release runs.
+- Session page sizes show the token types billed differently
+  A turn's size is now three token counts by how each is billed, cached input, uncached input and output, behind their own icons. A prompt is its bytes alone, and a tool call shows the bytes the model wrote, then the bytes it read. The download and upload arrows are gone, since max found them misleading on bytes.
+- maybe useful, maybe not
+- a bit less slop
+
 ## 1.0.115
 
 - Session page sizes drawn as icons and counts
