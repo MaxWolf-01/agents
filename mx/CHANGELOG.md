@@ -1,3 +1,8 @@
+## 1.0.118
+
+- Session page's timeline links fit beside the hub's dot, and cards and artefacts open by key
+  The hub puts a status dot before each timeline link, and the type icon had pushed the link into a sliver, so the icon and link are now one cell. In an open card, 1 to 9 open its links, which show their numbers. O opens an artefact in a browser tab of its own.
+
 ## 1.0.117
 
 - Session page shows turns, tasks and timeline side by side, the tasks drawn from a plan
