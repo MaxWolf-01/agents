@@ -9,13 +9,12 @@
 #                 cuts the ticket's missing branches and worktrees, sets a new
 #                 worktree up, updates claude, and starts the worker in the
 #                 tmux session dispatch-<repo>-<slug> on `dispatch prompt`'s
-#                 message. --effort overrides DISPATCH_EFFORT;
-#                 --cpu-weight, 100 to 10000, weighs the worker among its
-#                 user's workers. A --repo sits at <place> inside the worktree,
-#                 or beside it as <name>-<slug> when <place> is empty. Exit 1:
-#                 no mx plugin here, the setup failed (its tail printed), the
-#                 run is still running, or a listed repo this spawn drops
-#                 carries work; 3: every slot held (`host-slots`).
+#                 message. --cpu-weight, 100 to 10000, weighs the worker
+#                 among its user's workers. A --repo sits at <place> inside
+#                 the worktree, or beside it as <name>-<slug> when <place> is
+#                 empty. Exit 1: no mx plugin here, the setup failed (its tail
+#                 printed), the run still runs, or a listed repo this spawn
+#                 drops carries work; 3: every slot held (`host-slots`).
 # wait <slug> [--stall SECS] [--deadline SECS]
 #                 prints the run's probe line once it ends. Exit 0 exited, 1
 #                 gone, 2 worklog silent for --stall, 5 --deadline passed; the
@@ -30,7 +29,7 @@
 #                 runner died without one (a killed pane, a reboot).
 #                 report=yes|handoff=yes: this round committed its report|handoff.
 # log <slug> [lines]
-#                 the status line and the worklog's last lines, 20 by default.
+#                 the status line and the worklog's last lines, default 20.
 # cleanup <slug> [--force]
 #                 kills the pane and the worker's `job`s, removes the ticket's
 #                 worktrees and branches, forgets the run. Exit 1, nothing
@@ -42,7 +41,8 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto;
 #                             bypassPermissions where ~/HOST.md is isolated)
-#   DISPATCH_EFFORT           the worker's effort (default medium)
+#   DISPATCH_EFFORT           the worker's effort (default medium; at a
+#                             resume, its last round's)
 #   DISPATCH_PLUGIN_DIR       the mx install a worker loads, else the
 #                             user-scope mx@MaxWolf-01
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile (default ~/.claude)
@@ -52,7 +52,7 @@
 set -u
 
 # State is plain text in this scratch dir: config (init), setup (--setup-cmd), stamp (the staged
-# version), manifest (name TAB run TAB worktree TAB runner, a line per run), <run>.status and
+# version), manifest (name TAB run TAB worktree TAB runner TAB effort, a line per run), <run>.status and
 # <run>.log (the runner's), and per ticket the files `names` sets and runner-<slug>.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
@@ -64,7 +64,7 @@ if [ -z "$mode" ]; then
     mode=auto
     [ "$(sed -n '2,/^---$/s/^isolated: *//p' "$HOME/HOST.md" 2> /dev/null | head -1)" != true ] || mode=bypassPermissions
 fi
-effort=${DISPATCH_EFFORT:-medium}
+effort=${DISPATCH_EFFORT:-}
 cpu_weight=100
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
@@ -106,12 +106,12 @@ names() {
     context=$here/context-$slug.md
 }
 
-# Sets `run_id` and `run_runner` (the runner that run was started with) from the newest manifest
-# line for <name>; both empty when it never ran.
+# Sets `run_id`, `run_runner` (the runner that run was started with) and `run_effort` (the effort it
+# ran at) from the newest manifest line for <name>; all empty when it never ran.
 current_run() {
-    run_id= run_runner=
+    run_id= run_runner= run_effort=
     [ -f "$manifest" ] || return 0
-    IFS=$'\t' read -r _ run_id _ run_runner < <(tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print; exit }')
+    IFS=$'\t' read -r _ run_id _ run_runner run_effort < <(tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print; exit }')
     run_runner=${run_runner:-$runner}
 }
 
@@ -326,6 +326,7 @@ spawn() {
         checkout
     fi
     update_claude
+    effort=${effort:-medium}
     run_id=$name-$(date +%s)
 
     # A shell the runner is typed into, so the session outlives the worker and keeps its scrollback.
@@ -346,7 +347,7 @@ spawn() {
         die "no $here/$run_id.log after 15s; the pane's last lines are above"
     fi
 
-    ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
+    ( flock 9; printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" "$effort" >> "$manifest" ) 9>>"$manifest.lock"
     hand_slot
     echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version  mx=${plugin_dir##*/}"
 }
@@ -429,7 +430,7 @@ wait_() {
 probe() {
     [ -f "$manifest" ] || die "no manifest; nothing spawned from $here"
     # The last manifest line per name is its current run.
-    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name run_id worktree run_runner; do
+    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name run_id worktree run_runner _; do
         state_line "$name" "$run_id" "${run_runner:-$runner}"
     done
 }
@@ -472,6 +473,8 @@ resume() {
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
     # The session id is the spawning harness's, so with no DISPATCH_RUNNER the run's runner resumes it.
     [ -n "${DISPATCH_RUNNER:-}" ] || runner=$run_runner
+    # Empty for a round started before the manifest recorded efforts: it ran at a spawn's default.
+    effort=${effort:-$run_effort}
     [ ${#repos_given[@]} -eq 0 ] || die "a resume keeps the listed repos its spawn recorded; --repo is a spawn's"
     resuming=1
     spawn "$1" "$2" "$session"

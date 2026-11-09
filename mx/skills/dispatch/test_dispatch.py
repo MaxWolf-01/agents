@@ -481,16 +481,16 @@ def context_of(toy: Path, slug: str) -> str:
     return said.stdout
 
 
-def resume(toy: Path, staged: Path, slug: str, message: str) -> Path:
-    """`message` written as the guidance and the run resumed on this machine: the new run's id, once
-    its status line is there."""
+def resume(toy: Path, staged: Path, slug: str, message: str, resume_args: Sequence[str] = ()) -> Path:
+    """`message` written as the guidance and the run resumed on this machine, `resume_args` after its
+    model: the new run's id, once its status line is there."""
     state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     before = set(state.glob("*.status"))
     # A run id is the second it started in, so a resume within the second of the run before it
     # would write over that run's files.
     time.sleep(max(0.0, max(int(one.stem.rsplit("-", 1)[1]) for one in before) + 1 - time.time()))
     subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=environment(toy))
-    resumed = subprocess.run([str(staged), "ctl", "resume", slug, "sonnet"],
+    resumed = subprocess.run([str(staged), "ctl", "resume", slug, "sonnet", *resume_args],
                              cwd=toy, capture_output=True, text=True, timeout=180, env=environment(toy))
     assert resumed.returncode == 0, resumed.stderr
     for _ in range(60):
@@ -644,6 +644,27 @@ def test_the_effort_set_in_the_orchestrators_environment_reaches_a_remote_host(t
     assert said.returncode == 0, said.stderr
     assert "effort=low" in said.stdout, said.stdout
     assert "stub: built warm-preset at low" in "".join(p.read_text() for p in state.glob("*.log"))
+
+
+@pytest.mark.full_path
+def test_a_resume_runs_at_the_effort_its_spawn_ran_at_unless_given_one(toy: Path, staged: Path) -> None:
+    """D1, ruled: a worker sent back resumes with what it was started with, or with what it is
+    explicitly resumed with. Every resume once fell back to `medium`."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", spawn_args=["--effort", "high"]).returncode == 0
+    waited(toy)
+
+    kept = resume(toy, staged, "warm-preset", "continue\n")
+    assert kept.with_suffix(".log").read_text() == "stub: built warm-preset at high\n"
+
+    given = resume(toy, staged, "warm-preset", "continue\n", resume_args=["--effort", "low"])
+    assert given.with_suffix(".log").read_text() == "stub: built warm-preset at low\n"
+
+    # The run resumed is the last one, at low now.
+    again = resume(toy, staged, "warm-preset", "continue\n")
+    assert again.with_suffix(".log").read_text() == "stub: built warm-preset at low\n"
 
 
 @pytest.mark.full_path
@@ -3027,7 +3048,7 @@ def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) ->
     assert "replacement: built warm-preset" in log.read_text()
     record = (state / "manifest").read_text().split("\t")
     assert record[0] == "dispatch-lamp-warm-preset", record
-    assert record[-1].strip() == f"{state}/runner-warm-preset", record
+    assert record[3] == f"{state}/runner-warm-preset", record
 
 
 @pytest.mark.full_path
