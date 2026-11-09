@@ -222,7 +222,7 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     assert waiting(view_of(directory, transcript)) == ["Q1", f"{TWO_MAIN} D5"]
     top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
     assert "Sync on every commit, or on a timer?" in text_of(top) and "A timer batches" in text_of(top)
-    (link,) = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
+    link, *_ = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
     assert link["href"] == (tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md").as_uri()
     assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
 
@@ -264,7 +264,7 @@ def test_a_question_put_for_a_ticket_is_a_session_question_until_its_ticket_reco
     directory, transcript = ticket_session(tmp_path, ASKED_FOR_THE_TICKET)
     assert waiting(view_of(directory, transcript)) == ["Q2"]
     card = elements(render_session(directory, transcript, now=NOW), "q2")["q2"]
-    (link,) = [attrs for attrs, text in anchors(card) if text == f"{TWO_MAIN} D5"]
+    link, *_ = [attrs for attrs, text in anchors(card) if text == f"{TWO_MAIN} D5"]
     assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
     assert "<li>the board</li>" in card and "what drifted last week" in text_of(card)
     assert any(text == "The drift, drawn" for _, text in anchors(card))
@@ -413,7 +413,7 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
 
     elsewhere = tmp_path / "elsewhere" / "deeper" / worked_example.name
     (elsewhere / "turns").mkdir(parents=True)
-    for name in ("session.md", AGENT_REPO):
+    for name in ("session.md", "plan", AGENT_REPO):
         shutil.copy(worked_example / name, elsewhere)
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
@@ -814,7 +814,7 @@ def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path)
     assert [d.handle for _, d in v.todos] == ["A3"] and waiting(v) == ["Q1"]
     page = render_session(directory, transcript, now=NOW)
     top = text_of(elements(page, QUESTIONS)[QUESTIONS])
-    assert "1 to decide · 1 to do" in top and "Post one #coding message" in top
+    assert "Q1 Force-push devops #4 and #5 now?" in top and "A3 Post one #coding message" in top
     assert "Review devops #3" not in top and "Post the first #coding message" not in top
     listed = text_of(sections_of(page)["01"])
     assert "Review devops #3 to do · done · cleared in turn 02" in listed and "replaced by A3 in turn 02" in listed
@@ -867,14 +867,16 @@ def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: 
                     ["b", "Wait for the first review", "a reviewer sees one history", ""]]
 
 
-def test_the_artefacts_to_look_at_are_the_ones_linked_since_the_user_last_spoke(tmp_path: Path) -> None:
-    """With a message of the user's before each turn, only the newest turn's artefacts wait; where
-    the user said nothing, every turn's do, oldest first, and one two turns linked waits once,
-    under the later."""
-    directory, transcript = todo_session(tmp_path / "spoke", transcript_turns=True)
-    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "devops#2"), (2, "The six PR texts, reworded")]
-    directory, transcript = todo_session(tmp_path / "silent", transcript_turns=False)
+def test_an_artefact_waits_until_a_line_of_the_users_message_names_it(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: an artefact leaves only once the user marked it seen, or noted
+    it, and sent the batch; a message that does not name it leaves it waiting. One two turns linked
+    waits once, under the later; the timeline marks the one seen."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
     assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "The six PR texts, reworded"), (2, "devops#2")]
+    write_transcript(transcript, ["Lint the repo", "Reword the message", "agent/show/lint/texts.html: seen\nQ1: a"])
+    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "devops#2")]
+    timeline = elements(render_session(directory, transcript, now=NOW), "a02")["a02"]
+    assert re.search(r'<li class="seen"[^>]*>.*?The six PR texts, reworded', timeline) and "devops#2" in timeline
 
 
 def test_a_to_do_superseded_by_a_question_is_refused_as_a_to_do_supersedes_only_a_to_do(tmp_path: Path) -> None:

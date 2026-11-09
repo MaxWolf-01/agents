@@ -36,7 +36,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import ARTEFACTS, PLAN, SESSIONS, agent_repo_of, left_alone, session_directory  # noqa: E402
+from session_page import ARTEFACTS, SESSIONS, agent_repo_of, left_alone, session_directory  # noqa: E402
+from session_plan import PLAN  # noqa: E402
 
 RECORDS = ("session.md", "turns", PLAN)  # what a session's directory holds that its history keeps
 LOCK_WAIT = 5.0  # seconds the child waits out another process holding the agent repo's index lock

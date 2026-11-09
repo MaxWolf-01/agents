@@ -62,7 +62,7 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 import qualified  # noqa: E402  what a ticket's qualified tag names, which the page shows its questions by and links
 from steps import Spent, Step, shown, spent_of, steps_of  # noqa: E402  the tool calls each turn made, as the log shows them, and what it spent
 from live_hook import LIVE  # noqa: E402  the turn under way's tool calls, which the log polls
-from session_plan import PLAN, PlanStep, read_plan, walk  # noqa: E402  the session's plan, which the tasks column draws
+from session_plan import PlanStep, read_plan, walk  # noqa: E402  the session's plan, which the tasks column draws
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 # The turns' tool calls, beside the page as a script setting `window.toolCalls`, which the page
@@ -312,6 +312,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         log=work,
         spent=spent,
         plan=plan,
+        looked=looked_at(turns, spoken),
     )
 
 
@@ -631,6 +632,7 @@ class Session:
     log: dict[str, tuple["Step", ...]] = field(default_factory=dict)  # each turn's steps, by the id of its block (`worked_for`)
     spent: dict[str, "Spent"] = field(default_factory=dict)  # what each turn consumed and produced, by the id of its block, as `log` divides it
     plan: tuple[PlanStep, ...] = ()  # the session's plan (`session_plan`), its steps in the file's order
+    looked: frozenset[str] = frozenset()  # the paths of the artefacts a line of the user's message named: seen, or a note on it
 
 
 # ---- reading the records ----------------------------------------------------
@@ -1391,6 +1393,7 @@ def log_script(session: "Session") -> str:
 
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 DIRECTORY: ContextVar[Path | None] = ContextVar("DIRECTORY", default=None)  # the directory of the session being rendered
+LOOKED: ContextVar[frozenset[str]] = ContextVar("LOOKED", default=frozenset())  # Session.looked, of the session being rendered
 AGENT = tracker.TICKETS.parent  # the agent repo, from the repo root
 # what a qualified tag names, in the agent repo of the page being rendered (`qualified.cites`)
 NAMES: ContextVar[Callable[[re.Match], qualified.Cited | None] | None] = ContextVar("NAMES", default=None)
@@ -1399,18 +1402,18 @@ KEYS = [
     ("j k", "next, previous turn"),
     ("Enter", "open or close the turn"),
     ("o", "open or close every turn"),
-    ("g g", "top"),
-    ("G", "last turn"),
-    ("n", "the newest turn"),
+    ("g g", "the top turn, the timeline at its top"),
+    ("G", "the last turn, the timeline at its end"),
+    ("N", "the newest turn"),
     ("t 0 7", "turn 07, by the number it shows"),
-    ("[ ]", "what waits on you: the keys go to its card, where [ ] move between the items"),
-    ("q", "show or fold what waits on you"),
-    ("a b c", "on a question's card: pick that option"),
-    ("d x", "on a to-do's card: done, dismissed"),
-    ("o s", "on an artefact's card: open it, mark it seen; seen stays on the page"),
-    ("n", "on a card: a note, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
-    ("u", "on a card: clear what is staged"),
-    ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back to the cards"),
+    ("[ ]", "the previous, next item of the tasks: the keys below act on it; [ on the first takes the tasks to their top"),
+    ("Enter", "on an item: open its card, where [ ] move between the cards and Esc goes back"),
+    ("a b c", "on a question: pick that option"),
+    ("d x", "on a to-do: done, dismissed"),
+    ("o s", "on an artefact: open it, mark it seen; it leaves once the batch is sent"),
+    ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
+    ("u", "on an item: clear what is staged"),
+    ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back"),
     ("1 to 9", "open the turn's nth artefact"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's; "
           "with them open, k on the newest turn goes on to the turn under way's"),
@@ -1438,13 +1441,22 @@ def open_todos(session: Session) -> list[tuple[Turn, ToDo]]:
 
 
 def to_look_at(session: Session) -> list[tuple[Turn, Shown]]:
-    """The artefacts waiting for the user to look at, oldest first: those the turns written since the
-    user last spoke linked, the turn holding their last message included (a chat turn may hold it),
-    every turn's where the transcript holds no message of theirs. An artefact two of those turns
-    linked waits once, under the later."""
-    since = [t for t in session.turns if session.spoke is None or (t.written is not None and t.written > session.spoke)]
-    found = {s.artefact: (t, s) for t in since for s in shown_links(t, session.root, session.directory) if s.artefact}
+    """The artefacts waiting for the user to look at, oldest first: every one a turn linked until a
+    line of the user's message names it, as the page's batch does once they marked it seen or noted
+    it. An artefact two turns linked waits once, under the later."""
+    found = {s.artefact: (t, s) for t in session.turns for s in shown_links(t, session.root, session.directory)
+             if s.artefact and s.link.path not in session.looked}
     return list(found.values())
+
+
+ARTEFACT_LINE = re.compile(r"^(\S+): *\S", re.M)
+
+
+def looked_at(turns: list[Turn], messages: list[tuple[datetime, str]]) -> frozenset[str]:
+    """The paths of the turns' artefacts that a line of the user's messages names, in the form the
+    page's batch sends: `<path>: seen`, or a note on it."""
+    paths = {link.path for t in turns for link in t.artefacts}
+    return frozenset(m.group(1) for _, text in messages for m in ARTEFACT_LINE.finditer(text) if m.group(1) in paths)
 
 
 def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
@@ -1456,9 +1468,11 @@ def waits(q: Question | TicketQuestion, settled: dict[str, Settled]) -> bool:
 def page(session: Session, now: datetime) -> str:
     """The session page, with every path a record writes resolved from the session's repo root."""
     root, names, directory = ROOT.set(session.root), NAMES.set(qualified.cites(session.root / AGENT)), DIRECTORY.set(session.directory)
+    looked = LOOKED.set(session.looked)
     try:
         return assemble(view(session), now)
     finally:
+        LOOKED.reset(looked)
         ROOT.reset(root)
         NAMES.reset(names)
         DIRECTORY.reset(directory)
@@ -1566,7 +1580,6 @@ def when(t: Turn | Chat) -> str:
 
 def assemble(v: View, now: datetime) -> str:
     session = v.session
-    top = band(v)
     body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
     name = (f'<span class="sep">|</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
@@ -1591,7 +1604,7 @@ def assemble(v: View, now: datetime) -> str:
 {GLYPHS}
 <header class="bar">
   <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}{account}</span>{newest_control(v.rows)}
-  <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
+  <button class="icon view-toggle" id="view-toggle" aria-controls="{QUESTIONS}" aria-pressed="true" aria-label="the turns" data-tip="The turns\nor the tasks and the timeline">{ICONS["note"]}</button>
   <button class="log-toggle v-meta" id="log-toggle" aria-controls="log" aria-expanded="false" aria-keyshortcuts="l" data-src="{LOG}?{now:%Y%m%d%H%M%S%f}" data-live="{LIVE}" title="the focused turn's tool calls" aria-label="the focused turn's tool calls"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
@@ -1604,13 +1617,15 @@ def assemble(v: View, now: datetime) -> str:
     <section class="intro">
       <h1 class="v-title">{title}</h1>{handoffs(session)}
       <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="resume" id="resume" data-cmd="{esc(v.resume)}" aria-keyshortcuts="R" title="copy: {esc(v.resume)}">copy resume command</button></p>
-    </section>{top}
+    </section>
     <div class="pane" id="turns-pane">
       <section class="turns" aria-label="turns">
         {body}
       </section>
     </div>
-  </div>{column(v.rows, session)}
+  </div>
+  <div class="rail">{tasks_column(v)}{column(v.rows, session)}
+  </div>
 </main>
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -1686,8 +1701,13 @@ def chat_group(r: Row) -> str:
 def timeline_row(r: Row) -> str:
     """What follows a turn's number in the timeline: its headline, then its artefacts."""
     headline = esc(strip_tags(inline(r.turn.headline)))
-    items = "".join(f"<li>{opening_key(s)}{artefact(s, 'artefact')}</li>" for s in r.artefacts)
+    items = "".join(f'<li{seen_mark(s)}>{opening_key(s)}{type_icon(s.link.path)}{artefact(s, "artefact")}</li>' for s in r.artefacts)
     return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
+
+
+def seen_mark(s: Shown) -> str:
+    """An artefact the user marked seen and sent, as the timeline marks it."""
+    return f' class="seen"{tip("You looked at it" + chr(10) + "and the agent was told")}' if s.link.path in LOOKED.get() else ""
 
 
 def newest_control(rows: tuple[Row, ...]) -> str:
@@ -1698,7 +1718,7 @@ def newest_control(rows: tuple[Row, ...]) -> str:
     if not rows:
         return ""
     label = rows[0].key if isinstance(rows[0].turn, Turn) else "chat"
-    return (f'<button class="newest" data-newest aria-keyshortcuts="n" title="the newest turn">'
+    return (f'<button class="newest" data-newest aria-keyshortcuts="N" title="the newest turn">'
             f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span></button>')
 
 
@@ -1720,24 +1740,162 @@ def artefact(s: Shown, cls: str) -> str:
 KINDS = {"decide": "to decide", "do": "to do", "look": "to look at"}
 
 
-def band(v: View) -> str:
-    """What waits on the user, at the top: one card per item, one shown at a time (page.js), the
-    questions first, then the to-dos, then the artefacts to look at; above the cards a tick per
-    item, and the review of the batch, which page.js fills, after them. Nothing where nothing waits."""
-    cards = ([decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
-             + [look_card(t, s, n) for n, (t, s) in enumerate(v.looks, start=1)])
-    if not cards:
-        return ""
-    counts = {"decide": len(v.waiting), "do": len(v.todos), "look": len(v.looks)}
-    heading = " · ".join(f"{n} {KINDS[kind]}" for kind, n in counts.items() if n)
+def svg(d: str, size: int = 16) -> str:
+    return (f'<svg class="ico" viewBox="0 0 24 24" width="{size}" height="{size}" fill="none" stroke="currentColor" stroke-width="1.7" '
+            f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{d}</svg>')
+
+
+# Lucide's paths (ISC licence), the set the prototype of this column was drawn with.
+ICONS = {
+    "check": svg('<path d="M20 6 9 17l-5-5"/>'),
+    "x": svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+    "wait": svg('<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>'
+                '<path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>', 15),
+    "next": svg('<circle cx="12" cy="12" r="9"/>', 15),
+    "doing": '<span class="spin">' + svg('<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/>'
+                                         '<path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>', 15) + "</span>",
+    "open": svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
+    "note": svg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    "send": svg('<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/>'
+                '<path d="m21.854 2.147-10.94 10.939"/>'),
+    "eye": svg('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
+    "play": svg('<polygon points="6 3 20 12 6 21 6 3"/>'),
+    "term": svg('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>', 13),
+    "review": svg('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>', 15),
+    "markdown": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/>'
+                    '<path d="M16 13H8"/><path d="M16 17H8"/>', 15),
+    "image": svg('<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>', 15),
+    "page": svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>', 15),
+    "file": svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>', 15),
+    "link": svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>', 15),
+    "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
+    "tasks": svg('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>', 18),
+}
+# What an artefact is, by its path, as its icon says: (the icon, its name in the tooltip).
+TYPES = (
+    (re.compile(r"(^|/)diffviews/|review", re.I), "review", "Review page"),
+    (re.compile(r"\.md$", re.I), "markdown", "Markdown"),
+    (re.compile(r"\.(png|jpe?g|gif|webp|svg)$", re.I), "image", "Image"),
+    (re.compile(r"\.html?$|^https?:", re.I), "page", "Page"),
+)
+
+
+def artefact_type(path: str) -> tuple[str, str]:
+    """The icon an artefact's path gives it, and what that icon names; a file of no other type is a file."""
+    return next(((icon, name) for pattern, icon, name in TYPES if pattern.search(file_part(path))), ("file", "File"))
+
+
+def type_icon(path: str) -> str:
+    icon, name = artefact_type(path)
+    return f'<span class="t-type" data-tip="{name}">{ICONS[icon]}</span>'
+
+
+def tip(text: str) -> str:
+    """A `data-tip` attribute: the styled tooltip page.js shows, its first line as its title."""
+    return f' data-tip="{esc(text)}"'
+
+
+def button(icon: str, key: str, act: str, says: str, cls: str = "") -> str:
+    """A control of the tasks column: an icon, the key that does the same, and the tooltip that says both."""
+    return (f'<button type="button" class="ib {cls}" data-act="{act}" aria-keyshortcuts="{key}" '
+            f'aria-label="{esc(says.split(chr(10))[0])}"{tip(says)}>{ICONS[icon]}</button>')
+
+
+STATE_TIPS = {"wait": "Waits on you\nThe calls under it hold it up.", "doing": "In flight\nUnder way now.",
+              "next": "Next\nNothing needed from you yet."}
+
+
+def tasks_column(v: View) -> str:
+    """The tasks, in the order the user should look at them: what needs them, each call and to-do
+    under the plan step it holds up, those no step names first; the artefacts to look at; what is in
+    flight; what comes next. The plan's steps are drawn as the plan nests them, a step the user holds
+    up at the top level. Every item's card waits in the column's dialog, which page.js opens; the
+    review of the batch shows there too."""
+    open_rows = {q.handle: decide_row(t, q) for t, q in v.waiting} | {d.tag: todo_row(t, d) for t, d in v.todos}
+    named = {tag for step in walk(v.session.plan) if step.state != "done" for tag in step.names}
+    sections: dict[str, list[str]] = {"needs": [row for handle, row in open_rows.items() if handle not in named], "doing": [], "next": []}
+
+    def visit(step: PlanStep, parent: str | None, depth: int) -> None:
+        held = [open_rows[t] for t in step.names if t in open_rows]
+        section = None if step.state == "done" else "needs" if held else "doing" if step.state == "doing" else "next"
+        depth = depth + 1 if section is not None and section == parent and section != "needs" else 0
+        if section:
+            sections[section].append(step_row(step, depth) + "".join(held))
+        for under in step.under:
+            visit(under, section, depth)
+
+    for step in v.session.plan:
+        visit(step, None, -1)
+    looks = [look_row(t, s) for t, s in v.looks]
+    working = (f'<div class="t-task doing" id="working" hidden><span class="si"{tip(STATE_TIPS["doing"])}>{ICONS["doing"]}</span>'
+               '<span class="t-txt">A turn is running</span></div>')
+    body = ("".join(sections["needs"])
+            + (f'<div class="t-gap"></div><div class="t-label v-meta">to look at</div>{"".join(looks)}' if looks else "")
+            + f'<div class="t-gap"></div>{working}{"".join(sections["doing"])}'
+            + (f'<div class="t-gap"></div>{"".join(sections["next"])}' if sections["next"] else ""))
+    cards = [decide_card(t, q) for t, q in v.waiting] + [todo_card(t, d) for t, d in v.todos]
+    count = len(v.waiting) + len(v.todos)
     return f"""
-    <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
-      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {heading}<span class="tally" id="tally"></span></h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold</button></div>
-      <div class="ticks" id="ticks" aria-label="every item, the ones staged filled"></div>
-      <div class="cards">{"".join(cards)}
-      </div>
-      <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
+    <section class="tasks{'' if count or looks else ' quiet'}" id="{QUESTIONS}" aria-labelledby="tasks-title" tabindex="-1">
+      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.") if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}</div>
+      <div class="t-list">{body}</div>
+      <div class="card-dialog" id="card-dialog" hidden><div class="d-card">{"".join(cards)}
+        <section class="review" id="review" aria-label="the batch, as the session gets it" tabindex="-1" hidden></section>
+      </div></div>
     </section>"""
+
+
+def step_row(step: PlanStep, depth: int) -> str:
+    """A plan step: its state's icon, its words, what runs it and what to look at for it."""
+    state = "wait" if step.state == "wait" else step.state
+    jobs = "".join(f'<span class="t-job v-meta"{tip("Runs in the background" + chr(10) + "whether or not a turn does")}>{ICONS["term"]}{esc(j)}</span>'
+                   for j in step.jobs)
+    see = "".join(f'<a class="ib" href="{esc(href(path))}" target="_blank" rel="noopener" {ARTEFACT}="{esc(resolved(path, ROOT.get(), DIRECTORY.get()))}"'
+                  f'{tip(artefact_type(path)[1] + chr(10) + path)}>{ICONS[artefact_type(path)[0]]}</a>' for path in step.see)
+    return (f'<div class="t-task {state}" style="--d:{depth}"><span class="si"{tip(STATE_TIPS.get(state, ""))}>{ICONS.get(state, ICONS["next"])}</span>'
+            f'<span class="t-txt">{inline(step.text)}</span>{jobs}{see}</div>')
+
+
+def item_row(handle: str, kind: str, card: str, tag: str, headline: str, picks: str, data: str = "") -> str:
+    """One item of the tasks column: its tag, which opens its card, its headline, its note, and what
+    picks an answer for it. Its height stays the same whatever has the focus."""
+    return (f'<div class="t-row" data-handle="{esc(handle)}" data-kind="{kind}" data-card="{card}"{data}>'
+            f'<a class="qt v-num" href="#{card}">{tag}</a><span class="t-h">{headline}</span>'
+            f'<span class="t-acts">{button("note", "n", "note", "Add a note" + chr(10) + "n works from anywhere on the page.")}</span>'
+            f'<span class="t-pick">{picks}</span></div>')
+
+
+def decide_row(turn: Turn, q: Question | TicketQuestion) -> str:
+    if isinstance(q, TicketQuestion):
+        return item_row(q.handle, "decide", ticket_question_anchor(q), esc(q.tag), f"{ticket_link(q)} {strip_links(inline(q.headline))}", "")
+    pills = "".join(f'<button type="button" class="pill" data-pick="{o.letter}" aria-keyshortcuts="{o.letter}"'
+                    f'{tip(chr(10).join([strip_tags(inline(o.text))] + [f"{name}: {strip_tags(inline(getattr(o, key)))}" for key, name in (("leads", "Leads to"), ("gives", "Gives"), ("costs", "Costs")) if getattr(o, key)]))}>'
+                    f'{o.letter}</button>' for o in q.options)
+    ticket = f" {for_ticket(q)}" if q.ticket else ""
+    return item_row(q.handle, "decide", q.tag.lower(), q.tag, strip_links(inline(q.headline)) + ticket, pills,
+                    f' data-options="{"".join(o.letter for o in q.options)}"')
+
+
+def todo_row(turn: Turn, d: ToDo) -> str:
+    picks = (button("check", "d", "done", "Done" + chr(10) + "The batch tells the agent.")
+             + button("x", "x", "dismissed", "Dismiss it" + chr(10) + "It leaves the list when you send."))
+    return item_row(d.handle, "do", d.tag.lower(), d.tag, strip_links(inline(d.headline)), picks)
+
+
+def look_row(turn: Turn, s: Shown) -> str:
+    """An artefact to look at: it opens only when the user opens it, and leaves once they marked it
+    seen and sent the batch."""
+    return (f'<div class="t-row art" data-handle="{esc(s.link.path)}" data-kind="look">{type_icon(s.link.path)}'
+            f'<span class="t-h">{artefact(s, "art-title open")}</span>'
+            f'<span class="t-acts">{button("note", "n", "note", "Add a note on it")}'
+            f'<a class="ib" href="{esc(s.href)}" target="_blank" rel="noopener" aria-keyshortcuts="o" aria-label="open it"{tip("Open it" + chr(10) + "Nothing opens by itself.")}>{ICONS["open"]}</a></span>'
+            f'<span class="t-pick"><button type="button" class="seen-btn" data-act="seen" aria-pressed="false" aria-keyshortcuts="s"'
+            f'{tip("Mark it seen" + chr(10) + "It leaves this list when you send, and the agent is told.")}>{ICONS["eye"]}<span>Mark seen</span></button></span></div>')
+
+
+def strip_links(html_text: str) -> str:
+    """Inline HTML with its links taken out, their text kept: a row's headline is one click target."""
+    return re.sub(r"</?a\b[^>]*>", "", html_text)
 
 
 def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: str, meta: str, body: str, keys: str,
@@ -1822,15 +1980,6 @@ def todo_card(turn: Turn, d: ToDo) -> str:
                 meta=asked_in(turn, "listed"), body=detail + leaned(d), keys="<span><kbd>d</kbd> done</span><span><kbd>x</kbd> dismiss</span>")
 
 
-def look_card(turn: Turn, s: Shown, n: int) -> str:
-    """An artefact the turns since the user last spoke linked. Seen is the page's own mark, sent to
-    nobody; a note on it goes with the batch, under the path the record wrote."""
-    note = f'<p class="q-detail">{inline(s.link.note)}</p>' if s.link.note else ""
-    return card(cls="look", anchor=f"look-{turn.key}-{n}", handle=s.link.path, kind="look", rail=f"L{n}", headline=artefact(s, "link open"),
-                meta=asked_in(turn, "linked"), body=f'{note}<p class="v-meta path">{esc(s.link.path)}</p>',
-                keys="<span><kbd>o</kbd> open</span><span><kbd>s</kbd> seen</span>")
-
-
 def ticket_question_anchor(c: TicketQuestion) -> str:
     return f"{c.ticket}-{c.tag.lower()}"
 
@@ -1879,7 +2028,7 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     return f"""
 <details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
   <summary class="head">
-    <span class="rail v-num">{r.key}{COPY_TURN}</span>
+    <span class="rail v-num">{r.key}{COPY_TURN}{LOG_TURN}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
     <span class="v-meta date">{esc(r.when)}{spent(r.spent)}</span>{chips(r)}
   </summary>
@@ -1895,7 +2044,7 @@ def chat_row(r: Row) -> str:
     nothing to open or close."""
     return f"""
 <article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
-  <span class="rail v-meta">chat{COPY_TURN}</span>
+  <span class="rail v-meta">chat{COPY_TURN}{LOG_TURN}</span>
   <div class="chat-head">{you(r)}{"".join(map(peer, r.turn.sent))}</div>
   <span class="v-meta date">{esc(r.when)}{spent(r.spent)}</span>
   <div class="reply prose">{block(r.turn.reply)}</div>
@@ -2144,6 +2293,8 @@ COPY_CODE = f'<button class="copy-code" type="button" aria-label="copy the code"
 # which goes from turn to turn.
 COPY_TURN = (f'<button class="copy-turn" type="button" tabindex="-1" aria-label="copy the turn\'s markdown" '
              f'aria-keyshortcuts="y" title="copy the turn\'s markdown (y)">{COPY_ICON}</button>')
+# where no key reaches it, on a phone, the turn's tool calls are this button's (page.js)
+LOG_TURN = f'<button class="turn-log" type="button" tabindex="-1" aria-label="this turn\'s tool calls">{ICONS["log"]}</button>'
 
 
 def with_copy(rule: Callable):

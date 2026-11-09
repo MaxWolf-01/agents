@@ -103,7 +103,7 @@ const reach = () => {
   newest.forEach((n) => n.classList.toggle("fresh", fresh))
 }
 const toNewest = () => {
-  sheet(false)
+  setView("turns")
   if (!blocks.length) return
   if (blocks[0].matches("details")) blocks[0].open = true
   focusBlock(0)
@@ -133,7 +133,7 @@ const fade = (box, head) => {
 const refade = () => requestAnimationFrame(() => faded.forEach((u) => u()))
 fade(pane)
 fade(column, columnHead)
-if (waiting) fade(waiting, waiting.querySelector(".divider"))
+if (waiting) fade(waiting, waiting.querySelector(".t-head"))
 
 let ticking = false
 pane.addEventListener("scroll", () => {
@@ -148,43 +148,38 @@ pane.addEventListener("scroll", () => {
 const SCROLLING_KEYS = new Set(["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "])
 for (const ev of ["wheel", "touchstart"]) pane.addEventListener(ev, () => (follow = "scroll"), { passive: true })
 
-// ---- what waits on the reader: one card at a time, each answer staged, the batch sent as one message
-// Each item is a card the renderer wrote; one shows at a time, and the band takes the keys while the
-// focus is in it ([ and ] put it there). What is staged is kept as the reader stages it: by the hub
-// tab the page sits in, through the `hubWaiting` the container hub's tab defines (dotfiles'
-// bin/container-hub.html), which also sends the batch; or, where no hub frames the page, in this
-// browser's storage, and the review then copies the batch instead of sending it. Nothing reaches the
-// session but by a send from the review.
+// ---- the tasks: what waits on the reader, each answer staged, the batch sent as one message
+// Each item is a row the renderer wrote, a question's and a to-do's with a card in the column's
+// dialog, which opens one card at a time. The keys go to the tasks while the focus is in them ([ and ]
+// put it there). What is staged is kept as the reader stages it: by the hub tab the page sits in,
+// through the `hubWaiting` the container hub's tab defines (dotfiles' bin/container-hub.html), which
+// also sends the batch; or, where no hub frames the page, in this browser's storage, and the review
+// then copies the batch instead of sending it. Nothing reaches the session but by a send from the review.
 
-const foldBand = document.getElementById("fold-band")
-const band = (on = waiting.classList.contains("collapsed")) => {
-  waiting.classList.toggle("collapsed", !on)
-  foldBand.setAttribute("aria-expanded", on)
-  foldBand.textContent = on ? "fold" : "show"
-  refade()
-}
-if (foldBand) foldBand.addEventListener("click", () => band())
-
-const cards = waiting ? [...waiting.querySelectorAll(".card")] : []
-const ticks = document.getElementById("ticks"), review = document.getElementById("review"), tally = document.getElementById("tally")
+const dialog = document.getElementById("card-dialog"), review = document.getElementById("review")
+const rows = waiting ? [...waiting.querySelectorAll(".t-row[data-handle]")] : []
+const cardOf = (row) => (row && row.dataset.card ? document.getElementById(row.dataset.card) : null)
 const hub = (() => { try { return parent !== window && parent.hubWaiting && parent.hubWaiting.holds(window) ? parent.hubWaiting : null } catch { return null } })()
 const STAGED = "session-page:staged:" + document.getElementById("session-id").dataset.copy
-// staged: each item's answer by its handle, {pick, act, note}; seen: the artefacts opened or ticked,
-// the page's own mark; sent: when each item went in a batch, which keeps it off the cards until a
-// turn that ended after the send is on the page
+// staged: each item's answer by its handle, {pick, act, note}; seen: the artefacts marked seen, which
+// go in the batch; sent: when each item went in a batch, which keeps it off the tasks until a turn
+// that ended after the send is on the page
 let state = { staged: {}, seen: [], sent: {} }
-let loaded = !waiting, at = 0, reviewing = false, noting = null, before = "", pending = null
-const handles = new Set(cards.map((c) => c.dataset.handle))
+let loaded = !waiting, at = -1, open = false, reviewing = false, noting = null, before = "", pending = null
+const handles = new Set(rows.map((r) => r.dataset.handle))
 
-const items = () => cards.filter((c) => !state.sent[c.dataset.handle])
+const items = () => rows.filter((r) => !state.sent[r.dataset.handle])
+const carded = () => items().filter((r) => r.dataset.card)
+const current = () => items()[at] || null
 const st = (h) => state.staged[h] || {}
 const seenOf = (h) => state.seen.includes(h)
-const answer = (s) => [s.pick || s.act, s.note].filter(Boolean).join(", ")
-const line = (h) => `${h}: ${answer(st(h))}`
-// What was staged on an item this render no longer shows (an artefact linked before the user last
-// spoke, a question settled meanwhile): kept until it is sent, and sent after the cards' lines.
-const orphans = () => Object.keys(state.staged).filter((h) => !handles.has(h))
-const batch = () => [...items().map((c) => c.dataset.handle).filter((h) => state.staged[h]), ...orphans()].map(line).join("\n")
+const answer = (h) => [st(h).pick || st(h).act || (seenOf(h) ? "seen" : ""), st(h).note].filter(Boolean).join(", ")
+const line = (h) => `${h}: ${answer(h)}`
+const goes = (h) => !!(state.staged[h] || seenOf(h))
+// What was staged on an item this render no longer shows (a question settled meanwhile): kept until
+// it is sent, and sent after the rows' lines.
+const orphans = () => [...new Set([...Object.keys(state.staged), ...state.seen])].filter((h) => !handles.has(h))
+const batch = () => [...items().map((r) => r.dataset.handle).filter(goes), ...orphans()].map(line).join("\n")
 const words = () => (hub ? hub.words(window) : "").trim()
 
 let saving = Promise.resolve()
@@ -197,7 +192,7 @@ const persist = () => {
   }
   saving = saving.then(() => hub.save(window, doc)).then((r) => { if (!r.ok) say(`not kept: ${r.error}`) }, () => say("not kept: the hub tab did not answer"))
 }
-// `redraw` false leaves the card as it is, for the note field typed into
+// `redraw` false leaves the row as it is, for the note field typed into
 const stage = (h, patch, redraw = true) => {
   const s = { ...st(h), ...patch }
   Object.keys(s).forEach((k) => { if (!s[k]) delete s[k] })
@@ -218,8 +213,8 @@ const see = (h, on = !seenOf(h)) => {
 const ended = [...document.querySelectorAll("[data-block][data-at]")].map((b) => Date.parse(b.dataset.at))
 const adopt = (doc) => {
   if (!doc) return
-  state = { staged: doc.staged, seen: doc.seen.filter((h) => handles.has(h)),
-            sent: Object.fromEntries(Object.entries(doc.sent).filter(([h, t]) => handles.has(h) && !ended.some((e) => e > t))) }
+  state = { staged: doc.staged || {}, seen: (doc.seen || []).filter((h) => handles.has(h)),
+            sent: Object.fromEntries(Object.entries(doc.sent || {}).filter(([h, t]) => handles.has(h) && !ended.some((e) => e > t))) }
 }
 const read = !waiting ? Promise.resolve()
   : (hub ? Promise.resolve().then(() => hub.load(window)).then((r) => { if (!r.ok) throw new Error(r.error); return r.staged })
@@ -228,26 +223,27 @@ const read = !waiting ? Promise.resolve()
       .finally(() => {
         loaded = true
         // a card the reload or a link named, found among the items once the sent ones are known
-        const n = pending ? items().findIndex((c) => c.id === pending) : -1
-        if (n >= 0) at = n
+        if (pending) { const n = items().findIndex((r) => r.dataset.card === pending); if (n >= 0) { at = n; open = true } }
         pending = null
         draw()
         if (hub) hub.restaged(window)
       })
 
-// the hub tab's side: the batch a send from the review carries, and the lines that went, which leave the cards
+// the hub tab's side: the batch a send from the review carries, and the lines that went, which leave the tasks
 window.waitingBatch = () => (loaded ? batch() : "")
-window.waitingStaged = () => (loaded ? items().filter((c) => state.staged[c.dataset.handle]).length + orphans().length : 0)
+window.waitingStaged = () => (loaded ? items().filter((r) => goes(r.dataset.handle)).length + orphans().length : 0)
 window.waitingSent = (text) => read.then(() => {
-  const sent = new Set(text.split("\n")), now = Date.now(), keys = inBand()
-  for (const h of Object.keys(state.staged)) if (sent.has(line(h))) {
+  const sent = new Set(text.split("\n")), now = Date.now()
+  for (const h of new Set([...Object.keys(state.staged), ...state.seen])) if (sent.has(line(h))) {
     if (handles.has(h)) state.sent[h] = now
     delete state.staged[h]
+    state.seen = state.seen.filter((x) => x !== h)
   }
   persist()
-  // back to the first item still waiting, the keys kept in the band where the review had them
-  if (keys) showCard(0)
-  else { reviewing = false; at = 0; draw(); waiting.scrollTop = 0 }
+  reviewing = false
+  open = false
+  at = Math.min(at, items().length - 1)
+  draw()
 })
 // the review is open: the box's Enter sends what it shows, the batch with the box's words below it
 window.waitingReviewing = () => reviewing
@@ -257,44 +253,54 @@ window.waitingWords = () => { if (reviewing) review.querySelector(".message").ou
 window.reloadWouldLose = () => noting !== null
 
 const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;")
-const staged = (c) => {
-  const h = c.dataset.handle, s = st(h)
-  const option = s.pick && c.querySelector(`tr[data-option="${s.pick}"] td:nth-child(2)`)
-  const picked = option ? `${s.pick} · ${option.firstChild.textContent.trim()}` : s.pick
-  const what = picked || s.act
+const staged = (row) => {
+  const h = row.dataset.handle, s = st(h), c = cardOf(row)
+  const option = s.pick && c && c.querySelector(`tr[data-option="${s.pick}"] td:nth-child(2)`)
+  const what = (option ? `${s.pick} · ${option.textContent.trim()}` : s.pick) || s.act || (seenOf(h) ? "seen" : "")
   return what || s.note ? `staged: ${[what, s.note && `note: ${s.note}`].filter(Boolean).join(" · ")}` : ""
 }
-const drawCard = (c) => {
-  const h = c.dataset.handle, s = st(h)
+const drawRow = (row, n) => {
+  const h = row.dataset.handle, s = st(h)
+  row.hidden = !!state.sent[h]
+  row.classList.toggle("at", n === at)
+  row.classList.toggle("st", goes(h))
+  row.querySelectorAll(".pill").forEach((p) => p.classList.toggle("on", p.dataset.pick === s.pick))
+  row.querySelectorAll("[data-act=done], [data-act=dismissed]").forEach((b) => b.classList.toggle("on", b.dataset.act === s.act))
+  const noteButton = row.querySelector("[data-act=note]")
+  noteButton.classList.toggle("kept", !!s.note)
+  noteButton.dataset.tip = s.note ? `Your note\n${s.note}` : "Add a note\nn works from anywhere on the page."
+  const seenButton = row.querySelector(".seen-btn")
+  if (seenButton) {
+    const on = seenOf(h)
+    seenButton.classList.toggle("on", on)
+    seenButton.setAttribute("aria-pressed", on)
+    seenButton.querySelector("span").textContent = on ? "Seen" : "Mark seen"
+    seenButton.dataset.tip = on ? "Marked seen\nIt stays until you send, so you can still undo it." : "Mark it seen\nIt leaves this list when you send, and the agent is told."
+    // the timeline marks it too, until the send takes it off the tasks
+    const target = row.querySelector("a[data-artefact]").dataset.artefact
+    column.querySelectorAll("a[data-artefact]").forEach((a) => { if (a.dataset.artefact === target) a.closest("li").classList.toggle("seen-staged", on) })
+  }
+}
+const drawCard = (c, row) => {
+  const h = row.dataset.handle, s = st(h)
   c.querySelectorAll("tr[data-option]").forEach((tr) => tr.classList.toggle("chosen", tr.dataset.option === s.pick))
-  c.classList.toggle("seen", seenOf(h))
   const out = c.querySelector(".staged")
   if (noting === h) return
-  out.textContent = staged(c)
+  out.textContent = staged(row)
   out.hidden = !out.textContent
 }
 const draw = () => {
   if (!waiting) return
   const list = items()
-  at = Math.max(0, Math.min(list.length - 1, at))
-  cards.forEach((c) => { c.hidden = reviewing || c !== list[at]; drawCard(c) })
-  ticks.replaceChildren()
-  let kind = null
-  list.forEach((c, n) => {
-    if (kind && kind !== c.dataset.kind) ticks.append(Object.assign(document.createElement("span"), { className: "gap" }))
-    kind = c.dataset.kind
-    const tick = Object.assign(document.createElement("button"), { type: "button", className: "tk", title: `${c.dataset.kind === "look" ? c.querySelector(".rail").textContent : c.dataset.handle} · ${c.querySelector("h3").textContent}` })
-    tick.classList.toggle("st", !!state.staged[c.dataset.handle])
-    tick.classList.toggle("seen", seenOf(c.dataset.handle))
-    tick.classList.toggle("cur", n === at && !reviewing)
-    tick.addEventListener("click", () => showCard(n))
-    ticks.append(tick)
-  })
-  const nStaged = list.filter((c) => state.staged[c.dataset.handle]).length, nSent = cards.length - list.length
-  const where = Object.assign(document.createElement("span"), { className: "v-meta where" })
-  where.textContent = !list.length ? "every item sent" : reviewing ? "review" : `${at + 1} of ${list.length} · ${list[at].dataset.kindWord}`
-  ticks.append(where)
-  tally.textContent = (nStaged ? ` · ${nStaged} staged` : "") + (nSent ? ` · ${nSent} sent` : "")
+  at = Math.min(at, list.length - 1)
+  rows.forEach((r) => drawRow(r, list.indexOf(r)))
+  const c = cardOf(current())
+  dialog.querySelectorAll(".card").forEach((card) => { card.hidden = reviewing || card !== c })
+  dialog.hidden = !(open && (reviewing || c))
+  if (c) drawCard(c, current())
+  const n = list.filter((r) => goes(r.dataset.handle)).length + orphans().length
+  const badge = waiting.querySelector(".rv b") || waiting.querySelector(".rv").appendChild(Object.assign(document.createElement("b"), { className: "v-num" }))
+  badge.textContent = n || ""
   review.hidden = !reviewing
   if (reviewing) drawReview(list)
   refade()
@@ -304,59 +310,73 @@ const message = () => {
   return text ? `<pre class="message">${esc(text)}</pre>` : `<p class="v-small empty message">Nothing staged yet.</p>`
 }
 const drawReview = (list) => {
-  const left = list.filter((c) => !state.staged[c.dataset.handle] && !(c.dataset.kind === "look" && seenOf(c.dataset.handle)))
-  const kinds = [...new Set(left.map((c) => c.dataset.kindWord))]
-  const of = (word) => left.filter((c) => c.dataset.kindWord === word)
-  const named = (c) => (c.dataset.kind === "look" ? `${c.querySelector(".rail").textContent} ${c.querySelector("h3").textContent}` : c.dataset.handle)
+  const left = list.filter((r) => !goes(r.dataset.handle))
+  const named = (r) => (r.dataset.kind === "look" ? r.querySelector(".t-h").textContent : r.dataset.handle)
   const stays = !left.length ? `<p class="left-out v-small">Every item has an answer, or was seen.</p>`
-    : `<details class="left-out v-small"><summary>Not answered, so they stay: ${kinds.map((w) => `${of(w).length} to ${w}`).join(", ")}</summary>` +
-      kinds.map((w) => `<p><span class="v-meta">to ${w}</span> ${esc(of(w).map(named).join(", "))}</p>`).join("") + `</details>`
+    : `<p class="left-out v-small">Not answered, so they stay: ${esc(left.map(named).join(", "))}</p>`
   const gone = orphans()
   review.innerHTML = `<h3 class="v-h2">The batch, as the session gets it</h3>` + message() +
     (gone.length ? `<p class="left-out v-small">Staged on items this page no longer shows, and sent with the rest: ${esc(gone.join(", "))}.</p>` : "") +
     stays +
     `<p class="keys-row v-meta"><button type="button" class="key" data-key="Enter"><kbd>↵</kbd> ${hub ? "send" : "copy it: no hub frames this page to send it"}</button>` +
-    `<button type="button" class="key" data-key="Escape"><kbd>Esc</kbd> back to the items</button></p>`
+    `<button type="button" class="key" data-key="Escape"><kbd>Esc</kbd> back</button></p>`
 }
 
-const inBand = () => !!waiting && waiting.contains(document.activeElement)
-// the review takes the focus, the card it hides having had it, so its Enter and Esc are the band's
+const inBand = () => !!waiting && (waiting.contains(document.activeElement) || open)
+// the tasks take the keys: the row in focus is marked, and kept in the column's view
+const focusRow = (n) => {
+  const list = items()
+  if (!list.length) return
+  at = Math.max(0, Math.min(list.length - 1, n))
+  if (!waiting.contains(document.activeElement)) waiting.focus({ preventScroll: true })
+  draw()
+  keepInView(waiting, list[at], waiting.querySelector(".t-head").offsetHeight)
+}
+const openCard = (n) => {
+  const list = items()
+  if (!list[n] || !list[n].dataset.card) return false
+  at = n
+  open = true
+  reviewing = false
+  setView("tasks")
+  draw()
+  cardOf(list[at]).focus({ preventScroll: true })
+  return true
+}
+const closeDialog = () => { open = false; reviewing = false; draw(); waiting.focus({ preventScroll: true }) }
 const openReview = () => {
+  open = true
   reviewing = true
-  band(true)
+  setView("tasks")
   draw()
   review.focus({ preventScroll: true })
-  waiting.scrollTop = 0
-}
-const showCard = (n) => {
-  reviewing = false
-  at = n
-  band(true)
-  draw()
-  const c = items()[at]
-  if (c) { c.focus({ preventScroll: true }); waiting.scrollTop = 0 }
 }
 
-const note = (c) => {
-  const h = c.dataset.handle, out = c.querySelector(".staged")
+// a note on the row, in a field under it, or in the open card's
+const note = (row) => {
+  const h = row.dataset.handle, c = open && cardOf(row)
   noting = h
   before = st(h).note || ""
   const field = Object.assign(document.createElement("input"), { className: "note-in", value: before,
-    placeholder: `a note on ${c.querySelector(".rail").textContent}; ↵ keeps it, Esc drops the edit` })
+    placeholder: `a note on ${row.dataset.kind === "look" ? "it" : h}; ↵ keeps it, Esc drops the edit` })
   field.setAttribute("aria-label", "note")
-  // kept as typed, so a crash loses nothing; it belongs to the card it was opened on whatever moves
+  const done = (keep) => {
+    noting = null
+    stage(h, { note: keep ? field.value.trim() : before })
+    if (!c) field.remove()
+    ;(c || waiting).focus({ preventScroll: true })
+  }
+  // kept as typed, so a crash loses nothing; it belongs to the item it was opened on whatever moves
   field.addEventListener("input", () => stage(h, { note: field.value.trim() }, false))
   field.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== "Escape") return
     e.preventDefault()
     e.stopPropagation()
-    noting = null
-    stage(h, { note: e.key === "Enter" ? field.value.trim() : before })
-    c.focus({ preventScroll: true })
+    done(e.key === "Enter")
   })
-  field.addEventListener("blur", () => { if (noting === h) { noting = null; stage(h, { note: field.value.trim() }) } })
-  out.hidden = false
-  out.replaceChildren(field)
+  field.addEventListener("blur", () => { if (noting === h) done(true) })
+  if (c) { const out = c.querySelector(".staged"); out.hidden = false; out.replaceChildren(field) }
+  else { field.classList.add("t-note"); row.after(field) }
   field.focus()
 }
 
@@ -367,64 +387,120 @@ const send = async () => {
   if (!r.ok) say(`not sent: ${r.error}`)
 }
 
-// A key that acts on the band; false where it is not the band's, so the page's own takes it.
+// A key that acts on the tasks; false where it is not theirs, so the page's own takes it.
 const bandKey = (key) => {
   if (reviewing) {
     if (key === "Enter") { send(); return true }
-    if (key === "Escape" || key === "r") { reviewing = false; draw(); items()[at]?.focus({ preventScroll: true }); return true }
-    if (key === "[" || key === "]") { showCard(key === "]" ? 0 : items().length - 1); return true }
+    if (key === "Escape" || key === "r") { reviewing = false; if (current() && current().dataset.card) openCard(at); else closeDialog(); return true }
     return false
   }
-  const list = items(), c = list[at]
-  if (key === "Escape") { document.activeElement.blur(); if (blocks[cur]) focusBlock(cur); return true }
-  if (key === "]" || key === "[") { showCard(Math.max(0, Math.min(list.length - 1, at + (key === "]" ? 1 : -1)))); return true }
+  const list = items(), row = current()
+  if (key === "Escape") {
+    if (open) closeDialog()
+    else { document.activeElement.blur(); at = -1; draw(); if (blocks[cur]) focusBlock(cur) }
+    return true
+  }
+  if (key === "]" || key === "[") {
+    const step = key === "]" ? 1 : -1
+    if (open) {
+      const cs = carded(), here = cs.indexOf(row), to = cs[Math.max(0, Math.min(cs.length - 1, here + step))]
+      if (to) openCard(list.indexOf(to))
+    } else if (key === "[" && at <= 0) { at = 0; waiting.scrollTo({ top: 0, behavior: behavior() }); focusRow(0) }
+    else focusRow(at + step)
+    return true
+  }
   if (key === "r") { openReview(); return true }
-  if (!c) return false
-  const h = c.dataset.handle, kind = c.dataset.kind
-  if ((key === "o" || (key === "Enter" && kind === "look")) && c.querySelector("a.open")) { c.querySelector("a.open").click(); return true }
-  if (!loaded && /^[a-z]$|^Enter$/.test(key)) { say("what you staged is still being read"); return true }
-  if (kind === "decide" && key.length === 1 && (c.dataset.options || "").includes(key)) { toggle(h, "pick", key); return true }
+  if (!row) return false
+  const h = row.dataset.handle, kind = row.dataset.kind
+  if (key === "Enter") { if (!open && !openCard(at) && kind === "look") row.querySelector("a.open").click(); return true }
+  if (key === "o") {
+    const link = kind === "look" ? row.querySelector("a.open") : cardOf(row) && cardOf(row).querySelector("a.open")
+    if (link) link.click()
+    return true
+  }
+  if (!loaded && /^[a-z]$/.test(key)) { say("what you staged is still being read"); return true }
+  if (kind === "decide" && key.length === 1 && (row.dataset.options || "").includes(key)) { toggle(h, "pick", key); return true }
   switch (key) {
-    // Enter on a card is swallowed, so it does not open or close the focused turn
-    case "Enter": return true
     case "d": case "x": if (kind !== "do") return false; toggle(h, "act", key === "d" ? "done" : "dismissed"); return true
     case "s": if (kind !== "look") return false; see(h); return true
-    case "n": note(c); return true
-    case "u": stage(h, { pick: null, act: null, note: null }); return true
+    case "n": note(row); return true
+    case "u": stage(h, { pick: null, act: null, note: null }); if (kind === "look") see(h, false); return true
   }
   return false
 }
-// Heard before the hub's catch of a link, so an artefact opened from its card, by a click or by o, is seen.
+const rowAct = (row, act) => {
+  const h = row.dataset.handle
+  at = items().indexOf(row)
+  if (act === "note") note(row)
+  else if (act === "seen") see(h)
+  else toggle(h, "act", act)
+}
 if (waiting) waiting.addEventListener("click", (e) => {
-  const k = e.target.closest("[data-key]"), row = e.target.closest("tr[data-option]"), c = e.target.closest(".card")
-  if (k) { e.preventDefault(); bandKey(k.dataset.key) }
-  else if (row && c) toggle(c.dataset.handle, "pick", row.dataset.option)
-  else if (c && c.matches(".look") && e.target.closest("a.open")) see(c.dataset.handle, true)
+  const t = e.target, k = t.closest("[data-key]"), row = t.closest(".t-row"), act = t.closest("[data-act]"), c = t.closest(".card")
+  if (t === dialog) { closeDialog(); return }
+  if (k) { e.preventDefault(); bandKey(k.dataset.key); return }
+  if (act && act.dataset.act === "work") { openCard(Math.max(0, items().findIndex((r) => r.dataset.card))); return }
+  if (act && act.dataset.act === "review") { openReview(); return }
+  if (row && act) { e.preventDefault(); rowAct(row, act.dataset.act); return }
+  if (row && t.closest(".pill")) { at = items().indexOf(row); toggle(row.dataset.handle, "pick", t.closest(".pill").dataset.pick); return }
+  const option = t.closest("tr[data-option]")
+  if (option && c) { const r = rows.find((x) => x.dataset.card === c.id); toggle(r.dataset.handle, "pick", option.dataset.option); return }
+  // a row's tag or words open its card; a link in it, an artefact's or a ticket's, opens what it names
+  if (row && !t.closest("a:not(.qt), button, input")) { e.preventDefault(); if (!openCard(items().indexOf(row))) focusRow(items().indexOf(row)) }
 }, true)
 draw()
 
-const sheetToggle = document.getElementById("sheet-toggle")
-const sheet = (on = !document.body.classList.contains("sheet-open")) => {
-  document.body.classList.toggle("sheet-open", on)
-  sheetToggle.setAttribute("aria-expanded", on)
+// ---- a turn under way: the tasks say so while one runs. The page is a file the hub reloads as each
+// turn renders, so nothing tells it a turn began; it reads the live hook's file every few seconds.
+const working = document.getElementById("working")
+const liveSrc = document.getElementById("log-toggle").dataset.live
+const poll = () => {
+  if (document.hidden || !working) return
+  const s = Object.assign(document.createElement("script"), { src: `${liveSrc}?${Date.now()}` })
+  const show = () => {
+    s.remove()
+    const live = window.liveCalls
+    working.hidden = !live
+    if (live) working.querySelector(".t-txt").textContent = `A turn is running: ${live.prompt || "no prompt"}`.slice(0, 160)
+  }
+  s.onload = show
+  s.onerror = () => { window.liveCalls = null; show() }
+  document.head.append(s)
 }
-sheetToggle.addEventListener("click", () => sheet())
-document.addEventListener("click", (e) => {
-  if (document.body.classList.contains("sheet-open") && !column.contains(e.target) && !sheetToggle.contains(e.target)) sheet(false)
-})
+if (working) { poll(); setInterval(poll, 4000) }
 
+// ---- a phone: the turns, or the tasks and the timeline, one at a time; the bar's button flips them
+const viewToggle = document.getElementById("view-toggle")
+const narrow = matchMedia("(max-width: 44rem)")
+const setView = (view) => {
+  document.body.dataset.view = view
+  viewToggle.setAttribute("aria-pressed", view === "tasks")
+}
+setView("tasks")
+viewToggle.addEventListener("click", () => setView(document.body.dataset.view === "turns" ? "tasks" : "turns"))
+// the tool calls of a turn, by a button on it, since l reaches them only from a keyboard
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".turn-log")
+  if (!b) return
+  e.preventDefault()
+  e.stopPropagation()
+  const block = b.closest("[data-block]")
+  ;(block.matches("details") ? block.querySelector(":scope > summary") : block).focus({ preventScroll: true })
+  const toggleLog = document.getElementById("log-toggle")
+  if (toggleLog.getAttribute("aria-expanded") !== "true") toggleLog.click()
+}, true)
 // ---- links within the page: a turn opens first, a waiting question opens in the band
 
 const reveal = (id, how) => {
   const el = id && document.getElementById(id)
   if (!el) return
-  sheet(false)
-  if (cards.includes(el)) {
-    if (loaded) showCard(Math.max(0, items().indexOf(el)))
-    else { pending = el.id; band(true) }
+  if (dialog && dialog.contains(el) && el.matches(".card")) {
+    if (loaded) openCard(items().findIndex((r) => r.dataset.card === el.id))
+    else pending = el.id
     return
   }
   if (!pane.contains(el)) return
+  setView("turns")
   const turn = el.closest("details.turn")
   if (turn) turn.open = true
   scrollTo(offsetIn(el) - MARGIN, how)
@@ -461,8 +537,7 @@ const place = () => {
     open: turns.filter((t) => t.open).map((t) => t.id),
     cur: blocks[cur] ? blocks[cur].id : null,
     seen,
-    card: items()[at] ? items()[at].id : null,
-    band: waiting ? !waiting.classList.contains("collapsed") : true,
+    card: open && current() ? current().dataset.card : null,
   }
 }
 const save = () => { try { sessionStorage.setItem(KEY, JSON.stringify(place())) } catch {} }
@@ -476,10 +551,7 @@ const restore = (s) => {
   const follows = s.caughtUp && blocks.length > 0 && blocks[0].id !== s.newest
   cur = s.cur && !follows ? blocks.findIndex((b) => b.id === s.cur) : -1
   mark()
-  if (waiting) {
-    pending = s.card
-    band(s.band)
-  }
+  if (waiting) pending = s.card
   const anchor = s.anchor && document.getElementById(s.anchor)
   const go = () => { pane.scrollTop = follows || s.top || !anchor ? 0 : offsetIn(anchor) + s.into; reach() }
   go()
@@ -550,7 +622,9 @@ document.addEventListener("pointermove", (e) => {
   tipFor = el
   tipTimer = setTimeout(() => {
     if (!el.isConnected) return  // the log drew its steps again under the pointer
-    tipBox.textContent = el.dataset.tip
+    // the first line is the tooltip's title, the rest what it says beneath
+    const [first, ...rest] = el.dataset.tip.split("\n")
+    tipBox.replaceChildren(Object.assign(document.createElement("b"), { textContent: first }), ...(rest.length ? ["\n" + rest.join("\n")] : []))
     const r = el.getBoundingClientRect(), w = tipBox.offsetWidth
     tipBox.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`
     tipBox.style.top = `${r.bottom + 6}px`
@@ -559,6 +633,10 @@ document.addEventListener("pointermove", (e) => {
 })
 document.addEventListener("pointerout", (e) => { if (!e.relatedTarget) hideTip() })
 document.addEventListener("scroll", hideTip, true)
+
+// A tag's preview is a tooltip too: the renderer writes it as the link's title, which the browser
+// would show in its own plain box, late.
+document.querySelectorAll("a.qualified[title], a.tag-link[title]").forEach((a) => { a.dataset.tip = a.title; a.removeAttribute("title") })
 
 // ---- copying
 
@@ -671,23 +749,23 @@ document.addEventListener("keydown", (e) => {
   if (typed !== null && byNumber(e)) { e.preventDefault(); return }
   if (e.key === "?") { toggleHelp(); e.preventDefault(); return }
   if (inBand() && bandKey(e.key)) { e.preventDefault(); return }
-  if (e.key === "Escape") { toggleHelp(false); sheet(false); return }
+  if (e.key === "Escape") { toggleHelp(false); return }
   if (nativeKey(e)) return
   if (SCROLLING_KEYS.has(e.key)) {
     follow = "scroll"
-    if (!(e.target.closest && e.target.closest(".pane, .column, .waiting"))) { scrollByKey(e.key); e.preventDefault() }
+    if (!(e.target.closest && e.target.closest(".pane, .column, .tasks"))) { scrollByKey(e.key); e.preventDefault() }
     return
   }
-  if (e.key === "g") { gg(() => { scrollTo(0); cur = -1; mark(); document.activeElement.blur() }); return }
+  if (e.key === "g") { gg(() => { scrollTo(0); cur = -1; mark(); document.activeElement.blur(); column.scrollTo({ top: 0, behavior: behavior() }) }); return }
   const focused = blocks[cur]
   switch (e.key) {
     case "j": focusBlock(cur + 1); break
     case "k": focusBlock(cur < 0 ? 0 : cur - 1); break
-    case "G": focusBlock(blocks.length - 1); break
-    case "n": toNewest(); break
+    case "G": focusBlock(blocks.length - 1); column.scrollTo({ top: column.scrollHeight, behavior: behavior() }); break
+    case "N": toNewest(); break
+    case "n": if (current()) note(current()); else say("no item in focus: ] picks one"); break
     case "t": if (numbers.length) { typed = ""; say("turn …", true) } break
-    case "[": case "]": if (items().length) showCard(at); break
-    case "q": if (waiting) band(); break
+    case "[": case "]": if (items().length) focusRow(at < 0 ? 0 : at); break
     case "r": if (waiting) openReview(); break
     case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "o": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }
