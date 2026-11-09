@@ -1,3 +1,8 @@
+## 1.0.117
+
+- Session page shows turns, tasks and timeline side by side, the tasks drawn from a plan
+  The session page is three columns where they fit, each scrolling on its own: the turns, the tasks and the timeline. The tasks read what needs the user, what to look at, what is in flight and what is next, drawn from a plan file the agent keeps in the session's directory. A question clears when the plan step naming it is done. Every question put to the user is a session Q, with its ticket handle beside it. Options are marked as nobody's pick and show what each leads to, gives and costs. Question and to-do cards carry their recap and links. Artefacts open only when the user opens them, and leave when marked seen, commented on, or retired by a turn record.
+
 ## 1.0.116
 
 - Review asks what should not exist, and the architecture scan runs without a report
