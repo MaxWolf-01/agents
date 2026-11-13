@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Inbox } from "./inbox.ts";
 import { type JarvisConfig, tellJarvis } from "./jarvis.ts";

@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { open, readdir, readFile, readlink, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { detectSupportedImageMimeTypeFromFile, defineTool, resizeImage, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { absolute, claudeConfigs, inside, shown } from "./paths.ts";
 import { run } from "./run.ts";
