@@ -332,8 +332,8 @@ def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line(
 
 def test_a_block_under_a_question_after_its_options_is_refused_and_told_where_it_goes(tmp_path: Path) -> None:
     """session-page-question-continuation-lands-on-last-option: a draft quoted at the question's
-    indent after its options once rendered inside the last option; it is refused, pointing at
-    Details, while a line wrapped deeper than an option's `-` still continues that option."""
+    indent after its options once rendered inside the last option; it is refused, pointing at a
+    Recap, while a line wrapped deeper than an option's `-` still continues that option."""
     record = tmp_path / "07.md"
     question = ("---\ndate: 2026-10-23\n---\n\n# Thomas's roles comment\n\n## Questions\n\n"
                 "- [Q20] **Post this reply on Thomas's roles comment?**\n"
@@ -341,7 +341,7 @@ def test_a_block_under_a_question_after_its_options_is_refused_and_told_where_it
     record.write_text(question)
     assert [o.text for o in read_turn(record).questions[0].options] == ["As written below.", "With your changes."]
     record.write_text(f"{question}\n  > Done across the stack.\n")
-    with pytest.raises(RecordError, match=re.escape("goes in ## Details, which the question links as [text](#t07)")) as refused:
+    with pytest.raises(RecordError, match=re.escape("goes in a `- Recap:` sub-item")) as refused:
         read_turn(record)
     assert str(refused.value).startswith(f"{record}:14: text under Q20 after its sub-items")
 
@@ -599,10 +599,11 @@ def reply(at: str, id: str, block: dict, input: int, cached: int, output: int) -
 
 
 def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
-    """session-page-keys-and-sizes: a turn shows the tokens and bytes it consumed and produced; a reply's tokens count
-    once, as its last block's entry has them, however many entries its blocks take; the model consumes a prompt and a
-    tool's result, and produces its thinking, its text and a tool's request. A prompt shows its bytes, its tokens on
-    hover."""
+    """session-page-keys-and-sizes: a reply's tokens count once, as its last block's entry has them, however many
+    entries its blocks take; the model consumes a prompt and a tool's result, and produces its thinking, its text and a
+    tool's request. A prompt shows its bytes, its tokens on hover. session-page-sizes-drawn-cleanly: a turn shows its
+    tokens by the rate each kind is billed at, cached input, uncached input (written to the cache or not) and output,
+    each after its own glyph, with no word or separator beside them, and the split and the bytes on hover."""
     worked = with_work(
         transcript, tmp_path / "t.jsonl",
         json.dumps({"type": "user", "timestamp": "2026-09-22T22:04:00Z", "message": {"role": "user", "content": "Größer, bitte"}}),
@@ -612,14 +613,32 @@ def test_a_turn_shows_what_it_consumed_and_produced_and_each_prompt_its_size(wor
         reply("2026-09-22T22:06:00Z", "msg_b", {"type": "text", "text": "ok"}, 1, 200, 2),
     )
     before, after = (session_page.read_session(worked_example, t).spent["t03"] for t in (transcript, worked))
+    assert before.cache_read_tokens == before.cache_write_tokens == before.input_tokens == before.output_tokens == 0, "the sample has no usage"
+    # each reply's last usage: 100 + 200 cache reads, 5 + 5 cache writes, 10 + 1 other input, 7 + 2 output;
     # 15 bytes of prompt and 2 of result; 4 of thinking, 16 of `{"command":"ls"}` and 2 of text
-    assert (after.consumed_tokens - before.consumed_tokens, after.produced_tokens - before.produced_tokens,
-            after.consumed_bytes - before.consumed_bytes, after.produced_bytes - before.produced_bytes) == (321, 9, 17, 22)
+    assert (after.cache_read_tokens, after.cache_write_tokens, after.input_tokens, after.output_tokens,
+            after.consumed_bytes - before.consumed_bytes, after.produced_bytes - before.produced_bytes) == (300, 10, 11, 9, 17, 22)
     page = render_session(worked_example, worked, now=NOW)
     head = re.search(r'<details class="turn[^"]*" id="t03".*?</summary>', page, re.S).group(0)
-    assert f"in {before.consumed_tokens + 321} tok" in text_of(head)
-    sizes = [(html.unescape(title), text_of(shown)) for title, shown in re.findall(r'<span class="v-meta size" title="([^"]*)">(.*?)</span>', page)]
-    assert ("≈4 tokens", "15 B") in sizes, "13 characters, two of them two bytes each"
+    spent = re.search(r'<span class="spent".*?</span></span>', head, re.S).group(0)
+    assert amounts(spent) == [("cached", "300"), ("read", "21"), ("wrote", "9")]
+    assert text_of(spent).split() == ["300", "21", "9"], "no word or separator beside the counts"
+    tip = html.unescape(re.search(r'data-tip="([^"]*)"', spent).group(1))
+    assert tip.splitlines() == ["cached input: 300 tokens", "uncached input: 21 tokens, 10 written to the cache", "output: 9 tokens",
+                                f"bytes: {before.consumed_bytes + 17:,} read, {before.produced_bytes + 22:,} written"], "the detail, on hover"
+    plain = render_session(worked_example, transcript, now=NOW)
+    turn_04 = re.search(r'<details class="turn[^"]*" id="t04".*?</details>', plain, re.S).group(0)
+    counted = re.findall(r'<span data-tip="(\d+ messages)">(.*?</span>)</span>', turn_04)
+    n = len(SAMPLE["04"])
+    assert [(tip, amounts(shown)) for tip, shown in counted] == [(f"{n} messages", [("messages", str(n))])], \
+        "turn 04's prompts, counted behind the glyph that says what is counted"
+    sizes = [(html.unescape(tip), shown) for tip, shown in re.findall(r'<span class="v-meta size" data-tip="([^"]*)">(.*?)</span>', page)]
+    assert ("15 bytes, ≈4 tokens", "15 B") in sizes, "13 characters, two of them two bytes each, and no glyph: a prompt has no direction"
+
+
+def amounts(html_text: str) -> list[tuple[str, str]]:
+    """Each count in a piece of the page, after the glyph that says what it counts."""
+    return re.findall(r'<use href="#g-(\w+)"/></svg>([^<]*)</span>', html_text)
 
 
 def test_work_after_a_message_no_record_answers_yet_is_on_no_turn(worked_example: Path, transcript: Path, tmp_path: Path) -> None:

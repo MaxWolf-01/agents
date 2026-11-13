@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through its candidates in order of impact.
+description: Scan a codebase for deepening opportunities and record them as candidates; on request, a visual report of them and a grilling through them in order of impact. Use when the user asks for an architecture review, or when your own work keeps meeting the same friction in the code.
 ---
 
 # Improve Codebase Architecture
@@ -12,7 +12,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 - Run `/mx:codebase-design`; use its terms exactly in every suggestion.
 - The domain language in `GLOSSARY.md` gives names to good seams; ADRs in `decisions/` record decisions this command should not re-litigate.
 
-**A repo with a living report keeps one list of candidates.** The report is `retro/report.md` in the agent repo of the project whose tracker plans the repo, the repo's own or one whose `agent/repos.toml` lists it. Run by hand on such a repo, read the report's candidates of the architecture code lens and its Dismissed section before the scan, and hold to the rules on ids and dismissals of [`../retro/REPORT.md`](../retro/REPORT.md). Each ruling the grilling gets on a candidate is written into that report as REPORT.md's max's verdicts section says.
+**A repo with a living report keeps one list of candidates.** The report is `retro/report.md` in the agent repo of the project whose tracker plans the repo, the repo's own or one whose `agent/repos.toml` lists it. Run by hand on such a repo, read the report's candidates of the architecture code lens and its Dismissed section before the scan, and hold to the rules on ids and dismissals of [`../retro/REPORT.md`](../retro/REPORT.md). The scan's candidates go there, and each ruling the grilling gets on a candidate is written into that report as REPORT.md's max's verdicts section says.
 
 ## Process
 
@@ -25,6 +25,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 Then walk the codebase. Don't follow rigid heuristics; explore organically and note where you experience friction:
 
+- Which feature, mode, option or module serves nobody, so that removing it whole would cost nothing? The removal is the candidate.
 - Where does understanding one concept require bouncing between many small modules?
 - Where do files of two modules keep changing in the same commits? Count it from the walk-back: for each pair of files, the commits that touched both. A seam most changes cross is in the wrong place; a module whose files never change together holds things that do not belong together (low **cohesion**). The counts go in the candidate's Problem.
 - Where are modules **shallow**, with an interface nearly as complex as the implementation?
@@ -43,7 +44,7 @@ The scan is done when every candidate carries:
 
 - **Files**: which files/modules are involved
 - **Problem**: why the current architecture is causing friction
-- **Solution**: plain English description of what would change; the interface itself is designed in step 3, with the user
+- **Solution**: plain English description of what would change; the interface itself is designed in step 4, with the user
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
 - **Dependency category**: which of the four in `/mx:codebase-design` the deepening falls into
 - **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
@@ -53,13 +54,17 @@ The scan is done when every candidate carries:
 
 **Use GLOSSARY.md vocabulary for the domain, and the `/mx:codebase-design` vocabulary for the architecture.** If `GLOSSARY.md` defines "Order," talk about "the Order intake module", not "the FooBarHandler," and not "the Order service."
 
-### 2. Build the report
+### 2. Write the candidates down
 
-Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 3. The fork's directive: build the report [REPORT.md](REPORT.md) describes.
+In a repo with a living report they enter it as the rules above say, under the next ids. Elsewhere they go in `candidates.md`, in the show directory `/mx:show` gives the work, slug `architecture-review-<date>`. A scan you started on your own ends here, with a line naming the list where the user reads.
 
-### 3. Grilling loop
+### 3. The report, when the user calls for it
 
-When the report lands, run `/mx:grilling` through its candidates in the report's order, one grilling and one ticket per candidate or group of related ones; the user's comments on the report pick, drop or reorder them. Each grilling walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 4. The fork's directive: build the report [REPORT.md](REPORT.md) describes.
+
+### 4. Grilling, when the user takes candidates up
+
+Run `/mx:grilling` through the candidates in order of impact, one grilling and one ticket per candidate or group of related ones; the user's comments, on the report or in the session, pick, drop or reorder them. Each grilling walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
 The grilling keeps the domain model current as it goes (`/mx:domain-modelling`). Two side effects are this skill's own:
 

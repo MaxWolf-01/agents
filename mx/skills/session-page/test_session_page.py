@@ -47,6 +47,11 @@ def waiting(page: View) -> list[str]:
     return [q.handle for _, q in page.waiting]
 
 
+def waiting_and_cards(page: str) -> str:
+    """What waits on the user, as the page draws it: the tasks column and the dialog of their cards."""
+    return elements(page, QUESTIONS)[QUESTIONS] + elements(page, "card-dialog")["card-dialog"]
+
+
 # ---- sessions to render -----------------------------------------------------
 
 
@@ -116,13 +121,22 @@ def test_the_hub_finds_an_artefact_by_its_attribute_and_the_column_by_its_id() -
     assert (ARTEFACT, COLUMN) == ("data-artefact", "artefacts")
 
 
+def test_a_timeline_artefact_is_one_cell_after_its_key(worked_example: Path, transcript: Path) -> None:
+    """The hub puts its mark right before an artefact's link and sizes the row by a mark that is the row's own child, so
+    the type icon and the link sit in one cell of their own: beside them, a mark would push the link into a sliver."""
+    page = render_session(worked_example, transcript, now=NOW)
+    column = page[page.index('id="artefacts"'):]
+    assert re.search(r'<li[^>]*><kbd class="n">1</kbd><span class="tl-art">.*?<a class="artefact"', column, re.S)
+
+
 def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path, transcript: Path) -> None:
     """The ids the checks find a turn and a question by are the ones the page's own links jump to,
     and each names one part: an anchor that breaks, or a part shown twice, fails here."""
     page = render_session(worked_example, transcript, now=NOW)
     ids = re.findall(r'\bid="([^"]+)"', page)
     assert [i for i in set(ids) if ids.count(i) > 1] == []
-    assert sorted({target for target in re.findall(r'href="#([^"]+)"', page)} - set(ids)) == []
+    markup = re.sub(r"<script>.*?</script>", "", page, flags=re.S)  # page.js and log.js, whose templates hold no link
+    assert sorted({target for target in re.findall(r'href="#([^"]+)"', markup)} - set(ids)) == []
 
 
 @settings(deadline=None)  # an example writes a session directory and renders it twice
@@ -162,7 +176,7 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text("")
     assert waiting(view_of(directory, transcript)) == ["Q1"]
-    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    top = waiting_and_cards(render_session(directory, transcript, now=NOW))
     assert f'href="{(tmp_path / "agent/show/refusals/blind-q1.html").as_uri()}"' in top
     assert "my pick" not in text_of(top)
 
@@ -219,11 +233,13 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     lets it go the same way."""
     directory, transcript = ticket_session(tmp_path, f"- [Q1] **One page or two?**\n  - (a) One. *my pick*\n  - (b) Two.\n- [{TWO_MAIN} D5]")
     assert waiting(view_of(directory, transcript)) == ["Q1", f"{TWO_MAIN} D5"]
-    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    top = waiting_and_cards(render_session(directory, transcript, now=NOW))
     assert "Sync on every commit, or on a timer?" in text_of(top) and "A timer batches" in text_of(top)
-    (link,) = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
-    assert link["href"] == (tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md").as_uri()
-    assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
+    links = [attrs for attrs, text in anchors(top) if text == f"{TWO_MAIN} D5"]
+    assert len(links) == 2, "the handle links from its row and from its card"
+    for link in links:
+        assert link["href"] == (tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md").as_uri()
+        assert link["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
 
     ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
     ticket.write_text(TICKET.replace("immediate.\n", "immediate.\n  - Ruled 2026-10-24: on every commit.\n"))
@@ -238,6 +254,49 @@ def test_a_ticket_question_put_to_the_user_waits_at_the_top_until_its_ticket_rec
     ticket.unlink()
     assert waiting(view_of(directory, transcript)) == ["Q1"]
     assert "no longer a question of its ticket" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
+
+
+ASKED_FOR_THE_TICKET = f"""- [Q2] **Sync on every commit?** The checkouts drift in between.
+  - Ticket: {TWO_MAIN} D5
+  - (a) On every commit
+    - Leads to: a hook in both checkouts
+    - Gives: never out of step
+  - (b) On a timer
+    - Leads to: a unit on each host
+    - Costs: an hour out of step
+  - Recap: what drifted last week
+    - the board
+    - two tickets
+  - [The drift, drawn](agent/show/drift.html): which files"""
+
+
+def test_a_question_put_for_a_ticket_is_a_session_question_until_its_ticket_records_the_ruling(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: everything put to the user is a session Qn, a ticket's question
+    with its ticket handle beside it, a link with the ticket's question as its preview. The card
+    carries what it leans on, the recap and the artefact, and each option what it leads to, gives
+    and costs. It clears with an answer line like any Qn, or once the ticket records the ruling,
+    which its turn then shows under the Qn's own tag."""
+    directory, transcript = ticket_session(tmp_path, ASKED_FOR_THE_TICKET)
+    assert waiting(view_of(directory, transcript)) == ["Q2"]
+    card = elements(render_session(directory, transcript, now=NOW), "q2")["q2"]
+    links = [attrs for attrs, text in anchors(card) if text == f"{TWO_MAIN} D5"]
+    assert len(links) == 1 and links[0]["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
+    assert "<li>the board</li>" in card and "what drifted last week" in text_of(card)
+    assert any(text == "The drift, drawn" for _, text in anchors(card))
+    rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
+    assert rows == [["", "option", "leads to", "gives", "costs"],
+                    ["a", "On every commit", "a hook in both checkouts", "never out of step", ""],
+                    ["b", "On a timer", "a unit on each host", "", "an hour out of step"]]
+
+    ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
+    ticket.write_text(TICKET.replace("immediate.\n", "immediate.\n  - Ruled 2026-10-24: on every commit.\n"))
+    assert waiting(view_of(directory, transcript)) == []
+    turn = sections_of(render_session(directory, transcript, now=NOW))["01"]
+    assert 'id="q2"' in turn and "ruled 2026-10-24" in text_of(turn)
+
+    ticket.write_text(TICKET)
+    write_transcript(transcript, ["Sync the checkouts", "Q2: b"])
+    assert waiting(view_of(directory, transcript)) == []
 
 
 def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
@@ -369,7 +428,7 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
 
     elsewhere = tmp_path / "elsewhere" / "deeper" / worked_example.name
     (elsewhere / "turns").mkdir(parents=True)
-    for name in ("session.md", AGENT_REPO):
+    for name in ("session.md", "plan", AGENT_REPO):
         shutil.copy(worked_example / name, elsewhere)
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
@@ -770,7 +829,7 @@ def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path)
     assert [d.handle for _, d in v.todos] == ["A3"] and waiting(v) == ["Q1"]
     page = render_session(directory, transcript, now=NOW)
     top = text_of(elements(page, QUESTIONS)[QUESTIONS])
-    assert "1 to decide · 1 to do" in top and "Post one #coding message" in top
+    assert "Q1 Force-push devops #4 and #5 now?" in top and "A3 Post one #coding message" in top
     assert "Review devops #3" not in top and "Post the first #coding message" not in top
     listed = text_of(sections_of(page)["01"])
     assert "Review devops #3 to do · done · cleared in turn 02" in listed and "replaced by A3 in turn 02" in listed
@@ -793,25 +852,117 @@ def test_a_line_of_the_users_message_in_the_pages_form_settles_its_item(tmp_path
     assert "on second thought" in text_of(sections_of(render_session(directory, transcript, now=NOW))["01"])
 
 
+def test_a_question_leaves_the_top_once_the_plan_step_naming_it_is_done(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought, max's Q3: a question settled by what happened, a merge on his
+    review comment, leaves once the plan step naming it goes done, with no answer line. While the
+    step is open it waits, its row drawn once, under the step it holds up; the turn that asked shows
+    what settled it."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "plan").write_text("doing Force-push devops | waits Q1\n  next Post the message | waits A3\n")
+    v = view_of(directory, transcript)
+    assert waiting(v) == ["Q1"] and [d.handle for _, d in v.todos] == ["A3"]
+    tasks = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    row = 'class="t-row" data-handle="Q1"'
+    assert tasks.count(row) == 1 and tasks.index("Force-push devops<") < tasks.index(row)
+
+    (directory / "plan").write_text("# the plan\ndone Force-pushed #4 and #5 | settles Q1\n  done Posted it | waits A3\n")
+    v = view_of(directory, transcript)
+    assert waiting(v) == [] and v.todos == ()
+    page = render_session(directory, transcript, now=NOW)
+    assert "settled by the plan: Force-pushed #4 and #5" in text_of(sections_of(page)["01"])
+    assert "settled by the plan: Posted it" in text_of(sections_of(page)["02"])
+
+
+def test_a_bare_tag_of_the_sessions_own_links_its_item_with_a_preview(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: every tag on the page is a link with a hover preview, the
+    session's own Q1 and A3 too: to the item on the page, its headline and whether it waits as the
+    preview. A tag the session never asked, and one inside code, stay text."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "turns" / "03.md").write_text(
+        "---\ndate: 2026-10-30\n---\n\n# Waiting\n\n## Details\n\nQ1 still waits, A3 too; Q9 is no tag here, nor `Q1`.\n")
+    found = anchors(sections_of(render_session(directory, transcript, now=NOW))["03"])
+    assert [text for _, text in found].count("Q1") == 1, "a tag in code stays text"
+    links = {text: attrs for attrs, text in found}
+    assert links["Q1"]["href"] == "#q1" and links["Q1"]["title"] == "Q1 · Force-push devops #4 and #5 now? · waiting"
+    assert links["A3"]["href"] == "#a3" and links["A3"]["title"].startswith("A3 · Post one #coding message")
+    assert "Q9" not in links
+
+
+def test_every_icon_in_the_tasks_says_what_it_is_in_the_styled_tooltip(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: an icon in the tasks column carries the page's own tooltip, never
+    the browser's; an artefact's icon names its type."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "plan").write_text("doing Lint | job a subagent | see agent/show/lint/texts.html\nnext Post | waits A3\n")
+    tasks = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    listed = tasks
+    icons = re.findall(r"<(?:button|a|span)\b[^>]*>\s*(?:<span class=\"spin\">)?<svg", listed)
+    assert icons and all("data-tip=" in i for i in icons), [i for i in icons if "data-tip=" not in i]
+    assert "title=" not in "".join(icons)
+    assert re.search(r'class="t-type" data-tip="Page"', listed), "an html artefact's icon says it is a page"
+
+
+def test_the_tasks_read_in_the_order_the_user_should_look(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: top to bottom, what needs the user (a call no step names first,
+    then the step a call holds up with it under it), the artefacts to look at, what is in flight,
+    what comes next. A step whose going done will answer a call (`settles`) holds nothing up: it
+    stays in flight, and the call waits at the top as one no step names."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    (directory / "plan").write_text("next Post the message\ndoing Rebase the stack | settles Q1\nwait Ask about it | waits A3\n")
+    tasks = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    order = [tasks.index(mark) for mark in ('data-handle="Q1"', "Ask about it", 'data-handle="A3"', "to look at", "Rebase the stack",
+                                            "Post the message")]
+    assert order == sorted(order), order
+
+
 def test_a_question_lays_out_its_options_as_what_each_gives_and_costs(tmp_path: Path) -> None:
-    """The floor D3 sets: each option a row, its gives and costs in columns of their own, the pick
-    marked; an option that names no cost leaves its cell empty."""
+    """The floor D3 sets: each option a row, its gives and costs in columns of their own; an option
+    that names no cost leaves its cell empty. An older record's pick mark shows nowhere: no option
+    is marked as the agent's."""
     directory, transcript = todo_session(tmp_path, transcript_turns=True)
     card = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
     rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
     assert rows == [["", "option", "gives", "costs"],
-                    ["a", "Push now my pick", "#4 and #5 carry the rule today", "their old SHAs stop resolving"],
+                    ["a", "Push now", "#4 and #5 carry the rule today", "their old SHAs stop resolving"],
                     ["b", "Wait for the first review", "a reviewer sees one history", ""]]
 
 
-def test_the_artefacts_to_look_at_are_the_ones_linked_since_the_user_last_spoke(tmp_path: Path) -> None:
-    """With a message of the user's before each turn, only the newest turn's artefacts wait; where
-    the user said nothing, every turn's do, oldest first, and one two turns linked waits once,
-    under the later."""
-    directory, transcript = todo_session(tmp_path / "spoke", transcript_turns=True)
-    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "devops#2"), (2, "The six PR texts, reworded")]
-    directory, transcript = todo_session(tmp_path / "silent", transcript_turns=False)
+def test_an_artefact_waits_until_a_line_of_the_users_message_names_it(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought: an artefact leaves only once the user marked it seen, or noted
+    it, and sent the batch; a message that does not name it leaves it waiting. One two turns linked
+    waits once, under the later; the timeline marks the one seen."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
     assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "The six PR texts, reworded"), (2, "devops#2")]
+    write_transcript(transcript, ["Lint the repo", "Reword the message", "agent/show/lint/texts.html: seen\nQ1: a"])
+    assert [(t.number, s.link.text) for t, s in view_of(directory, transcript).looks] == [(2, "devops#2")]
+    write_transcript(transcript, ["Lint the repo", "Reword the message",
+                                  "agent/show/lint/texts.html: seen\nhttps://github.com/HELFERLINE/devops/issues/2: the legend is wrong"])
+    assert view_of(directory, transcript).looks == (), "a note on an artefact sends it as looked at too"
+    timeline = elements(render_session(directory, transcript, now=NOW), "a02")["a02"]
+    assert re.search(r'<li class="seen"[^>]*>.*?The six PR texts, reworded', timeline) and "devops#2" in timeline
+
+
+def test_a_record_retires_an_artefact_by_its_path_and_a_batch_sweeps_nothing(tmp_path: Path) -> None:
+    """what-waits-on-you-rethought, max's D4: an artefact leaves the tasks when a later record names
+    its path under `superseded:`, to why it is moot, and the turn says so; the timeline keeps it. A
+    batch that names neither artefact leaves both waiting. A link again after the retirement waits
+    again, and a path no earlier turn linked is refused at its line."""
+    directory, transcript = todo_session(tmp_path, transcript_turns=True)
+    write_transcript(transcript, ["Lint the repo", "Reword the message", "Q1: a\nA3: done"])
+    looks = lambda: [s.link.text for _, s in view_of(directory, transcript).looks]
+    assert looks() == ["The six PR texts, reworded", "devops#2"], "a batch swept an artefact away"
+    (directory / "turns" / "03.md").write_text(
+        "---\ndate: 2026-10-30\nsuperseded:\n  agent/show/lint/texts.html: you reviewed the texts on GitHub\n---\n\n# Pushed\n")
+    assert looks() == ["devops#2"]
+    page = render_session(directory, transcript, now=NOW)
+    assert "texts.html retired: you reviewed the texts on GitHub" in text_of(sections_of(page)["03"])
+    assert "The six PR texts, reworded" in elements(page, "a02")["a02"], "the timeline keeps a retired artefact"
+    (directory / "turns" / "04.md").write_text(
+        "---\ndate: 2026-10-31\n---\n\n# Reworded again\n\n## Links\n\n- [The texts, third take](agent/show/lint/texts.html): again\n")
+    assert looks() == ["devops#2", "The texts, third take"]
+    (directory / "turns" / "05.md").write_text("---\ndate: 2026-11-01\nsuperseded:\n  agent/show/lint/nope.html: moot\n---\n\n# Typo\n")
+    with pytest.raises(RecordError, match="nope.html is no artefact an earlier turn linked") as refused:
+        view_of(directory, transcript)
+    assert str(refused.value).startswith(f"{directory / 'turns' / '05.md'}:4: ")
 
 
 def test_a_to_do_superseded_by_a_question_is_refused_as_a_to_do_supersedes_only_a_to_do(tmp_path: Path) -> None:

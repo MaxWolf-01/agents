@@ -94,12 +94,12 @@ def scratch(root: Path, repo: str, base: str) -> Path:
 
 
 def spawned(d: Path, slug: str, *, at: int | None = None) -> str:
-    """A run in the manifest, as `dispatch-ctl spawn` leaves it: name, run id, worktree, runner."""
+    """A run in the manifest, as `dispatch-ctl spawn` leaves it: name, run id, worktree, runner, effort."""
     repo = (d / "config").read_text().split("repo=")[1].split("\n")[0]
     name = f"dispatch-{repo}-{slug}"
     run = f"{name}-{at or int(time.time())}"
     with (d / "manifest").open("a") as f:
-        f.write(f"{name}\t{run}\t/nowhere/{repo}-{slug}\t{d / 'run-worker.sh'}\n")
+        f.write(f"{name}\t{run}\t/nowhere/{repo}-{slug}\t{d / 'run-worker.sh'}\tmedium\n")
     return run
 
 
@@ -709,10 +709,12 @@ class Following:
 
     def matches_ps(self, within: float = 20) -> tuple[str, str]:
         """The drawn table and ps's output, once they agree or <within> seconds run out."""
+        # An age's seconds tick between the two reads, and on a loaded host in every pair of them.
+        pair = lambda: tuple(re.sub(r"\b\d+s\b", "Ns", text) for text in (self.drawn(), self.printed()))
         def agreed() -> tuple[str, str] | None:
-            pair = self.drawn(), self.printed()
-            return pair if pair[0] == pair[1] else None
-        return until(agreed, within) or (self.drawn(), self.printed())
+            drawn, printed = pair()
+            return (drawn, printed) if drawn == printed else None
+        return until(agreed, within) or pair()
 
     def logins(self, host: str) -> int:
         return sum(1 for c in ssh_calls(self.home) if c.split("\t")[0] == host)

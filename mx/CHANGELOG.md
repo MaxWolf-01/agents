@@ -1,3 +1,38 @@
+## 1.0.119
+
+- Session page cards read their recap as body text, not as a quote
+  The card's recap loses its left rule and indent (page.css), so a question's or to-do's content no longer looks like a blockquote; the rule now only marks text that is actually quoted, the user's own echoed words. Checked against a rendered card before and after; make check, make test and the session page's browser tests pass.
+- show: a figure in a GitHub README wears the house ink on a transparent ground
+  The GitHub skin in mx/skills/show is rewritten. A figure embedded in a markdown file GitHub renders now takes the house style's ink tokens, surfaces as washes mixed with transparent, and ships as a light and a dark PNG embedded through <picture>, in place of the grey-and-orange Geist skin that covered the dark theme alone. SVG-FIGURES.md's pointer names it the default for such a figure.
+
+## 1.0.118
+
+- Session page's timeline links fit beside the hub's dot, and cards and artefacts open by key
+  The hub puts a status dot before each timeline link, and the type icon had pushed the link into a sliver, so the icon and link are now one cell. In an open card, 1 to 9 open its links, which show their numbers. O opens an artefact in a browser tab of its own.
+
+## 1.0.117
+
+- Session page shows turns, tasks and timeline side by side, the tasks drawn from a plan
+  The session page is three columns where they fit, each scrolling on its own: the turns, the tasks and the timeline. The tasks read what needs the user, what to look at, what is in flight and what is next, drawn from a plan file the agent keeps in the session's directory. A question clears when the plan step naming it is done. Every question put to the user is a session Q, with its ticket handle beside it. Options are marked as nobody's pick and show what each leads to, gives and costs. Question and to-do cards carry their recap and links. Artefacts open only when the user opens them, and leave when marked seen, commented on, or retired by a turn record.
+
+## 1.0.116
+
+- Review asks what should not exist, and the architecture scan runs without a report
+  Code review's read reviewer gains a fourth pass asking what in a diff should not exist. /mx:improve-codebase-architecture stops after writing its candidates down, builds its HTML report or grills only when the user asks, and its scan, which the periodic retro inherits, also asks what could be removed whole. Its report rules become five conditions a page must meet, with the card layout and module-depth figures moved to /mx:show. /mx:bloat-audit counts superfluous tests among its deletions and points at both smell lists. test_following_draws_what_ps_prints no longer compares the seconds of an age, which ticked between its two reads under load and failed two release runs.
+- Session page sizes show the token types billed differently
+  A turn's size is now three token counts by how each is billed, cached input, uncached input and output, behind their own icons. A prompt is its bytes alone, and a tool call shows the bytes the model wrote, then the bytes it read. The download and upload arrows are gone, since max found them misleading on bytes.
+- maybe useful, maybe not
+- a bit less slop
+
+## 1.0.115
+
+- Session page sizes drawn as icons and counts
+  Sizes on the session page are a count behind an icon, down for what the model consumed and up for what it produced, replacing text like "in ≈3 tok 10 B · out ≈17 tok 65 B". Turns show the API's exact tokens; prompts and tool calls show exact bytes. Hovering half a second opens a styled tooltip with both figures, drawn above panes that would clip it. Multi-message prompts show their count behind a messages icon.
+- Session page copies any link or code on c
+  On the session page the c key now copies any link or code under the pointer or any link focused with Tab, where it used to copy only file paths. A web link copies its URL, a link to a local file its path, and code its text. The "c copy" hint appears on everything copyable.
+- A resumed dispatch worker keeps its round's effort
+  When the dispatch tool resumes a worker, the worker now keeps the effort of its previous round instead of falling back to medium. An explicit --effort or DISPATCH_EFFORT still overrides it, and that level carries into later resumes. Fresh spawns default to medium, as do resumes of runs started before the manifest recorded effort.
+
 ## 1.0.114
 
 - feat(house-style): the UI principles from max's steering, for anything drawn for him

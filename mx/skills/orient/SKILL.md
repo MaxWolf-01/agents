@@ -69,7 +69,7 @@ Keep the planning steps (1 to 3) in **one unbroken context window** (no handoff 
 
 Not product work, upkeep.
 
-- **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities**, then grill through them in order of impact.
+- **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities** and record them; on request, a report of them and a grilling through them in order of impact.
 - **`/mx:bloat-audit`**: an over-engineering audit, a ranked list of what to delete, simplify, or replace with stdlib.
 - **`/mx:retro`**: act on the repo's living report, which a weekly retro run keeps: the findings and candidates the user picks are grilled into tickets, and their verdicts written into it; or start a run by hand, on a focus they name. It is typed by the user, so a session that hears them want to act on a finding names it to them.
 

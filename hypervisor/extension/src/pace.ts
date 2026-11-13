@@ -2,7 +2,7 @@
 // delegated task, whose result reaches it later as a ping, `[from] text`, which starts a turn of its own.
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Inbox } from "./inbox.ts";
 import { run } from "./run.ts";

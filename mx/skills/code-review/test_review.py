@@ -362,7 +362,7 @@ def test_read_works_its_passes_in_order_and_opens_the_standards_last(repo):
     sources in turn, so the longest reading comes after the passes that need none of it."""
     assert run(repo, "--reviewers", "read", "--spec", spec(repo)).returncode == 0
     prompt = (review_dir(repo) / "prompts" / "read.md").read_text()
-    passes = [prompt.index(f"## {name}:") for name in ("Correctness", "Spec", "Standards")]
+    passes = [prompt.index(f"## {name}:") for name in ("Correctness", "Spec", "Standards", "Grug")]
     assert passes == sorted(passes), passes
 
 

@@ -42,9 +42,9 @@ ARTEFACTS = (
     "agent/show/session-page/round-3/pages.html",
     "agent/show/session-page/round-3/spec.html",
 )
-# The widths the hub shows a session page at, the first being a wide window's, the last the
-# hub sidebar's, where the timeline is a sheet.
-WIDTHS = (1600, 1240, 900, 530)
+# The widths the hub shows a session page at, the first being a wide window's, where the turns still
+# have room beside the tasks and the timeline, the last a phone's, where one view shows at a time.
+WIDTHS = (2400, 1920, 1240, 900, 530)
 
 PROBE = r"""
 import json, os, shutil, sys
@@ -68,7 +68,7 @@ CONTROL = '''(() => {
   if (!n) return null
   const r = n.getBoundingClientRect()
   return {inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, fresh: n.classList.contains("fresh"),
-          text: n.textContent}
+          text: n.getAttribute("aria-label"), tip: n.dataset.tip}
 })()'''
 
 with sync_playwright() as pw:
@@ -155,6 +155,7 @@ with sync_playwright() as pw:
         out["o"] = page.evaluate(OPEN)
         page.keyboard.press("o")
         out["oo"] = page.evaluate(OPEN)
+        settle(page)  # the pane's scroll after o reflowed the turns would take the keys away as they show
         OVER = '[...document.querySelectorAll(".key-over")].map((k) => k.textContent)'
         page.keyboard.down("Control")
         page.keyboard.down("Alt")
@@ -206,21 +207,31 @@ with sync_playwright() as pw:
         page.keyboard.press("Y")
         out["M"], out["M_toast"] = clipboard(), page.text_content("#toast")
 
-    elif scenario == "copy-path":
+    elif scenario == "copy-under-pointer":
         context, page = open_page(1280, 800)
         context.grant_permissions(["clipboard-read", "clipboard-write"])
         hint = lambda: page.evaluate("document.querySelector('.key-hint')?.textContent ?? null")
-        page.hover("#t04 a.path")
-        out["hint"] = hint()
+        out["hovered"] = {}
+        for target in args["targets"]:
+            page.evaluate("navigator.clipboard.writeText('')")
+            # a scroll takes the hint away, so the target is brought into view, and its scroll event has fired, first
+            page.locator(target).scroll_into_view_if_needed()
+            page.evaluate("new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
+            page.hover(target)
+            seen_hint = hint()
+            page.keyboard.press("c")
+            page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
+            out["hovered"][target] = [seen_hint, page.evaluate("navigator.clipboard.readText()")]
+        page.hover(args["in_page"])
+        out["hint_in_page"] = hint()
         page.keyboard.press("c")
-        page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
-        out["copied"] = page.evaluate("navigator.clipboard.readText()")
+        out["toast_in_page"] = page.text_content("#toast")
         page.mouse.move(5, 5)
         out["hint_away"] = hint()
         page.keyboard.press("c")
         out["toast"] = page.text_content("#toast")
         page.evaluate("navigator.clipboard.writeText('')")
-        page.focus("#t04 a.path")
+        page.focus(args["targets"][0])
         page.keyboard.press("c")
         page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
         out["copied_focused"] = page.evaluate("navigator.clipboard.readText()")
@@ -246,7 +257,7 @@ with sync_playwright() as pw:
         out["control_after"] = page.evaluate(CONTROL)
         wheel(page, -200)
         out["control_short_of_it"] = page.evaluate(CONTROL)
-        page.keyboard.press("n")
+        page.keyboard.press("N")
         settle(page)
         out["newest"] = {**page.evaluate(PLACE), "control": page.evaluate(CONTROL)}
         # a navigation that arrives with a fragment reveals it
@@ -272,7 +283,7 @@ with sync_playwright() as pw:
         page.evaluate("document.fonts.ready")
         page.wait_for_timeout(300)
         out["stayed"] = {**page.evaluate(PLACE), "control": page.evaluate(CONTROL)}
-        page.keyboard.press("n")
+        page.keyboard.press("N")
         settle(page)
         out["newest"] = {**page.evaluate(PLACE), "control": page.evaluate(CONTROL)}
 
@@ -306,19 +317,23 @@ with sync_playwright() as pw:
     elif scenario == "prompt_size":
         # the size each turn's prompts show on their folded line, as far as the reader sees it
         context, page = open_page(args["width"], 800)
+        if page.locator("#view-toggle").is_visible():
+            page.click("#view-toggle")  # a phone opens on the tasks
         out["sizes"] = page.evaluate('''[...document.querySelectorAll(".said > summary .count .size")]
-            .filter((el) => el.checkVisibility()).map((el) => el.textContent)''')
+            .filter((el) => el.checkVisibility()).map((el) => [!!el.querySelector("svg"), el.textContent])''')
     elif scenario == "layout":
-        # P3, P7, P8 at one width: the panes, the control at both ends of the turns, the band's rows
+        # P3, P7, P8 at one width: the columns, the control at both ends of the turns, the tasks' rows
         width = args["width"]
         context, page = open_page(width, 800)
         geometry = '''(() => { const box = (s) => { const el = document.querySelector(s), r = el.getBoundingClientRect()
             return {top: r.top, bottom: r.bottom, left: r.left, right: r.right, shown: el.checkVisibility({visibilityProperty: true})} }
-          return {bar: box(".bar"), band: box("#open-questions"), pane: box("#turns-pane"), column: box("#artefacts"),
-                  sheet: box("#sheet-toggle"), height: innerHeight, width: innerWidth,
+          return {bar: box(".bar"), tasks: box("#open-questions"), pane: box("#turns-pane"), column: box("#artefacts"),
+                  toggle: box("#view-toggle"), height: innerHeight, width: innerWidth,
                   firstTurnBorder: getComputedStyle(document.querySelector(".turns > .blk")).borderTopWidth,
-                  cards: [...document.querySelectorAll("#open-questions .card")].map((c) => ({id: c.id, shown: !c.hidden,
-                    head: box(`#${c.id} h3`)})), ticks: document.querySelectorAll("#ticks .tk").length} })()'''
+                  rows: [...document.querySelectorAll("#open-questions .t-row")].map((r) => r.getBoundingClientRect().height)} })()'''
+        out["tasks_view"] = page.evaluate(geometry)
+        if out["tasks_view"]["toggle"]["shown"]:
+            page.click("#view-toggle")
         out["top"] = page.evaluate(geometry)
         out["control_top"] = page.evaluate(CONTROL)
         for _ in range(3):
@@ -329,93 +344,139 @@ with sync_playwright() as pw:
         out["control_bottom"] = page.evaluate(CONTROL)
         out["pane_at_end"] = page.evaluate('''(() => { const p = document.getElementById("turns-pane")
             return p.scrollTop > 0 && p.scrollTop + p.clientHeight >= p.scrollHeight - 1 })()''')
-        for key in ("]", "[", "j", "k", "g", "g", "End", "PageUp", "Home"):
+        out["timeline_at_end"] = page.evaluate('''(() => { const c = document.getElementById("artefacts")
+            return c.scrollTop + c.clientHeight >= c.scrollHeight - 1 })()''')
+        for key in ("]", "[", "Escape", "j", "k", "g", "g", "End", "PageUp", "Home"):
             page.keyboard.press(key)
         settle(page)
+        out["timeline_at_top"] = page.evaluate("document.getElementById('artefacts').scrollTop")
         out["window"] = page.evaluate("[scrollX, scrollY, document.scrollingElement.scrollTop, document.body.scrollTop]")
         out["scrollbars"] = page.evaluate('''[...document.querySelectorAll("*")].filter((e) => { const s = getComputedStyle(e)
             return ["auto", "scroll"].includes(s.overflowY) && e.offsetWidth - e.clientWidth - parseFloat(s.borderLeftWidth) - parseFloat(s.borderRightWidth) > 0 })
             .map((e) => e.id || e.className)''')
-        if out["top"]["sheet"]["shown"]:
-            page.click("#sheet-toggle")
-        page.wait_for_timeout(400)
-        out["sheet_open"] = page.evaluate(geometry)["column"]
+        page.keyboard.press("]")
+        out["row_heights_focused"] = page.evaluate(geometry)["rows"]
+        page.keyboard.press("Escape")
+        page.keyboard.press("q")
+        FOLD = '''(() => ({list: document.querySelector("#open-questions .t-list").checkVisibility(),
+            head: document.querySelector("#open-questions .t-head").checkVisibility(),
+            column: document.getElementById("artefacts").getBoundingClientRect().top}))()'''
+        out["folded"] = page.evaluate(FOLD)
+        page.reload()
+        page.evaluate("document.fonts.ready")
+        out["folded_reloaded"] = page.evaluate(FOLD)
+        page.click("#fold-tasks")
+        out["shown"] = page.evaluate(FOLD)
     elif scenario == "crowded":
-        # the card ] goes to in a band with many items, each longer than the band, and how much of it shows
+        # the row ] goes to among many, each with a card longer than a screen, and the card Enter opens on it
         context, page = open_page(args["width"], 800)
+        if page.locator("#view-toggle").is_visible() and page.evaluate("document.body.dataset.view") != "tasks":
+            page.click("#view-toggle")
         for _ in range(args["presses"]):
             page.keyboard.press("]")
+        settle(page)
+        out["row"] = page.evaluate('''(() => { const t = document.getElementById("open-questions"), r = t.querySelector(".t-row.at")
+          const a = t.getBoundingClientRect(), b = r.getBoundingClientRect()
+          return {handle: r.dataset.handle, inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1, rows: t.querySelectorAll(".t-row.at").length} })()''')
+        page.keyboard.press("Enter")
         out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom} }
-          const band = document.getElementById("open-questions"), card = band.querySelector(".card:not([hidden])")
-          return {band: box(band), head: box(band.querySelector(".divider")), title: box(card.querySelector("h3")), id: card.id,
-                  shown: band.querySelectorAll(".card:not([hidden])").length, focused: card.contains(document.activeElement)} })()'''))
+          const dialog = document.getElementById("card-dialog"), card = dialog.querySelector(".card:not([hidden])")
+          return {title: box(card.querySelector("h3")), height: innerHeight, id: card.id,
+                  shown: dialog.querySelectorAll(".card:not([hidden])").length, focused: card.contains(document.activeElement)} })()'''))
     elif scenario == "stage":
-        # the keys stage an answer on each kind of card, a note stays on the card it was opened on, what is staged
+        # the keys stage an answer on each kind of item, a note stays on the item it was opened on, what is staged
         # outlives a reload, and the review shows the batch, which Enter copies where no hub frames the page
         context, page = open_page(1280, 900)
         context.grant_permissions(["clipboard-read", "clipboard-write"])
-        STATE = '''(() => { const c = document.querySelector("#open-questions .card:not([hidden])")
-          return {card: c ? c.dataset.handle : null, staged: c ? c.querySelector(".staged").textContent : null,
-                  chosen: c ? [...c.querySelectorAll("tr.chosen")].map((r) => r.dataset.option) : [],
-                  ticks: [...document.querySelectorAll("#ticks .tk")].map((t) => t.className), where: document.querySelector("#ticks .where").textContent,
-                  tally: document.getElementById("tally").textContent, inBand: document.getElementById("open-questions").contains(document.activeElement),
+        STATE = '''(() => { const t = document.getElementById("open-questions"), r = t.querySelector(".t-row.at")
+          const card = document.querySelector("#card-dialog:not([hidden]) .card:not([hidden])")
+          return {row: r ? r.dataset.handle : null, picked: r ? [...r.querySelectorAll(".pill.on")].map((p) => p.dataset.pick) : [],
+                  act: r ? [...r.querySelectorAll(".ib.on")].map((b) => b.dataset.act) : [],
+                  seen: r && r.querySelector(".seen-btn") ? r.querySelector(".seen-btn").textContent : null,
+                  note: r ? r.querySelector("[data-act=note]").dataset.tip : null,
+                  staged: [...t.querySelectorAll(".t-row.st")].map((x) => x.dataset.handle),
+                  badge: t.querySelector(".rv b")?.textContent ?? "", inBand: t.contains(document.activeElement),
+                  card: card ? card.id : null,
                   review: document.getElementById("review").hidden ? null : document.querySelector("#review pre")?.textContent ?? "",
-                  stays: document.querySelector("#review .left-out summary, #review p.left-out")?.textContent ?? null} })()'''
+                  stays: [...document.querySelectorAll("#review p.left-out")].at(-1)?.textContent ?? null} })()'''
         out["steps"] = []
         def step(*keys):
             for key in keys:
                 page.keyboard.type(key[5:]) if key.startswith("type:") else page.keyboard.press(key)
             out["steps"].append([" ".join(keys), page.evaluate(STATE)])
-        step("]")                      # into the band, on the first card
+        step("]")                      # into the tasks, on the first row
         step("b")                      # an option of the question's
-        step("p")                      # the agent's pick, over it
-        step("p")                      # and again, which takes it back
-        step("Enter")                  # the agent's pick
+        step("a")                      # another, over it
+        step("a")                      # and again, which takes it back
+        step("a")
         step("n", "type:only after Friday]", "Enter")  # a note, a ] typed in it moving nothing
         step("]")                      # the to-do
         step("x")                      # dismissed
         step("d")                      # done, over it
         step("u")                      # cleared
         step("d")                      # done
-        step("]", "s")                 # the first artefact, seen and not staged
+        step("]", "s")                 # the first artefact, marked seen
         with context.expect_page(timeout=5000) as tab:
-            page.keyboard.press("o")   # opened, and seen still
+            page.keyboard.press("o")   # opened, which marks nothing
         tab.value.close()
         out["steps"].append(["o", page.evaluate(STATE)])
         step("n", "type:the legend is wrong", "Enter")
         step("]", "n", "type:read", "Escape")  # the second artefact: a note opened and dropped
-        step("s")                      # and seen, which deals with it
+        step("s")                      # and seen
         page.reload()
         page.evaluate("document.fonts.ready")
-        step("]")                      # the reload kept the batch, and the card the reader was on
+        step("]", "Enter")             # the reload kept the batch; the question's card opens
         step("r")
         page.evaluate("navigator.clipboard.writeText('')")
         step("Enter")
         page.wait_for_function("navigator.clipboard.readText().then((t) => t !== '')", timeout=5000)
         out["copied"] = page.evaluate("navigator.clipboard.readText()")
-        step("Escape", "Escape")       # back to the card, then out of the band
+        step("Escape")                 # back to the card
+        step("Escape")                 # out of the dialog
+        step("Escape")                 # out of the tasks
         step("j")                      # the turns' key again
+        step("n")                      # a note from the turns, on no item: none is in focus
         step("r")                      # the review, in one key from the turns
     elif scenario == "options":
-        # where the first question's option words, gives and costs sit against each other, at a width
+        # where the first question's option words, leads to, gives and costs sit against each other, at a width
         context, page = open_page(args["width"], 900)
+        if page.locator("#view-toggle").is_visible() and page.evaluate("document.body.dataset.view") != "tasks":
+            page.click("#view-toggle")
+        # n's note field on the first row, against the column's content box
+        page.keyboard.press("]")
+        page.keyboard.press("n")
+        out["note"] = page.evaluate('''(() => { const t = document.getElementById("open-questions"), s = getComputedStyle(t)
+          const r = t.getBoundingClientRect(), f = document.querySelector("#open-questions .t-note").getBoundingClientRect()
+          const row = t.querySelector(".t-row").getBoundingClientRect()
+          return {left: f.left, right: f.right, inner: [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)], row: [row.left, row.right]} })()''')
+        page.keyboard.press("Escape")
+        page.click("#open-questions .t-row .qt")
         out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right} }
-          const row = document.querySelector("#q1 tr.pick")
-          return {words: box(row.children[1]), gives: box(row.querySelector("td.g")), costs: box(row.querySelector("td.c")),
-                  card: box(document.querySelector("#q1 .card-main")), labelled: getComputedStyle(row.querySelector("td.g"), "::before").content} })()'''))
+          const row = document.querySelector("#q1 tr[data-option]")
+          return {words: box(row.children[1]), leads: box(row.querySelector("td.l")), gives: box(row.querySelector("td.g")), costs: box(row.querySelector("td.c")),
+                  card: box(document.querySelector("#q1 .card-main")), labelled: getComputedStyle(row.querySelector("td.g"), "::before").content,
+                  shown: !document.getElementById("card-dialog").hidden} })()'''))
+        WINDOW = '''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right} }
+          const at = (x, y) => document.elementFromPoint(x, y)?.closest("#card-dialog") !== null
+          return {dialog: box(document.getElementById("card-dialog")), card: box(document.querySelector(".d-card")), width: innerWidth, height: innerHeight,
+                  covers: [at(2, innerHeight / 2), at(innerWidth - 2, innerHeight / 2), at(innerWidth / 2, innerHeight - 2)]} })()'''
+        out["card_window"] = page.evaluate(WINDOW)
+        page.keyboard.press("r")
+        out["review_window"] = page.evaluate(WINDOW)
     elif scenario == "framed":
         # the page in a frame of a hub tab: what it staged comes from the hub, every change goes back to it, and the
-        # send is the hub's, after which the lines it sent leave the cards
+        # send is the hub's, after which the lines it sent leave the tasks
         import http.server, threading
         root = Path(args["root"])
         handler = lambda *a, **k: http.server.SimpleHTTPRequestHandler(*a, directory=str(root), **k)
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        SHOWN = '''(() => { const c = document.querySelector("#open-questions .card:not([hidden])")
-          return {card: c ? c.dataset.handle : null, staged: c ? c.querySelector(".staged").textContent : null,
-                  tally: document.getElementById("tally").textContent, ticks: document.querySelectorAll("#ticks .tk").length,
-                  where: document.querySelector("#ticks .where").textContent, scroll: document.getElementById("open-questions").scrollTop,
-                  inBand: document.getElementById("open-questions").contains(document.activeElement)} })()'''
+        SHOWN = '''(() => { const t = document.getElementById("open-questions"), r = t.querySelector(".t-row.at")
+          const shown = [...t.querySelectorAll(".t-row")].filter((x) => !x.hidden)
+          return {row: r ? r.dataset.handle : null, picked: shown[0] ? [...shown[0].querySelectorAll(".pill.on")].map((p) => p.dataset.pick) : [],
+                  note: shown[0] ? shown[0].querySelector("[data-act=note]").dataset.tip : null,
+                  shown: shown.map((x) => x.dataset.handle), staged: [...t.querySelectorAll(".t-row.st")].map((x) => x.dataset.handle),
+                  badge: t.querySelector(".rv b")?.textContent ?? "", scroll: t.scrollTop, inBand: t.contains(document.activeElement)} })()'''
         try:
             context, page = open_page(1280, 900, f"http://127.0.0.1:{server.server_address[1]}/{args['tab']}")
             # the frame's script runs as it parses; its load waits on fonts, which the page cache answers for the tab alone
@@ -424,7 +485,7 @@ with sync_playwright() as pw:
             page.wait_for_function("window.restaged", timeout=10000)  # the page has read what the hub kept
             out["loaded"] = inner.evaluate(SHOWN)
             if args.get("send"):
-                inner.focus("#open-questions .card:not([hidden])")
+                inner.focus("#open-questions")
                 for key in args["keys"]:
                     page.keyboard.press(key)
                 out["typed"] = inner.evaluate("document.querySelector('#review pre').textContent")
@@ -432,10 +493,10 @@ with sync_playwright() as pw:
                 page.evaluate("window.words = 'and go on'")
                 inner.evaluate("window.waitingWords()")  # what the hub tab calls as the user types in its box
                 out["review"] = inner.evaluate("document.querySelector('#review pre').textContent")
-                out["stays"] = inner.evaluate("document.querySelector('#review .left-out summary').textContent")
+                out["stays"] = inner.evaluate("[...document.querySelectorAll('#review p.left-out')].at(-1).textContent")
                 out["before"] = page.evaluate("window.sent")
                 page.keyboard.press("Enter")
-                inner.wait_for_function("document.getElementById('tally').textContent.includes('sent')", timeout=10000)
+                inner.wait_for_function("!window.waitingReviewing()", timeout=10000)
                 out["sent"] = page.evaluate("window.sent")
                 out["saved"] = page.evaluate("window.saved.at(-1)")
                 out["after"] = inner.evaluate(SHOWN)
@@ -446,7 +507,8 @@ with sync_playwright() as pw:
                                     inner.evaluate("window.waitingChanged()"), page.wait_for_function("window.restaged", timeout=10000))
                 told(args["elsewhere"])
                 out["told"] = inner.evaluate(SHOWN)
-                inner.focus("#open-questions .card:not([hidden])")
+                inner.focus("#open-questions")
+                page.keyboard.press("]")
                 page.keyboard.press("n")
                 page.keyboard.type("mine")
                 told(args["while_noting"])
@@ -490,7 +552,14 @@ with sync_playwright() as pw:
             page.evaluate(f"(verb) => ({STEP})(verb).querySelector('button').click()", verb)
             return page.evaluate(f'''(verb) => [...({STEP})(verb).querySelectorAll(".detail pre")].map((p) => ({{lang: p.dataset.lang,
                 cls: p.className, text: p.textContent, lit: !!p.querySelector("[class^=hljs-]"), more: !!p.nextElementSibling?.matches(".more")}}))''', verb)
-        out["bash_size"] = page.evaluate(f"({STEP})('ran').querySelector('.size').textContent")
+        out["bash_size"] = page.evaluate(f'''[...({STEP})('ran').querySelectorAll('.size .amount')]
+            .map((a) => [a.querySelector('use').getAttribute('href'), a.textContent])''')
+        page.evaluate(f"({STEP})('ran').querySelector('.size').scrollIntoView()")
+        page.mouse.move(*page.evaluate(f'''(() => {{ const r = ({STEP})('ran').querySelector('.size').getBoundingClientRect()
+            return [r.left + r.width / 2, r.top + r.height / 2] }})()'''))
+        page.wait_for_selector(".tip.on", timeout=5000)
+        out["bash_tip"] = page.evaluate("document.querySelector('.tip.on').textContent")
+        page.mouse.move(0, 0)
         out["bash"], out["edit"], out["read"] = opened("ran"), opened("edited"), opened("read")
         out["read_whole"] = page.evaluate(f'''(() => {{ const s = ({STEP})("read"); s.querySelector(".more").click()
             return s.querySelector(".detail pre").textContent.length }})()''')
@@ -543,6 +612,26 @@ with sync_playwright() as pw:
         live.unlink()
         page.wait_for_function("!document.querySelector('#log .which').textContent.startsWith('under way')", timeout=10000)
         out["ended"] = page.evaluate(SHOWN)
+    elif scenario == "phone":
+        # a phone: the page opens on the tasks; an artefact opens from its row by a tap, a turn's tool calls by its
+        # button; and while the live hook's file is there, the tasks say a turn is running
+        context = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True, reduced_motion="reduce")
+        serve(context, default_root())
+        page = context.new_page()
+        page.goto(page_url)
+        out["view"] = page.evaluate("document.body.dataset.view")
+        out["working_before"] = page.evaluate("document.getElementById('working').checkVisibility()")
+        Path(args["live"]).write_text(args["calls"])
+        page.wait_for_function("document.getElementById('working').checkVisibility()", timeout=15000)
+        out["working"] = page.text_content("#working .t-txt")
+        with context.expect_page(timeout=5000) as tab:
+            page.tap("#open-questions .t-row.art a.open")
+        out["opened"] = tab.value.url
+        tab.value.close()
+        page.tap("#view-toggle")
+        page.tap("#t01 .turn-log")
+        page.wait_for_function("document.querySelector('#log .which')", timeout=10000)
+        out["log"] = page.text_content("#log .which")
     browser.close()
 print(json.dumps(out))
 """
@@ -579,7 +668,7 @@ def filler(number: int, questions: str = "") -> str:
 WAITING = (
     "---\ndate: 2026-10-29\n---\n\n# Unity's lint baseline cleared\n\n"
     "## Questions\n\n- [Q1] **Force-push devops #4 and #5 now?** nobody has reviewed them\n"
-    "  - (a) Push now *my pick*\n    - Gives: #4 and #5 carry the rule today\n    - Costs: their old SHAs stop resolving\n"
+    "  - (a) Push now\n    - Leads to: both PRs rebased\n    - Gives: #4 and #5 carry the rule today\n    - Costs: their old SHAs stop resolving\n"
     "  - (b) Wait for the first review\n\n"
     "## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`\n\n"
     "## Links\n\n- [The six PR texts](agent/show/lint/texts.html): Q1 leans on them\n"
@@ -659,7 +748,7 @@ def crowded(long_session: tuple[Path, Path], transcript: Path) -> Path:
     page, _ = long_session
     detail = " ".join(["A sentence of the question's detail, long enough to wrap across the measure."] * 12)
     asked = "## Questions\n\n" + "".join(
-        f"- [Q{n}] **Question {n}, one of many waiting at once?** {detail}\n  - (a) Yes. *my pick*\n  - (b) No.\n"
+        f"- [Q{n}] **Question {n}, one of many waiting at once?** {detail}\n  - (a) Yes.\n  - (b) No.\n"
         for n in range(10, 21))
     (page.parent / "turns" / "12.md").write_text(filler(12, asked + "\n"))
     crowded = page.parent / "crowded.html"
@@ -751,10 +840,10 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["resume_inline"], "the resume control is not on the title's meta line"
     resume = f"cd /home/max/repos/github/MaxWolf-01/agents && claude --resume {SESSION}"
     assert (seen["resume_clicked"], seen["resume_keyed"]) == (resume, resume)
-    for keys in ("n", "t 0 7", "[ ]", "q", "c", "y", "Y", "R", "l", "o", "O", "Ctrl Alt"):
+    for keys in ("N", "n", "t 0 7", "[ ]", "q", "r", "c", "y", "Y", "R", "l", "o", "O", "Ctrl Alt"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
     assert (seen["o"], seen["oo"]) == ([True] * 4, [False] * 4), "o opens every turn, then closes every turn"
-    assert {"l", "?", "R", "n", "q"} <= set(seen["held"]), f"Ctrl+Alt held shows each control's key over it: {seen['held']}"
+    assert {"l", "?", "R", "N", "r"} <= set(seen["held"]), f"Ctrl+Alt held shows each control's key over it: {seen['held']}"
     assert seen["let_go"] == []
 
 
@@ -795,19 +884,34 @@ def test_a_turn_copies_as_its_markdown_by_its_button_and_by_y(rendered: tuple[Pa
     assert seen["M_toast"] == "copied the session as markdown"
 
 
-def test_c_copies_the_path_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
-    """A path's link shows the key that copies it while the pointer is on it, and c copies the path
-    as the turn shows it, `:line` and all; with the pointer elsewhere c copies nothing and says so,
-    and a path Tab focused takes the key without the pointer."""
-    page, _ = rendered
+def test_c_copies_the_link_or_code_under_the_pointer(rendered: tuple[Path, Path], transcript: Path) -> None:
+    """Every link and code span shows the key that copies it while the pointer is on it, and c copies
+    it: a path written as code as the turn shows it, `:line` and all; other code, inline or a fenced
+    block, as its text short of the newline that ends it; a URL as it is, the pointer on code inside
+    its link too; a link to a file on this machine as that file's path. A link to a place on the page,
+    or the pointer elsewhere, copies nothing and says so, and a link Tab focused takes the key
+    without the pointer."""
+    page, root = rendered
     record = page.parent / "turns" / "04.md"
-    record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\nSee `{ARTEFACTS[0]}:3`.\n\n", 1))
+    url = "https://example.org/a?b=1"
+    block = "make test BASE=master\nmake check"
+    details = (f"See `{ARTEFACTS[0]}:3`, run `make test-all`, read {url}, [`T-12`]({url}12), [the plan]({ARTEFACTS[1]}) and [turn 03](#t03).\n\n"
+               f"```sh\n{block}\n```\n\n")
+    record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\n{details}", 1))
     page.write_text(render_session(page.parent, transcript))
-    seen = probe(page, "copy-path")
-    assert seen["hint"] == "c copy", f"no hint under the hovered path: {seen['hint']}"
-    assert seen["copied"] == f"{ARTEFACTS[0]}:3"
+    expected = {
+        "#t04 a.path": f"{ARTEFACTS[0]}:3",
+        '#t04 code:text-is("make test-all")': "make test-all",
+        f'#t04 a:text-is("{url}")': url,
+        '#t04 a code:text-is("T-12")': f"{url}12",
+        '#t04 a:text-is("the plan")': str(root / ARTEFACTS[1]),
+        "#t04 .code pre": block,
+    }
+    seen = probe(page, "copy-under-pointer", targets=list(expected), in_page='#t04 a:text-is("turn 03")')
+    assert seen["hovered"] == {target: ["c copy", text] for target, text in expected.items()}
+    assert seen["hint_in_page"] is None and seen["toast_in_page"] == "no link or code under the pointer"
     assert seen["hint_away"] is None, "the hint stayed after the pointer left"
-    assert seen["toast"] == "no path under the pointer"
+    assert seen["toast"] == "no link or code under the pointer"
     assert seen["copied_focused"] == f"{ARTEFACTS[0]}:3"
 
 
@@ -889,17 +993,17 @@ def test_a_prompt_shows_its_size_at_a_wide_window_and_in_the_hub_sidebar(rendere
     """session-page-keys-and-sizes: each prompt shows its size in bytes, in a wide window and at the hub sidebar's width."""
     page, _ = rendered
     sizes = probe(page, "prompt_size", width=width)["sizes"]
-    assert sizes and all(re.fullmatch(r"\d+(\.\d)? k?B", s) for s in sizes), sizes
+    assert sizes and all(not glyph and re.fullmatch(r"\d+(\.\d)? [kM]?B", s) for glyph, s in sizes), sizes
 
 
 @pytest.mark.parametrize("width", WIDTHS)
 def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: int) -> None:
-    """P3, P7, P8 and the layout the ticket's Decisions bind, at each width the hub shows the page at: the
-    window never scrolls and no pane shows a scrollbar; the band of what waits sits over the turns
-    with one rule between them, a tick per item and the first item's card shown, its headline in
-    view however long the card is; the
-    timeline runs full height right of the turns, or at the sidebar's width sits in a sheet behind
-    the bar's button; the control to the newest turn is in view with the pane at either end."""
+    """P3, P7 and what-waits-on-you-rethought's layout, at each width the hub shows the page at: the
+    window never scrolls and no pane shows a scrollbar. Where three columns fit, the turns, the tasks
+    and the timeline sit side by side, each full height; narrower, the tasks sit over the timeline
+    right of the turns; on a phone the page opens on the tasks and the bar's button shows the turns.
+    The control to the newest turn is in view with the pane at either end, G takes the timeline to
+    its end and g g to its top, and no row of the tasks changes height when it takes the focus."""
     page, _ = long_session
     seen = probe(page, "layout", width=width)
     assert seen["window"] == [0, 0, 0, 0], f"P7: the window scrolled: {seen['window']}"
@@ -907,33 +1011,41 @@ def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: i
     assert seen["pane_at_end"], "the turns never scrolled to their end"
     assert seen["control_top"] and seen["control_top"]["inView"], f"P3 at the top: {seen['control_top']}"
     assert seen["control_bottom"] and seen["control_bottom"]["inView"], f"P3 at the bottom: {seen['control_bottom']}"
+    assert seen["timeline_at_end"] and seen["timeline_at_top"] == 0, "G and g g take the timeline to its ends"
+    assert seen["row_heights_focused"] == seen["top"]["rows"], "a row changed height as it took the focus"
+    if width > 704:
+        folded, shown = seen["folded"], seen["shown"]
+        assert not folded["list"] and folded["head"] and not seen["folded_reloaded"]["list"], "q folds the tasks to their head, and a reload keeps it"
+        assert shown["list"], "the chevron shows the tasks again"
+        if width < 1180:
+            assert folded["column"] < shown["column"], "folded, the tasks give the timeline their room"
     for moment in ("top", "bottom"):
         at = seen[moment]
-        band, pane, column = at["band"], at["pane"], at["column"]
-        assert band["bottom"] <= pane["top"] + 1 and pane["bottom"] >= at["height"] - 1, f"{moment}: {at}"
-        assert at["firstTurnBorder"] == "0px", "the first turn draws a rule of its own under the band's"
-        cards = at["cards"]
-        assert [c["shown"] for c in cards] == [True] + [False] * (len(cards) - 1) and at["ticks"] == len(cards), cards
-        head = cards[0]["head"]
-        assert band["top"] <= head["top"] and head["bottom"] <= band["bottom"] + 1, f"P8: the card's headline is out of the band: {at}"
-        if width > 704:
-            assert column["left"] >= pane["right"] - 1 and column["top"] <= at["bar"]["bottom"] + 1, f"{moment}: {at}"
-            assert column["bottom"] >= at["height"] - 1 and column["shown"] and not at["sheet"]["shown"], f"{moment}: {at}"
+        tasks, pane, column = at["tasks"], at["pane"], at["column"]
+        assert at["firstTurnBorder"] == "0px", "the first turn draws a rule under the title's"
+        assert pane["shown"] and pane["bottom"] >= at["height"] - 1, f"{moment}: {at}"
+        if width >= 1180:
+            assert pane["right"] <= tasks["left"] + 1 and tasks["right"] <= column["left"] + 1, f"{moment}: three columns: {at}"
+            assert tasks["bottom"] >= at["height"] - 1 and column["bottom"] >= at["height"] - 1 and not at["toggle"]["shown"], f"{moment}: {at}"
+        elif width > 704:
+            assert pane["right"] <= tasks["left"] + 1 and abs(tasks["left"] - column["left"]) < 2, f"{moment}: {at}"
+            assert tasks["bottom"] <= column["top"] + 1 and column["bottom"] >= at["height"] - 1, f"{moment}: the tasks over the timeline: {at}"
         else:
-            assert not column["shown"] and at["sheet"]["shown"], f"{moment}: the timeline is not in a sheet: {at}"
+            assert not tasks["shown"] and not column["shown"] and at["toggle"]["shown"], f"{moment}: the turns alone: {at}"
     if width <= 704:
-        sheet = seen["sheet_open"]
-        assert sheet["shown"] and sheet["right"] <= seen["top"]["width"] + 1 and sheet["left"] >= 0, f"the sheet did not open: {sheet}"
+        first = seen["tasks_view"]
+        assert first["tasks"]["shown"] and first["column"]["shown"] and not first["pane"]["shown"], f"the page opens on the tasks: {first}"
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_the_card_gone_to_shows_alone_with_its_headline_in_view_in_a_crowded_band(crowded: Path, width: int) -> None:
-    """With fourteen questions waiting, each longer than the band, ] goes into the band on the
-    first card and on through them: the sixth shows alone, holding the keys, its headline under the
-    band's heading."""
+def test_the_row_gone_to_is_in_view_and_its_card_opens_alone_in_a_crowded_column(crowded: Path, width: int) -> None:
+    """With fourteen questions waiting, each with a card longer than a screen, ] goes into the tasks
+    on the first row and on through them: the sixth is in the column's view, and Enter opens its
+    card alone, holding the keys, its headline in view."""
     seen = probe(crowded, "crowded", width=width, presses=6)
-    assert (seen["id"], seen["shown"], seen["focused"]) == ("q12", 1, True), seen
-    assert seen["head"]["bottom"] <= seen["title"]["top"] + 1 and seen["title"]["bottom"] <= seen["band"]["bottom"] + 1, f"out of view: {seen}"
+    assert seen["row"]["inView"] and seen["row"]["rows"] == 1, seen["row"]
+    assert (seen["id"], seen["shown"], seen["focused"]) == (seen["row"]["handle"].lower(), 1, True), seen
+    assert seen["title"]["top"] >= 0 and seen["title"]["bottom"] <= seen["height"], f"out of view: {seen}"
 
 
 @pytest.mark.parametrize("width", WIDTHS)
@@ -990,7 +1102,7 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     opens the newest turn's calls in order, one line each, and the log follows j and k. A Bash call
     shows its command highlighted as shell, an Edit its old and new text as a diff highlighted by
     the file's extension, a long Read is cut short, its line numbers dropped, and shows whole on
-    demand. Thinking shows where the transcript kept its text. A call shows the bytes it consumed and produced. Esc
+    demand. Thinking shows where the transcript kept its text. A call shows the bytes of the request it wrote and of the result it read, their tokens on hover. Esc
     closes it, the control opens it, l closes it."""
     page, _ = rendered
     write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
@@ -1004,7 +1116,8 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert [s for s in seen["after_jj"]["steps"] if s[0] == "thinking"] == [["thinking", "The grid wants a leading word."]]
     bash, ran = seen["bash"]
     assert (bash["lang"], bash["text"], bash["lit"], ran["text"]) == ("bash", "make test BASE=master", True, "321 passed")
-    assert seen["bash_size"] == "in ≈3 tok 10 B · out ≈17 tok 65 B", "the result it consumed and the request it produced, as compact JSON"
+    assert seen["bash_size"] == [["#g-wrote", "65 B"], ["#g-read", "10 B"]], "the result it consumed and the request it produced, as compact JSON"
+    assert seen["bash_tip"] == "the request it wrote: 65 bytes, ≈17 tokens\nthe result it read: 10 bytes, ≈3 tokens", "the detail, on hover"
     old, new, _ = seen["edit"]
     assert (old["cls"], old["lang"], old["text"], old["lit"]) == ("code del", "css", ".bar { color: red; }", True)
     assert (new["cls"], new["lang"], new["text"], new["lit"]) == ("code add", "css", ".bar { color: green; }", True)
@@ -1064,91 +1177,116 @@ def test_the_log_takes_the_keys_to_walk_open_and_close_its_steps(rendered: tuple
 
 
 def test_the_keys_stage_each_kind_of_item_and_the_review_shows_the_batch(waiting_page: Path) -> None:
-    """work-through-what-waits-one-item-at-a-time#P2, #P4 and #P5 on a page no hub frames: ] goes into
-    the band, a letter picks, p takes the agent's pick and takes it back, Enter takes it, d and x a
-    to-do's, u clears, s and o an artefact's seen (which stages nothing), n a note that stays on the
-    card it was opened on even with a ] typed in it, Esc in a note drops the edit; a reload keeps it
-    all and the card the reader was on; r reviews the batch, an artefact named by its record's path,
-    a seen artefact counted as dealt with, and Enter copies it, since no hub sends it; Esc leaves the
-    review, then the band; and r from the turns opens the review in one key."""
+    """work-through-what-waits-one-item-at-a-time#P2, #P4 and #P5, in the tasks of
+    what-waits-on-you-rethought, on a page no hub frames: ] goes into the tasks, a letter picks and
+    takes it back, d and x a to-do's, u clears, s marks an artefact seen and o opens it, marking
+    nothing; n a note that stays on the row it was opened on even with a ] typed in it, Esc in a note
+    drops the edit; a reload keeps it all; Enter opens a card; r reviews the batch, an artefact named
+    by its record's path and `seen`, and Enter copies it, since no hub sends it; Esc leaves the
+    review, the dialog, then the tasks; n with no item in focus says so; and r from the turns opens
+    the review in one key."""
     seen = probe(waiting_page, "stage")
-    (into, picked, pick, unpicked, taken, noted, todo, dismissed, done, cleared, redone, looked, opened, looked_noted, dropped,
-     seen_too, reloaded, review, copied, left, turns, reviewed) = (s for _, s in seen["steps"])
-    assert [s["card"] for s in (into, picked, pick, unpicked, taken, noted)] == ["Q1"] * 6 and into["inBand"], seen["steps"][:6]
-    assert (picked["chosen"], pick["chosen"], unpicked["chosen"], taken["chosen"]) == (["b"], ["a"], [], ["a"])
-    assert noted["staged"] == "staged: a · Push now · note: only after Friday]", noted
-    assert todo["card"] == "A1" and [s["staged"] for s in (dismissed, done, cleared, redone)] == [
-        "staged: dismissed", "staged: done", "", "staged: done"]
-    assert looked["card"] == "agent/show/lint/texts.html" and looked["staged"] == "" and "seen" in looked["ticks"][2], looked
-    assert "seen" in opened["ticks"][2] and opened["inBand"], opened
-    assert looked_noted["staged"] == "staged: note: the legend is wrong", looked_noted
-    assert dropped["card"] == "agent/show/lint/diff.html" and dropped["staged"] == "", "Esc kept the note it was to drop"
-    assert reloaded["card"] == "agent/show/lint/diff.html" and reloaded["tally"] == " · 3 staged", reloaded
-    assert [("st" in t, "seen" in t) for t in reloaded["ticks"]] == [(True, False), (True, False), (True, True), (False, True)], reloaded
-    batch = "Q1: a, only after Friday]\nA1: done\nagent/show/lint/texts.html: the legend is wrong"
+    (into, picked, over, unpicked, taken, noted, todo, dismissed, done, cleared, redone, looked, opened, looked_noted, dropped,
+     seen_too, reloaded, review, copied, back, left, out, turns, no_item, reviewed) = (s for _, s in seen["steps"])
+    assert [s["row"] for s in (into, picked, over, unpicked, taken, noted)] == ["Q1"] * 6 and into["inBand"], seen["steps"][:6]
+    assert (picked["picked"], over["picked"], unpicked["picked"], taken["picked"]) == (["b"], ["a"], [], ["a"])
+    assert noted["note"] == "Your note\nonly after Friday]", noted
+    assert todo["row"] == "A1" and [s["act"] for s in (dismissed, done, cleared, redone)] == [["dismissed"], ["done"], [], ["done"]]
+    assert looked["row"] == "agent/show/lint/texts.html" and looked["seen"] == "Seen", looked
+    assert opened["seen"] == "Seen" and opened["inBand"], opened
+    assert looked_noted["note"] == "Your note\nthe legend is wrong", looked_noted
+    assert dropped["row"] == "agent/show/lint/diff.html" and dropped["note"].startswith("Add a note"), "Esc kept the note it was to drop"
+    assert seen_too["seen"] == "Seen"
+    assert reloaded["staged"] == ["Q1", "A1", "agent/show/lint/texts.html", "agent/show/lint/diff.html"] and reloaded["badge"] == "4", reloaded
+    assert reloaded["card"] == "q1", reloaded
+    batch = "Q1: a, only after Friday]\nA1: done\nagent/show/lint/texts.html: seen, the legend is wrong\nagent/show/lint/diff.html: seen"
     assert review["review"] == batch and seen["copied"] == batch, (review, seen["copied"])
     assert review["stays"] == "Every item has an answer, or was seen.", review["stays"]
-    assert not left["inBand"] and left["review"] is None and not turns["inBand"], (left, turns)
-    assert reviewed["review"] == batch and reviewed["inBand"], reviewed
+    assert back["review"] is None and back["card"] == "q1", back
+    assert left["card"] is None and left["inBand"], left
+    assert not out["inBand"] and not turns["inBand"], (out, turns)
+    assert reviewed["review"] == batch, reviewed
 
 
-def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_sent_off_the_cards(waiting_page: Path) -> None:
+def test_in_a_hub_tab_the_staging_is_the_hubs_and_the_send_takes_the_lines_it_sent_off_the_tasks(waiting_page: Path) -> None:
     """#P2 and #P3 at the page's seam with the hub tab: what the hub kept is staged on load, a note on
     an item this render no longer shows among it; nothing goes before the review's Enter, which shows
-    the batch with the box's words below it, as they stand when the box last changed; once the hub sent it, the lines it sent leave the cards
-    and the staging, and one it left out (A1's) stays staged; the band starts again at the first item
-    still waiting, the keys in it."""
+    the batch with the box's words below it, as they stand when the box last changed; once the hub
+    sent it, the lines it sent leave the tasks and the staging, and one it left out (A1's) stays
+    staged; the tasks start again at the first item still waiting, the keys in them."""
     staged = {"Q1": {"pick": "b", "note": "kept by the hub"}, "agent/show/old/fig.html": {"note": "the axis is off"}}
     kept = {"staged": staged, "seen": [], "sent": {}}
-    seen = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=hub_tab(waiting_page, kept), send=True, keys=["]", "d", "r"])
-    assert seen["loaded"]["staged"] == "staged: b · Wait for the first review · note: kept by the hub", seen["loaded"]
+    seen = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=hub_tab(waiting_page, kept), send=True, keys=["]", "]", "d", "r"])
+    assert seen["loaded"]["picked"] == ["b"] and seen["loaded"]["note"] == "Your note\nkept by the hub", seen["loaded"]
     message = "Q1: b, kept by the hub\nA1: done\nagent/show/old/fig.html: the axis is off\n\nand go on"
     assert seen["typed"] == message[: -len(" on")] and seen["review"] == message and seen["before"] is None, seen
     assert seen["reviewing"] and not seen["reviewing_after"], "the hub's box reads whether the review is open to send what it shows"
-    assert seen["stays"] == "Not answered, so they stay: 2 to look at", seen["stays"]
+    assert seen["stays"] == "Not answered, so they stay: The six PR texts, The stack's diff", seen["stays"]
     assert seen["sent"] == "Q1: b, kept by the hub\nagent/show/old/fig.html: the axis is off\n\nand go on", seen["sent"]
     assert seen["saved"]["staged"] == {"A1": {"act": "done"}} and set(seen["saved"]["sent"]) == {"Q1"}, seen["saved"]
     after = seen["after"]
-    assert (after["tally"], after["ticks"], after["card"], after["where"]) == (" · 1 staged · 1 sent", 3, "A1", "1 of 3 · do"), after
+    assert (after["shown"], after["staged"], after["row"], after["badge"]) == (
+        ["A1", "agent/show/lint/texts.html", "agent/show/lint/diff.html"], ["A1"], "A1", "1"), after
     assert after["inBand"] and after["scroll"] == 0, after
 
 
 def test_a_change_staged_in_another_browser_shows_without_a_reload_and_leaves_a_note_being_typed(waiting_page: Path) -> None:
     """Told that another browser changed the staging, the page shows what the hub now holds. A note being typed stays as
-    typed, the other browser's pick on that item taken beside it; and a staging the hub dropped empties the cards."""
+    typed, the other browser's pick on that item taken beside it; and a staging the hub dropped empties the tasks."""
     doc = lambda staged: {"staged": staged, "seen": [], "sent": {}}
     seen = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=hub_tab(waiting_page, doc({})),
                  elsewhere=doc({"Q1": {"pick": "b"}}), while_noting=doc({"Q1": {"pick": "a", "note": "theirs"}}), emptied=None)
-    assert seen["loaded"]["tally"] == "", seen["loaded"]
-    assert (seen["told"]["card"], seen["told"]["staged"], seen["told"]["tally"]) == ("Q1", "staged: b · Wait for the first review", " · 1 staged"), seen["told"]
+    assert (seen["loaded"]["staged"], seen["loaded"]["badge"]) == ([], ""), seen["loaded"]
+    told = seen["told"]
+    assert (told["shown"][0], told["picked"], told["staged"], told["badge"]) == ("Q1", ["b"], ["Q1"], "1"), told
     assert seen["noting"] == "mine", seen
     assert seen["saved"]["staged"] == {"Q1": {"pick": "a", "note": "mine"}}, seen["saved"]
-    assert (seen["emptied"]["staged"], seen["emptied"]["tally"]) == ("", ""), seen["emptied"]
+    assert (seen["emptied"]["staged"], seen["emptied"]["badge"]) == ([], ""), seen["emptied"]
 
 
 def test_a_sent_item_comes_back_once_a_turn_ended_after_its_send(waiting_page: Path) -> None:
-    """A sent item stays off the cards until a turn that ended after the send is on the page, which
+    """A sent item stays off the tasks until a turn that ended after the send is on the page, which
     says whether it settled: Q1, sent before record 01 ended, waits again; A1, sent after, stays off."""
     page = waiting_page.read_text()
     assert 'data-at="' in page, "record 01 carries no time it ended"
     sent = {"Q1": 1790000000000, "A1": 1890000000000}  # 2026-09-21 and 2029-11-23, around 2026-09-23T01:36Z
     tab = hub_tab(waiting_page, {"staged": {}, "seen": [], "sent": sent})
     loaded = probe(waiting_page, "framed", root=str(waiting_page.parent), tab=tab)["loaded"]
-    assert (loaded["card"], loaded["ticks"], loaded["tally"]) == ("Q1", 3, " · 1 sent"), loaded
+    assert loaded["shown"] == ["Q1", "agent/show/lint/texts.html", "agent/show/lint/diff.html"], loaded
 
+
+def test_on_a_phone_an_artefact_and_a_turns_tool_calls_open_by_touch_and_the_tasks_say_a_turn_runs(waiting_page: Path) -> None:
+    """what-waits-on-you-rethought: no key reaches anything on a phone, so an artefact opens by a tap
+    on its row and a turn's tool calls by its button; the page opens on the tasks, which say a turn
+    is running while the live hook's file is there."""
+    calls = PREFIX + json.dumps({"prompt": "make the log live", "steps": []}) + "\n"
+    seen = probe(waiting_page, "phone", live=str(waiting_page.parent / LIVE), calls=calls)
+    assert seen["view"] == "tasks" and not seen["working_before"], seen
+    assert seen["working"] == "A turn is running: make the log live", seen
+    assert seen["opened"].endswith("agent/show/lint/texts.html"), seen
+    assert seen["log"].startswith("turn 01"), seen
 
 
 @pytest.mark.parametrize("width", WIDTHS)
 def test_a_questions_options_read_at_every_width(waiting_page: Path, width: int) -> None:
-    """At the hub sidebar's width an option's gives and costs, each named, stack under its words, which keep
-    the card's width; wider, they sit beside the words in columns of their own."""
+    """On a phone an option's leads to, gives and costs, each named, stack under its words, which keep
+    the card's width; wider, they sit beside the words in columns of their own. A row's tag opens the card."""
     seen = probe(waiting_page, "options", width=width)
-    words, gives, costs = seen["words"], seen["gives"], seen["costs"]
-    if width <= 900:
-        assert words["bottom"] <= gives["top"] + 1 and gives["bottom"] <= costs["top"] + 1, seen
+    words, leads, gives, costs = seen["words"], seen["leads"], seen["gives"], seen["costs"]
+    assert seen["shown"], "the row's tag did not open its card"
+    note = seen["note"]
+    assert note["inner"][0] - 1 <= note["left"] and note["right"] <= note["inner"][1] + 1, f"the note field leaves the column's content: {note}"
+    assert note["right"] - note["left"] >= note["inner"][1] - note["inner"][0] - 2, f"the note field is not the column's width: {note}"
+    for which in ("card_window", "review_window"):
+        at = seen[which]
+        assert (at["dialog"]["left"], at["dialog"]["top"], at["dialog"]["right"], at["dialog"]["bottom"]) == (0, 0, at["width"], at["height"]), at
+        assert all(at["covers"]), f"{which}: the backdrop does not cover the whole page: {at}"
+        assert abs((at["card"]["left"] + at["card"]["right"]) / 2 - at["width"] / 2) < 2, f"{which}: the card is not centred: {at}"
+    if width <= 704:
+        assert words["bottom"] <= leads["top"] + 1 and leads["bottom"] <= gives["top"] + 1 and gives["bottom"] <= costs["top"] + 1, seen
         assert words["right"] - words["left"] >= 0.8 * (seen["card"]["right"] - seen["card"]["left"]) and "gives" in seen["labelled"], seen
     else:
-        assert abs(words["top"] - gives["top"]) < 2 and words["right"] <= gives["left"] + 1 <= costs["left"], seen
+        assert abs(words["top"] - gives["top"]) < 2 and words["right"] <= leads["left"] + 1 <= gives["left"] + 1 <= costs["left"], seen
 
 
 if __name__ == "__main__":

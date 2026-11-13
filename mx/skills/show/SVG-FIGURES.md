@@ -7,7 +7,7 @@ Two other tools own neighbouring ground. **A chart**, anything where the reader 
 This file has two layers and they do not bind equally.
 
 - **Mechanics** are properties of the medium. They hold for any hand-placed SVG, including a deliberately strange one.
-- **The skin** is the house style, `/mx:house-style`, worn by a figure: its tokens and type, plus the node treatments and markers below. A figure that sits on GitHub's dark theme wears [`GITHUB-SKIN.md`](GITHUB-SKIN.md) instead. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way. A default aesthetic must never outrank the point of the picture.
+- **The skin** is the house style, `/mx:house-style`, worn by a figure: its tokens and type, plus the node treatments and markers below. A figure embedded in a markdown file GitHub renders (a README, a doc page, an issue) wears [`GITHUB-SKIN.md`](GITHUB-SKIN.md) by default: the same ink on a transparent ground, in a light and a dark render. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way. A default aesthetic must never outrank the point of the picture.
 
 ---
 
@@ -165,6 +165,7 @@ Everything else is layout convention, a few lines each.
 - **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in the house's `series-1` onward, at 0.18 fill opacity.
 - **Gantt**: tasks as rows, bars on a date axis, dependencies as thin elbows. 12 tasks max.
 - **Exploded view**: one physical thing with its parts pulled apart along the axis they assemble on, each labelled outside the part on a leader line.
+- **A module's depth, before and after** (a deepening): side by side, and varied across a page of them. A **mass diagram** gives each module one rectangle for the interface and one for the implementation: shallow is nearly the same height, deep a short interface over a tall implementation. A **cross-section** stacks the layers a call passes through: many thin bands become one thick band named for the responsibility. A **call-graph collapse** nests a tree of calls as boxes, and after shows one box with the now-internal calls faded inside it. A **graph** marks the leaking edges when the point is who calls whom.
 
 ---
 

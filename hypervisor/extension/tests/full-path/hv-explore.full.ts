@@ -31,7 +31,7 @@ standInModels(agent, anthropic.url);
 const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: home, HV_HOME: home, HV_STORE: store, OPTCHAT_HOME: path.join(dir, "optchat"), HV_PROFILE: "hv", PI_CODING_AGENT_DIR: agent, PI_OFFLINE: "1" };
 const pi = [process.execPath, PI, "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-session", "-e", path.join(EXTENSION, "src/live.ts"), "--model", "stand-in/claude-opus-5-5"];
 /** The TUI's start, as `hv` passes it: a detached session carrying the environment pi runs in. */
-const start = ["tmux", "new-session", "-d", "-s", "hypervisor", ...Object.entries(env).filter(([k]) => /^(PATH|HOME|HV_|OPTCHAT_|PI_)/.test(k)).flatMap(([k, v]) => ["-e", `${k}=${v}`]), ...pi];
+const start = ["tmux", "new-session", "-d", "-s", "hypervisor", "-n", "hv", ...Object.entries(env).filter(([k]) => /^(PATH|HOME|HV_|OPTCHAT_|PI_)/.test(k)).flatMap(([k, v]) => ["-e", `${k}=${v}`]), ...pi];
 
 after(async () => {
 	try {
@@ -45,7 +45,7 @@ const hvExplore = (...args: string[]) => execFileSync(process.execPath, [HV_EXPL
 const ended = () => (existsSync(path.join(store, "explore.jsonl")) ? readFileSync(path.join(store, "explore.jsonl"), "utf8").split("\n").filter((line) => line.includes('"ended"')).length : 0);
 async function runsEnded(n: number) {
 	for (const deadline = Date.now() + 60_000; ended() < n && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 300));
-	assert.equal(ended(), n, `run ${n} never ended; the pane reads:\n${execFileSync("tmux", ["capture-pane", "-p", "-t", "=hypervisor:"], { env, encoding: "utf8" })}`);
+	assert.equal(ended(), n, `run ${n} never ended; the pane reads:\n${execFileSync("tmux", ["capture-pane", "-p", "-t", "=hypervisor:=hv"], { env, encoding: "utf8" })}`);
 }
 
 test("hv explore starts the closed TUI with the run, then types the next run into the open TUI, and --found reads it back", async () => {

@@ -20,7 +20,7 @@
 .log .step > button:hover { background: var(--wash-ink); }
 .log .step .verb { flex: none; color: var(--muted); }
 .log .step .subject { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--body); }
-.log .step .size { flex: none; color: var(--muted); opacity: 0.7; font-size: 0.7rem; }
+.log .step .size { flex: none; display: inline-flex; gap: 0.6em; align-self: center; color: var(--muted); opacity: 0.7; font-size: 0.7rem; }
 .log .step .took { flex: none; color: var(--muted); opacity: 0.7; }
 .log .step .failed { flex: none; color: light-dark(#9c3d22, #d98a6c); }
 .log .step .took.running { color: var(--accent); opacity: 1; }
