@@ -219,7 +219,7 @@ button.id:hover { color: var(--accent); }
 .card-dialog { position: fixed; inset: 0; z-index: 8; display: grid; place-items: start center; padding: 6vh 1rem 1rem; background: color-mix(in srgb, var(--strong) 35%, transparent); overflow-y: auto; }
 .card-dialog[hidden] { display: none; }
 .d-card { width: min(56rem, 100%); box-sizing: border-box; padding: 1.25rem 1.5rem 1.1rem; background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); container-type: inline-size; }
-.recap { margin-top: 0.8rem; max-width: var(--measure); padding: 0.5rem 0.8rem; border-left: 2px solid var(--edge); }
+.recap { margin-top: 0.8rem; max-width: var(--measure); }
 .card .links { margin-top: 0.8rem; }
 /* the timeline: an artefact's type before it, and one the user looked at marked */
 .column li .t-type { padding: 0; margin-right: 0.3rem; vertical-align: -2px; }
