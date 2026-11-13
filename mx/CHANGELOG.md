@@ -1,3 +1,10 @@
+## 1.0.119
+
+- Session page cards read their recap as body text, not as a quote
+  The card's recap loses its left rule and indent (page.css), so a question's or to-do's content no longer looks like a blockquote; the rule now only marks text that is actually quoted, the user's own echoed words. Checked against a rendered card before and after; make check, make test and the session page's browser tests pass.
+- show: a figure in a GitHub README wears the house ink on a transparent ground
+  The GitHub skin in mx/skills/show is rewritten. A figure embedded in a markdown file GitHub renders now takes the house style's ink tokens, surfaces as washes mixed with transparent, and ships as a light and a dark PNG embedded through <picture>, in place of the grey-and-orange Geist skin that covered the dark theme alone. SVG-FIGURES.md's pointer names it the default for such a figure.
+
 ## 1.0.118
 
 - Session page's timeline links fit beside the hub's dot, and cards and artefacts open by key
