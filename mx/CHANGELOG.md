@@ -1,3 +1,8 @@
+## 1.0.120
+
+- feat(session-page): a change staged in another browser shows without a reload
+  When the session page sits inside a container hub tab, it now picks up changes another browser makes to the staged answers without a reload: the hub tab calls its waitingChanged, and the page waits for its own pending saves, fetches the hub's copy and redraws. If the reader changes something here in the meantime, that newer change wins and goes to the other browser instead. A note the reader is typing stays as typed, though the other browser's choice on that item is still taken. Before, a second open browser held a stale copy, and its next pick wrote that copy over the first browser's picks.
+
 ## 1.0.119
 
 - Session page cards read their recap as body text, not as a quote
