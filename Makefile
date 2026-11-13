@@ -22,11 +22,14 @@ check:
 	@uv run --quiet tools/show_conventions.py
 	@echo "manifests parse, hooks point at executables, bin/ answers --help, every claude launch names what it inherits, every skill approves its own ! lines and no model-invoked one but dispatch carries allowed-tools, no two scripts under mx share a name and no check imports another, no file under mx defines one name twice, every README image was rendered from its sources as they are now, every show directory belongs to live work, no render is tracked beside its source"
 
-# One test process per core; JOBS=1 runs them one after another.
-JOBS ?= auto
+# One test process per fast CPU thread; JOBS=1 runs them one after another. On a CPU with efficiency
+# cores, processes beyond the performance threads use more CPU and finish no sooner. Only such a CPU
+# has cpu_core; on any other, auto gives one per thread.
+JOBS ?= $(shell taskset -c "$$(cat /sys/devices/cpu_core/cpus 2>/dev/null)" nproc 2>/dev/null || echo auto)
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
-UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with 'markdown-it-py[linkify]' pytest -p no:cacheprovider
+# nice: a run fills every thread it is given, and whatever else the machine is doing should go first.
+UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 nice -n 10 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with 'markdown-it-py[linkify]' pytest -p no:cacheprovider
 PYTEST = $(UV_PYTEST) -n $(JOBS)
 # The full-path checks test-full-path runs: every one, or those in the test files TESTS names on
 # the command line. Never read from the environment, so an exported TESTS cannot narrow a release.
