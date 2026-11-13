@@ -131,7 +131,7 @@ If you find a tool that would help you accomplish your task more efficiently / e
 </tools>
 
 <subagents>
-Read source, docs and knowledge files yourself: the mental model has to form in your context, and its 1M tokens hold them. Hand reading to a subagent only where the scale forces it: planning across many aspects of a huge codebase, or 2-3 isolated research paths in parallel.
+Read source, docs and knowledge files yourself: the mental model has to form in your context, and its 1M tokens hold them. Hand reading to a subagent only where the scale forces it: planning across many aspects of a huge codebase, or isolated research paths in parallel.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 When a subagent's output matters, tell it where to write its report and read that file; the return channel is not reliable, and `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage. A subagent that goes idle without handing back a report has NOT stalled: read its report file, or failing that its transcript under `~/.claude/projects/<project>/<session-id>/subagents/` (hundreds of KB; extract the last assistant text block, never read it whole), before redoing any of the work yourself.
 Subagents default to opus, whatever the session model is, and run at the session's effort unless the spawn names one, which it does where a skill or this file asks for it; a fork always runs at the session's.
