@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Starts the hypervisor, pi's TUI with our pi-optchat fork and the hypervisor's extension, in the tmux session
-# `hypervisor`, or attaches to it when it runs. Its memory is the OptChat profile $HV_PROFILE (default `hv`); each start
+# Starts the hypervisor, pi's TUI with our pi-optchat fork and the hypervisor's extension, in the window `hv` of the tmux
+# session `hypervisor`, and takes you there. The session may hold other windows; only the window `hv` counts as the
+# hypervisor running, so a session left without it gets the window anew. Its memory is the OptChat profile $HV_PROFILE (default `hv`); each start
 # is a new pi session on it, since the memory, not pi's transcript, carries the conversation.
 #
 # Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
@@ -16,7 +17,7 @@
 # `hv mail` prints what the hypervisor and Jarvis sent each other, as one timeline (`hv mail --help`).
 set -euo pipefail
 
-here=$(cd "$(dirname "$0")" && pwd)
+here=$(dirname "$(readlink -f "$0")")
 extension=$here/extension
 store=${HV_STORE:-$HOME/.local/share/hypervisor}
 profile=${HV_PROFILE:-hv}
@@ -85,14 +86,19 @@ pi=(node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
 
 env=(-e "HV_STORE=$HV_STORE" -e "OPTCHAT_HOME=$OPTCHAT_HOME" -e "PI_CODING_AGENT_DIR=$PI_CODING_AGENT_DIR" -e "HV_PROFILE=$HV_PROFILE" -e PI_CACHE_RETENTION=long)
 
-start=(tmux new-session -d -s hypervisor -c "$HOME" "${env[@]}" "${pi[@]}")
+if tmux has-session -t =hypervisor 2>/dev/null; then
+	start=(tmux new-window -d -t =hypervisor: -n hv -c "$HOME" "${env[@]}" "${pi[@]}")
+else
+	start=(tmux new-session -d -s hypervisor -n hv -c "$HOME" "${env[@]}" "${pi[@]}")
+fi
 
 if [[ ${1:-} == explore ]]; then
 	shift
 	exec node "$extension/src/hv-explore.ts" "$@" -- "${start[@]}"
 fi
 
-if ! tmux has-session -t =hypervisor 2>/dev/null; then
+if ! tmux has-session -t =hypervisor:=hv 2>/dev/null; then
 	"${start[@]}"
 fi
+tmux select-window -t =hypervisor:=hv
 if [[ -n ${TMUX:-} ]]; then exec tmux switch-client -t =hypervisor; else exec tmux attach -t =hypervisor; fi
