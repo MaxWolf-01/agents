@@ -80,7 +80,7 @@ fi
 ln -sfn "$here/live/instructions.md" "$profiles/$profile/AGENTS.md"
 
 pi=(node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
-	--model anthropic/claude-opus-5-5 --thinking medium
+	--model anthropic/claude-fable-5-2 --thinking medium
 	--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates
 	-e "$extension/src/live.ts" -e "$fork/src/index.ts" --optchat-profile "$profile")
 
