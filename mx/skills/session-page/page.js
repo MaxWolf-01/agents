@@ -153,8 +153,9 @@ for (const ev of ["wheel", "touchstart"]) pane.addEventListener(ev, () => (follo
 // dialog, which opens one card at a time. The keys go to the tasks while the focus is in them ([ and ]
 // put it there). What is staged is kept as the reader stages it: by the hub tab the page sits in,
 // through the `hubWaiting` the container hub's tab defines (dotfiles' bin/container-hub.html), which
-// also sends the batch; or, where no hub frames the page, in this browser's storage, and the review
-// then copies the batch instead of sending it. Nothing reaches the session but by a send from the review.
+// also sends the batch and tells the page when another browser changed what is staged; or, where no
+// hub frames the page, in this browser's storage, and the review then copies the batch instead of
+// sending it. Nothing reaches the session but by a send from the review.
 
 const dialog = document.getElementById("card-dialog"), review = document.getElementById("review")
 const rows = waiting ? [...waiting.querySelectorAll(".t-row[data-handle]")] : []
@@ -183,8 +184,10 @@ const batch = () => [...items().map((r) => r.dataset.handle).filter(goes), ...or
 const words = () => (hub ? hub.words(window) : "").trim()
 
 let saving = Promise.resolve()
+let changes = 0
 // Each save waits for the one before it, so the hub keeps the newest.
 const persist = () => {
+  changes++
   const doc = JSON.parse(JSON.stringify(state))
   if (!hub) {
     try { localStorage.setItem(STAGED, JSON.stringify(doc)) } catch (e) { say(`not kept: this browser's storage refused it (${e.name})`) }
@@ -229,6 +232,24 @@ const read = !waiting ? Promise.resolve()
         if (hub) hub.restaged(window)
       })
 
+// Another browser changed what is staged: the page reads it again once its own saves are in, and shows it. A change
+// made here meanwhile is the newer, and goes to the other browser in turn. A note being typed stays as typed.
+window.waitingChanged = () => {
+  const asked = ++changes
+  return read.then(() => saving).then(() => hub.load(window)).then((r) => {
+    if (!r.ok || asked !== changes) return
+    const typed = noting !== null ? st(noting).note : null
+    adopt(r.staged || { staged: {}, seen: [], sent: {} })
+    if (noting !== null) {
+      const { note: _, ...kept } = st(noting)
+      const s = typed ? { ...kept, note: typed } : kept
+      if (Object.keys(s).length) state.staged[noting] = s
+      else delete state.staged[noting]
+    }
+    draw()
+    hub.restaged(window)
+  }, () => {})
+}
 // the hub tab's side: the batch a send from the review carries, and the lines that went, which leave the tasks
 window.waitingBatch = () => (loaded ? batch() : "")
 window.waitingStaged = () => (loaded ? items().filter((r) => goes(r.dataset.handle)).length + orphans().length : 0)
