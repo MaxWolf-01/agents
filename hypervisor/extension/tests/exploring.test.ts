@@ -277,7 +277,7 @@ test("with the hypervisor's TUI open, hv explore types the command into its pane
 	writeFileSync(path.join(open, "tmux"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${calls}"\n`, { mode: 0o755 });
 	const run = await hvExplore(["20", "the", "news"], [recorder, started], open);
 	assert.equal(run.code, 0, run.out);
-	assert.deepEqual(readFileSync(calls, "utf8").trimEnd().split("\n"), ["has-session -t =hypervisor", "send-keys -t =hypervisor: -l /explore 20 the news", "send-keys -t =hypervisor: Enter"]);
+	assert.deepEqual(readFileSync(calls, "utf8").trimEnd().split("\n"), ["has-session -t =hypervisor:=hv", "send-keys -t =hypervisor:=hv -l /explore 20 the news", "send-keys -t =hypervisor:=hv Enter"]);
 	assert.equal(existsSync(started), false);
 });
 

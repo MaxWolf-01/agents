@@ -12,12 +12,11 @@ export const USAGE = `usage: hv explore N [direction] [--tokens T] [--until-week
 
 Runs up to N explore steps on the hypervisor's own memory, as /explore does in its TUI:
 ${COMMAND.split("\n").slice(1).join("\n")}
-The command goes to the TUI, which hv starts when it does not run; the run goes on there (tmux attach -t hypervisor).
+The command goes to the TUI, which hv starts when it does not run; the run goes on there (hv takes you there).
 With --found, prints what the latest run found, from $HV_STORE/explore.jsonl.`;
 
-/** The tmux session `hv` runs the TUI in, and its pane: a bare `=session` names no pane, so send-keys takes the colon. */
-const SESSION = "=hypervisor";
-const PANE = `${SESSION}:`;
+/** The tmux window `hv` runs the TUI in. The session may hold other windows, so a bare session would reach whichever is active. */
+const WINDOW = "=hypervisor:=hv";
 
 /** What the latest run in the store's journal found, step by step, and how it ended, as text; or that no run is there. */
 export async function found(store: string): Promise<string> {
@@ -36,10 +35,10 @@ export async function found(store: string): Promise<string> {
 	return out.join("\n");
 }
 
-/** Whether the hypervisor's TUI runs, in its tmux session. */
+/** Whether the hypervisor's TUI runs, in its tmux window. */
 function tuiOpen(): boolean {
 	try {
-		execFileSync("tmux", ["has-session", "-t", SESSION], { stdio: "ignore" });
+		execFileSync("tmux", ["has-session", "-t", WINDOW], { stdio: "ignore" });
 		return true;
 	} catch {
 		return false;
@@ -72,9 +71,9 @@ if (import.meta.main) {
 	const command = `/explore ${args.join(" ")}`;
 	if (tuiOpen()) {
 		// Literal keys, then Enter on its own, so nothing in the direction reads as a key name.
-		execFileSync("tmux", ["send-keys", "-t", PANE, "-l", command]);
-		execFileSync("tmux", ["send-keys", "-t", PANE, "Enter"]);
-		console.log("The hypervisor's TUI is open, so /explore was typed into its pane: see there that the run started (tmux attach -t hypervisor). A draft in its editor would have taken the text.");
+		execFileSync("tmux", ["send-keys", "-t", WINDOW, "-l", command]);
+		execFileSync("tmux", ["send-keys", "-t", WINDOW, "Enter"]);
+		console.log("The hypervisor's TUI is open, so /explore was typed into its pane: see there that the run started (hv takes you there). A draft in its editor would have taken the text.");
 		process.exit(0);
 	}
 	if (!start.length) {
@@ -82,5 +81,5 @@ if (import.meta.main) {
 		process.exit(2);
 	}
 	execFileSync(start[0]!, [...start.slice(1), command], { stdio: "inherit" });
-	console.log("The hypervisor's TUI was started with /explore as its first message: see there that the run started (tmux attach -t hypervisor).");
+	console.log("The hypervisor's TUI was started with /explore as its first message: see there that the run started (hv takes you there).");
 }
