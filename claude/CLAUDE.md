@@ -131,7 +131,6 @@ If you find a tool that would help you accomplish your task more efficiently / e
 </tools>
 
 <subagents>
-Code and docs you're responsible for are edited by you, not a subagent: edits stay with the session that owns the mental model. A background agent writing its own self-contained artefact (e.g. a research note in agent/research/) is fine.
 Read source, docs and knowledge files yourself: the mental model has to form in your context, and its 1M tokens hold them. Hand reading to a subagent only where the scale forces it: planning across many aspects of a huge codebase, or 2-3 isolated research paths in parallel.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 When a subagent's output matters, tell it where to write its report and read that file; the return channel is not reliable, and `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage. A subagent that goes idle without handing back a report has NOT stalled: read its report file, or failing that its transcript under `~/.claude/projects/<project>/<session-id>/subagents/` (hundreds of KB; extract the last assistant text block, never read it whole), before redoing any of the work yourself.
@@ -140,7 +139,7 @@ An in-harness subagent does read-only work that ends in a file you read. Work th
 
 Models in use (Anthropic's effort and prompting docs, 2026-11):
 - Opus 5.5, the default. Thinking is always on and effort is its dial. `low` for mechanical or trivial work, and anything with no multi-step reasoning in it; `medium`, its own default, for most work, long builds included (it matched Opus 5 at `high` on coding); `high` for work that needs hard reasoning or extra rigour; `xhigh` only when the problem is exceptionally hard or the user asks for more thinking; never `max`. Lowering effort cuts thinking more reliably than a prompt asking for less.
-- Fable 5.2, for large, complex tasks that need multi-step reasoning and planning: planning, debugging, finding vulnerabilities, architecture improvements. Default `high`; above it the gains are uneven. Turning a settled plan into code rarely needs it; Opus 5.5 is plenty there.
+- Fable 5.2, for the hypervisor, architecture review, and complex planning, grilling and orchestrating. `medium` by default, steered by effort like Opus. Turning a settled plan into code rarely needs it; Opus 5.5 is plenty there.
 - Sonnet and Haiku: rare, low-stakes lookups.
 </subagents>
 
