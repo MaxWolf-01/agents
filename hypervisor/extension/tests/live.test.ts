@@ -151,7 +151,7 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		assert.deepEqual(after("-e").filter((e) => !e.includes("=")), [path.resolve(import.meta.dirname, "../src/live.ts"), path.join(fork, "src", "index.ts")], "the extensions, this one first, so OptChat journals max's message with its path line");
 		assert.ok(after("-e").includes("PI_CACHE_RETENTION=long"));
 		assert.deepEqual(after("--optchat-profile"), ["hv"]);
-		assert.deepEqual(after("--model"), ["anthropic/claude-opus-5-5"]);
+		assert.deepEqual(after("--model"), ["anthropic/claude-fable-5-2"]);
 		for (const off of ["--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files"]) assert.ok(started.includes(off), off);
 		assert.equal(readlinkSync(instructions), path.resolve(import.meta.dirname, "../../live/instructions.md"), "the profile's instructions link to live/'s, over the copy an earlier start left");
 
