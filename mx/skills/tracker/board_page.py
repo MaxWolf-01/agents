@@ -402,8 +402,8 @@ VIEW_JS = r"""
   const hrefOf = (a) => a && (a.getAttribute("href") ?? a.getAttribute("xlink:href"));
 
   function markCur(root, id) {
-    for (const n of root.querySelectorAll("g.node.cur")) n.classList.remove("cur");
-    if (id) root.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
+    for (const n of root.querySelectorAll(".pele-node.cur")) n.classList.remove("cur");
+    if (id) root.querySelector('.pele-node[data-id="' + id + '"]')?.classList.add("cur");
   }
 
   // A graph at full size is wider than the box it sits in, so the box is dragged as well as
@@ -467,6 +467,22 @@ VIEW_JS = r"""
     return view.key;
   }
 """
+
+
+# A graph node's ink by its class, as house tokens: fill, stroke, text, and the stroke's dash
+# pattern where it has one. The work that wants the user wears the accent, the rest steps back to
+# the edge; ghost is a done ticket shown as context, and proposed is not ruled on: both dashed.
+GRAPH_INK = {
+    "review": ("wash", "accent", "strong", ""), "open": ("ground-2", "body", "body", ""),
+    "claimed": ("ground-2", "muted", "body", ""), "blocked": ("ground", "edge", "muted", ""),
+    "proposed": ("ground", "muted", "body", "4 3"), "done": ("ground", "edge", "muted", ""),
+    "ghost": ("ground", "edge", "muted", "2 3"),
+}
+GRAPH_STYLE = "".join(
+    f"  .pele-node.{cls} rect {{ fill: var(--{fill}); stroke: var(--{stroke});{f' stroke-dasharray: {dash};' if dash else ''} }}\n"
+    f"  .pele-node.{cls} .pele-label {{ fill: var(--{text}); }}\n"
+    for cls, (fill, stroke, text, dash) in GRAPH_INK.items()
+)
 
 
 # The page's stylesheet: the house tokens, then the board's own rules. `${columns}` is where PAGE
@@ -595,9 +611,10 @@ ${columns}
   /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
      that has not come back yet would widen the column it sits in */
   .mermaid:not(:has(svg)) { display: none; }
-  .mermaid svg { max-width: 100%; height: auto; }
-  .side g.node.cur rect, .side g.node.cur polygon,
-    .gfbody g.node.cur rect, .gfbody g.node.cur polygon { stroke-width: 2.5px !important; }
+  /* a drawing's colours are these tokens, so it follows the scheme without being drawn again */
+  .pele { --pele-bg: var(--ground); --pele-fg: var(--body); --pele-muted: var(--muted); --pele-line: var(--muted);
+    --pele-surface: var(--ground); --pele-surface-alt: var(--ground); --pele-border: var(--edge); }
+""" + GRAPH_STYLE + r"""  .pele-node.cur rect { stroke-width: 2.5px; }
 
   /* ---- the same graph at full size: over the board, or in a window of its own ---- */
   .side .gbody { cursor: zoom-in; }  /* the preview opens the full size view */
@@ -815,13 +832,6 @@ PAGE = Template(r"""<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<script type="importmap">
-{"integrity": {
-  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs": "sha256-xBkLW+qMellY+DuZMpYPTCrktZEq5EF2eXDqaqcznEU=",
-  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/chunk-SP2CHFBE.mjs": "sha256-OlxTRTJXQsIIjtqqpnZh8ACC0go+GQLkhkrF/rXpGPk=",
-  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/render-FL5BWEWF.mjs": "sha256-Hnzk53loGUiOW5BNdXfD72ZHqAiFm6ndvA8CAGoQZns="
-}}
-</script>
 <script>
   // The scheme before first paint: ?theme= pins it, for a screenshot or a layout check; else the
   // switch's last answer, else the system's.
@@ -866,7 +876,6 @@ ${groups}
     <div class="g" data-tree=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
     <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine, from cdn.jsdelivr.net, did not arrive, or arrived other than its pinned copy</div>
-    <div class="gnote" id="gundrawn" hidden>the graph could not be drawn: a piece of its engine, from cdn.jsdelivr.net, did not arrive, or arrived other than its pinned copy; a reload tries again</div>
   </div>
 </aside>
 </main>
@@ -910,10 +919,9 @@ ${groups}
     const off = new Set(JSON.parse(localStorage.getItem("board-off:" + document.title) ?? "[]"));
     for (const b of document.querySelectorAll(".treechip")) b.classList.toggle("off", off.has(b.dataset.tree));
     for (const t of document.querySelectorAll(".ticket")) t.classList.toggle("off", off.has(t.dataset.tree));
-    // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid.
-    // Keyed by the scheme too, since mermaid bakes the palette into the SVG.
+    // re-inject cached SVGs: an unchanged graph paints before the engine has arrived
     for (const el of document.querySelectorAll(".mermaid")) {
-      const hit = cache[el.dataset.key + "@" + document.documentElement.dataset.theme];
+      const hit = cache[el.dataset.key];
       if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
     }
     if (saved) {
@@ -928,81 +936,42 @@ ${groups}
 </script>
 
 <script type="module">
-  // The graph engine and its layout come from the CDN the first time a graph is drawn, so a board
-  // with no way to the CDN loses its graph and nothing else. A failed load is not retried. Every
-  // file is pinned by hash, the layout's chunks through the import map in the head: the local server
-  // that opens this page also serves every agent directory to it, so a file changed at the CDN is
-  // refused, and the board says the engine did not arrive. mermaid comes as its one-file classic build, which needs
-  // one pin where its module build would need one per chunk.
-  const MERMAID = ["https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js",
-                   "sha256-WB7X10vZBI0OOpE2OSfXLvIpQtdyJUayf3zCnjU5Drg="];
-  const ELK = "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs";
-  const classic = ([src, integrity]) => new Promise((loaded, failed) => {
-    const s = Object.assign(document.createElement("script"), { src, integrity, crossOrigin: "anonymous" });
-    // the classic build draws every .mermaid on the page at window load unless told not to
-    s.onload = () => { globalThis.mermaid.startOnLoad = false; loaded(globalThis.mermaid); };
-    s.onerror = () => failed(new Error("refused or missing: " + src));
-    document.head.append(s);
-  });
-  let mermaid = null, loading = null;
+  // The graph engine comes from the CDN the first time a graph is drawn, so a board with no way to
+  // the CDN loses its graph and nothing else. A failed load is not retried. Its one file is pinned by
+  // hash: the local server that opens this page also serves every agent directory to it, so a file
+  // changed at the CDN is refused, and the board says the engine did not arrive.
+  const PELE = ["https://cdn.jsdelivr.net/npm/pele@1.13.0/dist/pele.global.js",
+                "sha256-CwpGxXpaaXFnDAn17EBmcFvXhQX5D9Ea32JgMl76CRA="];
+  let loading = null;
   function engine() {
-    if (loading) return loading;
-    loading = Promise.all([classic(MERMAID), import(ELK)]).then(([m, elk]) => {
-      mermaid = m;
-      mermaid.registerLayoutLoaders(elk.default);
-      setupMermaid();
-      return mermaid;
-    });
+    loading ??= new Promise((loaded, failed) => {
+      const [src, integrity] = PELE;
+      const s = Object.assign(document.createElement("script"), { src, integrity, crossOrigin: "anonymous" });
+      s.onload = loaded;
+      s.onerror = () => failed(new Error("refused or missing: " + src));
+      document.head.append(s);
+    }).then(() => document.fonts.ready);  // a label is measured as it is drawn, so in the board's own font
     loading.catch((e) => console.error("the graph engine did not load:", e));
     return loading;
   }
   const drawable = () => engine().then(() => true, () => false);
-  const unloaded = document.getElementById("gunloaded"), undrawable = document.getElementById("gundrawn");
-  // the engine fetches the rest of itself while it draws, so a draw can fail after the engine loaded
-  const drawOf = (id, src) => mermaid.render(id, src + "\n" + classDefs)
-    .catch((e) => console.error("the graph did not draw:", e));
+  const unloaded = document.getElementById("gunloaded");
+  // A drawing carries no colour of its own: the stylesheet inks it, by its nodes' classes, in
+  // whichever scheme is on show.
+  function drawOf(src) {
+    try {
+      return pele.render(src, { fontFamily: getComputedStyle(document.body).getPropertyValue("--font-body").trim(), fontSize: 13 }).svg;
+    } catch (e) {
+      console.error("the graph did not draw:", e);
+      return "";
+    }
+  }
 
   // What the two full size views do, shared with the window of its own, which runs its own copy
   // (VIEW_JS).
 ${viewjs}
 
-  // Mermaid bakes the colours into the SVG, and a light-dark() token never resolves through
-  // getPropertyValue, so every colour is read off a probe element in the scheme on show, and read
-  // again when the scheme switches. A node's class names its tokens (board.GRAPH_INK).
-  const probe = document.createElement("span");
-  probe.style.display = "none";
-  document.body.append(probe);
-  const rgb = (name) => { probe.style.color = "var(" + name + ")"; return getComputedStyle(probe).color.match(/[\d.]+/g).map(Number); };
-  // mermaid's classDef parser takes no rgba(), so a translucent token is laid over the ground and written as hex
-  const hex = ([r, g, b, a = 1], [R, G, B] = [0, 0, 0]) =>
-    "#" + [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
-  let classDefs = "";
-  function setupMermaid() {
-    const ground = rgb("--ground");
-    const ink = (token) => hex(rgb("--" + token), ground);
-    const c = Object.fromEntries(["ground", "edge", "muted", "body"].map((n) => [n, ink(n)]));
-    classDefs = Object.entries(${graphink}).map(([s, [fill, stroke, text, dash]]) =>
-      "  classDef " + s + " fill:" + ink(fill) + ",stroke:" + ink(stroke) + ",color:" + ink(text) +
-      (dash ? ",stroke-dasharray:" + dash : "")).join("\n");
-    // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
-    // mode only when its measured width equals the wrap width exactly, and the
-    // measurement misses by a fraction of a pixel at any page zoom other than 100%
-    // and at some device scale factors (1.75 and 2.225, though not 1.25 or 2), so
-    // every long label stays on one line and clips (mermaid-js/mermaid#7794).
-    // SVG labels wrap by mermaid's own measure.
-    mermaid?.initialize({
-      startOnLoad: false, suppressErrorRendering: true, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
-      elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
-      themeVariables: {
-        fontFamily: getComputedStyle(document.body).getPropertyValue("--font-body").trim(), fontSize: "13px",
-        primaryColor: c.ground, primaryTextColor: c.body, primaryBorderColor: c.edge, lineColor: c.muted,
-        clusterBkg: c.ground, clusterBorder: c.edge, titleColor: c.muted,
-      },
-    });
-  }
-  setupMermaid();
-
-  let seq = 0, drawing = 0;
+  let drawing = 0;
   // data-drawing on the root counts the calls under way, so "0" is the page's word that the graph
   // on show has settled, drawn or not; something that has to see the drawing waits on it.
   async function renderGraphs() {
@@ -1010,8 +979,6 @@ ${viewjs}
     try { await drawGraphs(); } finally { document.documentElement.dataset.drawing = --drawing; }
   }
   async function drawGraphs() {
-    // mermaid.render (string -> svg), never mermaid.run: run's in-DOM processing
-    // contaminates across the page's many diagrams, render is hermetic per call.
     // Only the graph on show renders; the others wait for their turn.
     // What is drawn already, or restored from the svg cache, is left as it is; the composed graph
     // with every tree hidden has no source, and its note shows instead.
@@ -1021,31 +988,12 @@ ${viewjs}
     // asked again after the wait, which can outlast the cursor's stay on the graph that started it
     unloaded.hidden = drawn || !undrawn().length;
     for (const el of drawn ? undrawn() : []) {
-      if (el.querySelector("svg")) continue;  // drawn by a call that started before this one
       el.dataset.src = el.textContent;
-      const done = await drawOf("m" + Date.now() + "_" + seq++, el.dataset.src);
-      // a failed graph is left undrawn, so the next call tries it again
-      if (!done) { el.dataset.failed = ""; continue; }
-      delete el.dataset.failed;
-      el.innerHTML = done.svg;
-      nodeHover(el);
+      el.innerHTML = drawOf(el.dataset.src);
     }
-    undrawable.hidden = !document.querySelector(".g:not([hidden]) .mermaid[data-failed]");
     markNode();
     paintFull();
   }
-
-  // Every node carries its full title as a native tooltip.
-  function nodeHover(root) {
-    for (const n of root.querySelectorAll("g.node")) {
-      const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
-      // each wrapped row is its own tspan with no space at the boundary, so join the rows
-      const rows = [...n.querySelectorAll(".text-outer-tspan")].map((r) => r.textContent.trim());
-      t.textContent = (rows.length ? rows.join(" ") : n.textContent).replace(/\s+/g, " ").trim();
-      n.prepend(t);
-    }
-  }
-  for (const el of document.querySelectorAll(".mermaid")) if (el.querySelector("svg")) nodeHover(el);
 
   // ---- state: hidden trees, the cursor row, the graph mode ----
   const { saved, off, cache } = window.boardState;
@@ -1104,7 +1052,7 @@ ${viewjs}
     for (const f of parts.trees) {
       const nodes = f.nodes.filter((n) => keep.has(n.id));
       if (!on(f.name) || !nodes.length) continue;
-      lines.push('  subgraph S_b_' + f.name.replace(/[^a-zA-Z0-9]/g, "_") + '["' + f.name + '"]');
+      lines.push('  subgraph S_' + f.name.replace(/[^a-zA-Z0-9]/g, "_") + '["' + f.name + '"]');
       for (const n of nodes) lines.push(...n.lines);
       lines.push("  end");
     }
@@ -1114,8 +1062,8 @@ ${viewjs}
     delete pre.dataset.src;
     pre.hidden = !edges.length;
     g.querySelector(".gnote").hidden = !!edges.length;
-    const hit = cache[key + "@" + document.documentElement.dataset.theme];
-    if (hit && hit.src === pre.textContent) { pre.dataset.src = hit.src; pre.innerHTML = hit.svg; nodeHover(pre); }
+    const hit = cache[key];
+    if (hit && hit.src === pre.textContent) { pre.dataset.src = hit.src; pre.innerHTML = hit.svg; }
   }
 
   // The graph panel shows one pre-rendered graph at a time: the cursor row's tree, or the whole
@@ -1132,73 +1080,34 @@ ${viewjs}
   }
   function setMode(m) { mode = m; showGraph(); }
 
-  // the cursor row's node in the graph on show, which carries the namespace that graph was built
-  // with: f for one tree's own, b for the whole tracker composed from its parts
-  function curNode() {
-    if (!cur?.dataset.slug) return "";
-    const composed = side.querySelector(".g:not([hidden])")?.dataset.tree === "*";
-    return "T_" + (composed ? "b" : "f") + "_" + cur.dataset.slug.replace(/[^a-zA-Z0-9]/g, "_");
-  }
+  // the cursor row's node in the graph on show, as board.node_id names it
+  const curNode = () => cur?.dataset.slug ? "T_" + cur.dataset.slug.replace(/[^a-zA-Z0-9]/g, "_") : "";
   function markNode() { markCur(side, curNode()); }
 
   // ---- the graph at full size: over the board, or in a window of its own ----
-  // The preview is one graph given a column's width; both full size views are the same graph given
-  // its own, drawn again from the preview's source so that a node keeps the id and the "#t-..."
-  // link the board matches a row by. A drawing is kept per source and scheme, so opening and
-  // closing costs one render of each graph rather than one per opening.
+  // Both full size views show the preview's own drawing, which is drawn at its full size and shrunk
+  // by the column's width alone, so a node keeps the "#t-..." link the board matches a row by.
   const full = document.getElementById("gfull");
-  const fullCache = {};
   let gwin = null;  // the window of its own, while one is open
-  let fullKey = null, viewSeq = 0;
-
-  // what the preview is showing, as the two full size views need it
-  function shownGraph() {
-    const g = side.querySelector(".g:not([hidden])"), pre = g?.querySelector(".mermaid");
-    return {
-      src: (pre?.dataset.src ?? pre?.textContent ?? "").trim(),
-      note: g?.querySelector(".gnote:not([hidden])")?.textContent ?? "",
-      name: document.getElementById("gname").textContent, mode, cur: curNode(),
-      theme: document.documentElement.dataset.theme,
-    };
-  }
-
-  async function svgFor(src) {
-    const key = src + "@" + document.documentElement.dataset.theme;
-    // a failure is kept too: the window of its own asks every second, and only a reload can mend it
-    if (!(key in fullCache)) {
-      const done = await drawOf("gf" + Date.now() + "_" + seq++, src);
-      if (!done) return fullCache[key] = "";
-      const box = document.createElement("div");
-      box.innerHTML = done.svg;
-      nodeHover(box);  // the titles are markup, so they travel to the window of its own with it
-      // mermaid sizes its drawing to whatever box it is given (width="100%", capped at the size it
-      // drew); full size is that size, which is the one its viewBox counts in.
-      const el = box.querySelector("svg"), [, , w, h] = el.getAttribute("viewBox").split(/[\s,]+/);
-      el.setAttribute("width", w);
-      el.setAttribute("height", h);
-      fullCache[key] = box.innerHTML;
-    }
-    return fullCache[key];
-  }
+  let fullKey = null;
 
   // The whole of what a full size view shows, drawing included, so the window of its own is sent a
-  // picture rather than a source it has no mermaid to draw.
-  async function viewOf(g) {
-    const draw = g.src && await drawable(), svg = draw ? await svgFor(g.src) : "";
-    const note = !g.src ? g.note : !draw ? unloaded.textContent : !svg ? undrawable.textContent : g.note;
+  // picture rather than a source it has no engine to draw.
+  function shownView() {
+    const g = side.querySelector(".g:not([hidden])"), pre = g?.querySelector(".mermaid");
+    const src = (pre?.dataset.src ?? pre?.textContent ?? "").trim(), svg = pre?.querySelector("svg")?.outerHTML ?? "";
+    const note = (unloaded.hidden ? g?.querySelector(".gnote:not([hidden])") : unloaded)?.textContent ?? "";
+    const name = document.getElementById("gname").textContent;
     return {
-      key: [g.name, g.mode, g.theme, g.src, note].join("|"), name: g.name, mode: g.mode,
-      theme: g.theme, note, cur: g.cur, svg,
+      key: [name, mode, src, !!svg, note].join("|"), name, mode,
+      theme: document.documentElement.dataset.theme, note, cur: curNode(), svg,
     };
   }
 
-  // Paint whichever full size views are open. The sequence number is what keeps a slow drawing
-  // from landing after a faster one started later: mermaid resolves in whatever order it finishes.
-  async function paintFull() {
+  // Paint whichever full size views are open.
+  function paintFull() {
     if (!full.classList.contains("open") && !gwin) return;
-    const me = ++viewSeq;
-    const view = await viewOf(shownGraph());
-    if (me !== viewSeq) return;
+    const view = shownView();
     if (full.classList.contains("open")) fullKey = paintView(full, view, fullKey);
     sendView(view);
   }
@@ -1222,13 +1131,13 @@ ${viewjs}
     } catch { gwin = null; }
   }
 
-  addEventListener("message", async (e) => {
+  addEventListener("message", (e) => {
     // the only things a message moves are the board's own cursor and its graph mode, so an opaque
     // origin nobody can check costs nothing
     const said = e.data;
     if (said?.graph === "hello") {
       gwin = e.source;
-      const view = await viewOf(shownGraph());
+      const view = shownView();
       e.source.postMessage(view.key === said.key ? { graph: "alive" } : { graph: "view", view }, "*");
     } else if (said?.graph === "goto") {
       openTarget(said.href);
@@ -1365,11 +1274,7 @@ ${viewjs}
     const root = document.documentElement;
     root.dataset.theme = root.dataset.theme === "night" ? "day" : "night";
     localStorage.setItem("board-theme", root.dataset.theme);
-    setupMermaid();
-    // a rendered element holds the SVG and its source only in dataset.src; assigning textContent
-    // puts the source back and drops the SVG in one step, so the graph returns in the new palette
-    for (const el of document.querySelectorAll(".mermaid")) if (el.dataset.src) el.textContent = el.dataset.src;
-    renderGraphs();
+    paintFull();  // the window of its own follows the board's scheme
   }
   document.getElementById("scheme").addEventListener("click", switchScheme);
 
@@ -1455,7 +1360,7 @@ ${viewjs}
     };
     const svgs = {};
     for (const el of document.querySelectorAll(".mermaid")) {
-      if (el.querySelector("svg")) svgs[el.dataset.key + "@" + document.documentElement.dataset.theme] = { src: el.dataset.src, svg: el.innerHTML };
+      if (el.querySelector("svg")) svgs[el.dataset.key] = { src: el.dataset.src, svg: el.innerHTML };
     }
     try {
       sessionStorage.setItem("board-view", JSON.stringify(state));

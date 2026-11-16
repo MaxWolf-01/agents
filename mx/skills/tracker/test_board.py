@@ -290,7 +290,7 @@ def test_a_rejected_proposal_unblocks_what_waited_on_it_and_leaves_the_graph(tra
     assert "uses fast suite" not in graph
     # after-first still waits on the done first, which is drawn as its dashed context
     assert 'first"]:::ghost' in graph
-    assert "T_f_first --> T_f_after_first" in graph
+    assert "T_first --> T_after_first" in graph
     assert "uses fast suite" not in str(board_graph(list(read.values())))
 
 
@@ -308,8 +308,8 @@ def test_a_tree_whose_tickets_wait_on_nothing_has_no_graph(tmp_path: Path) -> No
 def test_a_proposed_ticket_is_a_node_in_its_own_class_once_something_waits_on_it(tracker: Path) -> None:
     graph = tree_graph(list(load(tracker).values()), TREE)
     assert 'faster suite"]:::proposed' in graph
-    assert "T_f_second --> T_f_faster_suite" in graph and "T_f_faster_suite --> T_f_uses_fast_suite" in graph
-    assert 'click T_f_faster_suite "#t-faster-suite"' in graph
+    assert "T_second --> T_faster_suite" in graph and "T_faster_suite --> T_uses_fast_suite" in graph
+    assert 'click T_faster_suite "#t-faster-suite"' in graph
 
 
 def test_the_whole_tracker_graph_is_parts_per_tree_with_edges_naming_both_ends(tracker: Path) -> None:
@@ -317,19 +317,19 @@ def test_the_whole_tracker_graph_is_parts_per_tree_with_edges_naming_both_ends(t
     parts = board_graph(read)
     assert [f["name"] for f in parts["trees"]] == [TREE, ALONE], "the order the pills take"
     ids = {f["name"]: [n["id"] for n in f["nodes"]] for f in parts["trees"]}
-    assert ids[TREE] == ["T_b_after_first", "T_b_built", "T_b_faster_suite", "T_b_first",
-                         "T_b_needs_chore", "T_b_second", "T_b_uses_fast_suite"]
-    assert ids[ALONE] == ["T_b_loose_idea", "T_b_quoted", "T_b_small_chore"]
+    assert ids[TREE] == ["T_after_first", "T_built", "T_faster_suite", "T_first",
+                         "T_needs_chore", "T_second", "T_uses_fast_suite"]
+    assert ids[ALONE] == ["T_loose_idea", "T_quoted", "T_small_chore"]
     edges = {(e["a"], e["from"], e["b"], e["to"]) for e in parts["edges"]}
-    assert (TREE, "T_b_second", ALONE, "T_b_loose_idea") in edges
-    assert (ALONE, "T_b_small_chore", TREE, "T_b_needs_chore") in edges
-    assert (TREE, "T_b_first", ALONE, "T_b_quoted") in edges
+    assert (TREE, "T_second", ALONE, "T_loose_idea") in edges
+    assert (ALONE, "T_small_chore", TREE, "T_needs_chore") in edges
+    assert (TREE, "T_first", ALONE, "T_quoted") in edges
     lines = "\n".join(line for f in parts["trees"] for n in f["nodes"] for line in n["lines"])
     assert 'loose idea"]:::proposed' in lines
     assert 'first"]:::ghost' in lines
-    # a raw double quote in a label ends mermaid's string and breaks the whole flowchart
-    assert 'T_b_quoted["○ Say ”no limit” plainly"]' in lines
-    assert (TREE, "T_b_first", TREE, "T_b_after_first") in edges
+    # a raw double quote in a label ends its string and breaks the whole flowchart
+    assert 'T_quoted["○ Say ”no limit” plainly"]' in lines
+    assert (TREE, "T_first", TREE, "T_after_first") in edges
 
 
 def test_a_done_ticket_another_tree_waits_on_is_drawn_as_its_context(tmp_path: Path) -> None:
@@ -346,7 +346,7 @@ def test_a_done_ticket_another_tree_waits_on_is_drawn_as_its_context(tmp_path: P
     lines = "\n".join(line for f in parts["trees"] for n in f["nodes"] for line in n["lines"])
     assert 'storage"]:::ghost' in lines
     assert "cleanup" not in lines
-    assert [(e["a"], e["b"], e["line"]) for e in parts["edges"]] == [("base", "top", "  T_b_storage --> T_b_uses_storage")]
+    assert [(e["a"], e["b"], e["line"]) for e in parts["edges"]] == [("base", "top", "  T_storage --> T_uses_storage")]
 
 
 # ---- the board's values ----------------------------------------------------
@@ -386,8 +386,8 @@ def test_the_lone_tickets_pill_comes_last_and_carries_a_graph_of_its_own(tracker
     and the tickets in no tree wait on each other like any others, so that pill has a graph."""
     pills = view_of(tracker).pills
     assert [p.tree for p in pills] == [TREE, ALONE]
-    assert "T_f_quoted" in pills[-1].graph, f"the lone tickets have no graph of their own: {pills[-1].graph}"
-    assert "T_f_second" not in pills[-1].graph, f"another tree's rows are drawn in it: {pills[-1].graph}"
+    assert "T_quoted" in pills[-1].graph, f"the lone tickets have no graph of their own: {pills[-1].graph}"
+    assert "T_second" not in pills[-1].graph, f"another tree's rows are drawn in it: {pills[-1].graph}"
 
 
 def test_a_trees_pill_marks_when_any_of_its_tickets_waits_on_the_user(tmp_path: Path) -> None:
@@ -433,7 +433,7 @@ def test_a_gh_reference_is_a_link_on_the_row_and_in_its_search_text(tracker: Pat
 
 def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: Path) -> None:
     """Pins the format: the script hides rows by the pill's raw tree name, filters on data-search
-    with String.includes, and marks the node T_f_<slug> in the graph container of the row's tree."""
+    with String.includes, and marks the node T_<slug> in the graph container of the row's tree."""
     read = list(load(tracker).values())
     page = page_of(tracker)
     in_tree = [t for t in read if t.tree == TREE]
@@ -445,9 +445,9 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     graph = re.search(rf'<div class="g" data-tree="{TREE}" hidden><pre class="mermaid" data-key="g:{TREE}">(.*?)</pre>', page, re.S).group(1)
     for row_id, tree, slug, _ in rows:
         if tree == TREE and slug in ("second", "faster-suite", "uses-fast-suite", "after-first", "first", "built"):
-            assert f"T_f_{slug.replace('-', '_')}[" in graph, row_id
+            assert f"T_{slug.replace('-', '_')}[" in graph, row_id
     assert '<div class="g" data-tree="*" hidden><pre class="mermaid" data-key="g:*"></pre>' in page
-    assert '"id": "T_b_quoted"' in page
+    assert '"id": "T_quoted"' in page
 
 
 def test_a_row_links_its_review_page(tracker: Path) -> None:
@@ -539,19 +539,29 @@ def free_port() -> int:
 
 
 def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
-    """The graph's colours are baked into the SVG by mermaid, so the page hands it one classDef per
-    status, each named by house tokens the stylesheet declares as a light and a dark pair. The ink
-    is read back out of the script it is handed to, where a build in review is drawn in the accent
-    on its wash, and a proposal and a context node with a dashed edge, a proposal's the longer."""
-    declared = {prop.removeprefix("--") for selectors, said in style_rules(board_page.STYLE) if ":root" in selectors
+    """A node's colours come from the page's stylesheet by the class the graph gives it, in house
+    tokens declared as a light and a dark pair, so a drawing follows the scheme without being drawn
+    again: a build in review in the accent on its wash, a proposal and a context node with a dashed
+    edge, a proposal's the longer."""
+    rules = style_rules(page_of(tracker).split("<style>")[1].split("</style>")[0])
+    declared = {prop for selectors, said in rules if ":root" in selectors
                 for prop, value in said.items() if value.startswith("light-dark(")}
-    assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
-    handed = json.loads(re.search(r"classDefs = Object\.entries\((\{.*?\})\)", page_of(tracker)).group(1))
-    assert handed["review"] == ["wash", "accent", "strong", ""], "a build in review stands out from the rest of the graph"
-    assert (handed["proposed"][3], handed["ghost"][3]) == ("4 3", "2 3"), "a proposal and a context node lose their dashes"
-    assert {status for status, ink in handed.items() if ink[3]} == {"proposed", "ghost"}
-    for status, (fill, stroke, text, _) in board.GRAPH_INK.items():
-        assert {fill, stroke, text} <= declared, f"{status} is drawn in {sorted({fill, stroke, text} - declared)}, which the stylesheet does not declare"
+    box = {status: rules_for(rules, f".pele-node.{status} rect") for status in {*STATUS_SYMBOL, "ghost"}}
+    text = {status: rules_for(rules, f".pele-node.{status} .pele-label") for status in box}
+    assert [status for status in box if not ("fill" in box[status] and "fill" in text[status])] == [], (
+        "a status the graph draws with no ink of its own")
+    assert (box["review"]["fill"], box["review"]["stroke"], text["review"]["fill"]) == ("var(--wash)", "var(--accent)", "var(--strong)"), (
+        "a build in review stands out from the rest of the graph")
+    assert {status: ink["stroke-dasharray"] for status, ink in box.items() if "stroke-dasharray" in ink} == {"proposed": "4 3", "ghost": "2 3"}, (
+        "a proposal and a context node lose their dashes")
+    for status in box:
+        used = {box[status]["fill"], box[status]["stroke"], text[status]["fill"]}
+        assert {f"var({token})" for token in declared} >= used, f"{status} is drawn in {sorted(used)}, not all of which the stylesheet declares"
+
+
+def rules_for(rules: list[tuple[list[str], dict[str, str]]], selector: str) -> dict[str, str]:
+    """What every rule naming `selector` declares, later rules over earlier ones."""
+    return {prop: value for selectors, said in rules if selector in selectors for prop, value in said.items()}
 
 
 def hrefs(seen: board.View) -> list[str]:

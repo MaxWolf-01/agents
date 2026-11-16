@@ -48,8 +48,7 @@ copies kept on this machine (show/page_cache.py), so a run after the first touch
 The browser checks run again with the network cut off and no copies, where the graph engine
 never arrives: there they hold every view of the graph to saying it could not load, and drive
 everything else the board does in full. A run online on a machine that has no network and no
-copies skips, since the graph it is there to check never draws. One run more loads the engine and cuts
-the network off before it draws, where every view of the graph says it could not be drawn.
+copies skips, since the graph it is there to check never draws.
 """
 
 import json
@@ -340,7 +339,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     tracker's graph readable at full size in the overlay, a node clicked in the overlay and in the
     window bringing the board to that ticket's row, and the switch working in both.
 
-    Readable is the size mermaid drew the graph for, which is the one its viewBox counts in and the
+    Readable is the size the engine drew the graph for, which is the one its viewBox counts in and the
     one the preview's column shrinks it below. The window of its own is a page of its own, so its
     layout is handed to render-lint here rather than through the matrix above, which only reaches
     pages on disk."""
@@ -370,7 +369,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     if drawn:
         assert over["nodes"] >= 8, f"the whole tracker's graph drew {over['nodes']} nodes"
         assert all(abs(a - b) < 1 for a, b in zip(over["drawn"], over["viewbox"], strict=True)), (
-            f"the overlay draws {over['drawn']} of a graph mermaid measured for {over['viewbox']}"
+            f"the overlay draws {over['drawn']} of a graph measured for {over['viewbox']}"
         )
         assert over["width"] > 2 * seen["preview_width"], (
             f"the overlay draws the graph {over['width']}px wide, against {seen['preview_width']}px in the preview"
@@ -445,59 +444,17 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
 
 
 @pytest.mark.full_path
-def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The ticket's acceptance criterion: the preview and both full size views say the graph could
-    not be drawn, and the graph draws on the board's next load once its pieces arrive. The engine
-    and its drawing pieces come from this machine's copies, or from the network where it holds none."""
-    for tool in ("uv", "chromium"):
-        if not shutil.which(tool):
-            pytest.skip(f"no {tool} to render the page with")
-    out = tmp_path / "board.html"
-    render(transcribed.root, transcribed.repo, out)
-    engine = sorted(set(re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+(?:\.esm\.min\.mjs|/mermaid\.min\.js))"', out.read_text())))
-    assert len(engine) == 2, f"the page names {engine} as its engine"
-    done = subprocess.run(
-        ["uv", "run", str(HERE / "board_probe_undrawn.py"), str(out), ",".join(engine), str(tmp_path / "engine-only")],
-        capture_output=True, text=True,
-    )
-    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
-    seen = json.loads(done.stdout)
-    if not seen["cdn"]:
-        pytest.skip("no network and no copy of the graph engine")
-    undrawn = "could not be drawn"
-    preview = seen["preview"]
-    assert undrawn in preview["note"] and not preview["unloaded"] and preview["graphs"] == 0, (
-        f"a draw that failed after the engine loaded leaves the preview as {preview}"
-    )
-    assert seen["stray"] == 0, "mermaid left its error drawing on the page"
-    assert undrawn in seen["overlay"], f"the overlay says {seen['overlay']!r}"
-    assert undrawn in seen["window"], f"the window of its own says {seen['window']!r}"
-    assert seen["next"] == {"graphs": 1, "note": False}, f"the board's next load, once the pieces arrive: {seen['next']}"
-
-
-# The layout's chunks, as the page's import map pins them: the render chunk is fetched once the
-# graph draws, every other one as the layout loads.
-CHUNKS = [url.rsplit("/", 1)[1] for url in json.loads(
-    re.search(r'<script type="importmap">(.*?)</script>', PAGE.template, re.S).group(1))["integrity"] if "/chunks/" in url]
-assert any(chunk.startswith("render-") for chunk in CHUNKS), f"the import map pins no render chunk among {CHUNKS}"
-
-
-@pytest.mark.full_path
-@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), *(
-    (f"/{chunk}", "could not be drawn" if chunk.startswith("render-") else "could not load") for chunk in CHUNKS)])
-def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:
+def test_an_engine_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path) -> None:
     """The ticket's acceptance criterion: a file whose bytes differ from its pinned hash is refused,
     the graph does not draw, the board says so the way it says the engine did not load, and the rest
-    of the board works. mermaid is pinned by its script's own hash, the layout's chunks only through
-    the import map; the layout fetches its render chunk only once it draws, so that one is refused
-    as a piece the draw did not get."""
+    of the board works."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)
     done = subprocess.run(
-        ["uv", "run", str(HERE / "board_probe_tampered.py"), str(out), changed, str(tmp_path / "changed")],
+        ["uv", "run", str(HERE / "board_probe_tampered.py"), str(out), "/pele.global.js", str(tmp_path / "changed")],
         capture_output=True, text=True,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
@@ -506,7 +463,7 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
         pytest.skip("no network and no copy of the graph engine")
     assert all(re.search(r"@\d+\.\d+\.\d+/", url) for url in seen["pinned"]), f"a script not at an exact version: {seen['pinned']}"
     [said] = seen["notes"] or [""]
-    assert len(seen["notes"]) == 1 and note in said and "pinned" in said, f"the panel says {seen['notes']}"
+    assert len(seen["notes"]) == 1 and "could not load" in said and "pinned" in said, f"the panel says {seen['notes']}"
     assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
 
