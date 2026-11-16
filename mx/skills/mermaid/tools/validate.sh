@@ -1,12 +1,13 @@
 #!/bin/bash
-# Validate a Mermaid diagram by parsing and rendering it with the official CLI.
+# Validate a Mermaid diagram by parsing and drawing it with Pele.
 # Usage: validate.sh diagram.mmd [output.svg]
-#   Exit 0 with an ASCII preview when the diagram parses and renders; nonzero
-#   with the parser's error otherwise. The SVG lands at output.svg when given,
-#   else in a temp file that is removed again. The preview (beautiful-mermaid)
-#   is best effort: an unsupported diagram type prints a warning, not a failure.
-#   Needs Node and npx; the first run downloads a headless Chromium through
-#   Puppeteer (PUPPETEER_EXECUTABLE_PATH points it at an installed one).
+#   Exit 0 with an ASCII preview when the diagram parses and draws; nonzero
+#   with Pele's error otherwise, at its line and column. The SVG lands at
+#   output.svg when given. The preview (beautiful-mermaid) is best effort: an
+#   unsupported diagram type prints a warning, not a failure.
+#   Needs Node 20 or later and npm, and no browser. The first run installs Pele
+#   as package-lock.json beside this script pins it, version and hash, under
+#   ${XDG_CACHE_HOME:-~/.cache}/mx-pele.
 
 set -euo pipefail
 
@@ -24,23 +25,36 @@ if [ ! -f "$INPUT" ]; then
     exit 1
 fi
 
-CLEANUP=0
-if [ -z "$OUTPUT" ]; then
-    OUTPUT=$(mktemp /tmp/mermaid_validate.XXXXXX.svg)
-    CLEANUP=1
+# One install per lockfile, so a new pin installs beside the old one rather than over it. It is
+# built in a directory of its own and moved into place whole, so a run that starts while another is
+# installing never finds half of one.
+HERE=$(cd "$(dirname "$0")" && pwd)
+PELE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/mx-pele/$(sha256sum "$HERE/package-lock.json" | cut -c1-16)"
+if [ ! -d "$PELE_HOME/node_modules/pele" ]; then
+    mkdir -p "$(dirname "$PELE_HOME")"
+    BUILD=$(mktemp -d "$PELE_HOME.XXXXXX")
+    trap 'rm -rf "$BUILD"' EXIT
+    cp "$HERE/package.json" "$HERE/package-lock.json" "$BUILD/"
+    npm ci --prefix "$BUILD" --no-audit --no-fund --silent >&2
+    mv -T "$BUILD" "$PELE_HOME" 2>/dev/null || true  # another run's install got there first
 fi
-
-# The browser carries the run it belongs to, as `browsers --help` defines it.
-PUPPETEER_CONFIG=$(mktemp /tmp/mermaid_validate.XXXXXX.json)
-node -e 'console.log(JSON.stringify({args: [`--mx-run=${process.env.MX_RUN || process.cwd()}`]}))' > "$PUPPETEER_CONFIG"
-
-trap 'rm -f "$PUPPETEER_CONFIG"; if [ "$CLEANUP" -eq 1 ]; then rm -f "$OUTPUT"; fi' EXIT
 
 echo "Validating: $INPUT"
 
-# Use mermaid-cli (mmdc) to parse and render. Errors mean invalid syntax.
-# Filter out JS stack traces, keep only the parse error.
-if npx -y @mermaid-js/mermaid-cli -p "$PUPPETEER_CONFIG" -i "$INPUT" -o "$OUTPUT" -q 2> >(grep -vE '^\s*at |^Parser3?\.' >&2); then
+if PELE="$PELE_HOME/node_modules/pele/dist/pele.js" node --input-type=module - "$INPUT" "$OUTPUT" <<'JS'; then
+import { readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const { render, PeleError } = await import(pathToFileURL(process.env.PELE));
+const [input, output] = process.argv.slice(2);
+try {
+  const { svg } = render(readFileSync(input, "utf8"));
+  if (output) writeFileSync(output, svg);
+} catch (e) {
+  if (!(e instanceof PeleError)) throw e;
+  console.error(`${input}${e.line ? `:${e.line}:${e.column}` : ""}: ${e.message}`);  // the message quotes the line
+  process.exit(1);
+}
+JS
     echo "✓ Mermaid OK"
     echo ""
     echo "ASCII preview:"
@@ -56,7 +70,7 @@ process.stdout.write("\n");
 '; then
         echo "Warning: ASCII preview failed (diagram type may be unsupported)."
     fi
-    if [ "$CLEANUP" -eq 0 ]; then
+    if [ -n "$OUTPUT" ]; then
         echo "Rendered to: $OUTPUT"
     fi
 else
