@@ -469,22 +469,6 @@ VIEW_JS = r"""
 """
 
 
-# A graph node's ink by its class, as house tokens: fill, stroke, text, and the stroke's dash
-# pattern where it has one. The work that wants the user wears the accent, the rest steps back to
-# the edge; ghost is a done ticket shown as context, and proposed is not ruled on: both dashed.
-GRAPH_INK = {
-    "review": ("wash", "accent", "strong", ""), "open": ("ground-2", "body", "body", ""),
-    "claimed": ("ground-2", "muted", "body", ""), "blocked": ("ground", "edge", "muted", ""),
-    "proposed": ("ground", "muted", "body", "4 3"), "done": ("ground", "edge", "muted", ""),
-    "ghost": ("ground", "edge", "muted", "2 3"),
-}
-GRAPH_STYLE = "".join(
-    f"  .pele-node.{cls} rect {{ fill: var(--{fill}); stroke: var(--{stroke});{f' stroke-dasharray: {dash};' if dash else ''} }}\n"
-    f"  .pele-node.{cls} .pele-label {{ fill: var(--{text}); }}\n"
-    for cls, (fill, stroke, text, dash) in GRAPH_INK.items()
-)
-
-
 # The page's stylesheet: the house tokens, then the board's own rules. `${columns}` is where PAGE
 # puts the widths of a row's fixed columns (board.columns).
 STYLE = r"""  /* The house tokens, copied from mx/skills/house-style/tokens.css: colours as light-dark() pairs,
@@ -611,10 +595,23 @@ ${columns}
   /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
      that has not come back yet would widen the column it sits in */
   .mermaid:not(:has(svg)) { display: none; }
-  /* a drawing's colours are these tokens, so it follows the scheme without being drawn again */
+  /* A drawing's colours are these tokens, so it follows the scheme without being drawn again. A node
+     wears its status class: the work that wants the user the accent, the rest steps back to the
+     edge; ghost is a done ticket shown as context, and proposed is not ruled on: both dashed. */
   .pele { --pele-bg: var(--ground); --pele-fg: var(--body); --pele-muted: var(--muted); --pele-line: var(--muted);
     --pele-surface: var(--ground); --pele-surface-alt: var(--ground); --pele-border: var(--edge); }
-""" + GRAPH_STYLE + r"""  .pele-node.cur rect { stroke-width: 2.5px; }
+  .pele-node.review rect { fill: var(--wash); stroke: var(--accent); }
+  .pele-node.review .pele-label { fill: var(--strong); }
+  .pele-node.open rect { fill: var(--ground-2); stroke: var(--body); }
+  .pele-node.open .pele-label { fill: var(--body); }
+  .pele-node.claimed rect { fill: var(--ground-2); stroke: var(--muted); }
+  .pele-node.claimed .pele-label { fill: var(--body); }
+  .pele-node.proposed rect { fill: var(--ground); stroke: var(--muted); stroke-dasharray: 4 3; }
+  .pele-node.proposed .pele-label { fill: var(--body); }
+  .pele-node.blocked rect, .pele-node.done rect { fill: var(--ground); stroke: var(--edge); }
+  .pele-node.ghost rect { fill: var(--ground); stroke: var(--edge); stroke-dasharray: 2 3; }
+  .pele-node.blocked .pele-label, .pele-node.done .pele-label, .pele-node.ghost .pele-label { fill: var(--muted); }
+  .pele-node.cur rect { stroke-width: 2.5px; }
 
   /* ---- the same graph at full size: over the board, or in a window of its own ---- */
   .side .gbody { cursor: zoom-in; }  /* the preview opens the full size view */
@@ -1082,7 +1079,8 @@ ${viewjs}
 
   // the cursor row's node in the graph on show, as board.node_id names it
   const curNode = () => cur?.dataset.slug ? "T_" + cur.dataset.slug.replace(/[^a-zA-Z0-9]/g, "_") : "";
-  function markNode() { markCur(side, curNode()); }
+  // a node of the cursor's ticket can sit in a hidden graph too, which is drawn once shown
+  function markNode() { markCur(side, ""); markCur(side.querySelector(".g:not([hidden])") ?? side, curNode()); }
 
   // ---- the graph at full size: over the board, or in a window of its own ----
   // Both full size views show the preview's own drawing, which is drawn at its full size and shrunk

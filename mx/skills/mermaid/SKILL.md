@@ -7,7 +7,7 @@ description: "Mermaid diagrams, validated before they go anywhere. Use when crea
 
 Validate a Mermaid diagram before it goes anywhere, with `bash <skill-dir>/tools/validate.sh`, `<skill-dir>` being this skill's base directory. Its `--help` is the manual: run it before your first validation.
 
-mx draws Mermaid with [Pele](https://github.com/obsidianmd/pele): it reads Mermaid syntax and draws every diagram type Mermaid 12.1 has, takes its colours from CSS, is smaller and faster, and runs no code from a diagram. The validator checks with it.
+mx draws Mermaid with [Pele](https://github.com/obsidianmd/pele): it reads Mermaid syntax and draws every diagram type Mermaid 12.1 has, takes its colours from CSS, is smaller and faster than mermaid.js, and runs no code from a diagram. The validator checks with it.
 
 ## Workflow
 

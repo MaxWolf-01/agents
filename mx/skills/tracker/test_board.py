@@ -309,7 +309,8 @@ def test_a_proposed_ticket_is_a_node_in_its_own_class_once_something_waits_on_it
     graph = tree_graph(list(load(tracker).values()), TREE)
     assert 'faster suite"]:::proposed' in graph
     assert "T_second --> T_faster_suite" in graph and "T_faster_suite --> T_uses_fast_suite" in graph
-    assert 'click T_faster_suite "#t-faster-suite"' in graph
+    # the link carries the node's whole label again, as the tooltip that shows it on hover
+    assert '  click T_faster_suite "#t-faster-suite" "◌ faster suite"' in graph.splitlines()
 
 
 def test_the_whole_tracker_graph_is_parts_per_tree_with_edges_naming_both_ends(tracker: Path) -> None:
@@ -554,9 +555,26 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
         "a build in review stands out from the rest of the graph")
     assert {status: ink["stroke-dasharray"] for status, ink in box.items() if "stroke-dasharray" in ink} == {"proposed": "4 3", "ghost": "2 3"}, (
         "a proposal and a context node lose their dashes")
+    # the edges, the frames round a tree and the plain text are Pele's own variables, set to the same tokens
+    pele = rules_for(rules, ".pele")
+    assert {"--pele-bg", "--pele-fg", "--pele-line", "--pele-border", "--pele-surface", "--pele-surface-alt"} <= set(pele)
     for status in box:
         used = {box[status]["fill"], box[status]["stroke"], text[status]["fill"]}
         assert {f"var({token})" for token in declared} >= used, f"{status} is drawn in {sorted(used)}, not all of which the stylesheet declares"
+    assert {f"var({token})" for token in declared} >= set(pele.values()), f"the drawing is inked in {pele}"
+    assert "stroke-width" in rules_for(rules, ".pele-node.cur rect"), "the cursor's node does not stand out"
+
+
+def test_the_graph_engine_is_one_exact_version_pinned_by_hash_the_one_the_validator_installs(tracker: Path) -> None:
+    """P2 of pele-draws-every-diagram: the page loads its one CDN script at an exact version with
+    its integrity hash, and the board draws with the Pele the mermaid skill validates with."""
+    page = page_of(tracker)
+    scripts = re.findall(r'"https://cdn\.jsdelivr\.net/npm/(\w+)@([^/"]+)/[^"]+",\s*"(sha256-[A-Za-z0-9+/]{43}=)"', page)
+    assert len(scripts) == 1 and len(re.findall(r"cdn\.jsdelivr\.net/npm/", page)) == 1, scripts
+    [(package, version, _)] = scripts
+    assert package == "pele" and re.fullmatch(r"\d+\.\d+\.\d+", version), version
+    lock = json.loads((Path(__file__).parents[1] / "mermaid" / "tools" / "package-lock.json").read_text())
+    assert lock["packages"]["node_modules/pele"]["version"] == version, "the board and the validator draw with different Pele"
 
 
 def rules_for(rules: list[tuple[list[str], dict[str, str]]], selector: str) -> dict[str, str]:
