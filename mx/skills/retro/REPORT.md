@@ -71,7 +71,7 @@ In order of the weighing.
 - **State**: live | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
 - **Evidence**: two or three quotes, each `"<verbatim>"` (<source>, <date>)
 - **Cause**: what produces it, by path and line where it is a file (`mx/skills/dispatch/SKILL.md:42`), or the habit
-- **Proposal**: the smallest fix: what it deletes or narrows, and where it lands (a deletion, a check, a line of the reviewer's baseline, a skill line, a tool)
+- **Proposal**: the fix at the cause: what it deletes or narrows, and where it lands (a deletion, a check, a line of the reviewer's baseline, a skill line, a tool)
 - **Weighing**: cost of the friction, upkeep of the fix, how often, how robust
 - **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back
 
