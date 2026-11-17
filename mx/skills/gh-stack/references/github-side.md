@@ -38,3 +38,12 @@ where a 404 means unprotected.
 **Rebase stack** rewrites every branch in the stack, so each local copy has to be reset to the
 remote afterwards, and review comments on the rewritten commits are marked outdated. It belongs
 right before the bottom layer merges, not in the middle of a review.
+
+## The stack moved to a new base
+
+When a stack's base branch is deleted, GitHub moves the stack onto another base and leaves its
+branches where they were. Until `gh stack sync` rebases it, `push` and `submit` refuse, and
+`view --json` still names the old trunk but marks the bottom branch `needsRebase`. If the old base
+never merged into the new one, the rebase drops the old base's commits from the stack, so
+non-interactive `sync` and `rebase` exit 1 asking for `--accept-base-change`. Find out where those
+commits went before passing it.
