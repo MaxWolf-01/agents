@@ -38,13 +38,13 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 
 | Artefact | Where | Holds |
 | --- | --- | --- |
-| Glossary | `GLOSSARY.md`, repo root | domain terms, opinionated, with avoid-lists |
-| ADR | `decisions/NNNN-slug.md` | one hard-to-reverse decision and why |
+| Glossary | `GLOSSARY.md`, at the repo root or one per context (`/mx:domain-modelling`) | domain terms |
+| ADR | `decisions/NNNN-slug.md`, beside its glossary | one hard-to-reverse decision and why |
 | Ticket | `agent/tickets/<slug>.md` | one piece of work (`/mx:tracker`) |
 | Board | `agent/board.html`, gitignored | the whole tracker as one page |
 | Research | `agent/research/NN-slug.md`, `NN` the next number, a `ticket:` frontmatter line naming the ticket that asked | detail too long for that ticket |
 | Prototype | `agent/prototypes/<slug>/` | throwaway code that answered a design question, and its `ANSWER.md` |
-| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for session work's; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact: diagram, comparison, run output, page |
+| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for session work's; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
 | Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
 | Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
 

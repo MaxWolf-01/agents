@@ -10,7 +10,7 @@ Surface architectural friction and propose **deepening opportunities**: refactor
 This command is _informed_ by the project's domain model and built on a shared design vocabulary:
 
 - Run `/mx:codebase-design`; use its terms exactly in every suggestion.
-- The domain language in `GLOSSARY.md` gives names to good seams; ADRs in `decisions/` record decisions this command should not re-litigate.
+- The domain language in the glossary gives names to good seams; the ADRs record decisions this command should not re-litigate.
 
 ## Process
 

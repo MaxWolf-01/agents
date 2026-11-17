@@ -5,7 +5,7 @@ description: "Tracker conventions: the ticket tree, how a ticket is filed, fetch
 
 # Tracker
 
-One kind of file: a **ticket**, flat among the others, its slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. A project's `agent/` is a git repo of its own inside the repo it plans, which ignores it: the **agent repo** holds the tickets and the rest of the planning, and every tool finds it there, with nothing to configure. The tracker is its `tickets`, read in its main checkout.
+One kind of file: a **ticket**, one file per ticket in a flat directory, its slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. A project's `agent/` is a git repo of its own inside the repo it plans, which ignores it: the **agent repo** holds the tickets and the rest of the planning, and every tool finds it there, with nothing to configure. The tracker is its `tickets`, read in its main checkout.
 
 A project whose tickets also land in repos other than these two lists them in `agent/repos.toml`, and each ticket names the ones its work touches in `repos:`, written when it is filed or cut; `tracker repos --help` says what the list holds.
 
