@@ -25,15 +25,7 @@ gh stack rebase --continue     # repeat if the next branch also conflicts
 
 `gh stack rebase --abort` restores every branch in the stack, not just the current one.
 
-Because `init` enables `git rerere`, a conflict you resolve once is replayed automatically the next
-time the same conflict appears — which is common, since a change low in the stack is rebased through
-every branch above it. Without `rerere`, repeated conflicts may need manual resolution on each
-affected layer.
-
 ## After a squash merge
-
-A squash merge replaces the branch's commits with one new commit, so the originals no longer exist
-in the trunk's history and an ordinary rebase would try to replay them again.
 
 `gh stack sync` detects this and rebases with `--onto` against the correct target, skipping the
 merged branch:
@@ -43,15 +35,9 @@ gh stack sync
 gh stack view --json    # merged branch reports "isMerged": true, "state": "MERGED"
 ```
 
-No manual action is needed. If the replay conflicts, `sync` restores all branches and exits 3.
-Run `gh stack rebase` to rerun the rebase, which will stop at the conflict and allow you to resolve
-and then `--continue` until complete. Use `gh stack sync --prune` to also delete local branches for
-merged PRs.
+No manual action is needed.
 
 ## Local and remote stacks have diverged
-
-Divergence means the local stack and the stack on GitHub changed in different ways — for example
-branches were added locally while a PR was added to the stack on github.com.
 
 When non-interactive, `sync` prints both chains, changes nothing, and exits **0** with
 `Sync aborted`. Success here does not mean the sync happened; check for that message, or re-run
@@ -107,8 +93,7 @@ gh stack unstack
 gh stack init --base main migration models ui
 ```
 
-The first rebase moves migration-only commits onto trunk, the second replays model commits above
-them, and the third replays UI-only commits above models. Preserve the old boundary SHAs before
+Preserve the old boundary SHAs before
 moving any branch. For a different reorder, identify each layer's range with
 `git log <old-parent>..<branch>`, then replay the ranges bottom to top.
 
@@ -154,6 +139,3 @@ this state by someone else, restore it:
 ```bash
 gh stack modify --abort
 ```
-
-Related: `submit` also detects a pending modify state, and under a TTY asks before overwriting the
-stack on GitHub with local state.

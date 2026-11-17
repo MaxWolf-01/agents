@@ -14,10 +14,6 @@ metadata:
 
 Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md`, the line that points at it, and the line under Core loop that points at `/mx:github`, which are local.
 
-`gh stack` is a [GitHub CLI](https://cli.github.com/) extension for stacked branches and pull
-requests. A stack is an ordered chain of branches rooted on a trunk, where each branch has one PR
-based on the branch below it, so a reviewer sees only that layer's diff.
-
 `gh stack` prints a stack trunk-first, left to right:
 
 ```
@@ -26,7 +22,7 @@ based on the branch below it, so a reviewer sees only that layer's diff.
 
 Left is the **bottom**, right is the **top**. `auth` is based on `main` and merges first;
 `frontend` merges last. `up` moves toward the top, away from trunk; `down` moves toward it.
-Foundational work belongs at the bottom, code that depends on it above. For how to choose the
+For how to choose the
 layers, read `references/stack-design.md`.
 
 ## Setup
@@ -58,7 +54,6 @@ Agent harnesses differ, so always pass the flags below instead of relying on tha
 | `gh stack up` / `down` / `top` / `bottom` | `gh stack switch` | `switch` is menu-only |
 | — | `gh stack modify` | TUI-only, no non-interactive path |
 
-- `view --short` is safe in both modes, but it is formatted for humans. Use `--json` to parse.
 - **`checkout <pr>` when a different local stack already covers those branches** cannot be forced.
   Run `gh stack unstack --local` first (this keeps the stack on GitHub), then retry.
 
@@ -67,9 +62,7 @@ Agent harnesses differ, so always pass the flags below instead of relying on tha
 - **Starting multi-part work:** create the stack before writing files. Do not implement every
   concern on trunk and split it later. Put one dependent concern in each layer, bottom to top.
 - **Editing an existing stack:** check out the layer that owns the change before editing. Never
-  commit a lower layer's concern on the current top branch. Run `gh stack view --json`; if
-  ownership is unclear, inspect `git log --all -- <path>`. Then check out the owner, edit, commit,
-  rebase upstack, and return to top.
+  commit a lower layer's concern on the current top branch.
 
 ```bash
 gh stack down                   # or: gh stack checkout api
@@ -116,8 +109,7 @@ gh stack merge 7 --yes           # every unmerged PR in stack #7
 gh stack merge 42 --yes --squash # or --merge, --rebase, --merge-method <method>
 ```
 
-Pass a PR number to merge that PR and every unmerged PR below it, or a stack number to merge every
-unmerged PR in that stack. The operation is all-or-nothing: if any PR in that set cannot merge,
+The operation is all-or-nothing: if any PR in that set cannot merge,
 none do.
 
 Without a method flag the last-used method is reused. If the base branch uses a merge queue, the
@@ -168,14 +160,11 @@ an ancestor of the branch.
 - Stacks are strictly linear: one parent, at most one child. Use separate stacks for parallel work.
 - There is no non-interactive reorder or removal. Errors may suggest `gh stack modify`, but it is
   TUI-only — restructure with `unstack` then `init` instead.
-- PR titles and bodies are auto-generated. Use `gh pr edit` afterwards to change them.
 
 ## More detail
 
-`gh stack <command> --help` is authoritative for flags and arguments. Note that
+Note that
 `gh stack help <command>` does **not** work — it prints the top-level help.
-
-Open the reference whose trigger matches the task; no need to preload all of them.
 
 - `references/github-side.md` — read before linking PRs that already exist into a stack, before
   merging a layer, and when the merge box says the stack is out of date.

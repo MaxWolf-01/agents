@@ -1,6 +1,6 @@
 # Command behavior
 
-`gh stack <command> --help` is authoritative for flags and arguments. (`gh stack help <command>` only prints the top-level help.) This file only covers behavior `--help` does not
+`gh stack <command> --help` is authoritative for flags and arguments. This file only covers behavior `--help` does not
 explain: preconditions, side effects, atomicity, and failure modes.
 
 ## Contents
@@ -39,8 +39,7 @@ selects a non-default trunk.
 - **Uncommitted changes carry over.** Without `-Am`, `add` does not touch the working tree, so
   staged and unstaged changes follow you onto the new branch. Commit or stash first for a clean start.
 - **`add -Am` commits in place when the current branch has no commits yet** — for example
-  immediately after `init` — instead of creating a branch. This is deliberate: the first layer
-  usually needs its content before a second layer exists.
+  immediately after `init` — instead of creating a branch.
 - `-A` and `-u` are mutually exclusive, and both require `-m`.
 
 ## push
@@ -136,9 +135,6 @@ Accepts a stack number, PR number, PR URL, or branch name.
 - A bare number resolves as a **stack number first**, then a PR number, then a branch name.
 - Stack numbers, PR numbers, and PR URLs fetch from GitHub, pull the branches down, and set the
   stack up locally.
-- If a local stack already exists over those branches with a different composition, `checkout`
-  cannot be forced past it. Run `gh stack unstack --local` first, then retry.
-- `checkout` has no flags. It relies on `remote.pushDefault` when several remotes exist.
 
 ## unstack
 
@@ -154,24 +150,11 @@ Removes the stack **grouping** only. It never deletes pull requests or branches.
 
 ## merge
 
-- Scope with an argument: pass a PR number to merge that PR and every unmerged PR below it in the
-  stack, or pass a stack number to merge every unmerged PR in that stack.
-- **All-or-nothing.** If any PR in that exact merge set cannot be merged, none are, and the reason
-  is reported.
-- The method comes from `--squash`, `--rebase`, `--merge`, or `--merge-method <method>`. Without
-  one, the last-used method is reused.
 - Only basic PR state is checked before merging: open and not a draft. Bypassing merge requirements
   is not supported for stacks.
-- **A merge queue on the base branch overrides everything.** The stack is added to the queue rather
-  than merged; the queue chooses the method and any method flag you passed is ignored with a
-  warning. Queued PRs are submitted together but land as the queue processes them, so they may merge
-  in separate groups rather than all at once.
-- `gh pr merge` cannot merge a stack. Always use `gh stack merge`.
 
 ## Navigation
 
 `up`, `down`, `top`, `bottom`, and `trunk` are always non-interactive. `up` and `down` accept a
 count (`gh stack up 3`). Movement clamps at the stack bounds, and merged branches are skipped when
 navigating from an active branch, so `bottom` lands on the lowest *unmerged* branch.
-
-`gh stack switch` is a selection menu with no non-interactive path. Use the commands above instead.

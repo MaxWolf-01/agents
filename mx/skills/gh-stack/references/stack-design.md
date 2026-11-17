@@ -1,7 +1,5 @@
 # Designing a stack
 
-How to decide what goes in each layer. Read this before running `gh stack init`.
-
 ## Contents
 
 - [Plan the layers before writing code](#plan-the-layers-before-writing-code)
@@ -31,9 +29,6 @@ Decide the layers first, then write code into them:
 This is illustrative. Infer the stack topic and layer names from the actual task; do not reuse
 `todo-app` or these layer names literally.
 
-The failure mode to avoid is writing everything on one branch and trying to split it afterwards.
-If a task is large enough to warrant a stack, create the stack at the start.
-
 ## Branch naming
 
 Prefer a shared topic prefix plus the layer's concern:
@@ -41,33 +36,16 @@ Prefer a shared topic prefix plus the layer's concern:
 This keeps related branches recognizable without using generic names that could belong to any
 stack. **User and repository branch naming conventions take precedence; follow them instead.**
 
-Names are used exactly as given — nothing is prepended or transformed, and slashes are kept, so
-`gh stack add refactor/foo` creates a branch literally named `refactor/foo`.
-
 If you pass `-m` without a branch name, the name is generated from the commit message in
 date-and-slug form (for example `03-24-add_api_routes`). Prefer naming the branch yourself.
 
 ## Staging changes deliberately
 
 Use `git add` and `git commit` directly rather than the `add -Am` shortcut. The point is control
-over which changes land in which branch. With several modified files in the working tree, stage the
-subset that belongs to the current layer, commit it, then create the next branch and stage the rest
-there:
-
-```bash
-git add internal/models/user.go internal/models/session.go
-git commit -m "Add user and session models"
-
-gh stack add api-routes
-git add internal/api/routes.go internal/api/handlers.go
-git commit -m "Add user API routes"
-```
+over which changes land in which branch.
 
 Multiple commits per branch are fine. What matters is that every commit in a branch serves the same
 concern, and that a change belonging to a different concern goes in a different branch.
-
-Note that `gh stack add <branch>` without `-Am` does not touch the working tree, so uncommitted
-changes carry over to the new branch. Commit or stash first if you want the new layer to start clean.
 
 ## When to add a layer
 
@@ -90,8 +68,6 @@ different concerns.
 
 **Start a separate stack** for unrelated work — a different feature, an unrelated bug fix, an
 independent refactor. Do not mix efforts into one stack just because you happened to work on both.
-Use `gh stack init` for the new effort, or `gh stack checkout <target>` to move between existing
-stacks.
 
 A trivial incidental fix can ride along in the current stack. Once it grows into its own project, it
 deserves its own stack.
