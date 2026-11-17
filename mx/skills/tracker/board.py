@@ -1395,7 +1395,7 @@ def runs(file: Path) -> bool:
 
 
 def show_dir(path: Path) -> Path:
-    """Where a ticket's artefacts are (/mx:orient, The artefacts): `agent/show/<slug>/`, beside the tracker the
+    """Where a ticket's artefacts are (claude/CLAUDE.md's artefact table): `agent/show/<slug>/`, beside the tracker the
     ticket was read from."""
     return path.parent.parent / "show" / path.stem
 

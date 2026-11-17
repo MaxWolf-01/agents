@@ -95,7 +95,7 @@ ACCOUNT_VARIABLE = "CLAUDE_ACCOUNT"
 # page, so that a render from another session (a handoff's pickup) names it too.
 ACCOUNT = "account"
 SESSIONS = Path("agent/sessions")  # where the SessionEnd hook commits its records, from the repo root
-# Where in a session's directory its own work's artefacts go (/mx:orient, The artefacts). A record's path under it
+# Where in a session's directory its own work's artefacts go (claude/CLAUDE.md's artefact table). A record's path under it
 # is from that directory, which the SessionEnd hook copies `show/` into the agent repo beside.
 ARTEFACTS = "show"
 
