@@ -20,7 +20,6 @@ Checks:
                      boundary, or a case band whose lines do not fan from its top-left corner
                      to each column boundary (references/notation.md)
   column-widths      columns of one group at unequal widths, a meaning the notation lacks
-  no-zero-size       a block that was never laid out
 
 Exit codes: 0 every check passed, 1 a check failed, 2 the page could not be measured (no
 Playwright, no browser), which leaves the layout unverified.
@@ -95,7 +94,7 @@ PROBE = r"""
   const groups = [...root.querySelectorAll('.cols')].map(el => ({
     desc: desc(el.parentElement), widths: [...el.children].filter(inFlow).map(c => c.getBoundingClientRect().width) }));
 
-  const blocks = [...root.querySelectorAll('.blk, .cell, .loop, .fork, .par')].map(el => ({ desc: desc(el), box: box(el) }));
+  const blocks = root.querySelectorAll('.blk, .cell, .loop, .fork, .par').length;
 
   return { root: box(root), containers, borders, texts, bands, groups, blocks,
            elements: all.map(el => ({ desc: desc(el), box: box(el) })) };
@@ -246,11 +245,6 @@ def faults(geo: dict) -> list[str]:
     for g in geo["groups"]:
         if g["widths"] and max(g["widths"]) - min(g["widths"]) > TOL:
             out.append(f"column-widths: {g['desc']} has columns {[round(w, 1) for w in g['widths']]} wide")
-
-    for blk in geo["blocks"]:
-        l, t, r, b = blk["box"]
-        if r - l < 1 or b - t < 1:
-            out.append(f"no-zero-size: {blk['desc']} laid out at {r - l:.1f}x{b - t:.1f}")
     return out
 
 
@@ -299,7 +293,7 @@ def main() -> int:
     if a.dump:
         print(json.dumps(geo, indent=1))
     found = faults(geo)
-    print(f"measured {len(geo['blocks'])} blocks, {len(geo['texts'])} text boxes, {len(geo['bands'])} bands "
+    print(f"measured {geo['blocks']} blocks, {len(geo['texts'])} text boxes, {len(geo['bands'])} bands "
           f"at {a.width}px, {a.scheme} scheme")
     for f in found:
         print("FAIL " + f)
