@@ -42,9 +42,13 @@ each label under the diagonal in its column.
 
 The early exit is DIN 66261's *Abbruchanweisung*. It names an enclosing block, and execution goes
 on with the block after that one, which is how a loop that only ends from inside its body is
-drawn. Source: the RWTH Aachen IGPM course notes *Programmentwurf mit Struktogrammen*
-(<https://www.igpm.rwth-aachen.de/Download/ws2021/cpp/nassi.pdf>, section 1.3.3), which draw DIN
-66261's symbols; the standard itself is sold by DIN Media and was not read.
+drawn.
+
+What this file says of DIN 66261's drawings, the case and the early exit, comes from a secondary
+source: the RWTH Aachen IGPM course notes *Programmentwurf mit Struktogrammen*
+(<https://www.igpm.rwth-aachen.de/Download/ws2021/cpp/nassi.pdf>, sections 1.2.3 and 1.3.3),
+which draw the standard's symbols. The standard itself (DIN 66261:1985-11) is sold by DIN Media
+and was not read.
 
 The parallel block is the one construct that breaks the single-thread reading. Its tracks run at
 the same time, and the bottom band is a join: nothing below the block starts until every track

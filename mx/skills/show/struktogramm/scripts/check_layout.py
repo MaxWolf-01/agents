@@ -13,6 +13,9 @@ Checks:
   doubled-border     two parallel lines under 3px apart where one shared line belongs
   overflow           a block reaching past the diagram's outer rectangle
   text-crossed       a band's line drawn through the box of a text
+  text-contrast      a text whose colour stands out from the diagram's background by less
+                     than 3:1, the WCAG minimum for large text, as when a colour scheme's
+                     text colour is the other scheme's
   band-shape         a branch band whose lines do not run from its top corners to the column
                      boundary, or a case band whose lines do not fan from its top-left corner
                      to each column boundary (references/notation.md)
@@ -27,8 +30,9 @@ import argparse
 import base64
 import json
 import os
-import shutil
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # preview.py, beside this file
 
 TOL = 1.5  # px: fractional flex widths round by up to a pixel
 DOUBLED = 3  # px: two lines closer than this read as one line drawn twice
@@ -79,7 +83,9 @@ PROBE = r"""
     if (!n.data.trim()) continue;
     const range = document.createRange(); range.selectNodeContents(n);
     for (const r of range.getClientRects())
-      if (r.width > 0 && r.height > 0) texts.push({ text: n.data.trim().slice(0, 40), rect: [r.left, r.top, r.right, r.bottom] });
+      if (r.width > 0 && r.height > 0)
+        texts.push({ text: n.data.trim().slice(0, 40), rect: [r.left, r.top, r.right, r.bottom],
+                     color: getComputedStyle(n.parentElement).color.match(/[\d.]+/g).slice(0, 3).map(Number) });
   }
 
   const bands = [...root.querySelectorAll('.fork > .cond')].map(el => ({
@@ -151,7 +157,7 @@ async ({ png, dpr, root, texts, bands }) => {
         if (ink(x, y) && segs.every(s => dist(s, x / dpr, y / dpr) > 2.5)) stray++;
     return { samples, missing, stray };
   });
-  return { crossed, shapes };
+  return { crossed, shapes, background: [bg >> 16, (bg >> 8) & 255, bg & 255] };
 }
 """
 
@@ -170,15 +176,13 @@ def band_lines(band: dict) -> list[list[float]]:
 def measure(html_path: str, *, width: int = 680, scheme: str = "light") -> dict:
     from playwright.sync_api import sync_playwright
 
+    from preview import find_browser
+
     dpr = 2
-    found = None
-    for name in ("chromium", "chromium-browser", "google-chrome", "chrome"):
-        if found := shutil.which(name):
-            break
     with sync_playwright() as p:
         # --mx-run names the run that launched the browser, so a stuck one can be killed without
         # touching another run's on a shared host. Chromium ignores a flag it does not know.
-        browser = p.chromium.launch(executable_path=found,
+        browser = p.chromium.launch(executable_path=find_browser(),
                                     args=["--no-sandbox", f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         try:
             page = browser.new_page(viewport={"width": width, "height": 900}, device_scale_factor=dpr,
@@ -229,6 +233,10 @@ def faults(geo: dict) -> list[str]:
         if n >= 4:
             out.append(f"text-crossed: a line runs through \"{text['text']}\" ({n} line pixels inside its box)")
 
+    for text in geo["texts"]:
+        if (ratio := _contrast(text["color"], geo["background"])) < 3:
+            out.append(f"text-contrast: \"{text['text']}\" stands out from the background by {ratio:.1f}:1")
+
     for band, s in zip(geo["bands"], geo["shapes"]):
         if s["missing"] > 0.1 * s["samples"] or s["stray"] > 20:
             out.append(f"band-shape: {band['desc']} is not drawn as a{'' if band['kind'] == 'case' else 'n'} "
@@ -244,6 +252,15 @@ def faults(geo: dict) -> list[str]:
         if r - l < 1 or b - t < 1:
             out.append(f"no-zero-size: {blk['desc']} laid out at {r - l:.1f}x{b - t:.1f}")
     return out
+
+
+def _contrast(a: list[float], b: list[float]) -> float:
+    """WCAG contrast ratio of two sRGB colours given as 0-255 channels."""
+    def luminance(rgb):
+        lin = [(c / 255) / 12.92 if c / 255 <= 0.04045 else ((c / 255 + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
 
 
 def _largest_hole(area: list[float], covers: list[list[float]]):

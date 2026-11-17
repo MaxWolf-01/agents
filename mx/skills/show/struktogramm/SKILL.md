@@ -54,7 +54,7 @@ A diagram is a JSON list of nodes, each with a `type`:
 - `call` draws doubled side bars: this block expands into a diagram of its own.
 - `loop` is tested before its body unless `"kind": "post"` puts the test after it, for a body
   that always runs once.
-- `exit` leaves the enclosing block its `text` names, and execution goes on after that block.
+- `exit` names in its `text` the enclosing block it leaves.
 - `if` labels its columns `yes` and `no`; a `"label"` inside `yes` or `no` replaces either. An
   empty `body` draws an empty box.
 - `par` tracks run at the same time, and the bottom band waits for all of them.
