@@ -20,3 +20,14 @@ The invocation cut of splitting (the sequence cut lives in `SKILL.md`): split of
 ## Router skills
 
 When user-invoked skills multiply past what you can remember, that piled-up cognitive load is cured by a **router skill**: one user-invoked skill that names the others and when to reach for each, so the human has one skill to remember instead of many. It can only hint, never fire them: user-invoked skills have no description, so nothing but the human can reach them.
+
+## Knowledge and workflow
+
+A skill carries two kinds of text. Its **knowledge** holds in any chat with any model: what to show, how to write, how to test. Its **workflow** text is about this setup's machinery: tickets, the session page, the hub, dispatch, forks, the agent repo and where files go in it. `SKILL.md` holds the knowledge. The workflow text goes in one file beside it, `WORKFLOW.md`, reached from `SKILL.md` by a single line that says when to read it, placed before the first section that text applies to. A skill with no workflow text has no `WORKFLOW.md`; a skill that is workflow by nature (`dispatch`, `tracker`) keeps it all in `SKILL.md`.
+
+The test, run on a finished split:
+
+1. Delete `WORKFLOW.md` and read `SKILL.md` as a reader with no tickets, no session page and no dispatch. It is a complete skill for them: no step waits on something only the workflow supplies, and no sentence leans on a section that left.
+2. Read `WORKFLOW.md` against the old skill: every rule the workflow carried is still read at the moment it applies, because the pointer line fires in every workflow session that reaches the rule.
+
+The unit is the sentence. A clause naming the workflow moves only where the sentence stands without it; an example that happens to be about a ticket stays. Text is moved, never copied. The `description` is the skill's one pointer and keeps the triggers of both halves. A file reached only from `WORKFLOW.md` is workflow too. A file a script hands to a reader on its own (a review's catalogue) keeps its workflow clauses, since that reader never opens `WORKFLOW.md`.
