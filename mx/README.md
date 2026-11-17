@@ -24,7 +24,7 @@ Tests, the `tracker` and `dispatch` scripts, which refuse what the rules forbid,
 - [`CHANGELOG.md`](CHANGELOG.md): one section per release; a session moved to a newer mx reads the sections it skipped.
 - [`bin/`](bin/): the commands skills call, on PATH in every session with the plugin enabled, each running the script in its skill and answering `--help`.
 - [`hooks/`](hooks/): `hooks.json`, which wires the session page, the context checkpoint and the update notice to session events.
-- [`skills/`](skills/): one directory per skill, listed by kind under [Skills](#skills), plus `session-page/`, the scripts and rules behind the session page.
+- [`skills/`](skills/): one directory per skill, listed by kind under [Skills](#skills), plus `session-page/`, the scripts and rules behind the session page. [`skills/show/struktogramm/`](skills/show/struktogramm/) is a skill inside a skill: `show` points to it for Nassi-Shneiderman diagrams, Claude Code does not list it, and the folder imports into claude.ai as it stands.
 - [`assets/`](assets/): the images this README embeds, rendered from [`../docs/figures/`](../docs/figures/).
 - [`docs/`](docs/): how the parts work in depth.
 - `test_*.py`: checks over every skill and script, run by `make check` in the repo root.
@@ -180,6 +180,7 @@ A `SKILL.md` that holds in any chat, with no tickets, session page or dispatch.
 | [`/mx:research`](skills/research/SKILL.md) | primary-source investigation of a question a decision waits on |
 | [`/mx:session-name`](skills/session-name/SKILL.md) | a `/rename` for the session |
 | [`/mx:sharpen`](skills/sharpen/SKILL.md) | aim the work at what the best expert would do |
+| [`show/struktogramm`](skills/show/struktogramm/SKILL.md) | a procedure drawn as a Nassi-Shneiderman diagram; reached from `/mx:show`, not invoked by name |
 | [`/mx:testing`](skills/testing/SKILL.md) | what makes a test worth keeping, and the fast suite against the full-path checks |
 | [`/mx:to-questionnaire`](skills/to-questionnaire/SKILL.md) | turn a decision someone else must answer into a questionnaire |
 | [`/mx:tyro-cli`](skills/tyro-cli/SKILL.md) | Python CLIs with tyro, and `uv run` scripts |
