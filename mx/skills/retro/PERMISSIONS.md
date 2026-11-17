@@ -4,7 +4,7 @@ What the workflow retro's permissions worker reads, and the shape of an entry it
 
 ## The data
 
-- **Denials in the digests** are `! DENIED <tool> (<kind>)` lines. `automode-blocked` is the classifier refusing a call, the rule it applied after `Reason:`; `permission-rule`, a deny or ask rule of the settings; `user-rejected`, max saying no at a prompt; `interrupted`, max stopping the call. A digest from before the kind was recorded says `denial`. `/permissions` → Recently denied lists the same classifier denials from the running session's memory alone; the transcripts are the record that lasts.
+- **Denials in the digests** are `! DENIED <tool> (<kind>)` lines. `automode-blocked` is the classifier refusing a call, the rule it applied after `Reason:`; `permission-rule`, a deny or ask rule of the settings; `user-rejected`, max saying no at a prompt; `interrupted`, max stopping the call. A digest from before the kind was recorded says `denial`.
 - **`[classifier allowed]`** after a call's tool name, `→ Bash [classifier allowed] {…}`, marks a call the classifier judged and let run. A call without it ran on a rule, the built-in read-only set or a mode with no classifier, or was denied.
 - **`rules.json`** is each settings file's `permissions` and `autoMode`, as the profile sets them; **`auto-mode.json`**, the auto mode config in effect, the shipped defaults where the profile sets none. Where `auto-mode.failed` stands in its place, the config could not be read.
 

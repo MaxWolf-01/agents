@@ -9,7 +9,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `notes/`, stage 2's notes, written with no earlier report in view, on the period and, in `notes/sample-*.md`, on the older sample from before it; `sessions/` and `sample/`, the digests the notes come from, `sample/` holding {{sample}}. In a workflow retro, also `versions.md`.
 - `todo/<repo>/`: max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), read as context, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date.
 
-The report's shape and rules are `{{skills}}/retro/REPORT.md`; read it first. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
+The report's shape and rules are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
 {{repos}}
 

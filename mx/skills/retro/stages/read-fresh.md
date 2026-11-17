@@ -14,7 +14,7 @@ Everything you read and write is in the run directory, `{{run}}`, your working d
 
 ## Steps
 
-1. Read `batches.json`. Spawn one subagent per batch and one for `git/`, in parallel, each at medium effort and given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
+1. Spawn one subagent per batch and one for `git/`, in parallel, each at medium effort and given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
 2. When they return, check that every batch and `git/` has its notes file and that each holds a section per digest. Spawn a fresh one, at the same effort, for any that is missing or cut short.
 
 The stage is done when `notes/` holds a file for every batch in `batches.json` and one for `git/`.
@@ -47,8 +47,6 @@ One file per session. Its header names the session id, title, project, profile, 
 - `! ERROR`, `! DENIED`: a failed or refused tool call, in full. `! HOOK → agent`, `! STOP HOOK`: a hook that sent the turn back. `! API ERROR`.
 - `(turn took 4m12s)`, `(context compacted)`, and `(left out: …)` where a long session's days before the period were cut.
 - `## Session page: …` closes a digest that has them: the session page's records, what max was shown of the session.
-
-A git record lists commits with their messages, reverts, ticket changes and worker reports.
 
 ### The notes
 

@@ -19,7 +19,7 @@ A retro is one per tracker. It reads the code of every repo the tracker plans, t
 
 ## A run by hand
 
-`retro <project>`, with `--focus "<focus>"` when max names one: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass. A run takes an hour or more: start it in the background with `job` (`/mx:tmux`), and come back when it ends. In a session that also works the report, start it once the verdicts are committed, so it reads them. `retro --help` says which repos a run takes, what it reads, where it writes and when it leaves the report uncommitted; `runs.log` in the retro's data directory says how each run ended.
+`retro <project>`, with `--focus "<focus>"` when max names one: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass. A run takes an hour or more: start it in the background with `job` (`/mx:tmux`). In a session that also works the report, start it once the verdicts are committed, so it reads them. `retro --help` says which repos a run takes, what it reads, where it writes and when it leaves the report uncommitted; `runs.log` in the retro's data directory says how each run ended.
 
 ## The weekly run
 
