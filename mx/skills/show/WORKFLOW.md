@@ -25,8 +25,6 @@ The builder is done once it has seen the artifact and reviewed its prose. It loo
 
 ## Produce and present
 
-These sit beside the bullets of the same section in `SKILL.md`.
-
 - Every page an agent opens is served from one local origin together with every agent directory, so a script changed at its CDN could read them all and send them off: this is why a page pins every script it loads.
 - A page names the session the reader resumes to get back to the conversation behind it: `session <first 8 of the id>` in its `v-meta` line, as a button that copies `claude --resume <id>`, the id being `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}` read in the shell.
 - Before the look `SKILL.md` asks for, `render-lint` an HTML page (its `--help` says what it reports; `--narrow` for an app or a page someone reads in a narrow window or zoomed in) and fix every fatal finding.
