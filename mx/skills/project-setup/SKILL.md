@@ -5,17 +5,17 @@ description: Set up a project's foundations, new or existing. Use when starting 
 
 # Project setup
 
-Target preferences for a project's foundations. On a fresh project, build all of it; on an existing repo, the user says what they want; ask where unclear, and the project's own instructions overrule anything here.
+On a fresh project, build all of it; on an existing repo, build what the user asks for, and ask where unclear. The project's own instructions overrule anything here.
 
 ## Core
 
 - **Reproducible install is the one hard requirement.** One documented command takes a clean checkout to a working environment. Everything else here is preference.
 - **Make targets are the convention**: `install`, `check`, `test`, and where they apply `test-full-path` (`/mx:testing`), `run`, `format`, `fix`, `release-patch|minor|major`. Agents and humans alike answer "how do I check this project" by reading the Makefile.
-- **Git + GitHub**: `gh repo create --private` (private always; the user makes things public themselves). The repo's `.gitignore` carries project-specific entries; the global gitignore already covers editors, caches, and build junk.
+- **Git + GitHub**: `gh repo create --private` (always private; the user makes a repo public themselves). The repo's `.gitignore` carries only project-specific entries; the global gitignore covers editors, caches and build junk.
 - **MIT license** unless the user says otherwise.
 - **README stub**: what it is, install, usage. No aspirational sections.
 - **AGENTS.md** at the root holds the project's instructions, so Claude Code and Codex both load the one file. Claude Code skips it wherever a `CLAUDE.md` or `CLAUDE.local.md` sits at or above the working directory, so an existing repo's `CLAUDE.md` is renamed to it (`git mv`), not kept beside it.
-- **Flake rule**: a dependency the language package manager can't deliver (compiler, native lib, Postgres, ffmpeg, CUDA) goes in a devShell flake, so every machine, including NixOS hosts, gets it from one pinned declaration. `nix develop -c <cmd>` runs a command inside it. Projects whose needs the language toolchain fully covers get no flake (uv delivers Python itself; npm delivers neither node nor pnpm, so node projects always get one).
+- **Flake rule**: a dependency the language package manager can't deliver (compiler, native lib, Postgres, ffmpeg, CUDA) goes in a devShell flake, so every machine, including NixOS hosts, gets it from one pinned declaration. `nix develop -c <cmd>` runs a command inside it. A project whose needs the language toolchain fully covers gets no flake (uv delivers Python itself; npm delivers neither node nor pnpm, so node projects always get one).
 
   ```nix
   {
