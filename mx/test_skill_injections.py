@@ -74,6 +74,6 @@ def test_every_injected_command_is_in_its_skills_allowed_tools():
 def test_only_dispatch_carries_allowed_tools_among_model_invoked_skills():
     fronts = {path.parent.name: frontmatter_and_body(path)[0] for path in sorted(SKILLS.glob("*/SKILL.md"))}
     model_invoked = {name for name, front in fronts.items() if not front.get("disable-model-invocation")}
-    assert {"dispatch", "mermaid", "tmux"} <= model_invoked, "the frontmatter no longer reads as it did"
+    assert {"dispatch", "tmux"} <= model_invoked, "the frontmatter no longer reads as it did"
     carrying = sorted(name for name in model_invoked - {"dispatch"} if fronts[name].get("allowed-tools"))
     assert not carrying, "these model-invoked skills carry allowed-tools, which fails them in claude -p: " + ", ".join(carrying)

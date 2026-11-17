@@ -10,6 +10,7 @@ An HTML page as the artifact: side-by-side panels, an interactive figure, prose 
 - Motion only in answer to the reader's action (open, expand, confirm), and it shows what changed. No entrance animations, no hover transitions on every card.
 - Quality floor: usable at 700px wide, visible keyboard focus, `prefers-reduced-motion` honoured, both schemes with the toggle.
 - Selector specificity: one class per block, no element selectors that can cancel a class's spacing.
+- A page names the session the reader resumes to get back to the conversation behind it: `session <first 8 of the id>` in its `v-meta` line, as a button that copies `claude --resume <id>`, the id being `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}` read in the shell.
 
 ## Layouts that have worked
 

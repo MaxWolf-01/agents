@@ -38,7 +38,7 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 
 Durable docs: `GLOSSARY.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `agent/` is a git repo of its own inside the project, which ignores it, holding what plans it (`/mx:orient` lists what goes where); `git -C agent` is how you commit there.
 
-Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
+Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output. A skill's `WORKFLOW.md`, where it has one, is how that skill fits the mx workflow: read it with the skill's `SKILL.md`.
 
 Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (tickets, commits, project AGENTS.md, docs); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
 

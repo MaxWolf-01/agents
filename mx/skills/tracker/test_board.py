@@ -567,13 +567,13 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
 
 def test_the_graph_engine_is_one_exact_version_pinned_by_hash_the_one_the_validator_installs(tracker: Path) -> None:
     """P2 of pele-draws-every-diagram: the page loads its one CDN script at an exact version with
-    its integrity hash, and the board draws with the Pele the mermaid skill validates with."""
+    its integrity hash, and the board draws with the Pele that show's mermaid validator installs."""
     page = page_of(tracker)
     scripts = re.findall(r'"https://cdn\.jsdelivr\.net/npm/(\w+)@([^/"]+)/[^"]+",\s*"(sha256-[A-Za-z0-9+/]{43}=)"', page)
     assert len(scripts) == 1 and len(re.findall(r"cdn\.jsdelivr\.net/npm/", page)) == 1, scripts
     [(package, version, _)] = scripts
     assert package == "pele" and re.fullmatch(r"\d+\.\d+\.\d+", version), version
-    lock = json.loads((Path(__file__).parents[1] / "mermaid" / "tools" / "package-lock.json").read_text())
+    lock = json.loads((Path(__file__).parents[1] / "show" / "mermaid" / "tools" / "package-lock.json").read_text())
     assert lock["packages"]["node_modules/pele"]["version"] == version, "the board and the validator draw with different Pele"
 
 
@@ -1282,7 +1282,7 @@ def test_what_a_show_directory_offers_an_opened_ticket(tmp_path: Path) -> None:
 
 
 def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
-    """Where a tree's show lives (/mx:show): the parent ticket's own directory. A parent is read
+    """Where a tree's show lives (/mx:show, WORKFLOW.md): the parent ticket's own directory. A parent is read
     like any other ticket, so its children's show directories are theirs and none of its own."""
     root = tmp_path / "agent" / "tickets"
     root.mkdir(parents=True)

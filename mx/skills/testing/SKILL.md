@@ -17,13 +17,13 @@ Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Two kinds of run
 
-**The fast suite** is `make test`: it touches nothing outside the checkout and a scratch directory of its own, with no browser, desktop, network or sleeps. A test that runs the project's own script as a subprocess in that scratch directory belongs in it. Every session and every worker runs it on every change, and the three jobs live in it.
+**The fast suite** is `make test`: it touches nothing outside the checkout and a scratch directory of its own, with no browser, desktop, network or sleeps. A test that runs the project's own script as a subprocess in that scratch directory belongs in it. It runs on every change, and the three jobs live in it.
 
-**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and by the session landing a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched. A landing's show is usually the output of such a run, so its runnable script (`/mx:show`, A runnable artifact) is the natural home for one: the check and the demonstration are the same run.
+**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and on a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched.
 
 ## The seam
 
-A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. The ticket's Testing seams names them for the work in hand (`/mx:tracker`); where nothing names one, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
+A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. Where nothing names one for the work in hand, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
 
 Logic inside a decorated entry point (a route handler, a CLI command, a scheduled task) is testable, by calling it directly or driving the framework's test client, but every test of it pays that setup. Put the logic in a plain function the entry point calls, and test that.
 

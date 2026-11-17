@@ -20,3 +20,16 @@ The invocation cut of splitting (the sequence cut lives in `SKILL.md`): split of
 ## Router skills
 
 When user-invoked skills multiply past what you can remember, that piled-up cognitive load is cured by a **router skill**: one user-invoked skill that names the others and when to reach for each, so the human has one skill to remember instead of many. It can only hint, never fire them: user-invoked skills have no description, so nothing but the human can reach them.
+
+## Knowledge and workflow
+
+A skill carries two kinds of text. Its **knowledge** holds in any chat with any model: what to show, how to write, how to test. A tool that ships with the skill (a script beside it, a command the plugin puts on `PATH`) is part of its knowledge, named at the step that uses it. Its **workflow** text is about this setup's machinery: tickets, the session page, the hub, dispatch, the agent repo and where files go in it.
+
+Most workflow text already has a home: `claude/CLAUDE.md`, `session-page/RULES.md`, `/mx:tracker`, `/mx:dispatch`, `/mx:orient`. A skill restates none of it, and names the home only where a sentence needs it. What is particular to one skill in the workflow goes in `WORKFLOW.md` beside its `SKILL.md`, as whole passages, each rule with its reason. A fact general to the workflow that has no home yet gets one, once, in the file that owns it. A skill whose workflow text all has homes elsewhere has no `WORKFLOW.md`. The one pointer to these files is the line in `claude/CLAUDE.md`'s workflow block, copied in `dispatch/worker-prompt.md` for workers; no `SKILL.md` carries one.
+
+The test, run on a finished skill:
+
+1. Read `SKILL.md` as a reader with no tickets, no session page and no dispatch. It is a complete skill for them: no step waits on something only the workflow supplies.
+2. Read `WORKFLOW.md` sentence by sentence and name the home of each fact. A sentence whose fact another home states is deleted; what is left is particular to this skill.
+
+An example that happens to be about a ticket stays in `SKILL.md`. The `description` keeps the triggers of the skill's workflow uses too. A file a script hands to a reader on its own (a review's catalogue) keeps its workflow clauses, since that reader never opens `WORKFLOW.md`.

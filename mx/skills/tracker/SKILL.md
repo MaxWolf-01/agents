@@ -80,10 +80,10 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 ## Retire
 
-A **finished tree** leaves the live tracker through `tracker retire`, whose `--help` says what a finished tree is and what goes with it. Dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
+A **finished tree** leaves the live tracker through `tracker retire`, whose `--help` says what a finished tree is and what goes with it. Dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`'s `WORKFLOW.md`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
-Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the session's records (`/mx:show`). A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
+Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the session's records (`/mx:orient`, The artefacts). A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows and how it is served. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows and how it is served. A ticket's row lists its show directory, and an executable file there (`/mx:show`, A runnable artifact) gets a button carrying the command that runs it from the code repo's root, so the reader starts it when they want it. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.
