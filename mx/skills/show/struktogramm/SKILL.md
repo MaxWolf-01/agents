@@ -90,8 +90,7 @@ python scripts/struktogramm.py diagram.json --fragment      # <style> and the di
 ```
 
 From Python: `page(nodes)` returns the document, `fragment(nodes)` the embeddable part, and
-`min_width(nodes)` the diagram's width in pixels. The renderer needs nothing past Python's
-standard library.
+`min_width(nodes)` the diagram's width in pixels.
 
 Width carries no meaning in the notation, so a block's columns are drawn equal whatever their
 content, and the diagram is at least as wide as its narrowest column needs to be to hold that
