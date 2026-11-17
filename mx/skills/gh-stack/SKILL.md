@@ -12,7 +12,7 @@ metadata:
 
 # gh-stack
 
-Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md`, the line that points at it, and the line under Core loop that points at `/mx:github`, which are local.
+Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md`, the line that points at it, and the line under Core loop that points at `/mx:github`, which are local. The local copy is also pruned of what a current model does unprompted, and a re-copy prunes it again.
 
 `gh stack` prints a stack trunk-first, left to right:
 
