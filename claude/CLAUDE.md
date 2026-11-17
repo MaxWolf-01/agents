@@ -199,4 +199,5 @@ Good code requires good abstractions requires deep understanding.
 - Represent data as data.
 - Abstractions should emerge from concrete implementations, not precede them.
 
+Prefer to put sentences on their own lines so it makes diffs a lot cleaner and easier to review changes within paragraphs and reduces line-wrapping, e.g. in markdown or code comments, docstrings. Paragraphs via blank lines, etc.
 </taste>
