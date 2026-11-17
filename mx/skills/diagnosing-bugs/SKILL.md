@@ -19,8 +19,6 @@ If the redacted output is not enough to diagnose the bug, say so and ask the use
 
 ### Ways to construct one
 
-The obvious loops first: a **failing test** at whatever seam reaches the bug (unit, integration, e2e); a **curl / HTTP script** against a running dev server; a **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot; a **headless browser script** (Playwright / Puppeteer) asserting on DOM, console, or network. When none of those reaches the bug:
-
 - **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.
 - **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.
 - **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
@@ -30,11 +28,7 @@ The obvious loops first: a **failing test** at whatever seam reaches the bug (un
 
 ### Tighten the loop
 
-Treat the loop as a product. Once you have _a_ loop, **tighten** it:
-
-- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
-- Can I make the signal sharper? (Assert on the specific symptom, not "didn't crash".)
-- Can I make it more deterministic? (Pin time, seed RNG, isolate filesystem, freeze network.)
+Treat the loop as a product. Once you have _a_ loop, **tighten** it.
 
 A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight.
 
@@ -59,8 +53,6 @@ No red-capable command, no Phase 2.
 
 ## Phase 2: Reproduce + minimise
 
-Run the loop. Watch it go red: the bug appears.
-
 Confirm:
 
 - [ ] The loop produces the failure mode the **user** described, not a different failure that happens to be nearby. Wrong bug = wrong fix.
@@ -70,8 +62,6 @@ Confirm:
 ### Minimise
 
 Once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut; keep only what's load-bearing for the failure.
-
-Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
 
 Done when **every remaining element is load-bearing**: removing any one of them makes the loop go green.
 
@@ -85,7 +75,7 @@ Each hypothesis must be **falsifiable**: state the prediction it makes.
 
 If you cannot state the prediction, the hypothesis is a vibe: discard or sharpen it.
 
-**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Cheap checkpoint, big time saver. Don't block on it; proceed with your ranking if the user is AFK.
+**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Don't block on it; proceed with your ranking if the user is AFK.
 
 ## Phase 4: Instrument
 
@@ -96,9 +86,9 @@ Tool preference:
 1. **Debugger / REPL inspection** if the env supports it. One breakpoint beats ten logs.
 2. **Targeted logs** at the boundaries that distinguish hypotheses.
 
-**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`. Cleanup at the end becomes a single grep. Untagged logs survive; tagged logs die.
+**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`. Cleanup at the end becomes a single grep.
 
-**Perf branch.** For performance regressions, logs are usually wrong. Instead: establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect. Measure first, fix second.
+**Perf branch.** For performance regressions, logs are usually wrong. Instead: establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect.
 
 ## Phase 5: Fix + regression test
 
