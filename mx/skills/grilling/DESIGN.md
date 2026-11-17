@@ -1,10 +1,10 @@
 # Writing the design into the ticket
 
-How a round fills the design sections `/mx:tracker`'s The ticket file lists, from User stories through Fog. That section owns their order and their item formats; this one is what makes each worth reading. A decision that meets `/mx:domain-modelling`'s bar is an ADR, with the ticket referencing it rather than restating it.
+How a round fills the design sections `/mx:tracker`'s The ticket file lists, from User stories through Fog; that section owns their order and item formats. A decision that meets `/mx:domain-modelling`'s bar is an ADR, which the ticket references rather than restates.
 
-**User stories.** Long and extensive while the ticket is being grilled, covering every actor and every aspect of the work. The user reads them as they grow, which is where misunderstandings surface, and the child tickets are cut from them and checked against them.
+**User stories.** Extensive while the ticket is being grilled, covering every actor and every aspect of the work: the user reads them as they grow, which is where misunderstandings surface, and the child tickets are cut from them and checked against them.
 
-**Properties.** What the work must *be*, where a story says what a user can *do*; the story format cannot express these, and a property with no story still earns its line. Phrase each as an always or a never a reviewer can check a diff against: rendering, error containment, lifecycle and session models, copy discipline. Ids are assigned in order, and a retired property leaves its number behind rather than passing it on.
+**Properties.** What the work must *be*, where a story says what a user can *do*; a property with no story still earns its line. Phrase each as an always or a never a reviewer can check a diff against: rendering, error containment, lifecycle and session models, copy discipline. Ids are assigned in order, and a retired property's number is never reused.
 
 **Decisions.** What the calls can cover:
 
@@ -16,9 +16,9 @@ How a round fills the design sections `/mx:tracker`'s The ticket file lists, fro
 - API contracts
 - Specific interactions
 
-Several of those name a shape `/mx:show`'s table gives a figure. The call links that figure and states what the figure cannot: the why, and the rejected alternative.
+Where one of those has a figure in `/mx:show`'s table, the call links that figure and states what it cannot show: the why, and the rejected alternative.
 
-Leave out file paths and code snippets, which go stale fast; a link to a figure or a prototype is neither. The exception is a snippet a prototype produced that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape): inline it in the decision it settles, trimmed to the decision-rich part and marked as the prototype's.
+Leave out file paths and code snippets, which go stale fast; a link to a figure or a prototype is neither. The exception is a prototype's snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape): inline it in the decision it settles, trimmed to the decision-rich part and marked as the prototype's.
 
 List any **floors**, prototypes (or aspects of one) the user promoted to minimum-quality references, with their paths, so the cut can stamp them onto the child tickets building those surfaces (`/mx:tracker`, SLICING.md).
 
