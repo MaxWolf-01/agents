@@ -241,7 +241,7 @@ with sync_playwright() as pw:
         # puts its fragment in the address, opens a turn, scrolls on, and the page is reloaded with
         # a turn added
         context, page = open_page(1280, 700)
-        page.click("#a03 .turn-ref")
+        page.click("#tl03 .turn-ref")
         settle(page)
         out["hash"] = page.evaluate("location.hash")
         page.click("#t05 > summary")
@@ -297,7 +297,7 @@ with sync_playwright() as pw:
             settle(page)
             out["typed"][" ".join(keys)] = {**page.evaluate(PLACE), "toast": page.text_content("#toast")}
         # P4: the number of a turn that links nothing goes to it, and so does its headline
-        for target in ("#a07 .turn-ref", "#a08 .hl"):
+        for target in ("#tl07 .turn-ref", "#tl08 .hl"):
             page.click(target)
             settle(page)
             out[target] = page.evaluate(PLACE)
@@ -307,11 +307,11 @@ with sync_playwright() as pw:
         short.keyboard.press("G")
         try:
             short.wait_for_function('''() => { const c = document.querySelector("#artefacts").getBoundingClientRect(),
-                g = document.querySelector("#a01").getBoundingClientRect(); return c.top <= g.top && g.bottom <= c.bottom }''',
+                g = document.querySelector("#tl01").getBoundingClientRect(); return c.top <= g.top && g.bottom <= c.bottom }''',
                 timeout=5000)
         except Exception:
             pass  # the assertion below says where the row was left
-        out["short"] = {"column": short.eval_on_selector("#artefacts", BOX), "row": short.eval_on_selector("#a01", BOX),
+        out["short"] = {"column": short.eval_on_selector("#artefacts", BOX), "row": short.eval_on_selector("#tl01", BOX),
                         "overflows": short.eval_on_selector("#artefacts", "(el) => el.scrollHeight > el.clientHeight")}
 
     elif scenario == "prompt_size":
@@ -841,7 +841,7 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
         ["t02", ["The grid, the session page sketch and Q1 to Q3"]],
         ["t01", []],
     ]
-    assert seen["walk"] == [["j", "t04", "a04"], ["j", "t03", "a03"], ["k", "t04", "a04"]]
+    assert seen["walk"] == [["j", "t04", "tl04"], ["j", "t03", "tl03"], ["k", "t04", "tl04"]]
     url = lambda path: (root / path).as_uri()
     assert seen["opened"] == {"t04 1": url(ARTEFACTS[2]), "t04 2": url(ARTEFACTS[3]), "t03 1": url(ARTEFACTS[1])}
     assert seen["clicked"] == [str(root / ARTEFACTS[i]) for i in (2, 3, 1)]
@@ -937,7 +937,7 @@ def test_a_reload_with_a_turn_added_keeps_the_readers_place(long_session: tuple[
     assert seen["hash"] == "#t03"
     before = seen["before"]
     assert not (before["anchor"] == "t03" and abs(before["into"]) < 20), f"the wheel left the reader on turn 03's top: {before}"
-    assert before["anchor"].startswith("t") and before["row"] == "a" + before["anchor"][1:], f"P5: the timeline marks {before['row']}"
+    assert before["anchor"].startswith("t") and before["row"] == "tl" + before["anchor"][1:], f"P5: the timeline marks {before['row']}"
     assert seen["control_before"]["fresh"] is False
     now = seen["after"]
     assert seen["hash_after"] == "#t03", "the reload dropped the fragment, so the check proves nothing about it"
@@ -990,7 +990,7 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
     assert seen["t 1"]["cur"] == "t09" and seen["t 1"]["toast"] == "turn 1…", seen["t 1"]
     assert seen["Enter"]["cur"] == "t01" and "t01" in seen["Enter"]["open"], seen["Enter"]
     assert seen["t 0 0"]["cur"] == "t01" and seen["t 0 0"]["toast"] == "no turn 00", seen["t 0 0"]
-    for target, turn in (("#a07 .turn-ref", "t07"), ("#a08 .hl", "t08")):
+    for target, turn in (("#tl07 .turn-ref", "t07"), ("#tl08 .hl", "t08")):
         at = probed[target]
         assert at["anchor"] == turn and at["cur"] == turn and turn in at["open"], f"P4: {target} went to {at}"
     short = probed["short"]

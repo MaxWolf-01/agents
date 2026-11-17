@@ -1704,7 +1704,7 @@ def column(rows: tuple[Row, ...], session: Session) -> str:
     its reply's first line. The session that continued this one is at its top, the one it continued
     at its bottom, each a link to that session's page."""
     groups = "".join(chat_group(r) if isinstance(r.turn, Chat) else f"""
-    <section class="group{'' if r.artefacts else ' bare'}" id="a{r.key}">
+    <section class="group{'' if r.artefacts else ' bare'}" id="tl{r.key}">
       <a class="v-num turn-ref" href="#t{r.key}">{r.key}</a><div class="tl">{timeline_row(r)}</div>
     </section>""" for r in rows)
     later = "".join(timeline_end(session, "next", s) for s in session.following)
@@ -1732,7 +1732,7 @@ def chat_group(r: Row) -> str:
     first = next((line for line in r.turn.reply.splitlines() if line.strip()), "")
     text = esc(strip_tags(inline(first.strip().lstrip("#-*> ").strip())))
     return f"""
-    <section class="group chat" id="a-{r.key}">
+    <section class="group chat" id="tl-{r.key}">
       <span class="turn-ref"></span><div class="tl"><a class="hl" href="#{r.key}" tabindex="-1" title="{text}">{text}</a></div>
     </section>"""
 
