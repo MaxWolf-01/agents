@@ -57,7 +57,7 @@ awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
 
 ## Structures
 
-- `40` `both` **Emphasis crutches.** "Full stop.", "Period.", "Let that sink in.", "Make no mistake", "This matters because", "Here's why that matters". They add no meaning. Delete them.
+- `40` `both` **Emphasis crutches.** "Full stop.", "Period.", "Let that sink in.", "Make no mistake", "This matters because", "Here's why that matters". Delete them.
 
 - `42` `both` **Rhetorical setups.** "What if [reframe]?", "Here's what I mean:", "Think about it:", "And that's okay.", a question posed and answered in the next breath. Make the point and let the reader draw the conclusion.
   Before: "What if I told you that the best teams don't optimize for productivity? Here's what I mean: they optimize for learning. Think about it." After: "The best teams optimize for learning, not productivity."
@@ -65,7 +65,7 @@ awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
 - `45` `both` **Dramatic fragmentation.** "[Noun]. That's it. That's the [thing].", "X. And Y. And Z.", "This unlocks something. [Word].", short sentences stacked for rhythm. Write complete sentences and trust the content over the presentation.
   Before: "Speed. Quality. Cost. You can only pick two. That's it. That's the tradeoff." After: "Pick two of speed, quality and cost."
 
-- `46` `both` **Negative listing.** Listing what something is not before revealing what it is: "Not a X... Not a Y... A Z.", "It wasn't X. It wasn't Y. It was Z." State Z. The reader doesn't need the runway.
+- `46` `both` **Negative listing.** Listing what something is not before revealing what it is: "Not a X... Not a Y... A Z.", "It wasn't X. It wasn't Y. It was Z." State Z.
 
 - `47` `both` **Binary contrasts.** "Not because X. Because Y.", "[X] isn't the problem. [Y] is.", "The answer isn't X. It's Y.", "It feels like X. It's actually Y.", "stops being X and starts being Y". They create false drama. State Y directly and drop the negation. Not a hit when the contrast is the content: a recommendation set against the reader's proposal, or a fact corrected against a belief the reader stated.
   Before: "Here's the thing: building products is hard. Not because the technology is complex. Because people are complex. Let that sink in." After: "Building products is hard. Technology is manageable. People aren't."
@@ -115,7 +115,7 @@ awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
 
 - `30` `both` **Cut adverbs, or use a stronger verb.** "runs quickly" becomes "is fast" or the number. "significantly improves" becomes the measured delta. An adverb propping up a weak verb means the verb is wrong. The frequent offenders: really, just, literally, genuinely, honestly, simply, actually, deeply, truly, fundamentally, inherently, inevitably, interestingly, importantly, crucially.
 
-- `31` `both` **Prefer the plain word.** "utilize" becomes "use", "leverage" becomes "use", "facilitate" becomes "help", "numerous" becomes "many", "in the event that" becomes "if". The fancier synonym is rarely clearer.
+- `31` `both` **Prefer the plain word.** "utilize" becomes "use", "leverage" becomes "use", "facilitate" becomes "help", "numerous" becomes "many", "in the event that" becomes "if".
 
 - `32` `both` **Mannered prose.** Metaphor or flourish where a literal phrase exists: aphorisms ("wire it or delete it"), rhetorical fragments for effect, personified code ("the plan holds it"), figurative verbs ("rides along", "stands on", "creeps in"), stock framing phrases ("X is a feature, not a bug", "dressed up as"), performative asides ("they exist, I promise"), every paragraph ending on a punch. "A dial worth turning" becomes "a parameter worth varying". Say what you mean. Rule 26 covers the metaphor nouns.
 
