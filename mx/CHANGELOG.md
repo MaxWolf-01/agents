@@ -1,3 +1,8 @@
+## 1.0.122
+
+- Skills drop what a current model does unprompted
+  Every skill under mx/skills was read whole and cut by deletion, one commit per skill: opening summaries, "read X first", worked examples of work whose steps are obvious, slogans after a rule, generic lists. Skill text goes from 74,707 to about 70,100 words. A rule that a commit shows was added after an observed failure stays unless its case is covered elsewhere; one such line was cut (tmux, a taken session name). writing-for-humans' rule 31 is rewritten, not cut: a precise technical term the reader holds is the plain word and is never paraphrased, and rules 33 and 55 agree with it. The failure behind it: a Slack draft that turned "the service is now idempotent" into a sentence of paraphrase.
+
 ## 1.0.121
 
 - The struktogramm fixture test passes on any font set
