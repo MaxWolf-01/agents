@@ -65,6 +65,13 @@ CSS = """
 .ns .ln.l, .ns .ln.r { width: 26px; }
 .ns .ln.r { left: auto; right: -1px; }
 .ns .exit > .ln { width: 22px; }
+.ns .exit.raise { padding-left: 44px; }
+.ns .exit.raise > .ln { width: 34px; }
+.ns .kw { font-variant: small-caps; letter-spacing: 0.04em; margin-right: 6px; }
+.ns .time { float: right; margin: 0 0 0 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ns .cond .time { display: block; float: none; margin: 2px 0 0; }
+.ns .inputs > .kw, .ns .exit > .kw { display: block; margin-bottom: 2px; }
+.ns .inputs > ul { display: flex; flex-wrap: wrap; gap: 2px 22px; margin: 0; padding: 0; list-style: none; }
 """
 
 
@@ -100,9 +107,9 @@ body { margin: 0; padding: 24px; background: #fdfdfb; font-family: system-ui, sa
 """
 
 
-# The width of each character in em, rounded up from DejaVu Sans, the widest of the common sans
-# faces: an estimate, since the fonts are the reader's. A character not listed is 0.65em, and a
-# CJK one 1em.
+# The width of each character in em, near DejaVu Sans, the widest of the common sans faces, and a
+# word's sum is taken 5% wider: an estimate, since the fonts are the reader's. A character not
+# listed is 0.65em, and a CJK one 1em.
 _EM = {**dict.fromkeys("ijlI.,:;'!|", 0.3), **dict.fromkeys("frt()[]/\\-\"", 0.42),
        **dict.fromkeys("ABCDGHKNOQRUVXYZw#&+<=>^~", 0.8), **dict.fromkeys("mMW%@\u2014", 1.0)}
 BODY, SMALL = 15, 12.5  # px: the font sizes the CSS gives text and captions
@@ -112,7 +119,7 @@ def _word(text: str, size: float) -> float:
     """The width in px of the longest word in `text`, set at `size` px. A line may break after a
     hyphen, so each part of a hyphenated word counts alone."""
     em = lambda c: _EM.get(c, 1.0 if ord(c) >= 0x2E80 else 0.65)
-    return max((sum(map(em, w)) * size for w in re.split(r"\s+|(?<=-)", text)), default=0)
+    return max((sum(map(em, w)) * size for w in re.split(r"\s+|(?<=-)", text)), default=0) * 1.05
 
 
 def _need_seq(nodes: list) -> float:
@@ -123,13 +130,15 @@ def _need(n: dict) -> float:
     """The narrowest a block can be with no word split: its widest text's longest word plus that
     text's padding, and for a block with columns, as many times its neediest column as it has."""
     kind = n.get("type", "stmt")
-    text = max(_word(n.get("text", ""), BODY), _word(n.get("sub") or "", SMALL))
+    text = max(_word(n.get("text", ""), BODY), _word(n.get("sub") or "", SMALL), _word(n.get("time") or "", SMALL))
+    if kind == "inputs":
+        return max(_word(n.get("title", "inputs"), SMALL), *(_word(i, BODY) for i in n["items"])) + 30
     if kind == "stmt":
         return text + 30
     if kind == "call":
         return text + 32
     if kind == "exit":
-        return text + 50
+        return max(text, _word(n.get("kind", ""), SMALL)) + (60 if n.get("kind") == "raise" else 50)
     if kind == "loop":
         return max(_word(n["cond"], SMALL) + 30, 21 + _need_seq(n["body"]))
     if kind == "if":
@@ -142,8 +151,11 @@ def _need(n: dict) -> float:
         each = max(max(_word(b.get("label", ""), SMALL) + 22, _need_seq(b.get("body", []))) for b in branches)
         return max(2 * (_word(n["cond"], BODY) + 24), len(branches) * each)
     if kind == "par":
-        caps = max(_word(n.get("cap", "in parallel"), SMALL), _word(n.get("join", "wait for all"), SMALL)) + 62
-        return max(caps, len(n["tracks"]) * max(_need_seq(t) for t in n["tracks"]))
+        tracks = _tracks(n)
+        caps = max(_word(n.get("cap", "in parallel"), SMALL), _word(n.get("join", "wait for all"), SMALL),
+                   _word(n.get("time") or "", SMALL)) + 62
+        each = max(max(_word(f"uses {uses}", SMALL) + 22, _need_seq(body)) for uses, body in tracks)
+        return max(caps, len(tracks) * each)
     return 0
 
 
@@ -159,8 +171,18 @@ def _lines(d: str, cls: str = "") -> str:
             f'<path d="{d}"/></svg>')
 
 
+def _time(node: dict) -> str:
+    return f'<span class="time small">{escape(node["time"])}</span>' if node.get("time") else ""
+
+
+def _tracks(n: dict) -> list:
+    """Each parallel track as (the resource it uses or "", its node list); a track is a node list,
+    or an object holding one as `body` beside the resource it names in `uses`."""
+    return [(t.get("uses", ""), t.get("body", [])) if isinstance(t, dict) else ("", t) for t in n["tracks"]]
+
+
 def _txt(node: dict) -> str:
-    out = escape(node["text"])
+    out = _time(node) + escape(node["text"])
     if node.get("sub"):
         out += f'<span class="sub">{escape(node["sub"])}</span>'
     return out
@@ -177,33 +199,43 @@ def _node(n: dict) -> str:
     if kind == "call":
         return f'<div class="cell blk call">{_txt(n)}</div>'
     if kind == "exit":
-        return f'<div class="cell blk exit">{_lines("M100 0 L0 50 L100 100")}{_txt(n)}</div>'
+        how = n.get("kind", "")
+        notch = "M60 0 L0 50 L60 100 M100 0 L40 50 L100 100" if how == "raise" else "M100 0 L0 50 L100 100"
+        kw = f'<span class="kw small">{escape(how)}</span>' if how else ""
+        return f'<div class="cell blk exit {escape(how)}">{_lines(notch)}{_time(n)}{kw}{_txt(n | {"time": None})}</div>'
+    if kind == "inputs":
+        items = "".join(f"<li>{escape(i)}</li>" for i in n["items"])
+        return f'<div class="cell blk inputs"><span class="kw small">{escape(n.get("title", "inputs"))}</span><ul>{items}</ul></div>'
     if kind == "loop":
         post = n.get("kind") == "post"
-        cap = f'<div class="cap small">{escape(n["cond"])}</div>'
+        cap = f'<div class="cap small">{_time(n)}{escape(n["cond"])}</div>'
         body = f'<div class="body">{_seq(n["body"])}</div>'
         return f'<div class="cell loop {"post" if post else "pre"}">{body + cap if post else cap + body}</div>'
     if kind == "if":
         yes, no = n.get("yes", {}), n.get("no", {})
         cond = (f'<div class="cell cond">{_lines("M0 0 L50 100 L100 0")}'
-                f'<div class="q">{escape(n["cond"])}</div>'
+                f'<div class="q">{escape(n["cond"])}{_time(n)}</div>'
                 f'<div class="yes small">{escape(yes.get("label", "yes"))}</div>'
                 f'<div class="no small">{escape(no.get("label", "no"))}</div></div>')
         return f'<div class="fork">{cond}{_cols([yes.get("body", []), no.get("body", [])])}</div>'
     if kind == "case":
         branches = n["branches"]
         fan = " ".join(f"M0 0 L{k * 100 / len(branches):.4f} 100" for k in range(1, len(branches) + 1))
-        cond = f'<div class="cell cond">{_lines(fan)}<div class="q">{escape(n["cond"])}</div></div>'
+        cond = f'<div class="cell cond">{_lines(fan)}<div class="q">{escape(n["cond"])}{_time(n)}</div></div>'
         lbls = '<div class="lbls">' + "".join(
             f'<div class="cell small">{escape(b.get("label", ""))}</div>' for b in branches) + "</div>"
         return f'<div class="fork case">{cond}{lbls}{_cols([b.get("body", []) for b in branches])}</div>'
     if kind == "par":
         top = _lines("M0 100 L100 0", "l") + _lines("M100 100 L0 0", "r")
         bot = _lines("M0 0 L100 100", "l") + _lines("M100 0 L0 100", "r")
-        return (f'<div class="par"><div class="cell cap top small">{top}{escape(n.get("cap", "in parallel"))}</div>'
-                f'{_cols(n["tracks"])}'
+        tracks = _tracks(n)
+        uses = ('<div class="lbls">' + "".join(
+            f'<div class="cell small">{f"uses {escape(u)}" if u else ""}</div>' for u, _ in tracks) + "</div>"
+            if any(u for u, _ in tracks) else "")
+        return (f'<div class="par"><div class="cell cap top small">{top}{_time(n)}{escape(n.get("cap", "in parallel"))}</div>'
+                f'{uses}{_cols([body for _, body in tracks])}'
                 f'<div class="cell cap bot small">{bot}{escape(n.get("join", "wait for all"))}</div></div>')
-    raise ValueError(f"unknown node type {kind!r}; the types are stmt, call, exit, loop, if, case, par")
+    raise ValueError(f"unknown node type {kind!r}; the types are stmt, call, exit, inputs, loop, if, case, par")
 
 
 def main() -> int:

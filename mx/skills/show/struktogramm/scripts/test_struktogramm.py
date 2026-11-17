@@ -46,14 +46,16 @@ def texts_in(nodes: list) -> list[str]:
     """Every text a node list asks the diagram to show."""
     found = []
     for n in nodes:
-        found += [n[k] for k in ("text", "sub", "cond", "cap", "join") if k in n]
+        found += [n[k] for k in ("text", "sub", "cond", "cap", "join", "time", "title") if k in n]
+        found += n.get("items", [])
         for arm in [n.get("yes"), n.get("no"), *n.get("branches", [])]:
             if arm:
                 found += [arm["label"]] if "label" in arm else []
                 found += texts_in(arm.get("body", []))
         found += texts_in(n.get("body", []))
         for track in n.get("tracks", []):
-            found += texts_in(track)
+            found += [track["uses"]] if isinstance(track, dict) and "uses" in track else []
+            found += texts_in(track["body"] if isinstance(track, dict) else track)
     return found
 
 
@@ -153,16 +155,21 @@ def holding(outer: str, inner: dict) -> dict:
     if outer == "case":
         return {"type": "case", "cond": "case of", "branches": [
             {"label": "one", "body": [inner]}, {"label": "two", "body": [TALL]}, {"label": "three", "body": []}]}
-    return {"type": "par", "cap": "in parallel", "join": "wait for both", "tracks": [[inner], [TALL]]}
+    return {"type": "par", "cap": "in parallel", "join": "wait for both",
+            "tracks": [{"uses": "the one oven", "body": [inner]}, [TALL]]}
 
 
 INNER = {
     "stmt": {"type": "stmt", "text": "A statement"},
     "call": {"type": "call", "text": "A call", "sub": "its own diagram"},
     "exit": {"type": "exit", "text": "leave the loop"},
-    "pre": {"type": "loop", "cond": "while inner", "body": [{"type": "stmt", "text": "step"}]},
+    "return": {"type": "exit", "kind": "return", "text": "the result"},
+    "raise": {"type": "exit", "kind": "raise", "text": "TimeoutError", "time": "after 30 s"},
+    "inputs": {"type": "inputs", "title": "ingredients", "items": ["2 eggs", "100 g flour", "a pinch of salt"]},
+    "timed": {"type": "stmt", "text": "Simmer", "sub": "lid on", "time": "20 min"},
+    "pre": {"type": "loop", "cond": "while inner", "time": "5 min", "body": [{"type": "stmt", "text": "step"}]},
     "post": {"type": "loop", "kind": "post", "cond": "until inner", "body": [{"type": "stmt", "text": "step"}]},
-    "if": {"type": "if", "cond": "Inner?", "yes": {"body": [{"type": "stmt", "text": "do"}]}, "no": {"body": []}},
+    "if": {"type": "if", "cond": "Inner?", "time": "1 s", "yes": {"body": [{"type": "stmt", "text": "do"}]}, "no": {"body": []}},
     "case": {"type": "case", "cond": "inner case", "branches": [{"label": "a", "body": []}, {"label": "b", "body": []}]},
     "par": {"type": "par", "tracks": [[{"type": "stmt", "text": "left"}], [{"type": "stmt", "text": "right"}]]},
 }
