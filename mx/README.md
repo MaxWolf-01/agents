@@ -24,7 +24,7 @@ Tests, the `tracker` and `dispatch` scripts, which refuse what the rules forbid,
 - [`CHANGELOG.md`](CHANGELOG.md): one section per release; a session moved to a newer mx reads the sections it skipped.
 - [`bin/`](bin/): the commands skills call, on PATH in every session with the plugin enabled, each running the script in its skill and answering `--help`.
 - [`hooks/`](hooks/): `hooks.json`, which wires the session page, the context checkpoint and the update notice to session events.
-- [`skills/`](skills/): one directory per skill, listed by kind under [Skills](#skills), plus `session-page/`, the scripts and rules behind the session page. [`skills/show/struktogramm/`](skills/show/struktogramm/) is a skill inside a skill: `show` points to it for Nassi-Shneiderman diagrams, Claude Code does not list it, and the folder imports into claude.ai as it stands.
+- [`skills/`](skills/): one directory per skill, listed by kind under [Skills](#skills), plus `session-page/`, the scripts and rules behind the session page. [`skills/show/mermaid/`](skills/show/mermaid/) and [`skills/show/struktogramm/`](skills/show/struktogramm/) are skills inside a skill: `show` points to them for Mermaid diagrams, validated with Pele, and for Nassi-Shneiderman diagrams; Claude Code does not list them, and each folder imports into claude.ai as it stands.
 - [`assets/`](assets/): the images this README embeds, rendered from [`../docs/figures/`](../docs/figures/).
 - [`docs/`](docs/): how the parts work in depth.
 - `test_*.py`: checks over every skill and script, run by `make check` in the repo root.
@@ -173,13 +173,13 @@ A `SKILL.md` that holds in any chat, with no tickets, session page or dispatch.
 | [`/mx:gh-stack`](skills/gh-stack/SKILL.md) | stacked PRs with `gh stack` |
 | [`/mx:github`](skills/github/SKILL.md) | issues and PRs written under your name |
 | [`/mx:house-style`](skills/house-style/SKILL.md) | the look of your own pages and tools |
-| [`/mx:mermaid`](skills/mermaid/SKILL.md) | Mermaid diagrams, validated before they go anywhere |
 | [`/mx:ml`](skills/ml/SKILL.md) | ML project conventions: experiments, tracking, tensor code |
 | [`/mx:prototype`](skills/prototype/SKILL.md) | throwaway code when shapes are rivals or one has to be driven to be judged |
 | [`/mx:recap`](skills/recap/SKILL.md) | where the work stands: findings, decisions, open questions |
 | [`/mx:research`](skills/research/SKILL.md) | primary-source investigation of a question a decision waits on |
 | [`/mx:session-name`](skills/session-name/SKILL.md) | a `/rename` for the session |
 | [`/mx:sharpen`](skills/sharpen/SKILL.md) | aim the work at what the best expert would do |
+| [`show/mermaid`](skills/show/mermaid/SKILL.md) | Mermaid diagrams, validated with Pele before they go anywhere; reached from `/mx:show`, not invoked by name |
 | [`show/struktogramm`](skills/show/struktogramm/SKILL.md) | a procedure drawn as a Nassi-Shneiderman diagram; reached from `/mx:show`, not invoked by name |
 | [`/mx:testing`](skills/testing/SKILL.md) | what makes a test worth keeping, and the fast suite against the full-path checks |
 | [`/mx:to-questionnaire`](skills/to-questionnaire/SKILL.md) | turn a decision someone else must answer into a questionnaire |

@@ -64,7 +64,7 @@ Every artifact, in every medium, reads like a good README: it states, it never s
 
 How a row's medium gets made. An open set, not a menu; combining media is normal, and anything that carries the thing qualifies:
 
-- **Diagram**: a structure or a flow, drawn. Mermaid, drawn by [Pele](https://github.com/obsidianmd/pele) (`/mx:mermaid`), when the layout should be solved for you; a hand-placed SVG ([`SVG-FIGURES.md`](SVG-FIGURES.md)) when the figure is the artifact and deserves the control.
+- **Diagram**: a structure or a flow, drawn. Mermaid, drawn by [Pele](https://github.com/obsidianmd/pele) ([`mermaid/SKILL.md`](mermaid/SKILL.md)), when the layout should be solved for you; a hand-placed SVG ([`SVG-FIGURES.md`](SVG-FIGURES.md)) when the figure is the artifact and deserves the control.
 - **Struktogramm**: a procedure as nested boxes with no arrows (Nassi-Shneiderman), when its loops and branches are what the reader has to see ([`struktogramm/SKILL.md`](struktogramm/SKILL.md)).
 - **Comparison**: a difference shown instead of described: a code diff (`diffview`), a table, two rendered variants side by side, or a blind test (`blind-test`, `/mx:grilling`) when the reader is to choose between them by taste.
 - **Runnable code**: a behaviour, exhibited by the smallest script that shows it and its output (A runnable artifact, above). A design or a state model to be felt is `/mx:prototype`.
