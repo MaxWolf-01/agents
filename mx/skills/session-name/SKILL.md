@@ -4,8 +4,6 @@ description: Generate a descriptive session name for /rename
 disable-model-invocation: true
 ---
 
-Generate a descriptive name for this session based on what was discussed/accomplished.
-
 Output a `/rename` command the user can run:
 
 ```
