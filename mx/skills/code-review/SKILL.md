@@ -8,8 +8,6 @@ Review of the diff between `HEAD` and a fixed point, by two reviewers:
 - **read** reads the diff, one pass per question, each pass opening its own sources only once the last is done: **correctness** (does the change work, without breaking callers, contracts, or edge cases?), **spec** (does it faithfully implement the originating ticket / issue / spec?), then **standards** (does it conform to the repo's documented standards and the smell baseline?), then **grug** (what in the diff should not exist?).
 - **tests** runs the suite under mutations: do the tests the diff touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? It is the one reviewer that executes the tip under review, and it runs where the diff touches a test.
 
-Their reports are read by the session or worker that owns the branch (step 5). [`review`](review) runs them (step 4).
-
 ## Process
 
 ### 1. Pin the fixed point
@@ -27,8 +25,6 @@ Look for what the work was ordered by, in this order:
 5. If nothing is found, ask the user where it is, unless the work is session work, which never had one.
 
 It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
-
-Where no order was found, the review runs without one, and read judges the diff on its own terms.
 
 ### 3. What binds the review
 
@@ -60,7 +56,7 @@ Two callers hold no ticket. A bare "review this branch" anchors its declines and
 
 Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, cited by its id qualified with the range (`review 2339177..8424220 R3`): fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
 
-A review's reader is the agent that owns the branch, never the user. It fixes, files or declines each finding, and what it cannot dispose of alone (a declined finding worth a ruling, a question the review raised) it escalates through its own closing comment, under the worker contract. Findings the review fixed, per-pass summaries and verification lists stay in the reports, which die with the worktree.
+A review's reader is the agent that owns the branch, never the user. What it cannot dispose of alone (a declined finding worth a ruling, a question the review raised) it escalates through its own closing comment, under the worker contract. Findings the review fixed, per-pass summaries and verification lists stay in the reports, which die with the worktree.
 
 A clean diff gets one line: the range, and that the reviewers came back empty.
 

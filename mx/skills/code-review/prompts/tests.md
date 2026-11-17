@@ -4,7 +4,7 @@ Your sources, read in full before you judge:
 
 {{STANDARDS}}
 
-Judge what these tests catch, not whether they pass. Read the tests in full and the code under test.
+Judge what these tests catch, not whether they pass.
 
 You start in `{{CHECKOUT}}`, your own checkout of the tip under review: mutate a file there and run the tests that exercise it there, the test files that reach the mutated code rather than the whole suite. Restore the file (`git restore <path>`) before the next mutation, so each run measures one change, and add the mutation's result to your report as its run returns. A mutation the suite still passes under is the strongest evidence a finding of yours can rest on: name the mutation, the test that should have failed, and what the suite did.
 

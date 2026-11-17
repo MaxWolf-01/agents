@@ -4,7 +4,7 @@ Your report is `{{REPORT}}`. That file is the whole delivery, read by the agent 
 
 You have {{MINUTES}} minutes. Note the time (`date`) as you start and check it as you go; spend the minutes on what matters most first, and finish inside them.
 
-Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies.
+Read every touched file in full, plus the callers of anything changed, not just the hunks.
 
 The diff under review, its left end the merge-base:
 
