@@ -53,7 +53,10 @@ def main():
         return 0
 
     png = os.path.abspath(a.out + ".png")
+    # --mx-run names the run that launched the browser, so a stuck one can be killed without
+    # touching another run's on a shared host. Chromium ignores a flag it does not know.
     cmd = [browser, "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
+           f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}",
            f"--force-device-scale-factor={a.scale}",
            f"--window-size={a.width},{a.height}",
            f"--screenshot={png}", html]

@@ -22,7 +22,6 @@ import pytest
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / "fixtures"
 EXAMPLES = sorted((HERE.parent / "examples").glob("*.json"))
-BROWSER_ARG = f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"
 
 
 def stdlib_python(*args: str) -> subprocess.CompletedProcess:
@@ -49,7 +48,7 @@ def test_checker_without_playwright_says_the_layout_is_unverified(tmp_path: Path
 def faults_of(html: Path, scheme: str = "light", width: int = 680) -> list[str]:
     """The checker's FAIL lines on a page, run as a caller runs it, with Playwright installed."""
     done = subprocess.run(["uv", "run", "--quiet", "--with", "playwright", "python", str(HERE / "check_layout.py"),
-                           str(html), "--scheme", scheme, "--width", str(width), f"--browser-arg={BROWSER_ARG}"],
+                           str(html), "--scheme", scheme, "--width", str(width)],
                           capture_output=True, text=True, timeout=180)
     assert done.returncode in (0, 1), done.stderr
     return [line.removeprefix("FAIL ") for line in done.stdout.splitlines() if line.startswith("FAIL ")]

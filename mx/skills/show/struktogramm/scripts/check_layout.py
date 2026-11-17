@@ -167,17 +167,19 @@ def band_lines(band: dict) -> list[list[float]]:
     return [[l, t, x, b] for x in band["bounds"]]
 
 
-def measure(html_path: str, *, width: int = 680, scheme: str = "light", browser_args: tuple = ()) -> dict:
+def measure(html_path: str, *, width: int = 680, scheme: str = "light") -> dict:
     from playwright.sync_api import sync_playwright
 
     dpr = 2
-    launch = {"args": ["--no-sandbox", *browser_args]}
+    found = None
     for name in ("chromium", "chromium-browser", "google-chrome", "chrome"):
         if found := shutil.which(name):
-            launch["executable_path"] = found
             break
     with sync_playwright() as p:
-        browser = p.chromium.launch(**launch)
+        # --mx-run names the run that launched the browser, so a stuck one can be killed without
+        # touching another run's on a shared host. Chromium ignores a flag it does not know.
+        browser = p.chromium.launch(executable_path=found,
+                                    args=["--no-sandbox", f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         try:
             page = browser.new_page(viewport={"width": width, "height": 900}, device_scale_factor=dpr,
                                     color_scheme=scheme)
@@ -269,11 +271,10 @@ def main() -> int:
     ap.add_argument("--width", type=int, default=680, help="viewport width in CSS pixels")
     ap.add_argument("--scheme", choices=["light", "dark"], default="light", help="colour scheme the page is shown in")
     ap.add_argument("--dump", action="store_true", help="print the raw measurements as JSON")
-    ap.add_argument("--browser-arg", action="append", default=[], help="an extra Chromium flag; repeat for more")
     a = ap.parse_args()
 
     try:
-        geo = measure(a.html, width=a.width, scheme=a.scheme, browser_args=tuple(a.browser_arg))
+        geo = measure(a.html, width=a.width, scheme=a.scheme)
     except Exception as exc:
         print(f"could not measure: {type(exc).__name__}: {exc}", file=sys.stderr)
         print("layout is UNVERIFIED: do not claim it is correct", file=sys.stderr)
