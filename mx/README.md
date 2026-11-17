@@ -45,7 +45,7 @@ Tests, the `tracker` and `dispatch` scripts, which refuse what the rules forbid,
 
 ## How a piece of work goes through
 
-`/mx:orient` is the map; in short:
+`/mx:orient` is the flow; in short:
 
 1. **You state an intent** in a session. It drafts a ticket, and the draft picks the first thing you judge.
 2. **The draft picks the route.** An intent with one sensible shape is built and you judge the build. One with rival shapes gets a prototype, or a figure per rival (`/mx:prototype`). One too foggy to brief is grilled: each round delivers the design whole and writes it to the ticket, and glossary terms and ADRs land as it goes (`/mx:grilling`). The pick comes back whenever a build misses or a new question appears.
@@ -208,7 +208,7 @@ The workflow's own machinery.
 
 | Skill | What it is for |
 | --- | --- |
-| [`/mx:orient`](skills/orient/SKILL.md) | the router over the workflow; start here |
+| [`/mx:orient`](skills/orient/SKILL.md) | the flow from intent to merge; start here |
 | [`/mx:tracker`](skills/tracker/SKILL.md) | the ticket tree: filing, claiming, ruling, retiring, and the board |
 | [`/mx:dispatch`](skills/dispatch/SKILL.md) | work a ticket and its children: one orchestrator, a fresh worker per ticket |
 | [`/mx:code-review`](skills/code-review/SKILL.md) | a review of a branch by reviewers in fresh context |

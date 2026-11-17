@@ -1,11 +1,11 @@
 ---
 name: orient
-description: "Which mx skill or flow fits the current situation: a router over the mx workflow. Call it before starting nontrivial work in a project with an agent/ directory, and whenever unsure which skill or flow fits."
+description: "The mx flow from intent to merge: which route an intent takes (grill, prototype or build), who builds it, and where the user rules. Call it before starting nontrivial work in a project with an agent/ directory, and whenever unsure what comes next."
 ---
 
 # Orient
 
-A **flow** is a path through the skills. Most work travels one **main flow**, with an on-ramp that merges onto it. Everything else is standalone, or a vocabulary layer that runs underneath.
+Most work travels one **main flow** through the skills, from an intent to its merge. A skill off it is reached by its own description.
 
 ## The main flow: intent → ship
 
@@ -35,7 +35,7 @@ One intent per route, from mx's own tracker:
 
    **The build never waits for the user to ratify a call.** It starts once the frontier is empty, that is, once you have no question left to put to them; every call they have not ruled on stays marked in its ticket (`/mx:grilling`), or is an assumption its worker anchors to the line it shaped, and the landing puts the ones that change what they asked for in front of them (`/mx:dispatch`). A round still carrying an open question waits for that answer instead. Nothing reaches the branch above a parent ticket's before the user's ruling, which is accept, amend, redo or reject (`/mx:tracker`). A parent ticket is ruled whole at its close-out, its children with it (`/mx:tracker`, The tree).
 
-5. **The landing: the calls that are the user's, shown, then QA.** Every ticket is a tracer bullet, drivable the moment it lands. The worker builds, tests and reports; the session holding the branch sorts the build's calls (`/mx:dispatch`) and shows the user only those that are theirs to make, each with the smallest artefact that makes it visible, the review page the drill-down and one show for everything that landed together (`/mx:show`'s `WORKFLOW.md`, A landing's show). A build carrying none merges as far as a standing yes carries it (`/mx:tracker`, State). The user rules on the calls shown and drives what they want to on their own machine while the remaining frontier keeps running, and taste lands here. QA's second half is where iteration re-enters, from the first drivable landing rather than when the frontier empties: the user dumps raw findings, and the agent rebuilds the holistic picture (drives the app itself, reads what a close-out filed, fires a background architecture review when structure smells). The findings sort themselves: defects the agent just fixes; the user's findings become new tickets with blocking edges, which the frontier absorbs, and a thread too big for the session a handed-off grilling session; verdicts land on tickets and ADRs; a reopened decision goes to grilling and is superseded; structural friction routes to `/mx:improve-codebase-architecture`; what the session itself finds worth doing and nobody asked for is filed `proposed` (`/mx:tracker`), where it waits for a triage. Where nothing is drivable yet, the show is concept figures alone (`/mx:show`), and taste debt accumulates knowingly, which is why greenfield builds keep the first milestone small and end-to-end.
+5. **The landing: the calls that are the user's, shown, then QA.** Every ticket is a tracer bullet, drivable the moment it lands. The worker builds, tests and reports; the session holding the branch sorts the build's calls (`/mx:dispatch`) and shows the user only those that are theirs to make, each with the smallest artefact that makes it visible, the review page the drill-down and one show for everything that landed together (`/mx:show`'s `WORKFLOW.md`, A landing's show). A build carrying none merges as far as a standing yes carries it (`/mx:tracker`, State). The user rules on the calls shown and drives what they want to on their own machine while the remaining frontier keeps running, and taste lands here. QA's second half is where iteration re-enters, from the first drivable landing rather than when the frontier empties: the user dumps raw findings, and the agent rebuilds the holistic picture (drives the app itself, reads what a close-out filed, fires a background architecture review when structure smells). The findings sort themselves: defects the agent just fixes; the user's findings become new tickets with blocking edges, which the frontier absorbs, and a thread too big for the session a handed-off grilling session; verdicts land on tickets and ADRs; a reopened decision goes to grilling and is superseded; structural friction routes to `/mx:improve-codebase-architecture`; a finding of the retro's living report is worked by `/mx:retro`, which the user types, so a session that hears them want to act on one names it to them; what the session itself finds worth doing and nobody asked for is filed `proposed` (`/mx:tracker`), where it waits for a triage. Where nothing is drivable yet, the show is concept figures alone (`/mx:show`), and taste debt accumulates knowingly, which is why greenfield builds keep the first milestone small and end-to-end.
 
 **The user's stations, and no others**: the open questions of a grilling round; the calls a landing shows them, which are only those they have not made that change what they asked for, none for a build carrying nothing new; QA; and the board's needs-me group, where every ticket question waits (`/mx:tracker`). No step blocks on them reading a brief.
 
@@ -43,38 +43,6 @@ One intent per route, from mx's own tracker:
 
 Keep the planning steps (1 to 3) in **one unbroken context window** (no handoff until the tickets are cut) so the grilling, the ticket and its child tickets all build on the same thinking. The limit is the **smart zone**: the stretch within which reasoning stays sharp; degradation becomes noticeable from roughly 30% of the window used, long before the advertised size fills. If a session nears it before the cut, don't push on degraded: end with the frontier open (`/mx:grilling`'s `WORKFLOW.md`, Across sessions) or `/mx:handoff` mid-round, and continue in a fresh thread.
 
-## On-ramp
-
-- **Something's broken** → `/mx:diagnosing-bugs`. For the hard ones: the bug that resists a first glance, the intermittent flake, the regression between two known-good states.
-
-## Codebase health
-
-- **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities** and record them; on request, a report of them and a grilling through them in order of impact.
-- **`/mx:bloat-audit`**: an over-engineering audit, a ranked list of what to delete, simplify, or replace with stdlib.
-- **`/mx:retro`**: act on the repo's living report, which a weekly retro run keeps: the findings and candidates the user picks are grilled into tickets, and their verdicts written into it; or start a run by hand, on a focus they name. It is typed by the user, so a session that hears them want to act on a finding names it to them.
-
-## Vocabulary underneath
-
-Two model-invoked references that run _beneath_ the other skills, each the single source of truth for its vocabulary. Reach for them directly when the **words**, not the process, are the problem.
-
-- **`/mx:domain-modelling`**: the project's _domain_ language. Challenge a fuzzy term, resolve an overloaded word, record a hard-to-reverse decision as an ADR.
-- **`/mx:codebase-design`**: the deep-module vocabulary (module, interface, depth, seam, adapter, leverage) for designing a module's _shape_.
-
 ## Phase boundaries
 
-A **phase** is a chunk of work inside a session (the grilling, the implementation, the QA), and what to do with the context built is decided **at** the boundary between two: continue, `/clear`, a subagent, or `/mx:handoff`, the first that fits in that order. [PHASE-BOUNDARIES.md](PHASE-BOUNDARIES.md) is the tree, with the reasoning behind each branch and why `/compact` is not on it.
-
-## Standalone
-
-- **`/mx:grilling`**: off the main flow too, for a plan, a design or a decision with no repo under it, or no build to follow.
-- **`/mx:triage`**: when the user starts a **triage** of the proposed tickets, which wait off the frontier until one: the pile grouped by shared cause, the bookkeeping (drops, merges, promotions, priorities) the agent's call, and only design calls put to the user.
-- **`/mx:research`**: investigate a question against **primary sources**; the findings land in the ticket that asked, detail too long for it in `agent/research/`.
-- **`/mx:to-questionnaire`**: when what's blocking you isn't in your head or the codebase but in **someone else's**, write them a questionnaire to fill in. What comes back is material for `/mx:grilling`.
-- **`/mx:wizard`**: for the steps only a **human** can take: provisioning infrastructure, credentials and CI secrets, an unfamiliar third-party dashboard, a one-off migration. Model-invoked: the agent reaches for it when it hits a wall only you can pass; anything the agent can do itself, it should.
-- **`/mx:wait-what`**: the corrective for a message that didn't land.
-- **`/mx:codex`**: a second opinion from another model family.
-- **`/mx:review-pr`**: a review of a PR on GitHub, where `/mx:code-review` takes a local branch.
-- **`/mx:recap`**: where the work in flight stands, when its thread is lost.
-- **`/mx:wrap`**: whether the session is done and can be closed. It is typed by the user, so a session that hears them ask names it to them.
-- **`/mx:writing-for-agents`**: the rules for what an agent reads.
-- **`/mx:writing-for-humans`**: the rules for what a person reads cold, and the cheap standalone de-slop pass on a file (`/mx:code-review` carries its rules on every diff).
+A **phase** is a chunk of work inside a session (the grilling, the implementation, the QA), and what to do with the context built is decided **at** the boundary between two: continue, `/clear`, a subagent, or `/mx:handoff`, the first that fits in that order. [PHASE-BOUNDARIES.md](PHASE-BOUNDARIES.md) is the tree, with the reasoning behind each branch and why `/compact` is not on it. Whether the session is done and can close is `/mx:wrap`, which the user types, so a session that hears them ask names it to them.
