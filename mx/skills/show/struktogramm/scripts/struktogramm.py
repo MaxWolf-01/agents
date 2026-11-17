@@ -68,7 +68,7 @@ CSS = """
 .ns .exit.raise { padding-left: 44px; }
 .ns .exit.raise > .ln { width: 34px; }
 .ns .kw { font-variant: small-caps; letter-spacing: 0.04em; margin-right: 6px; }
-.ns .time { float: right; margin: 0 0 0 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ns .time { float: right; margin: 0 0 0 14px; font-variant-numeric: tabular-nums; }
 .ns .cond .time { display: block; float: none; margin: 2px 0 0; }
 .ns .inputs > .kw, .ns .exit > .kw { display: block; margin-bottom: 2px; }
 .ns .inputs > ul { display: flex; flex-wrap: wrap; gap: 2px 22px; margin: 0; padding: 0; list-style: none; }
