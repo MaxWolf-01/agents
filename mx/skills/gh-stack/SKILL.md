@@ -20,10 +20,8 @@ Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-s
 (main) <- auth <- api <- frontend
 ```
 
-Left is the **bottom**, right is the **top**. `auth` is based on `main` and merges first;
-`frontend` merges last. `up` moves toward the top, away from trunk; `down` moves toward it.
-For how to choose the
-layers, read `references/stack-design.md`.
+Left is the **bottom**: `auth` is based on `main` and merges first. Right is the **top**. `up`
+moves away from trunk, `down` toward it. `references/stack-design.md` says how to choose the layers.
 
 ## Setup
 
@@ -37,13 +35,13 @@ git config remote.pushDefault origin   # required if the repo has more than one 
 
 ## Non-interactive use
 
-`gh stack` branches on whether **stdout is a TTY**. Piped, most commands error cleanly or print
-static text; under a PTY the same commands open a prompt or a full-screen TUI and block forever.
-Agent harnesses differ, so always pass the flags below instead of relying on that detection.
+Under a PTY, many `gh stack` commands open a prompt or a full-screen TUI and block forever; piped,
+they error or print static text. Harnesses differ in which one you get, so always use the forms
+in the table's first column.
 
-**Multiple remotes:** never run `push`, `submit`, `sync`, `rebase`, or `link` without
-`--remote <name>` unless `remote.pushDefault` is configured. `checkout` and `trunk` have no
-`--remote` flag and require the config.
+**Multiple remotes:** without `remote.pushDefault` configured, pass `--remote <name>` to `push`,
+`submit`, `sync`, `rebase`, and `link`. `checkout` and `trunk` have no `--remote` flag and require
+the config.
 
 | Always run | Never run bare | Why |
 |---|---|---|
@@ -64,10 +62,10 @@ Agent harnesses differ, so always pass the flags below instead of relying on tha
 
 ## Branch placement
 
-- **Starting multi-part work:** create the stack before writing files. Do not implement every
-  concern on trunk and split it later. Put one dependent concern in each layer, bottom to top.
-- **Editing an existing stack:** check out the layer that owns the change before editing. Never
-  commit a lower layer's concern on the current top branch.
+- **Starting multi-part work:** create the stack before writing files, and write each dependent
+  concern into its own layer, bottom to top, rather than on trunk to split later.
+- **Editing an existing stack:** check out the layer that owns the change before editing; a lower
+  layer's concern is committed on that layer, never on the top branch.
 
 ```bash
 gh stack down                   # or: gh stack checkout api
@@ -88,8 +86,7 @@ gh stack submit --auto          # push every branch and open draft PRs
 gh stack view --json            # confirm
 ```
 
-Add `--open` to `submit` to create PRs ready for review instead of drafts. Branch names are
-verbatim — `gh stack add refactor/foo` creates `refactor/foo`.
+`submit --open` creates PRs ready for review instead of drafts. Branch names are used verbatim.
 
 The titles and bodies `submit --auto` generates are rewritten per `/mx:github`, then set with `gh pr edit`.
 
@@ -100,13 +97,11 @@ gh stack sync                   # fetch, reconcile with GitHub, rebase, push, re
 gh stack sync --prune           # also delete local branches for merged PRs
 ```
 
-Pruning never happens without `--prune` when non-interactive. If the local and remote stacks have
-diverged, `sync` prints both chains, makes no changes, and exits 0 with `Sync aborted` — see
+Non-interactive, `sync` prunes only with `--prune`. When the local and remote stacks have
+diverged, it prints both chains, makes no changes, and exits 0 with `Sync aborted`; see
 `references/troubleshooting.md`.
 
 ## Merging
-
-Scope the merge with an argument:
 
 ```bash
 gh stack merge 42 --yes          # PR #42 plus every unmerged PR below it
@@ -114,17 +109,15 @@ gh stack merge 7 --yes           # every unmerged PR in stack #7
 gh stack merge 42 --yes --squash # or --merge, --rebase, --merge-method <method>
 ```
 
-The operation is all-or-nothing: if any PR in that set cannot merge,
-none do.
-
-Without a method flag the last-used method is reused. If the base branch uses a merge queue, the
-stack is queued instead and the queue picks the method, ignoring any flag you passed with a
-warning; queued PRs may land in separate groups.
+The merge is all-or-nothing: if any PR in the set cannot merge, none do. Without a method flag,
+the last-used method applies. If the base branch uses a merge queue, the stack is queued instead,
+the queue picks the method (a flag you passed is ignored with a warning), and queued PRs may land
+in separate groups.
 
 ## Reading state
 
-`gh stack view --json` writes JSON to **stdout**. Status messages go to **stderr** — do not parse
-them, branch on exit codes instead.
+`gh stack view --json` writes JSON to **stdout**. Status messages go to **stderr**; branch on exit
+codes rather than on them.
 
 ```
 trunk           string
@@ -133,8 +126,8 @@ branches[]      name, head, base, isCurrent, isMerged, isQueued, needsRebase
 branches[].pr   number, url, state ("OPEN" | "MERGED" | "QUEUED"); absent when no PR exists
 ```
 
-`base` is the saved SHA of the parent branch that this branch was last known to contain. It may be
-older than the parent's current tip. `needsRebase` is true when the current parent tip is no longer
+`base` is the saved SHA of the parent branch that this branch was last known to contain, which can
+lag the parent's current tip. `needsRebase` is true when the current parent tip is no longer
 an ancestor of the branch.
 
 ## Exit codes
@@ -166,15 +159,14 @@ an ancestor of the branch.
 - `rebase` and `sync` automatically update affected clean worktrees; they never auto-stash or
   create/remove worktrees. Mutations serialize across the clone, and paused operations require
   recovery in their recorded owners.
-- `modify` recovery flags may run from any worktree and use recorded native
-  operation owners; never resolve/stage in the caller's tree unless the diagnostic names it.
-- There is no non-interactive reorder or removal. Errors may suggest `gh stack modify`, but it is
-  TUI-only — restructure with `unstack` then `init` instead.
+- `modify` recovery flags may run from any worktree and act on the recorded native operation
+  owners; resolve and stage only in the tree the diagnostic names, which need not be the caller's.
+- There is no non-interactive reorder or removal. Errors may suggest `gh stack modify`, which is
+  TUI-only; restructure with `unstack` then `init` instead.
 
 ## More detail
 
-Note that
-`gh stack help <command>` does **not** work — it prints the top-level help.
+`gh stack help <command>` prints only the top-level help; use `gh stack <command> --help`.
 
 - `references/github-side.md` — read before linking PRs that already exist into a stack, before
   merging a layer, when the merge box says the stack is out of date, and when `sync` or `rebase`

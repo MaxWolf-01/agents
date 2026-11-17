@@ -1,8 +1,7 @@
 # What GitHub does with a stack
 
-The files beside this one describe the CLI. This one describes the server, which treats a stack
-the same way however it was created. The feature's own documentation:
-<https://docs.github.com/en/pull-requests/get-started/about-stacked-prs>
+This file describes the server, which treats a stack the same way however it was created. The
+feature's own documentation: <https://docs.github.com/en/pull-requests/get-started/about-stacked-prs>
 
 ## Why a stack rather than a chain of bases
 
@@ -22,9 +21,8 @@ work, and the history that results is the same as merging each layer in turn.
 
 `gh stack link <lower-pr> <upper-pr> --base <trunk> --remote <name>` records the chain and writes
 no local state (`commands.md`). Pass `--base`: it defaults to the repository's **default** branch,
-which is not always the branch the work integrates into. In a repo whose default is `main` while
-feature work targets `development`, leaving it off makes `link` rewrite the bottom PR's base to
-`main`, since it corrects any base that disagrees with the chain.
+and `link` corrects any base that disagrees with the chain, so where the default is `main` and the
+work targets `development`, leaving it off rewrites the bottom PR's base to `main`.
 
 ## "This stack is out-of-date with its base branch"
 
@@ -37,7 +35,7 @@ where a 404 means unprotected.
 
 **Rebase stack** rewrites every branch in the stack, so each local copy has to be reset to the
 remote afterwards, and review comments on the rewritten commits are marked outdated. It belongs
-right before the bottom layer merges, not in the middle of a review.
+right before the bottom layer merges, not mid-review.
 
 ## The stack moved to a new base
 
