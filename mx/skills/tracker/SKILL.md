@@ -5,11 +5,11 @@ description: "Tracker conventions: the ticket tree, how a ticket is filed, fetch
 
 # Tracker
 
-One kind of file: a **ticket**, one file per ticket in a flat directory, its slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. A project's `agent/` is a git repo of its own inside the repo it plans, which ignores it: the **agent repo** holds the tickets and the rest of the planning, and every tool finds it there, with nothing to configure. The tracker is its `tickets`, read in its main checkout.
+The tracker holds one kind of file, a **ticket**: one file per ticket in a flat directory, its slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and wide as the work needs. A project's `agent/` is a git repo of its own inside the repo it plans, which ignores it: the **agent repo** holds the tickets and the rest of the planning, and every tool finds it there unconfigured. The tracker is its `tickets`, read in its main checkout.
 
 A project whose tickets also land in repos other than these two lists them in `agent/repos.toml`, and each ticket names the ones its work touches in `repos:`, written when it is filed or cut; `tracker repos --help` says what the list holds.
 
-The `tracker` command owns every mechanical operation on those files, read and write, and `tracker --help` is the reference for all of them. Publishing to the issue tracker is `tracker new`, fetching a ticket is `tracker context`. Its check runs over the staged tickets from a pre-commit hook (`/mx:project-setup` wires it into a repo), so a file no reader could read is refused where it was written. What no command writes is the body, the prose the agent puts in the file: its shape is below, and [SLICING.md](SLICING.md) is how one ticket is cut into child tickets.
+The `tracker` command owns every mechanical read and write of those files, and `tracker --help` is their reference: publishing to the issue tracker is `tracker new`, fetching a ticket is `tracker context`. Its check runs over the staged tickets from a pre-commit hook (`/mx:project-setup` wires it into a repo), so a file no reader could read is refused where it was written. No command writes the body, the prose the agent puts in the file: its shape is below, and [SLICING.md](SLICING.md) is how one ticket is cut into child tickets.
 
 ## The ticket file
 
@@ -19,7 +19,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **size**: the user's own time on it, never the agent's. XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions.
 - **needs-user**: the user is in the loop for this one, so dispatch keeps it from a worker and their ruling is what lands it.
 
-**The H1 is the ticket's short name**, the few words a board row shows, and the slug is the same words kebab-cased. Both name what the work delivers, so a reader skimming the board knows the ticket without opening it: "Retry failed uploads", where "Upload panel queue" names only where the work happens. The sentence a title would carry goes in the brief instead. Under it the body is prose the agent writes, in the vocabulary of `GLOSSARY.md`, in this order:
+**The H1 is the ticket's short name**, the few words a board row shows, and the slug is the same words kebab-cased. Both name what the work delivers, so a reader skimming the board knows the ticket without opening it: "Retry failed uploads", where "Upload panel queue" names only where the work happens. The sentence a title would carry goes in the brief instead. Under it come these sections, in this order and in `GLOSSARY.md`'s vocabulary:
 
 - **`## Brief`**, always, right under the H1: the intent and why it matters, as a technical stakeholder writes it, read cold. A proposal's says what it was cut from.
 - **`## User stories`**: numbered, `As an <actor>, I want <a capability>, so that <a benefit>`.
@@ -32,9 +32,9 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **`## Questions`**: the calls only the user can make, below.
 - **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands in the ticket that asked for it, here or in the design sections, its detail in a research file (`/mx:research`).
 
-Every section but the three marked always appears when it has content. Read [`/mx:grilling`'s DESIGN.md](../grilling/DESIGN.md) in the round that writes the design sections, User stories through Fog: it is how each one is written.
+Every section but the three marked always appears only when it has content. Read [`/mx:grilling`'s DESIGN.md](../grilling/DESIGN.md) in the round that writes the design sections, User stories through Fog: it is how each one is written.
 
-**A ticket states the work**: what it is for, what it must hold, what was decided. How its build is shown, reviewed and landed is derived from the ticket and the skills when the build runs, the way a computed field is derived from its inputs, so the ticket carries none of it and a change to the skills reaches every ticket at once.
+**A ticket states the work**: what it is for, what it must hold, what was decided. How its build is shown, reviewed and landed is derived from the ticket and the skills when the build runs, so the ticket carries none of it and a change to the skills reaches every ticket at once.
 
 ### Questions
 
@@ -48,21 +48,21 @@ One `- [Dn] **headline** detail` item each, the tag continued from the highest t
   - Ruled 2026-09-21: keep it in the fast suite.
 ```
 
-A question is open, and shows in the board's needs-me group, until a `Ruled <date>:` line sits under it. A question a worker raised reaches the ticket with its report, which is what puts it in front of the user, and `tracker rule` writes the answer under it, before the build's merge as after it. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, and ruled as filed there, so a done ticket carries none.
+A question is open, and shows in the board's needs-me group, until a `Ruled <date>:` line sits under it. A worker's question reaches the ticket with its report, which puts it in front of the user; `tracker rule` writes the answer under it, before the build's merge or after it. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, whose ruling is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then and ruled there, so a done ticket carries none.
 
 ## The tree
 
 A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are parts of and a child ticket never repeats it.
 
-Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. A project worked from two machines has a main checkout on each, kept in step through git: the sync hook, which `tracker hook` installs, pushes each commit in the agent repo to its upstream as it is made, merging first whatever the other machine pushed; a ticket both machines changed stops that merge at a conflict, for whoever committed second to resolve, and ticket commits in that checkout wait until it is (`tracker sync --help`). An integration branch is pushed by whoever merges into it, as for a project on one machine. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`). A worker opens no ticket file, and `tracker` refuses every write from a `ticket/<slug>` branch; what a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and `tracker check --help` says what the commit hook refuses of either.
+Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. A project worked from two machines has a main checkout on each, kept in step by the sync hook (`tracker hook` installs it), which pushes each commit in the agent repo to its upstream as it is made, merging first whatever the other machine pushed; a ticket both machines changed stops that merge at a conflict for whoever committed second to resolve, and ticket commits in that checkout wait until it is resolved (`tracker sync --help`). Whoever merges into an integration branch pushes it, as on one machine. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`). A worker opens no ticket file, and `tracker` refuses every write from a `ticket/<slug>` branch; what a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and `tracker check --help` says what the commit hook refuses of either.
 
 **A parent ticket is ruled whole**, with its children, at its close-out: the full suite and the review one level up, what they propose filed as proposed tickets and what is the user's as ticket questions (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. From the parent's review page the user can still amend, redo or reject a single child.
 
 ## State
 
-Which status may follow which is `tracker`'s, refused by the rule it names. What they mean:
+`tracker` decides which status may follow which and names the rule a refusal breaks. What they mean:
 
-- **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and nobody has promoted it yet. It waits off the frontier for a **triage** (`/mx:triage`), which drops it, merges it into another ticket, or promotes it to open; the user's own "build this" makes it open at once. Its brief says what it was cut from. These don't need to offer a solution but can also simply record a problem, bug, inefficiency, or research question.
+- **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and nobody has promoted it yet. It waits off the frontier for a **triage** (`/mx:triage`), which drops it, merges it into another ticket, or promotes it to open; the user's own "build this" makes it open at once. Its brief says what it was cut from. It may record a problem, bug, inefficiency or research question without offering a solution.
 - **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already, and so is a child of a ticket being cut (SLICING.md) and a proposal a triage promotes as bookkeeping (`/mx:triage`); silence is not a ruling.
 - **claimed**: a session holds it, a worker resumed to revise included. Where several run at once, one agent is the sole claim-writer.
 - **review**: the work is finished and waits for the user's **ruling**, made on the calls the landing shows them, or as a line in chat. Which tickets in review unblock their dependents is `tracker frontier --help`'s.
@@ -70,13 +70,13 @@ Which status may follow which is `tracker`'s, refused by the rule it names. What
 
 The ruling has four outcomes: **accept** the build, **amend** it with the user's comments, **redo** it from the ticket, or **reject** the ticket with it. `/mx:dispatch` runs each one. What the ruling asks of the user is the calls `/mx:dispatch`'s sort finds theirs to make, each shown to them, with the review page as the drill-down. A build carrying none merges into its parent ticket's branch on their **standing yes**, with nothing put to them; a yes they gave at the start of a tree ("all your calls, just go") carries work that far too, and no further. A merge into the trunk waits for the user's word on that work (their global CLAUDE.md says what counts as one, and that a review they are in holds every merge); an amend that only applies their comments is that word. A reason for a rejection that the next build must know goes where rules live: an ADR, the project's AGENTS.md, the tool's config.
 
-Two facts carry **provenance**: whether the ticket is wanted at all is its status, a triage's promotion giving its reason in the commit that made it, and whose framing it carries is inline, an approach an agent sketched saying so ("options sketched by agent <date>, frame unconfirmed") while unmarked framing reads as agent-sketched. Acceptance criteria that keep the option space open ("options outside this list count") leave the session working the ticket the problem, not the menu it arrived with.
+Two facts carry **provenance**. Whether the ticket is wanted at all is its status, a triage's promotion giving its reason in the commit that made it. Whose framing it carries is marked inline: an approach an agent sketched says so ("options sketched by agent <date>, frame unconfirmed"), and unmarked framing reads as agent-sketched. Acceptance criteria that keep the option space open ("options outside this list count") hand the session working the ticket the problem, not the menu it arrived with.
 
 ## Supersede
 
-A newer artefact never leaves the older one looking live; agents read whatever exists as current truth. A superseded file is **tombstoned** (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, with no reader value left, deleted, which git history keeps.
+A newer artefact never leaves the older one looking live, since agents read whatever exists as current truth. A superseded file is **tombstoned** (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, with no reader value left, deleted, which git history keeps.
 
-While nothing is built on a ticket's answer, a later decision that overturns it amends it in place, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer it is the reasoning behind that code: leave it, file a ticket that supersedes it, and put a one-line forward pointer on the old one. Either way the **sweep** follows in the same session: grep the retired claim across `agent/tickets/`, `GLOSSARY.md` and `decisions/`, since a copy left standing is current truth to every later reader. A sweep that cannot run now is a ticket with a blocking edge.
+While nothing is built on a ticket's answer, a later decision that overturns it amends it in place, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer, it is the reasoning behind that code: leave it, file a ticket that supersedes it, and put a one-line forward pointer on the old one. Either way the **sweep** follows in the same session: grep the retired claim across `agent/tickets/`, `GLOSSARY.md` and `decisions/`, since a copy left standing is current truth to every later reader. A sweep that cannot run now is a ticket with a blocking edge.
 
 ## Retire
 
