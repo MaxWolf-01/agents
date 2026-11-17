@@ -1,9 +1,10 @@
 """Checks for the Struktogramm renderer and its layout checker. Run: make test, and make
 test-full-path for the ones that open a browser.
 
-The checker's oracle is the notation itself (references/notation.md): no point of the diagram
-belongs to no block, two blocks share one line, nothing reaches past the outer rectangle, no band
-line crosses a text, and a band's lines run where the notation draws them. The original
+The checker's oracle is the notation itself (../SKILL.md, and check_layout.py's --help for the
+band shapes): no point of the diagram belongs to no block, two blocks share one line, nothing
+reaches past the outer rectangle, no band line crosses a text, no word is split across lines, and
+a band's lines run where the notation draws them. The original
 renderer's output, as it came from claude.ai, breaks every one of those, and the checker has to
 name each fault on it (fixtures/), on the blocks where it shows. The renderer is then held to the
 same checker on every example, on every construct nested in every other, and embedded in a host

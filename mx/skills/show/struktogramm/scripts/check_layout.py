@@ -20,7 +20,7 @@ Checks:
                      text colour is the other scheme's
   band-shape         a branch band whose lines do not run from its top corners to the column
                      boundary, or a case band whose lines do not fan from its top-left corner
-                     to each column boundary (references/notation.md)
+                     to each column boundary
   column-widths      columns of one group at unequal widths, a meaning the notation lacks
 
 Exit codes: 0 every check passed, 1 a check failed, 2 the page could not be measured (no
@@ -177,7 +177,7 @@ HIDE_TEXT = ".ns, .ns * { color: transparent !important; -webkit-text-fill-color
 
 
 def band_lines(band: dict) -> list[list[float]]:
-    """The lines references/notation.md draws in a band, as [x0, y0, x1, y1] in page pixels."""
+    """The lines a band draws, as band-shape states them, as [x0, y0, x1, y1] in page pixels."""
     l, t, r, b = band["box"]
     if band["kind"] == "if":
         mid = band["bounds"][0]

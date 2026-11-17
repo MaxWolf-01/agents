@@ -1,109 +1,26 @@
 ---
 name: struktogramm
-description: "Render Nassi-Shneiderman diagrams (Struktogramme, DIN 66261) as clean HTML/CSS with shared borders and no arrows. Use this whenever the user mentions Nassi-Shneiderman, Struktogramm, NS diagram, or structured flowchart, and also whenever they want any procedure drawn as nested boxes rather than a flowchart with arrows: algorithms, recipes, checklists, decision procedures, protocols, or troubleshooting trees. Reach for this any time someone asks to visualize control flow, loops, or branching structure without arrows, or asks to turn a numbered list of steps into a diagram."
+description: "Draws a procedure as a Nassi-Shneiderman diagram (Struktogramm, DIN 66261), nested boxes with no arrows, rendered to HTML and checked in a browser. Use when someone asks for a Nassi-Shneiderman diagram, a Struktogramm or a structured flowchart, or wants an algorithm, recipe, protocol or troubleshooting procedure drawn as boxes rather than arrows."
 ---
 
 # Struktogramm
 
-A Nassi-Shneiderman diagram draws a procedure as nested rectangles with no arrows. The block
-below is the successor, the block inside is the body. `references/notation.md` says what each
-construct means and what the notation cannot express; read it before drawing anything with more
-than a few blocks.
+A Nassi-Shneiderman diagram has no arrows: a block's successor is the block below it, and its body
+is the block inside it. Anything drawn in it is therefore structured, and every point inside the
+outer rectangle belongs to exactly one block.
 
 ## Drawing one
 
-1. Write the procedure as a node list (schema below). This is the step that takes judgement; see
-   Modelling.
-2. Render it with `scripts/struktogramm.py`.
-3. Measure the render with `scripts/check_layout.py`, in both colour schemes. Look at it too, with
-   `scripts/preview.py`.
-4. Deliver it as a file, or inline where the host renders HTML.
-
-## Node schema
-
-A diagram is a JSON list of nodes, each with a `type`:
-
-```json
-[
-  {"type": "stmt", "text": "Salt water, bring to a boil"},
-  {"type": "stmt", "text": "Render guanciale", "sub": "until crisp, keep the fat"},
-
-  {"type": "call", "text": "Refresh starter", "sub": "see separate diagram"},
-
-  {"type": "loop", "cond": "while lo <= hi", "body": [ ... ]},
-  {"type": "loop", "kind": "post", "cond": "until the centre reads 96 °C", "body": [ ... ]},
-  {"type": "exit", "text": "binary search"},
-
-  {"type": "if", "cond": "Guanciale available?",
-   "yes": {"body": [ ... ]},
-   "no":  {"body": [ ... ]}},
-
-  {"type": "case", "cond": "compare a[mid] with x", "branches": [
-    {"label": "a[mid] < x", "body": [ ... ]},
-    {"label": "a[mid] = x", "body": [ ... ]},
-    {"label": "a[mid] > x", "body": [ ... ]}
-  ]},
-
-  {"type": "par", "cap": "in parallel", "join": "wait for both, then plate",
-   "tracks": [[ ... ], [ ... ]]}
-]
-```
-
-- `sub` is an optional dimmer second line, for the detail that would bloat the main text:
-  temperatures, doneness cues, caveats.
-- `call` draws doubled side bars: this block expands into a diagram of its own.
-- `loop` is tested before its body unless `"kind": "post"` puts the test after it, for a body
-  that always runs once.
-- `exit` names in its `text` the enclosing block it leaves.
-- `if` labels its columns `yes` and `no`; a `"label"` inside `yes` or `no` replaces either. An
-  empty `body` draws an empty box.
-- `par` tracks run at the same time, and the bottom band waits for all of them.
-
-Any `body` or track takes a full node list, so constructs nest to any depth.
-
-## Rendering
-
-```bash
-python scripts/struktogramm.py diagram.json -o out.html     # standalone page
-python scripts/struktogramm.py diagram.json --fragment      # <style> and the diagram, for embedding
-```
-
-From Python, `page(nodes)` returns the document and `fragment(nodes)` the embeddable part:
-
-```python
-import sys; sys.path.insert(0, "scripts")
-from struktogramm import page, fragment
-```
-
-The renderer needs nothing past Python's standard library. Its colours are the CSS variables
-`--text-primary`, `--text-secondary` and `--border-strong`: a host page that sets them themes the
-diagram, and without them it follows the reader's light or dark setting.
-
-Columns of one block are equal in width, so the diagram is at least as wide as its narrowest
-column needs to be to hold that column's longest word; `min_width(nodes)` says how wide, in
-pixels. A page narrower than that scrolls sideways, and a host that embeds the fragment in a
-narrower box gives the box `overflow-x: auto`. A diagram too wide to read is one to split with
-`call` nodes.
-
-## Verify the layout
-
-Whether a Struktogramm is drawn right shows only in the rendered page; the markup of a broken one
-and a correct one differ by a CSS rule. The checker opens the page in headless Chromium through
-Playwright and measures it:
-
-```bash
-python scripts/check_layout.py out.html                  # light scheme, 680px wide
-python scripts/check_layout.py out.html --scheme dark
-python scripts/preview.py diagram.json --scheme dark     # writes preview.html and preview.png
-```
-
-It prints PASS, or a FAIL line per fault, and exits non-zero on a fault; its `--help` lists the
-checks. Look at the preview as well, for what no check judges: whether the diagram reads well.
-Where neither script can run, say that the layout is unverified rather than that it is correct.
+1. Write the procedure as a node list (Modelling, then Node schema). This is the step that takes
+   judgement.
+2. Render it: `python scripts/struktogramm.py diagram.json -o out.html`.
+3. Check it: `python scripts/check_layout.py out.html`, then again with `--scheme dark`. The
+   step is done when both print PASS; `--help` lists what each FAIL means. Then render a picture
+   with `python scripts/preview.py diagram.json` and look at it, for what no check judges: whether
+   the diagram reads well. Where neither script can run, say the layout is unverified.
+4. Deliver it (Delivering).
 
 ## Modelling
-
-The rendering is mechanical; the modelling is where the work is.
 
 **Find the hidden loops.** Prose flattens iteration. "Simmer until reduced", "knead until
 smooth" and "retry until the connection succeeds" are post-tested loops written as single steps.
@@ -113,15 +30,83 @@ of what the notation adds over a numbered list.
 **Draw a branch only where the paths differ.** "Season to taste" is a statement. A branch earns
 its place when its two paths do different things afterwards.
 
-**Extract before you nest deeply.** Past three levels the columns get too narrow for their text,
-and a wider canvas only postpones it. Pull the inner part into a diagram of its own and reference
-it with a `call` node, as you would extract a function.
+**Extract before you nest deeply.** Past three levels the diagram gets too wide to read
+(Rendering says why). Pull the inner part into a diagram of its own and reference it with a
+`call` node, as you would extract a function.
 
-## Delivering the result
+## Node schema
+
+A diagram is a JSON list of nodes, each with a `type`. Any `body` or track takes a full node list,
+so constructs nest to any depth.
+
+```json
+[
+  {"type": "stmt", "text": "Render guanciale", "sub": "until crisp, keep the fat"},
+  {"type": "call", "text": "Refresh starter", "sub": "see separate diagram"},
+  {"type": "loop", "cond": "while lo <= hi", "body": [ ... ]},
+  {"type": "loop", "kind": "post", "cond": "until the centre reads 96 °C", "body": [ ... ]},
+  {"type": "exit", "text": "binary search"},
+  {"type": "if", "cond": "Guanciale available?", "yes": {"body": [ ... ]}, "no": {"body": [ ... ]}},
+  {"type": "case", "cond": "compare a[mid] with x", "branches": [
+    {"label": "a[mid] < x", "body": [ ... ]},
+    {"label": "a[mid] = x", "body": [ ... ]},
+    {"label": "a[mid] > x", "body": [ ... ]}]},
+  {"type": "par", "cap": "in parallel", "join": "wait for both, then plate", "tracks": [[ ... ], [ ... ]]}
+]
+```
+
+- `stmt` is one step; `sub` is an optional dimmer second line for detail that would bloat the
+  text (temperatures, doneness cues, caveats).
+- `call` is a step that expands into a diagram of its own, drawn with doubled side bars.
+- `loop` tests its `cond` before each pass of its body; `"kind": "post"` tests after, for a body
+  that always runs once.
+- `exit` leaves the enclosing block its `text` names, and execution goes on with the block after
+  that one: DIN 66261's *Abbruchanweisung*, as the RWTH Aachen course notes draw it
+  (<https://www.igpm.rwth-aachen.de/Download/ws2021/cpp/nassi.pdf>, section 1.3.3).
+- `if` labels its columns `yes` and `no`; a `"label"` inside `yes` or `no` replaces either. An
+  empty `body` is an empty box.
+- `case` has one column per branch, each under its `label`.
+- `par` tracks run at the same time, and nothing below the block starts until every track has
+  finished. It is the one construct a single thread does not read top to bottom.
+
+## Extensions
+
+DIN 66261 has no way to show inputs, durations, returns and errors, or shared resources. These
+fields are this skill's own, outside the standard, and each is optional; a reader who knows
+Struktogramme will not have seen them.
+
+- **Inputs.** `{"type": "inputs", "title": "ingredients", "items": ["2 eggs", "100 g flour"]}` is
+  a block listing what the procedure takes: ingredients, arguments, state. Put it first.
+- **Duration.** `"time": "20 min"` on any node sets a duration apart from its text, at the block's
+  right edge, in its loop's band, or under its branch's condition. A block's height says nothing
+  about how long it takes.
+- **Return and raise.** `"kind": "return"` or `"kind": "raise"` on an `exit` leaves the whole
+  procedure, with its `text` as the result or the error; a raise draws a doubled notch.
+- **Shared resource.** A `par` track written as `{"uses": "the oven", "body": [ ... ]}` names
+  what it holds, in a row under the top band, so tracks contending for one thing show it.
+
+## Rendering
+
+```bash
+python scripts/struktogramm.py diagram.json -o out.html     # standalone page
+python scripts/struktogramm.py diagram.json --fragment      # <style> and the diagram, for embedding
+```
+
+From Python: `page(nodes)` returns the document, `fragment(nodes)` the embeddable part, and
+`min_width(nodes)` the diagram's width in pixels. The renderer needs nothing past Python's
+standard library.
+
+Width carries no meaning in the notation, so the columns of a block are drawn equal whatever
+their content. The diagram is therefore at least as wide as its narrowest column needs to be to
+hold that column's longest word; a page narrower than that scrolls sideways, and a host that
+embeds the fragment in a narrower box gives the box `overflow-x: auto`.
+
+Colours are the CSS variables `--text-primary`, `--text-secondary` and `--border-strong`. Without
+them the diagram follows the reader's light or dark setting; a page with a palette of its own (a
+house style's tokens) maps that palette onto these three variables in its own CSS.
+
+## Delivering
 
 Prefer a file the user can open, print or keep; where the host renders inline HTML, the
 `--fragment` output embeds as it is. When the diagram is one of several alternatives under
 discussion, render each and let the user compare.
-
-The notation has no way to show quantities. For a recipe, put the ingredient list beside the
-diagram rather than amounts in the blocks.
