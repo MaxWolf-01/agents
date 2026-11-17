@@ -151,6 +151,7 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 - **State**: filled dot for initial, ringed dot for final, transitions labelled `event [guard] / action`. A transition from any state is one note (`* → error on timeout`), never an arrow from each.
 - **ER**: entity as a box with a field list, `#` before a primary key and `→` before a foreign key, cardinality glyphs at both ends 10–12px from the box edge, 8 entities max. A **schema** view is the same boxes with SQL types and constraint chips, each foreign key drawn from its column to the column it references.
 - **Fishbone** (a diagnosis): the effect at the head, causes along ribs grouped by category, every cause investigated drawn and the confirmed one in the accent, so the figure shows what was ruled out as well as what was found.
+- **Journey**: stages across, a sentiment curve above them, a marker on each pain point where the curve drops.
 - **Swimlane**: lanes for actors, flow crossing between them; add a step axis and chips when the handoffs matter more than the order.
 - **Nested / layers / tree / org chart**: containment, stacking, and parentage. Depth is the budget: 6 levels nested, 6 layers, 4 for tree and org depth.
 - **Quadrant**: two labelled axes with named poles, items as dots with labels outside the plot. The consultant variant names all four cells and drops the dots.
@@ -158,6 +159,7 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 - **Pyramid / funnel**: ranked tiers or drop-off. Widths to scale when they encode a quantity, equal when they encode rank only.
 - **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in the house's `series-1` onward, at 0.18 fill opacity.
 - **Gantt**: tasks as rows, bars on a date axis, dependencies as thin elbows. 12 tasks max.
+- **Exploded view**: one physical thing with its parts pulled apart along the axis they assemble on, each labelled outside the part on a leader line.
 - **A module's depth, before and after** (a deepening): side by side, and varied across a page of them. A **mass diagram** gives each module one rectangle for the interface and one for the implementation: shallow is nearly the same height, deep a short interface over a tall implementation. A **cross-section** stacks the layers a call passes through: many thin bands become one thick band named for the responsibility. A **call-graph collapse** nests a tree of calls as boxes, and after shows one box with the now-internal calls faded inside it. A **graph** marks the leaking edges when the point is who calls whom.
 
 ---
