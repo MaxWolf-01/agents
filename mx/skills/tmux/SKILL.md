@@ -5,7 +5,7 @@ description: "Run commands in tmux whenever they might not come back on their ow
 
 # tmux
 
-Run a command in tmux rather than as a blocking Bash call when it might not come back on its own, when its output is worth watching, or when it is interactive. The session outlives the command, the scrollback is readable by agent and human alike, and either can step in. A command that exits or fails on its own, `git status` or `cat`, stays plain Bash.
+Run a command in tmux rather than as a blocking Bash call when it might not come back on its own, when its output is worth watching, or when it is interactive. A command that exits or fails on its own, `git status` or `cat`, stays plain Bash.
 
 How long you expect it to take is the wrong test. The command you thought would take a minute is the one that hangs on a prompt or a dead network, and that is the case this exists for.
 
@@ -23,10 +23,10 @@ A password, a passphrase, a 2FA code: the user types that one thing, and you dri
 
 A REPL, a wizard, a sudo prompt, an app you poke at while watching it. Nothing here ends, so there is no completion to wait on and `job` buys nothing.
 
-- One session per job, named for the activity: `tmux new-session -d -s <activity>`. A taken name fails the command, so pick another.
+- One session per job, named for the activity: `tmux new-session -d -s <activity>`.
 - Kill only what you created: `tmux kill-session -t <name>`. Never `kill-server`; that server holds the user's shells, editors and every other agent. A throwaway server for a test gets its own socket, `tmux -L <label> ...`, and dies with `tmux -L <label> kill-server`. Inside a pane `$TMUX` already names the socket and beats `TMUX_TMPDIR`.
 - Send: `tmux send-keys -t <session> -l 'command'`, then `tmux send-keys -t <session> Enter`.
-- Read: `tmux capture-pane -p -J -t <session> -S -50`, where `-J` joins wrapped lines.
+- Read: `tmux capture-pane -p -J -t <session> -S -50`.
 - Poll before you type: `timeout 30 sh -c 'until tmux capture-pane -p -J -t <session> | grep -qF -- "<prompt>"; do sleep 0.5; done'` returns once the prompt is on screen and exits 124 when it never came. Racing it sends input into nothing.
 
 ## Remote

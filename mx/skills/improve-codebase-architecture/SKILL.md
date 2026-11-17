@@ -35,8 +35,7 @@ Then walk the codebase. Don't follow rigid heuristics; explore organically and n
 - Where does a seam's invariant resist being stated cleanly, or its test need heavy fakes? That is a finding about the seam.
 - Where does a comment explain a surprise in the code beside it? The surprise is the finding: code shaped so it needs no such comment is the candidate.
 - Where would a change that looks right from the one file an agent opened be wrong for the repo? The next contributor is an agent that sees only the files it opened, copies the nearest example and takes the shortest path that compiles. So both of two ways to do one task keep gaining callers, internals a caller can import become part of the interface, and lists kept in sync by hand drift apart. The candidate leaves one way, the easiest path.
-
-Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
+- ...
 
 The scan is done when every candidate carries:
 
@@ -50,8 +49,6 @@ The scan is done when every candidate carries:
 - **ADR conflict**, when a candidate contradicts an existing ADR and the friction is real enough to warrant revisiting it: _"contradicts ADR-0007, but worth reopening because…"_. Don't list every theoretical refactor an ADR forbids.
 - **Related candidates**, when it hangs together with others: it builds on one, or two are the same deepening seen from two sides and belong in one piece of work.
 
-**Use GLOSSARY.md vocabulary for the domain, and the `/mx:codebase-design` vocabulary for the architecture.** If `GLOSSARY.md` defines "Order," talk about "the Order intake module", not "the FooBarHandler," and not "the Order service."
-
 ### 2. Write the candidates down
 
 They go in `candidates.md`. A scan you started on your own ends here, with a line naming the list where the user reads.
@@ -62,7 +59,7 @@ Build the report [REPORT.md](REPORT.md) describes.
 
 ### 4. Grilling, when the user takes candidates up
 
-Run `/mx:grilling` through the candidates in order of impact, one grilling per candidate or group of related ones; the user's comments, on the report or in the session, pick, drop or reorder them. Each grilling walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+Run `/mx:grilling` through the candidates in order of impact, one grilling per candidate or group of related ones; the user's comments, on the report or in the session, pick, drop or reorder them.
 
 The grilling keeps the domain model current as it goes (`/mx:domain-modelling`). Two side effects are this skill's own:
 

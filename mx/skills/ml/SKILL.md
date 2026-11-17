@@ -34,7 +34,7 @@ When an exploratory run graduates into a keeper, freeze its invocation as the pa
 
 ## Tensor code
 
-- **einops strongly preferred** for rearranges/reductions; **einx** where einops runs out (a more expressive einops: general indexing, broadcasting, and elementwise ops in the same named-axis notation).
+- **einops strongly preferred** for rearranges/reductions; **einx** where einops runs out.
 - Runtime shape checking: `torch-einops-utils` (lucidrains, on Codeberg) ships `shape`/`assert_shape`: einops-syntax validation (`s = shape(t, 'b s d'); s.b`) with no annotation machinery; jaxtyping + beartype is the annotation-based alternative (needs ruff `ignore = ["F722"]`). Pick per project. `torch-einops-utils` is also worth raiding for small tensor utilities before writing your own.
 - Model files end in a `__main__` smoke check (tiny-dim instantiation, one dummy forward pass, shape/finiteness asserts), cheap enough for CI or a pre-commit hook, so the cheap breakages surface before a real run pays for them.
 - ruff line-length 120.

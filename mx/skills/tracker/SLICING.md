@@ -6,7 +6,7 @@ Cut as soon as the grilling's frontier is empty (`/mx:grilling`), ratified or no
 
 ## 1. Read the code first
 
-Understand the current state of the code before slicing. Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
+Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
 
 ## 2. Draft the slices, then find the independent parts
 
@@ -48,4 +48,4 @@ Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). Th
 
 Check the breakdown's shape yourself against the vertical-slice rules and the independence test: the cut is yours, and the user judges the built tree at its close-out, not the cut. Render the board (`/mx:tracker`) and report the breakdown on [the session page](../session-page/RULES.md) as a numbered list: slug, blocked by, what it delivers. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
-`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves.
+`/mx:dispatch` takes it straight away, at any size.

@@ -5,11 +5,11 @@ description: Shared vocabulary for designing deep modules. Use when the user wan
 
 # Codebase Design
 
-Design **deep modules**: a lot of behaviour behind a small interface, placed at a clean seam, testable through that interface. Use this language and these principles wherever code is being designed or restructured. The aim is leverage for callers, locality for maintainers, and testability for everyone.
+Design **deep modules**: a lot of behaviour behind a small interface, placed at a clean seam, testable through that interface. Use this language and these principles wherever code is being designed or restructured.
 
 ## Glossary
 
-Use these terms exactly; each entry's _Avoid_ list names the substitutes to steer clear of. Consistent language is the whole point.
+Use these terms exactly; each entry's _Avoid_ list names the substitutes to steer clear of.
 
 **Module**: anything with exactly one interface and an implementation. Deliberately scale-agnostic: a function, class, package, or tier-spanning slice. _Avoid_: unit, component, service.
 
@@ -27,9 +27,9 @@ Use these terms exactly; each entry's _Avoid_ list names the substitutes to stee
 
 **Adapter**: a concrete thing that satisfies an interface at a seam. Describes *role* (what slot it fills), not substance (what's inside).
 
-**Leverage**: what callers get from depth: more capability per unit of interface they learn. One implementation pays back across N call sites and M tests.
+**Leverage**: what callers get from depth: more capability per unit of interface they learn.
 
-**Locality**: what maintainers get from depth: change, bugs, knowledge, and verification concentrate in one place rather than spreading across callers. Fix once, fixed everywhere.
+**Locality**: what maintainers get from depth: change, bugs, knowledge, and verification concentrate in one place rather than spreading across callers.
 
 ## Principles
 

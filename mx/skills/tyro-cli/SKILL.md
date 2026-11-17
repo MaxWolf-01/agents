@@ -5,13 +5,12 @@ description: "Python CLIs with tyro, and PEP 723 scripts for `uv run`. Use when 
 
 # CLI Scripts with tyro
 
-All Python CLI scripts use tyro for argument parsing, never argparse, click, or fire. tyro generates CLIs from type annotations with zero boilerplate, and `--help` output is derived directly from docstrings and type hints.
+All Python CLI scripts use tyro for argument parsing, never argparse, click, or fire.
 
 ## Core Principles
 
 1. **`--help` is the documentation.** Every script must be fully self-documenting: module docstring with usage examples, every argument with a help string. A user running `--help` should never need to read source code.
 2. **PEP 723 inline metadata** for standalone scripts. Declare tyro (and other deps) via inline metadata so scripts are runnable with `uv run` without project setup. If the script lives in a project with pyproject.toml and tyro is already a dependency, inline metadata is unnecessary.
-3. **Lean over clever.** Simple dataclass with field docstrings covers 90% of use cases. Reach for advanced features (subcommands, nested configs) only when the CLI genuinely needs them.
 
 ## PEP 723 Inline Dependencies
 
@@ -22,7 +21,7 @@ All Python CLI scripts use tyro for argument parsing, never argparse, click, or 
 # ///
 ```
 
-Place at the top of the file. The script is then runnable via `uv run script.py --help`. When converting a script that already exists, list in `dependencies` every third-party package its imports need, and leave its code as it is: moving its parsing to tyro is a change of its own.
+When converting a script that already exists, list in `dependencies` every third-party package its imports need, and leave its code as it is: moving its parsing to tyro is a change of its own.
 
 ### Shebang for PEP 723 scripts
 
@@ -202,5 +201,3 @@ When passing `default=Config(...)` to `tyro.cli()`, `__post_init__` is called tw
 **String choices instead of Literal.** Use `Literal["a", "b"]`, not `str` with choices documented in the docstring. Literal gives type safety, auto-completion, and tyro generates proper `{a,b}` choices in help.
 
 **Multiple `tyro.cli()` calls with `return_unknown_args`.** Calling `tyro.cli()` twice and passing leftovers to a second call is fragile. Use a single nested dataclass instead.
-
-**Overusing argparse habits.** No need for `add_argument`, `ArgumentParser`, or manual type conversion. If reaching for argparse patterns, there's a tyro way to do it.

@@ -1,6 +1,6 @@
 # The living report
 
-One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run; git history holds every run's copy. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
+One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
 
 ## Rules
 

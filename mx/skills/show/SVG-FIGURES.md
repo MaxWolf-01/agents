@@ -1,13 +1,13 @@
 # Hand-authored SVG figures
 
-A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and the few lines of JS the scheme toggle needs, nothing more. Opens in a browser, screenshots cleanly, diffs as text. Reach for it when the picture *is* the artifact.
+A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and the few lines of JS the scheme toggle needs, nothing more. Reach for it when the picture *is* the artifact.
 
 Two other tools own neighbouring ground. **A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **is `dataviz`'s, painted as `/mx:house-style`'s `PARTS.md` says**. **Mermaid, drawn by Pele (see [`mermaid/SKILL.md`](mermaid/SKILL.md)), solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
 
 This file has two layers and they do not bind equally.
 
 - **Mechanics** are properties of the medium. They hold for any hand-placed SVG, including a deliberately strange one.
-- **The skin** is the house style, `/mx:house-style`, worn by a figure: its tokens and type, plus the node treatments and markers below. A figure embedded in a markdown file GitHub renders (a README, a doc page, an issue) wears [`GITHUB-SKIN.md`](GITHUB-SKIN.md) by default: the same ink on a transparent ground, in a light and a dark render. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way. A default aesthetic must never outrank the point of the picture.
+- **The skin** is the house style, `/mx:house-style`, worn by a figure: its tokens and type, plus the node treatments and markers below. A figure embedded in a markdown file GitHub renders (a README, a doc page, an issue) wears [`GITHUB-SKIN.md`](GITHUB-SKIN.md) by default: the same ink on a transparent ground, in a light and a dark render. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way.
 
 ---
 
@@ -22,9 +22,9 @@ This file has two layers and they do not bind equally.
 <rect x="X" y="Y" width="W" height="H" rx="6" fill="{fill}" stroke="{stroke}" stroke-width="1"/>
 ```
 
-**A label never touches its connector.** Leave 6–10px of visible gap between the bottom of the mask rect and the stroke. The mask stops the bleed-through; the gap is what keeps the line traceable. A label that hides its own arrow has destroyed the information it was annotating. For vertical segments put the label beside the line with the same gap, never rotated; vertical `writing-mode` text is unreadable at figure sizes.
+**A label never touches its connector.** Leave 6–10px of visible gap between the bottom of the mask rect and the stroke. The mask stops the bleed-through; the gap is what keeps the line traceable. For vertical segments put the label beside the line with the same gap, never rotated; vertical `writing-mode` text is unreadable at figure sizes.
 
-**Connectors turn at right angles.** A diagonal between two off-axis nodes reads as sloppy in a way that is hard to name and easy to see. Use a plain `<line>` only when the endpoints share an x or a y; otherwise an elbow with a quarter-arc corner:
+**Connectors turn at right angles.** Use a plain `<line>` only when the endpoints share an x or a y; otherwise an elbow with a quarter-arc corner:
 
 ```svg
 <!-- right then down, mid = (x1+x2)/2, corner radius 8 -->
@@ -34,13 +34,13 @@ This file has two layers and they do not bind equally.
 
 The exception is a radial layout. Spokes running from a ring of nodes into a shared center are *supposed* to be diagonal; the diagonal is what says "these all point at the same thing." Forcing them orthogonal destroys the shape. The rule is about arbitrary slants, not about geometry that carries meaning.
 
-**Pick the port that matches the direction of travel.** If the destination is mostly above or below, leave through the top or bottom edge and arrive at the top or bottom edge. An arrow arriving at a node's side after travelling vertically looks like it punctured the face rather than landing on it.
+**Pick the port that matches the direction of travel.** If the destination is mostly above or below, leave through the top or bottom edge and arrive at the top or bottom edge.
 
 **Crossings get a hop; shared edges get a fan.** Where two connectors must cross, bump the less important one over the other with a small arc (`a 8,8 0 0,1 16,0` on a horizontal path, which rises 8px and advances 16px). Never bump both. Where several connectors meet the same edge of a node, give each its own attach point at least 12px from its neighbours, spacing point *k* of *N* at `L·k/(N+1)` along the edge. Two arrows you cannot tell apart at a glance are a failed layout, not a styling problem.
 
 **Route around boxes that are not endpoints.** A line disappearing behind an unrelated node implies a relationship that isn't there. If an intervening box genuinely sits on the only straight path, dash that segment to mark it as transit and keep the label at the visible end.
 
-**Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. This single constraint does more than any other to stop a figure reading as machine-generated, because near-alignment is what the eye catches. The house skin uses 4.
+**Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. The house skin uses 4.
 
 **Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
 
@@ -55,7 +55,7 @@ chromium --headless --mx-run="${MX_RUN:-$PWD}" --disable-gpu --hide-scrollbars -
 
 `--mx-run` names the run the browser belongs to, so `browsers kill` takes it when it hangs.
 
-Then Read the PNG and fix what you see: overlaps, collisions, drift, dead space, a label swallowed by a box. Expect to go round two or three times. Done means you have looked at it and it both explains the thing and looks good.
+Then Read the PNG and fix what you see: overlaps, collisions, drift, dead space, a label swallowed by a box. Expect to go round two or three times.
 
 ---
 
@@ -145,18 +145,13 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 
 ## Type notes
 
-Everything else is layout convention, a few lines each.
-
-- **Architecture**: group by tier or trust boundary, hold one direction of primary flow, accent the key integration point or store.
 - **Architecture delta** (a concept diff of a structure): a before panel, a ledger of the changes, an after panel. The after panel copies the before panel's coordinates for every part that stayed, so the reader's map holds and only what moved looks new.
 - **Hub and spoke**: the platform in the middle, sources plugging in on one side and readers out on the other, each wire labelled with how it connects (the protocol, the file, the call).
-- **Flowchart**: diamonds for decisions, label every branch, one entry and one exit unless a second exit is the point.
 - **Sequence**: actors across the top, lifelines down, time strictly downward, activation bars for held control. A return is a dashed line with a filled arrowhead, an async message an open arrowhead. One combined fragment, its operator in a small tab at its top left, two `alt` regions, no nesting past one level.
 - **State**: filled dot for initial, ringed dot for final, transitions labelled `event [guard] / action`. A transition from any state is one note (`* → error on timeout`), never an arrow from each.
 - **ER**: entity as a box with a field list, `#` before a primary key and `→` before a foreign key, cardinality glyphs at both ends 10–12px from the box edge, 8 entities max. A **schema** view is the same boxes with SQL types and constraint chips, each foreign key drawn from its column to the column it references.
 - **Fishbone** (a diagnosis): the effect at the head, causes along ribs grouped by category, every cause investigated drawn and the confirmed one in the accent, so the figure shows what was ruled out as well as what was found.
 - **Journey**: stages across, a sentiment curve above them, a marker on each pain point where the curve drops.
-- **Timeline**: one axis, events on alternating sides when they crowd, uneven spacing only if the spacing is to scale.
 - **Swimlane**: lanes for actors, flow crossing between them; add a step axis and chips when the handoffs matter more than the order.
 - **Nested / layers / tree / org chart**: containment, stacking, and parentage. Depth is the budget: 6 levels nested, 6 layers, 4 for tree and org depth.
 - **Quadrant**: two labelled axes with named poles, items as dots with labels outside the plot. The consultant variant names all four cells and drops the dots.

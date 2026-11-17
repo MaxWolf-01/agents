@@ -52,7 +52,7 @@ A question is open, and shows in the board's needs-me group, until a `Ruled <dat
 
 ## The tree
 
-A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are parts of and a child ticket never repeats it. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
+A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are parts of and a child ticket never repeats it.
 
 Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. A project worked from two machines has a main checkout on each, kept in step through git: the sync hook, which `tracker hook` installs, pushes each commit in the agent repo to its upstream as it is made, merging first whatever the other machine pushed; a ticket both machines changed stops that merge at a conflict, for whoever committed second to resolve, and ticket commits in that checkout wait until it is (`tracker sync --help`). An integration branch is pushed by whoever merges into it, as for a project on one machine. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`). A worker opens no ticket file, and `tracker` refuses every write from a `ticket/<slug>` branch; what a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and `tracker check --help` says what the commit hook refuses of either.
 
@@ -86,4 +86,4 @@ Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows and how it is served. A ticket's row lists its show directory, and an executable file there (`/mx:show`, A runnable artifact) gets a button carrying the command that runs it from the code repo's root, so the reader starts it when they want it. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows and how it is served. A ticket's row lists its show directory, and an executable file there (`/mx:show`, A runnable artifact) gets a button carrying the command that runs it from the code repo's root. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.

@@ -30,5 +30,3 @@ A review is closed out when every thread it opened is resolved and its body is h
 gh api graphql -f id=<PRR_…> -f query='mutation($id: ID!) {
     minimizeComment(input: {subjectId: $id, classifier: RESOLVED}) { minimizedComment { isMinimized } } }'
 ```
-
-`unminimizeComment` with the same `subjectId` shows it again.

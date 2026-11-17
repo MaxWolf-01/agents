@@ -5,15 +5,6 @@ description: "Second opinion from a different model family (OpenAI Codex). Use w
 
 # Codex: Second Opinion
 
-Run OpenAI's Codex CLI non-interactively from Claude Code. Different model family = different blind spots, different strengths.
-
-## Example use cases
-
-- To increase diversity of opinions when exploring design choices
-- Code review or architecture critique
-- Debugging when stuck; a different model may see different patterns
-- User explicitly asks for a second perspective
-
 ## Command
 
 `<slug>` is the repo's name and a few words naming what you asked about (`agents-auth-redesign`, `memex-flaky-test`).
@@ -36,15 +27,8 @@ Codex has **zero context** from your session. Everything it needs must be in the
 **Give it orientation first:**
 - Codex loads the project's `AGENTS.md` itself; where the project keeps its instructions in a `CLAUDE.md` instead, tell it to read `./CLAUDE.md` for project context, knowledge map, and conventions
 - Point it to `GLOSSARY.md`, `decisions/`, and `agent/tickets/` when relevant; written records is more efficient than re-explaining what's already documented
-- Name the specific files and directories to review; it can read them, but won't know which ones matter unless told
 
 **Add session context it can't get from files:**
 - Describe the current approach, decisions made, constraints discovered: things only in your conversation
-- State the question clearly: what you want reviewed, what kind of answer you want
-
-**Request structured output:**
-- "List the top 5 issues, each with: what's wrong, where, and how you'd fix it"
-- "Pros and cons of this approach as a numbered list"
-- Not: "What do you think?"
 
 **GPT-5 is sensitive to contradictory instructions**, more so than other models. Keep prompts clean and unambiguous.

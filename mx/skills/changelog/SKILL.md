@@ -3,13 +3,13 @@ name: changelog
 description: Update CHANGELOG.md with notable changes since the last release. Use when preparing a release, or when asked for the changelog or release notes.
 ---
 
-Update the repository changelog with changes between the last release and the current version (`main`) that are not yet incorporated. If `CHANGELOG.md` does not exist, use `CHANGELOG` instead.
+If `CHANGELOG.md` does not exist, use `CHANGELOG` instead.
 
 ## Step-by-Step Process
 
 ### 1. Determine baseline version
 
-If no baseline version is provided, use the most recent git tag. You can find it with `git describe --tags --abbrev=0`.
+If no baseline version is provided, use the most recent git tag.
 
 ### 2. Read what landed
 
@@ -21,7 +21,7 @@ The first-parent line holds one commit per merged branch, plus any commit made s
 
 ### 3. Update the changelog
 
-Read the existing changelog file (`CHANGELOG.md`, or `CHANGELOG` if missing) and check if there are changes not yet incorporated, then add them. Always add them to the "Unreleased" section only. If there is none yet, add it at the top in the same style as the existing changelog (for example, `## Unreleased` vs `## [Unreleased]`).
+Read the existing changelog file and check if there are changes not yet incorporated, then add them. Always add them to the "Unreleased" section only. If there is none yet, add it at the top in the same style as the existing changelog (for example, `## Unreleased` vs `## [Unreleased]`).
 
 ## Ground Rules When Writing Changelogs
 
@@ -30,16 +30,11 @@ Read the existing changelog file (`CHANGELOG.md`, or `CHANGELOG` if missing) and
 - Focus on **notable changes** that affect users (features, fixes, breaking changes)
 - Mention pull requests (`#NUMBER`) when available, but not raw commit hashes
 - Ignore insignificant changes (typo fixes, internal refactoring, minor documentation updates)
-- Group related changes together when appropriate
 - Order entries by importance: breaking changes first, then features, then fixes
 
 ### Style Guidelines
 
-- Use valid markdown syntax
 - Start each entry with a past-tense verb or descriptive phrase
-- Keep entries concise but descriptive enough to understand the change
-- Use bullet points (`*` or `-`) for individual changes
-- Format code references with backticks (e.g., `foo.cleanup`)
 
 ### Example Format
 
@@ -59,24 +54,7 @@ Read the existing changelog file (`CHANGELOG.md`, or `CHANGELOG` if missing) and
 * Ignore `.jinja` and `.jinja2` as extensions in auto escape.  #832
 ```
 
-### Good vs. Bad Examples
-
-**Good:**
-
-- `Fixed an issue with the TypeScript SDK which caused an incorrect config for CJS.`
-- `Added support for claim timeout extension on checkpoint writes.`
-- `Improved error reporting when task claim expires.`
-
-**Bad:**
-
-- `Fixed bug` (too vague)
-- `Updated dependencies` (insignificant unless it fixes a security issue or adds new user-facing features)
-- `Refactored internal code structure` (internal change, not user-facing)
-- `Fixed typo in comment` (insignificant)
-
 ## Notes
 
-- If the current changelog already has an "Unreleased" section with content, append to it rather than replacing it
 - Preserve the existing changelog style and formatting (headings, bullet style, ordering, and spacing)
-- If the repo uses a different default branch name, treat that as the "current version" instead of `main`
 - When in doubt about whether a change is significant, err on the side of including it

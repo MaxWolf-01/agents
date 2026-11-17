@@ -4,7 +4,7 @@ Fallback when the fork subagent type is unavailable: forks the session via the d
 
 1. Read the parent id from `$CLAUDE_CODE_SESSION_ID`, and the origin id, the session the user is talking to, from `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}`.
 2. `uuidgen` → the fork's session id. Always pass it via `--session-id`: it is the handle to resume or interrogate the fork later (`claude --resume <fork-id>`, or `claude -p --setting-sources user,project,local --resume <fork-id> '<follow-up>'`).
-3. tmux session name `fork-<slug>-<first 8 of fork-id>`: unique, so concurrent forks never clash.
+3. tmux session name `fork-<slug>-<first 8 of fork-id>`.
 
 ```bash
 tmux new-session -d -s fork-<slug>-<id8> "env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID MX_ORIGIN_SESSION=<origin-id> \

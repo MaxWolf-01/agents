@@ -5,7 +5,7 @@ description: "Show, don't tell: the artifacts that make a thing visible, so a re
 
 # Show
 
-A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, have what the table names for the thing's shape built, look at it, put it in front of the reader.
+A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works.
 
 ## What a reader can be shown
 
@@ -62,14 +62,11 @@ Every artifact, in every medium, reads like a good README: it states, it never s
 
 ## Media craft
 
-How a row's medium gets made. An open set, not a menu; combining media is normal, and anything that carries the thing qualifies:
-
 - **Diagram**: a structure or a flow, drawn. Mermaid, drawn by [Pele](https://github.com/obsidianmd/pele) ([`mermaid/SKILL.md`](mermaid/SKILL.md)), when the layout should be solved for you; a hand-placed SVG ([`SVG-FIGURES.md`](SVG-FIGURES.md)) when the figure is the artifact and deserves the control.
 - **Struktogramm**: a procedure as nested boxes with no arrows (Nassi-Shneiderman), when its loops and branches are what the reader has to see ([`struktogramm/SKILL.md`](struktogramm/SKILL.md)).
 - **Comparison**: a difference shown instead of described: a code diff (`diffview`), a table, two rendered variants side by side, or a blind test (`blind-test`, `/mx:grilling`) when the reader is to choose between them by taste.
 - **Runnable code**: a behaviour, exhibited by the smallest script that shows it and its output (A runnable artifact, above). A design or a state model to be felt is `/mx:prototype`.
 - **HTML/JS page**: the most flexible medium, for interactive figures, animations, side-by-side panels and whole explainers ([`PAGES.md`](PAGES.md)).
-- **LaTeX/TikZ**: publication-grade figures.
 - **Animation**: a process unfolding over time. Interactive JS the reader steps and scrubs usually beats a linear video; manim is for math-heavy scenes.
 
 ## Produce and present

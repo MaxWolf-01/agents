@@ -31,7 +31,6 @@ _Avoid_: Client, buyer, account
 - **Code names go on the `_In code_` line.** The identifier the code uses for the term (a table, a type, a status value) goes there and nowhere in the definition, so the definition survives a rename. Omit the line when the code has no name of its own for the term.
 - **Definitions survive redesign.** The mechanism behind a term (formula, composition, parameters) lives in the design doc or ADR that decided it. Test each clause: would a change to the mechanism force an edit here? If yes, cut it and let the entry name the concept's role instead.
 - **Only ambiguous terms earn an entry.** A term belongs when it's newly coined or nonstandard, carries a non-obvious meaning in this context, or has competing words (pick one, list the rest under `_Avoid_`). A term whose common meaning already says everything stays out, even a domain-specific one, and especially general programming concepts. Coin as few terms as possible; the glossary is where the unavoidable ones are defined once and used everywhere.
-- **Group terms under subheadings** when natural clusters emerge. If all terms belong to a single cohesive area, a flat list is fine.
 
 `glossary-lint [GLOSSARY.md ...]` checks the word and sentence caps and code names in definitions; the other rules are judgment.
 

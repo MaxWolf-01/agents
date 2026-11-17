@@ -12,7 +12,3 @@ mx draws Mermaid with [Pele](https://github.com/obsidianmd/pele): it reads Merma
 ## Validating a diagram
 
 1. **If the diagram will live in Markdown**: draft it in a standalone `diagram.mmd` first (the tool only validates plain Mermaid files).
-2. Write/update `diagram.mmd`.
-3. Run `bash <skill-dir>/tools/validate.sh diagram.mmd`.
-4. Fix every error it reports, at the line and column it names.
-5. Once it validates, copy the Mermaid block into your Markdown file.
