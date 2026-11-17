@@ -609,9 +609,19 @@ with sync_playwright() as pw:
         out["back"] = page.evaluate(SHOWN)
         page.keyboard.press("j")
         out["newest_again"] = page.evaluate(SHOWN)
+        # the tasks' box of its newest steps: a click opens the log on the turn under way, though a turn is picked
+        out["box"] = page.evaluate('''[...document.querySelectorAll("#working .live-step")].map((s) =>
+          [s.querySelector(".verb").textContent, s.querySelector(".subject").textContent])''')
+        out["box_count"] = page.text_content("#working .live-count")
+        page.keyboard.press("Escape")
+        page.click("#working")
+        page.wait_for_function("document.querySelector('#log.open .which')?.textContent.startsWith('live')", timeout=10000)
+        out["clicked"] = page.evaluate(SHOWN)["which"]
+        out["edges"] = page.evaluate('[document.getElementById("log").getBoundingClientRect().left, document.querySelector(".tasks").getBoundingClientRect().left]')
         live.unlink()
-        page.wait_for_function("!document.querySelector('#log .which').textContent.startsWith('under way')", timeout=10000)
+        page.wait_for_function("!document.querySelector('#log .which').textContent.startsWith('live')", timeout=10000)
         out["ended"] = page.evaluate(SHOWN)
+        out["box_after"] = page.evaluate("document.getElementById('working').checkVisibility()")
     elif scenario == "phone":
         # a phone: the page opens on the tasks; an artefact opens from its row by a tap, a turn's tool calls by its
         # button; and while the live hook's file is there, the tasks say a turn is running
@@ -623,7 +633,7 @@ with sync_playwright() as pw:
         out["working_before"] = page.evaluate("document.getElementById('working').checkVisibility()")
         Path(args["live"]).write_text(args["calls"])
         page.wait_for_function("document.getElementById('working').checkVisibility()", timeout=15000)
-        out["working"] = page.text_content("#working .t-txt")
+        out["working"] = page.inner_text("#working")
         with context.expect_page(timeout=5000) as tab:
             page.tap("#open-questions .t-row.art a.open")
         out["opened"] = tab.value.url
@@ -1131,7 +1141,8 @@ def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[P
     """With no turn picked, the open log shows the turn under way's calls, a running one's time
     still moving, and a call the live hook adds shows without a reload. A picked turn shows its own; k on the newest
     turn goes on to the turn under way, j back, and the head holds no button for either, nor one to close it; once
-    the turn ends, the log falls back."""
+    the turn ends, the log falls back. The tasks show the newest steps in a box, whose click opens the log on
+    the turn under way, from the tasks' left edge."""
     page, _ = rendered
     write_page(read_session(page.parent, worked(transcript, tmp_path / "t.jsonl")), datetime.now())
     at = datetime.now(UTC).isoformat()
@@ -1143,12 +1154,15 @@ def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[P
 
     seen = probe(page, "live", live=str(page.parent / LIVE), first=calls(("make test", at)),
                  second=calls(("make test", at), ("make check", None)))
-    assert seen["first"] == {"which": "under way · make the log live", "buttons": ["open all"], "steps": [["ran", "make test", False]]}
+    assert seen["first"] == {"which": "live · make the log live", "buttons": ["open all"], "steps": [["ran", "make test", False]]}
     assert seen["second"]["steps"] == [["ran", "make test", False], ["ran", "make check", True]]
     assert seen["turn"]["which"].startswith("turn 04 ") and seen["turn"]["buttons"] == ["open all"]
     assert seen["back"] == seen["second"], "k on the newest turn goes on to the turn under way"
     assert seen["newest_again"]["which"] == seen["turn"]["which"], "and j goes back to the newest turn"
-    assert not seen["ended"]["which"].startswith("under way")
+    assert seen["box"] == [["ran", "make test"], ["ran", "make check"]] and seen["box_count"] == "2 steps"
+    assert seen["clicked"] == "live · make the log live", "a click on the tasks' box shows the turn under way, a turn picked or not"
+    assert seen["edges"][0] == seen["edges"][1], "the open log covers the tasks and the timeline whole"
+    assert not seen["ended"]["which"].startswith("live") and not seen["box_after"]
 
 
 
@@ -1262,7 +1276,7 @@ def test_on_a_phone_an_artefact_and_a_turns_tool_calls_open_by_touch_and_the_tas
     calls = PREFIX + json.dumps({"prompt": "make the log live", "steps": []}) + "\n"
     seen = probe(waiting_page, "phone", live=str(waiting_page.parent / LIVE), calls=calls)
     assert seen["view"] == "tasks" and not seen["working_before"], seen
-    assert seen["working"] == "A turn is running: make the log live", seen
+    assert seen["working"].split() == ["live", "0", "steps", "no", "tool", "calls", "yet", "open", "the", "log"], seen
     assert seen["opened"].endswith("agent/show/lint/texts.html"), seen
     assert seen["log"].startswith("turn 01"), seen
 
