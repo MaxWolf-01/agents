@@ -22,5 +22,5 @@ The default-page kit: a hero with a big number and a small label, gradient washe
 ## Build
 
 1. One sentence on what must click for the reader; the sections as a list.
-2. Build, then lint and look at both schemes (Produce and present in `SKILL.md`).
+2. Build, then lint and look at both schemes (Produce and present in `SKILL.md`, and in `WORKFLOW.md` for the lint).
 3. Remove one thing. Then present.

@@ -6,7 +6,7 @@ The records sit in the directory `session-page` prints, the same from every work
 
 A turn that delivers something, in order:
 
-1. **Its artifacts**, each built by a subagent or a fork (`/mx:show`, Who builds it), since the session writes no HTML. The turn waits for them, so every link its record carries points at a page that exists.
+1. **Its artifacts**, each built by a subagent or a fork (`/mx:show`'s `WORKFLOW.md`, Who builds it), since the session writes no HTML. The turn waits for them, so every link its record carries points at a page that exists.
 2. **The session record**, with the first turn record: `session.md`, its H1 alone, one that names the session's subject the way an email subject line does (the area of the project and the things worked on, by name). Until it exists, the page takes the title Claude Code keeps for the session. The H1 is rewritten when the session's scope moves, and a turn that rewrites it has it reviewed with its record.
 3. **The turn record**, below, written with the Write tool, since the page pairs the record with the user's message by that call. Revise it where a finding holds, and end the turn once it is final. Everything the user needs is in the record, so nothing follows it in the chat: what waits on them stays in the page's tasks until it clears, a call under Questions, a thing to do under To do, an artifact under Links.
 

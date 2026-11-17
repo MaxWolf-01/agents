@@ -1282,7 +1282,7 @@ def test_what_a_show_directory_offers_an_opened_ticket(tmp_path: Path) -> None:
 
 
 def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
-    """Where a tree's show lives (/mx:show): the parent ticket's own directory. A parent is read
+    """Where a tree's show lives (/mx:show, WORKFLOW.md): the parent ticket's own directory. A parent is read
     like any other ticket, so its children's show directories are theirs and none of its own."""
     root = tmp_path / "agent" / "tickets"
     root.mkdir(parents=True)
