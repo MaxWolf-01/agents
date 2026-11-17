@@ -1427,7 +1427,7 @@ KEYS = [
     ("Enter", "on an item: open its card, where [ ] move between the cards and Esc goes back"),
     ("a b c", "on a question: pick that option"),
     ("d x", "on a to-do: done, dismissed"),
-    ("o O s", "on an artefact: open it, open it in a new tab, mark it seen; it leaves once the batch is sent"),
+    ("o O s x", "on an artefact: open it, open it in a new tab, mark it seen, dismiss it; it leaves once the batch is sent"),
     ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on an item: clear what is staged"),
     ("q", "fold or show the tasks"),
@@ -1939,6 +1939,7 @@ def look_row(turn: Turn, s: Shown) -> str:
     return (f'<div class="t-row art" data-handle="{esc(s.link.path)}" data-kind="look">{type_icon(s.link.path)}'
             f'<span class="t-h">{artefact(s, "art-title open")}</span>'
             f'<span class="t-acts">{button("note", "n", "note", "Add a note on it")}'
+            f'{button("x", "x", "dismissed", "Dismiss it" + chr(10) + "You need not look at it. It leaves this list when you send, and the agent is told.")}'
             f'<a class="ib" href="{esc(s.href)}" target="_blank" rel="noopener" aria-keyshortcuts="o" aria-label="open it"{tip("Open it" + chr(10) + "Nothing opens by itself.")}>{ICONS["open"]}</a></span>'
             f'<span class="t-pick"><button type="button" class="seen-btn" data-act="seen" aria-pressed="false" aria-keyshortcuts="s"'
             f'{tip("Mark it seen" + chr(10) + "It leaves this list when you send, and the agent is told.")}>{ICONS["eye"]}<span>Mark seen</span></button></span></div>')
