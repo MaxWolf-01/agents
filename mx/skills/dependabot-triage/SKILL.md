@@ -5,7 +5,7 @@ allowed-tools: Bash(gh:*), Bash(npm:*), Bash(uv:*), Read, Grep, Glob
 disable-model-invocation: true
 ---
 
-Triage open Dependabot alerts for the current repository. The goal is distinguishing real vulnerabilities from noise; most Dependabot alerts on transitive dependencies are not exploitable.
+Triage the current repository's open Dependabot alerts, separating real vulnerabilities from noise: most alerts on transitive dependencies are not exploitable.
 
 ## Fetch
 
@@ -15,9 +15,7 @@ gh api -X GET repos/{owner}/{repo}/dependabot/alerts --jq '.[] | select(.state =
 
 ## Trace each alert
 
-For each alert, trace the dependency to understand how it enters the project.
-
-Then classify:
+For each alert, trace how the dependency enters the project, then classify it:
 
 | Classification | Meaning |
 |---|---|
@@ -46,6 +44,6 @@ gh api -X PATCH repos/{owner}/{repo}/dependabot/alerts/{number} \
 
 Valid dismiss reasons: `fix_started`, `inaccurate`, `no_bandwidth`, `not_used`, `tolerable_risk`. Use `not_used` for tree-shaken/build-only, `tolerable_risk` for theoretical.
 
-**Don't dismiss** Exploitable or Theoretical alerts. For those, summarize what updating would involve.
+**Keep open** Exploitable and Theoretical alerts, and summarize what updating would involve for each.
 
 **Always ask for confirmation before dismissing.** Present the table, get a yes, then dismiss.
