@@ -1,0 +1,8 @@
+{
+  "name": "mx-mermaid-validate",
+  "private": true,
+  "dependencies": {
+    "beautiful-mermaid": "1.1.3",
+    "pele": "1.13.0"
+  }
+}

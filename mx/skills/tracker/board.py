@@ -1408,14 +1408,12 @@ def slug_id(name: str) -> str:
 
 
 def node_label(text: str) -> str:
-    # a double quote ends mermaid's label string, and the #quot; entity renders literally in an SVG text label
+    # a double quote would end the label's string
     return text.replace('"', "”")
 
 
-def node_id(ns: str, slug: str) -> str:
-    # ns makes node ids unique per diagram instance: mermaid+elk contaminate across
-    # diagrams on one page when two share a node id (DOM lookups hit the first SVG).
-    return f"T_{ns}_{slug_id(slug)}"
+def node_id(slug: str) -> str:
+    return f"T_{slug_id(slug)}"
 
 
 def drawn(shown: list[Ticket], all_of_them: dict[str, Ticket]) -> tuple[set[str], set[str]]:
@@ -1429,24 +1427,13 @@ def drawn(shown: list[Ticket], all_of_them: dict[str, Ticket]) -> tuple[set[str]
     return live | ghost, ghost
 
 
-# A graph node's ink by its class, as house tokens: fill, stroke, text, and the stroke's dash
-# pattern where it has one. The work that wants the user wears the accent, the rest steps back to
-# the edge; ghost is a done ticket shown as context, and proposed is not ruled on: both dashed.
-GRAPH_INK = {
-    "review": ("wash", "accent", "strong", ""), "open": ("ground-2", "body", "body", ""),
-    "claimed": ("ground-2", "muted", "body", ""), "blocked": ("ground", "edge", "muted", ""),
-    "proposed": ("ground", "muted", "body", "4 3"), "done": ("ground", "edge", "muted", ""),
-    "ghost": ("ground", "edge", "muted", "2 3"),
-}
-
-
-def node_defs(ns: str, tickets: list[Ticket], drawing: set[str], ghost: set[str]) -> list[str]:
-    lines = []
-    for t in tickets:
-        if t.slug in drawing:
-            cls = "ghost" if t.slug in ghost else t.status
-            lines.append(f'  {node_id(ns, t.slug)}["{STATUS_SYMBOL[t.status]} {node_label(t.title)}"]:::{cls}')
-    lines.extend(f'  click {node_id(ns, t.slug)} "#t-{t.slug}"' for t in tickets if t.slug in drawing)
+def node_defs(tickets: list[Ticket], drawing: set[str], ghost: set[str]) -> list[str]:
+    """Each drawn ticket's node, then its link to the ticket's row, which carries the whole label
+    again as the node's tooltip."""
+    labels = {t.slug: f"{STATUS_SYMBOL[t.status]} {node_label(t.title)}" for t in tickets if t.slug in drawing}
+    lines = [f'  {node_id(t.slug)}["{labels[t.slug]}"]:::{"ghost" if t.slug in ghost else t.status}'
+             for t in tickets if t.slug in drawing]
+    lines.extend(f'  click {node_id(slug)} "#t-{slug}" "{label}"' for slug, label in labels.items())
     return lines
 
 
@@ -1462,9 +1449,8 @@ def tree_graph(tickets: list[Ticket], tree: str) -> str | None:
     slugs = {slug for edge in edges for slug in edge}
     if not slugs:
         return None
-    ns = "f"
-    lines = ["flowchart LR", *node_defs(ns, tickets, slugs, ghost & slugs)]
-    lines.extend(f"  {node_id(ns, a)} --> {node_id(ns, b)}" for a, b in edges)
+    lines = ["flowchart LR", *node_defs(tickets, slugs, ghost & slugs)]
+    lines.extend(f"  {node_id(a)} --> {node_id(b)}" for a, b in edges)
     return "\n".join(lines)
 
 
@@ -1473,13 +1459,12 @@ def board_graph(tickets: list[Ticket]) -> dict | None:
     shown: per tree, its nodes with their lines; every edge with the two trees it joins. Edges only,
     as in `tree_graph`; an edge is drawn where both ends are on the board, and a done ticket a live
     one waits on is its dashed context there too. None when nothing waits on anything."""
-    ns = "b"
     by_slug = {t.slug: t for t in tickets}
     include, ghost = drawn(tickets, by_slug)
     # the tree a node sits under is named as the pill names it, since the page composes this graph
     # by hiding the trees whose pills are off
     edges = [
-        (by_slug[ref].tree or ALONE, node_id(ns, ref), t.tree or ALONE, node_id(ns, t.slug))
+        (by_slug[ref].tree or ALONE, node_id(ref), t.tree or ALONE, node_id(t.slug))
         for t in tickets if t.slug in include
         for ref, _ in t.blocked_by if ref in include
     ]
@@ -1490,8 +1475,8 @@ def board_graph(tickets: list[Ticket]) -> dict | None:
                                           for ta, a, tb, b in edges]}
     for tree in trees_of(tickets):
         nodes = [
-            {"id": node_id(ns, t.slug), "lines": node_defs(ns, [t], {t.slug}, ghost & {t.slug})}
-            for t in in_tree(tickets, tree) if node_id(ns, t.slug) in connected
+            {"id": node_id(t.slug), "lines": node_defs([t], {t.slug}, ghost & {t.slug})}
+            for t in in_tree(tickets, tree) if node_id(t.slug) in connected
         ]
         if nodes:
             parts["trees"].append({"name": tree, "nodes": nodes})
@@ -1865,7 +1850,7 @@ def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
     footmeta = f"{len(reading.tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     notes = absences(reading) + [Absence("board-server", UNSERVED, hidden=True), Absence("board-stale", "", hidden=True)]
     return PAGE.substitute(
-        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK), copycap=COPY_CAP,
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, copycap=COPY_CAP,
         project=html.escape(reading.project), chips="".join(map(pill_html, board.pills)),
         groups="".join(map(group_html, board.groups)), graphs=graphs, log=log_html,
         columns="".join(column_tokens(selector, widths) for selector, widths in columns(board).items()),

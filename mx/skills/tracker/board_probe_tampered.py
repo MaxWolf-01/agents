@@ -2,9 +2,9 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-"""A file of the engine changed at the CDN: the board draws once from this machine's copies, so they
-hold every file it fetches, then loads again from a copy of them in which one file carries a byte
-more than the one its hash was taken of."""
+"""The engine changed at the CDN: the board draws once from this machine's copies, so they hold every
+file it fetches, then loads again from a copy of them in which the engine's file carries a byte more
+than the one its hash was taken of."""
 
 import json, os, re, shutil, sys
 from pathlib import Path
@@ -23,7 +23,7 @@ with sync_playwright() as pw:
     tab = loader.new_page()
     serve(loader, kept)
     tab.goto(f"{page_url}#t-map-columns")
-    tab.wait_for_selector(".side .mermaid svg, .gnote[id^=gun]:not([hidden])")
+    tab.wait_for_selector(".side .mermaid svg, #gunloaded:not([hidden])")
     if not tab.is_visible(".side .mermaid svg"):
         print(json.dumps({"cdn": False}))
         sys.exit()
@@ -42,9 +42,9 @@ with sync_playwright() as pw:
     errors = []
     tab.on("pageerror", lambda e: errors.append(str(e)))
     tab.goto(f"{page_url}?theme=day#t-map-columns")
-    tab.wait_for_selector("#gunloaded:not([hidden]), #gundrawn:not([hidden]), .side .mermaid svg")
+    tab.wait_for_selector("#gunloaded:not([hidden]), .side .mermaid svg")
     out = {"cdn": True, "pinned": pinned, "graphs": tab.eval_on_selector_all(".mermaid svg", "els => els.length"),
-           "notes": [tab.inner_text(n) for n in ("#gunloaded", "#gundrawn") if tab.is_visible(n)]}
+           "notes": [tab.inner_text("#gunloaded")] if tab.is_visible("#gunloaded") else []}
     # the rest of the board: the open row folds, and the scheme switches
     tab.click("#t-map-columns > summary")
     tab.keyboard.press("t")

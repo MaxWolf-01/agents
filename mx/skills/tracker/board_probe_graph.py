@@ -23,7 +23,7 @@ OVER = "(sel) => { const b = document.querySelector(sel); return b.scrollWidth -
 OPEN = "document.getElementById('gfull').classList.contains('open')"
 
 def nodes(frame, where):
-    return frame.eval_on_selector_all(where + " g.node", "els => els.length")
+    return frame.eval_on_selector_all(where + " .pele-node", "els => els.length")
 
 def click_node(frame, where, which):
     """The node for `which`, clicked where the graph is drawn."""
@@ -69,11 +69,11 @@ with sync_playwright() as pw:
     named(page, "#gfull .gname", "whole tracker")
     over = {"name": page.inner_text("#gfull .gname"), "note": page.inner_text("#gfull .gnote")}
     if drawn:
-        page.wait_for_selector("#gfull .gsvg g.node.cur")
+        page.wait_for_selector("#gfull .gsvg .pele-node.cur")
         over |= {"width": page.evaluate(WIDE, "#gfull .gsvg svg"),
                  "nodes": nodes(page, "#gfull .gsvg"), "overflow": page.evaluate(OVER, "#gfull .gfbody"),
-                 "marked": page.eval_on_selector_all("#gfull .gsvg g.node.cur", "els => els.map((n) => n.id)"),
-                 "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
+                 "marked": page.eval_on_selector_all("#gfull .gsvg .pele-node.cur", "els => els.map((n) => n.dataset.id)"),
+                 "titles": page.eval_on_selector_all("#gfull .gsvg .pele-node title", "els => els.length"),
                  "viewbox": page.evaluate("() => { const v = document.querySelector('#gfull .gsvg svg').viewBox.baseVal; return [v.width, v.height] }"),
                  "drawn": page.evaluate("() => { const b = document.querySelector('#gfull .gsvg svg').getBoundingClientRect(); return [b.width, b.height] }")}
         # narrowed first, so the drag has something to move whatever the fixture's
@@ -143,7 +143,7 @@ with sync_playwright() as pw:
     win = popped.value
     win.on("pageerror", lambda e: errors.append("window: " + str(e)))
     win.set_viewport_size({"width": 900, "height": 620})
-    win.wait_for_selector(".gfbody g.node.cur" if drawn else ".gfbody " + PAINTED)
+    win.wait_for_selector(".gfbody .pele-node.cur" if drawn else ".gfbody " + PAINTED)
     window = {"title": win.title(), "scheme": win.evaluate("document.documentElement.dataset.theme"),
               "ground": win.evaluate("getComputedStyle(document.body).backgroundColor"),
               "font": win.evaluate("getComputedStyle(document.querySelector('.gname')).fontFamily"),
@@ -151,8 +151,8 @@ with sync_playwright() as pw:
     if drawn:
         window |= {"width": win.evaluate(WIDE, ".gfbody svg"),
                    "nodes": nodes(win, ".gfbody"), "overflow": win.evaluate(OVER, ".gfbody"),
-                   "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
-                   "marked": win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")}
+                   "titles": win.eval_on_selector_all(".gfbody .pele-node title", "els => els.length"),
+                   "marked": win.eval_on_selector_all(".gfbody .pele-node.cur", "els => els.length")}
     win.click("[data-gmode=tree]")  # the board is on the whole tracker, so this is a change in both
     named(win, ".gname", "csv-import")
     window["switched"] = win.inner_text(".gname")
@@ -162,27 +162,17 @@ with sync_playwright() as pw:
         page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NODE[1:]}'")
         window["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
         window["still_open"] = not win.is_closed()
-        # The window follows the board's cursor without redrawing: the cursor moves to another row of
-        # the tree on show, so the graph is one the new row has a node in. A row of any other tree is
-        # a different graph, and a standalone ticket's tree has none at all, which leaves the window
-        # showing its note and no mark for this to wait on.
-        drawing = win.evaluate("document.querySelector('.gfbody .gsvg svg').id")
-        steps, slug = page.evaluate("""
-          () => {
-            const shown = [...document.querySelectorAll(".ticket")].filter((r) => r.checkVisibility())
-            const at = shown.findIndex((r) => r.classList.contains("kcur"))
-            const next = shown.findIndex((r, i) => i > at && r.dataset.tree === shown[at].dataset.tree)
-            return [next - at, shown[next]?.dataset.slug]
-          }
-        """)
-        assert slug, "no row of the cursor's own tree below it, so j leaves the graph on show"
-        for _ in range(steps):
-            page.keyboard.press("j")
-        page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=f"t-{slug}")
-        node = "T_f_" + slug.replace("-", "_")
-        win.wait_for_selector(f'.gfbody g.node.cur[id*="-{node}-"]')
-        window["follows_cursor"] = win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")
-        window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').id") == drawing
+        # The window follows the board's cursor without redrawing: the cursor goes straight to the row
+        # of another live node in the drawing, which is a row of the tree on show, through the row's
+        # anchor. A ghost node can be a row of another tree, whose graph is a different drawing.
+        win.evaluate("document.querySelector('.gfbody .gsvg svg').dataset.probe = 'before'")  # gone with a drawing put in its place
+        target = win.evaluate("document.querySelector('.gfbody .pele-node:not(.cur):not(.ghost) a')?.getAttribute('href')")
+        assert target, "no other live node in the drawing for the cursor to move to"
+        page.evaluate("(href) => { location.hash = href }", target)
+        page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=target[1:])
+        win.wait_for_selector(f'.gfbody .pele-node.cur a[href="{target}"]')
+        window["follows_cursor"] = win.eval_on_selector_all(".gfbody .pele-node.cur", "els => els.length")
+        window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').dataset.probe") == "before"
     window["html"] = win.evaluate("document.documentElement.outerHTML")
     out["window"] = window
 
@@ -195,7 +185,7 @@ with sync_playwright() as pw:
     page.wait_for_selector(f"#{ROW} > summary")
     page.click(f"#{ROW} > summary")
     if drawn:
-        win.wait_for_selector(".gfbody g.node.cur")
+        win.wait_for_selector(".gfbody .pele-node.cur")
         click_node(win, ".gfbody", NEXT)
         page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
     else:
