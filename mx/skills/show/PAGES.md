@@ -6,8 +6,8 @@ An HTML page as the artifact: side-by-side panels, an interactive figure, prose 
 
 - Body text is the house body role at the measure; a dense comparison page may set `--size-body` down, as the skill allows. Headings are `v-h2` and `v-h3`. Sentence case in prose.
 - One content column, `--page` wide, left-aligned. Everything on the 4px grid. A table wider than the measure takes the page width.
-- Structure encodes information. A border, a rule, a number, a label exists because it separates or orders something the reader needs told apart; numbering (`01 / 02`) only when the content is a sequence.
-- Motion only in answer to the reader's action (open, expand, confirm), and it shows what changed. No entrance animations, no hover transitions on every card.
+- Structure encodes information: a border, a rule, a number or a label exists only where it separates or orders something the reader needs told apart, and numbering (`01 / 02`) only where the content is a sequence.
+- Motion answers the reader's action (open, expand, confirm) and shows what changed; no entrance animations, no hover transitions on every card.
 - Quality floor: usable at 700px wide, visible keyboard focus, `prefers-reduced-motion` honoured, both schemes with the toggle.
 - Selector specificity: one class per block, no element selectors that can cancel a class's spacing.
 - A page names the session the reader resumes to get back to the conversation behind it: `session <first 8 of the id>` in its `v-meta` line, as a button that copies `claude --resume <id>`, the id being `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}` read in the shell.

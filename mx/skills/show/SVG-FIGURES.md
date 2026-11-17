@@ -1,8 +1,8 @@
 # Hand-authored SVG figures
 
-A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and the few lines of JS the scheme toggle needs, nothing more. Reach for it when the picture *is* the artifact.
+A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and JS only for the scheme toggle. Reach for it when the picture *is* the artifact.
 
-Two other tools own neighbouring ground. **A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **is `dataviz`'s, painted as `/mx:house-style`'s `PARTS.md` says**. **Mermaid, drawn by Pele (see [`mermaid/SKILL.md`](mermaid/SKILL.md)), solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
+**A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **is `dataviz`'s, painted as `/mx:house-style`'s `PARTS.md` says**. **Mermaid, drawn by Pele (see [`mermaid/SKILL.md`](mermaid/SKILL.md)), solves layout for you**; here you solve it yourself, buying control with effort, a trade worth it under ~9 nodes and usually not above.
 
 This file has two layers and they do not bind equally.
 
@@ -13,16 +13,16 @@ This file has two layers and they do not bind equally.
 
 ## Mechanics
 
-**Draw order is z-order.** SVG paints in document order and has no `z-index`. Background → zone rects → connectors → nodes → *all* labels → legend. Connectors before nodes is what lets a box cover its own line ends. Labels after connectors is what stops a line drawn later from cutting through text; the trap is a zone label emitted alongside its zone rect, which every subsequent connector then paints over. Keep every label in the label pass, whatever it belongs to.
+**Draw order is z-order.** SVG paints in document order and has no `z-index`: background → zone rects → connectors → nodes → *all* labels → legend, so a box covers its own line ends and no later line cuts through text. The trap is a zone label emitted alongside its zone rect, which every later connector paints over: every label goes in the label pass, whatever it belongs to.
 
-**Anything sitting over a line needs an opaque backing rect.** SVG gives text no halo, so a label on a connector is unreadable and a translucent node fill lets the line show through. Draw a rect in the page background color first, then the real thing on top:
+**Anything sitting over a line needs an opaque backing rect.** SVG gives text no halo, and a translucent node fill lets the line show through: draw a rect in the page background color first, then the real thing on top:
 
 ```svg
 <rect x="X" y="Y" width="W" height="H" rx="6" fill="{paper}"/>   <!-- mask -->
 <rect x="X" y="Y" width="W" height="H" rx="6" fill="{fill}" stroke="{stroke}" stroke-width="1"/>
 ```
 
-**A label never touches its connector.** Leave 6–10px of visible gap between the bottom of the mask rect and the stroke. The mask stops the bleed-through; the gap is what keeps the line traceable. For vertical segments put the label beside the line with the same gap, never rotated; vertical `writing-mode` text is unreadable at figure sizes.
+**A label never touches its connector.** Leave 6–10px of visible gap between the bottom of the mask rect and the stroke, so the line stays traceable. Beside a vertical segment the label sits at the same gap, never rotated: vertical `writing-mode` text is unreadable at figure sizes.
 
 **Connectors turn at right angles.** Use a plain `<line>` only when the endpoints share an x or a y; otherwise an elbow with a quarter-arc corner:
 
@@ -32,19 +32,19 @@ This file has two layers and they do not bind equally.
       fill="none" stroke="{stroke}" stroke-width="1.2" marker-end="url(#arrow)"/>
 ```
 
-The exception is a radial layout. Spokes running from a ring of nodes into a shared center are *supposed* to be diagonal; the diagonal is what says "these all point at the same thing." Forcing them orthogonal destroys the shape. The rule is about arbitrary slants, not about geometry that carries meaning.
+The rule is against arbitrary slants, not geometry that carries meaning: in a radial layout, spokes running from a ring of nodes into a shared center stay diagonal, since the diagonal is what says "these all point at the same thing."
 
-**Pick the port that matches the direction of travel.** If the destination is mostly above or below, leave through the top or bottom edge and arrive at the top or bottom edge.
+**Pick the port that matches the direction of travel.** If the destination is mostly above or below, leave and arrive through a top or bottom edge.
 
-**Crossings get a hop; shared edges get a fan.** Where two connectors must cross, bump the less important one over the other with a small arc (`a 8,8 0 0,1 16,0` on a horizontal path, which rises 8px and advances 16px). Never bump both. Where several connectors meet the same edge of a node, give each its own attach point at least 12px from its neighbours, spacing point *k* of *N* at `L·k/(N+1)` along the edge. Two arrows you cannot tell apart at a glance are a failed layout, not a styling problem.
+**Crossings get a hop; shared edges get a fan.** Where two connectors must cross, bump only the less important one over the other, with a small arc (`a 8,8 0 0,1 16,0` on a horizontal path, which rises 8px and advances 16px). Where several connectors meet the same edge of a node, give each its own attach point at least 12px from its neighbours, point *k* of *N* at `L·k/(N+1)` along the edge. Two arrows you cannot tell apart at a glance are a failed layout, not a styling problem.
 
-**Route around boxes that are not endpoints.** A line disappearing behind an unrelated node implies a relationship that isn't there. If an intervening box genuinely sits on the only straight path, dash that segment to mark it as transit and keep the label at the visible end.
+**Route around boxes that are not endpoints.** A line behind an unrelated node implies a relationship that isn't there. Where a box sits on the only straight path, dash that segment as transit and keep the label at the visible end.
 
 **Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. The house skin uses 4.
 
-**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
+**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), the same in every node. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span) and check it against its space. An arrow label is centred on its segment, 8px above the line, ≥4px clear of both boxes; a segment too short for its label is widened, never the label pushed onto a box. Text that touches a border, crowds a corner or sits off its neighbour's baseline makes a figure look thrown together, whatever else is right.
 
-**Budget the figure before drawing it.** Around 9 nodes and 12 connectors is where a diagram stops being readable at a glance. Past that you have two figures, an overview and a detail, not one dense one. Type-specific ceilings that bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
+**Budget the figure before drawing it.** Past around 9 nodes and 12 connectors a diagram stops reading at a glance: draw two figures, an overview and a detail. Type-specific ceilings bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
 
 **Lint the render, then look at it, before showing anyone.** `render-lint figure.html --crops /tmp/lint` writes a PNG per finding, so a 5px overflow that a page-sized screenshot hides is plain in its crop; its `--help` says what it reports. Then the eye, for what geometry cannot judge (rhythm, weight, whether it explains the thing):
 
@@ -61,7 +61,7 @@ Then Read the PNG and fix what you see: overlaps, collisions, drift, dead space,
 
 ## The skin
 
-The house style on a figure. Load `/mx:house-style` and inline its `tokens.css` into the file; the tokens, the type roles and the three habits are its, and only what a figure adds is here. Replace as a set, because the pieces are balanced against each other.
+Load `/mx:house-style` and inline its `tokens.css` into the file; the tokens, the type roles and the three habits are its, and only what a figure adds is here. Replace the skin as a set: the pieces are balanced against each other.
 
 ### Tokens
 
@@ -117,7 +117,7 @@ Define both markers up front, then reference by role: muted for internal flow, a
 </marker>
 ```
 
-Page is an H1 in `v-title`, an optional one-sentence subtitle under it, no eyebrow above it, the SVG sitting directly on the ground with no container chrome, and a legend as a horizontal strip below a hairline at the bottom, never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
+Page is an H1 in `v-title`, an optional one-sentence subtitle under it, no eyebrow above it, the SVG sitting directly on the ground with no container chrome, and a legend as a horizontal strip below a hairline at the bottom, never floating inside the drawing, where it collides with the nodes; add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
 
 ### What the skin rules out
 
@@ -129,17 +129,17 @@ Dark backgrounds with cyan or purple glow. Shadows. `border-radius` past 10px. I
 
 These compose freely over any node-and-arrow layout, and most good figures are two or three of them stacked. Reach here before inventing a new arrangement.
 
-**Phase banner**: a chevron strip across the top naming the stages the figure moves through, so the horizontal axis carries meaning without a single arrow. Each segment is a polygon `x,4 x+188,4 x+200,18 x+188,32 x,32 x+12,18`, the leading notch omitted on the first. Darken or lighten successive segments slightly to imply direction.
+**Phase banner**: a chevron strip across the top naming the stages, so the horizontal axis carries meaning without an arrow. Each segment is a polygon `x,4 x+188,4 x+200,18 x+188,32 x,32 x+12,18`, the leading notch omitted on the first. Darken or lighten successive segments slightly to imply direction.
 
 **Boundary box**: a rounded rect with a hairline stroke and a `wash-ink` fill enclosing what is inside one cluster, VPC, process, or trust zone, with a zone label (see Type) sitting in a `ground` mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
 
 **Cross-cutting bar**: a full-width bar for something everything depends on: auth, logging, orchestration, a scheduler. Inside a boundary box it spans the interior; outside and below, it reads as ambient infrastructure. Connect it with dashed arrows, since its relationship to each node is the same and drawing all of them would be noise.
 
-**Step axis × actor lanes**: horizontal lanes for actors, a numbered step axis across the top, each card placed at one (actor, step) cell. Handoffs become visible as the vertical jumps between lanes. Answers *who does what, in what order* in one read.
+**Step axis × actor lanes**: horizontal lanes for actors, a numbered step axis across the top, each card placed at one (actor, step) cell. Handoffs show as vertical jumps between lanes; it answers *who does what, in what order* in one read.
 
-**Typed handoff chips**: small colored tags in a card's bottom corners, left for what enters and right for what leaves, colored by kind of artifact and decoded in the legend. This is the upgrade over a plain swimlane: a swimlane shows that a handoff happened, chips show *what got handed over*.
+**Typed handoff chips**: small colored tags in a card's bottom corners, left for what enters and right for what leaves, colored by kind of artifact and decoded in the legend. Where a swimlane shows that a handoff happened, chips show *what got handed over*.
 
-**Hub and stations**: steps arranged in a ring with a shared store at the center, solid arrows around the ring for the cycle and dashed spokes inward for writes to shared state. The right shape for any loop that accumulates something rather than just repeating.
+**Hub and stations**: steps arranged in a ring with a shared store at the center, solid arrows around the ring for the cycle and dashed spokes inward for writes to shared state. The shape for a loop that accumulates something rather than just repeating.
 
 ---
 
@@ -168,6 +168,6 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 
 Monochrome icons in `icons/`, one per file and named by it: outlined generics from Tabler and filled brand marks from Simple Icons, their licences in `icons/LICENSES.md`.
 
-Every Tabler icon is a 24×24 stroked path already set to `currentColor`, so it inherits whatever skin is active. Simple Icons are 24×24 filled paths; set `fill="currentColor"` explicitly, as SVG defaults to black. Paste the paths inline inside a `<g transform="translate(x,y) scale(s)">`; the file stays self-contained, no external images.
+Every Tabler icon is a 24×24 stroked path already set to `currentColor`, so it inherits whatever skin is active. Simple Icons are 24×24 filled paths; set `fill="currentColor"` explicitly, as SVG defaults to black. Paste the paths inline inside a `<g transform="translate(x,y) scale(s)">`, so the file stays self-contained.
 
-An icon earns its place when it names a **third-party system** and the mark reads faster than the word: a Postgres elephant beats the string "PostgreSQL" at 9px. For your own components a name is clearer than a picture. Decoration is not automatically wrong, but decoration that competes with the focal node is.
+An icon earns its place when it names a **third-party system** and the mark reads faster than the word: a Postgres elephant beats the string "PostgreSQL" at 9px. Your own components get a name, not a picture. Decoration is wrong only where it competes with the focal node.
