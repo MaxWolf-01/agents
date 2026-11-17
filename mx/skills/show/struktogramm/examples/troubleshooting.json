@@ -5,7 +5,7 @@
     {"type":"stmt","text":"Problem is local to this device"},
     {"type":"loop","cond":"for each of: Wi-Fi off/on, forget-and-rejoin, reboot","body":[
       {"type":"stmt","text":"Apply the step, then retest"},
-      {"type":"if","cond":"Fixed?","yes":{"body":[{"type":"stmt","text":"Stop"}]},"no":{"body":[]}}]}]},
+      {"type":"if","cond":"Fixed?","yes":{"body":[{"type":"exit","text":"Leave the for-each loop"}]},"no":{"body":[]}}]}]},
   "no":{"body":[
     {"type":"stmt","text":"Problem is the network"},
     {"type":"case","cond":"router status lights","branches":[

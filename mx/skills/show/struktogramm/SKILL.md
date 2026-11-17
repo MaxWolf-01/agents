@@ -1,29 +1,27 @@
 ---
 name: struktogramm
-description: "Render Nassi-Shneiderman diagrams (Struktogramme, DIN 66261) as clean HTML/CSS with shared borders and no arrows. Use this whenever the user mentions Nassi-Shneiderman, Struktogramm, NS diagram, or structured flowchart, and also whenever they want any procedure drawn as nested boxes rather than a flowchart with arrows — algorithms, recipes, checklists, decision procedures, protocols, or troubleshooting trees. Reach for this any time someone asks to visualize control flow, loops, or branching structure without arrows, or asks to turn a numbered list of steps into a diagram."
+description: "Render Nassi-Shneiderman diagrams (Struktogramme, DIN 66261) as clean HTML/CSS with shared borders and no arrows. Use this whenever the user mentions Nassi-Shneiderman, Struktogramm, NS diagram, or structured flowchart, and also whenever they want any procedure drawn as nested boxes rather than a flowchart with arrows: algorithms, recipes, checklists, decision procedures, protocols, or troubleshooting trees. Reach for this any time someone asks to visualize control flow, loops, or branching structure without arrows, or asks to turn a numbered list of steps into a diagram."
 ---
 
 # Struktogramm
 
-Nassi-Shneiderman diagrams draw a procedure as nested rectangles with no arrows.
-Successor means "the block below", body means "the block inside". Read
-`references/notation.md` before drawing anything non-trivial — it covers what
-each construct means, which real-world steps are secretly loops, and what the
-notation cannot express.
+A Nassi-Shneiderman diagram draws a procedure as nested rectangles with no arrows. The block
+below is the successor, the block inside is the body. `references/notation.md` says what each
+construct means and what the notation cannot express; read it before drawing anything with more
+than a few blocks.
 
-## Workflow
+## Drawing one
 
-1. Convert the procedure to a node list (schema below). This is the modelling
-   step and the one that carries the judgement — see "Modelling" below.
+1. Write the procedure as a node list (schema below). This is the step that takes judgement; see
+   Modelling.
 2. Render it with `scripts/struktogramm.py`.
-3. **Verify the layout.** Run `scripts/check_layout.py`, which measures the
-   rendered boxes. Optionally also screenshot with `scripts/preview.py` and look
-   at it.
-4. Deliver as a file, or inline in the conversation if the host supports HTML.
+3. Measure the render with `scripts/check_layout.py`, in both colour schemes. Look at it too, with
+   `scripts/preview.py`.
+4. Deliver it as a file, or inline where the host renders HTML.
 
 ## Node schema
 
-A diagram is a JSON list of nodes. Every node has a `type`.
+A diagram is a JSON list of nodes, each with a `type`:
 
 ```json
 [
@@ -34,6 +32,7 @@ A diagram is a JSON list of nodes. Every node has a `type`.
 
   {"type": "loop", "cond": "while lo <= hi", "body": [ ... ]},
   {"type": "loop", "kind": "post", "cond": "until the centre reads 96 °C", "body": [ ... ]},
+  {"type": "exit", "text": "binary search"},
 
   {"type": "if", "cond": "Guanciale available?",
    "yes": {"body": [ ... ]},
@@ -50,101 +49,73 @@ A diagram is a JSON list of nodes. Every node has a `type`.
 ]
 ```
 
-Field notes:
+- `sub` is an optional dimmer second line, for the detail that would bloat the main text:
+  temperatures, doneness cues, caveats.
+- `call` draws doubled side bars: this block expands into a diagram of its own.
+- `loop` is tested before its body unless `"kind": "post"` puts the test after it, for a body
+  that always runs once.
+- `exit` leaves the enclosing block its `text` names, and execution goes on after that block.
+- `if` labels its columns `yes` and `no`; a `"label"` inside `yes` or `no` replaces either. An
+  empty `body` draws an empty box.
+- `par` tracks run at the same time, and the bottom band waits for all of them.
 
-- `sub` is an optional dimmer second line. Use it for the detail that would
-  otherwise bloat the main text — temperatures, doneness cues, caveats.
-- `call` draws doubled side bars, the notation's marker for "this expands into
-  its own diagram". Use it when nesting would otherwise exceed three levels.
-- `loop` defaults to pre-tested. `"kind": "post"` moves the condition band to the
-  bottom, for bodies that always run at least once.
-- `if` branch labels default to `yes` / `no`; override with `"label"` inside the
-  `yes` or `no` object. An empty `body` renders as an empty box, which is correct
-  — the notation has no gaps.
-- `par` tracks run concurrently and the bottom band is a join.
-
-Bodies nest arbitrarily. Anything accepting a `body` or a track accepts the full
-node list, including another `par`.
+Any `body` or track takes a full node list, so constructs nest to any depth.
 
 ## Rendering
 
 ```bash
-python scripts/struktogramm.py diagram.json -o out.html          # standalone page
-python scripts/struktogramm.py diagram.json --fragment            # <style> + <div>, for embedding
-python scripts/struktogramm.py diagram.json --dark -o out.html    # dark theme
+python scripts/struktogramm.py diagram.json -o out.html     # standalone page
+python scripts/struktogramm.py diagram.json --fragment      # <style> and the diagram, for embedding
 ```
 
-Or import it:
+From Python, `page(nodes)` returns the document and `fragment(nodes)` the embeddable part:
 
 ```python
 import sys; sys.path.insert(0, "scripts")
-from struktogramm import render, page, CSS
-html = page(nodes)          # full document
-frag = render(nodes)        # just the <div class="ns">, pair with CSS
+from struktogramm import page, fragment
 ```
 
-Colours come from `--text-primary`, `--text-secondary`, and `--border-strong`,
-each with a literal fallback. The output therefore inherits a host page's theme
-when one exists and still renders correctly when dropped into a bare file.
+The renderer needs nothing past Python's standard library. Its colours are the CSS variables
+`--text-primary`, `--text-secondary` and `--border-strong`: a host page that sets them themes the
+diagram, and without them it follows the reader's light or dark setting.
 
 ## Verify the layout
 
-Struktogramm correctness is a property of the rendered boxes, not of the markup.
-Broken and correct output differ by a CSS rule, so reading the HTML proves
-nothing. Measure it:
+Whether a Struktogramm is drawn right shows only in the rendered page; the markup of a broken one
+and a correct one differ by a CSS rule. The checker opens the page in headless Chromium through
+Playwright and measures it:
 
 ```bash
-python scripts/struktogramm.py diagram.json -o out.html
-python scripts/check_layout.py out.html            # add --browser <path> if needed
+python scripts/check_layout.py out.html                  # light scheme, 680px wide
+python scripts/check_layout.py out.html --scheme dark
+python scripts/preview.py diagram.json --scheme dark     # writes preview.html and preview.png
 ```
 
-It reports every block and column group it measured, then PASS or a specific
-FAIL. Exits non-zero on failure, so it can gate a build. What it catches:
-
-- **column-not-filled** — a column whose last block stops short of the column's
-  bottom edge, leaving unbordered dead space. This is the most common fault and
-  it hides easily: it is invisible whenever the sibling column happens to be a
-  similar height, so it survives casual inspection and then appears the moment
-  the content changes.
-- **columns-equal-height** — sibling columns that failed to stretch together.
-- **fan-column-widths** — unequal case columns, which would imply a meaning the
-  notation does not have.
-- **no-zero-size** — a block that never got laid out.
-
-Screenshots are a useful supplement but a weak check, because these faults are
-only visible in the specific content that exposes them:
-
-```bash
-python scripts/preview.py diagram.json --dark --height 1600
-```
-
-If neither tool can run — no browser, no Playwright — say the layout is
-unverified rather than claiming it is correct.
+It prints PASS, or a FAIL line per fault, and exits non-zero on a fault; its `--help` lists the
+checks. Look at the preview as well, for what no check judges: whether the diagram reads well.
+Where neither script can run, say that the layout is unverified rather than that it is correct.
 
 ## Modelling
 
-The rendering is mechanical; the modelling is where the work is. Three habits:
+The rendering is mechanical; the modelling is where the work is.
 
-**Find the hidden loops.** Prose flattens iteration. "Simmer until reduced",
-"knead until smooth", "retry until the connection succeeds" are all post-tested
-loops written as if they were single steps. Drawing them as loops is most of the
-value the notation adds over a numbered list — the exit condition stops being
-buried in a verb.
+**Find the hidden loops.** Prose flattens iteration. "Simmer until reduced", "knead until
+smooth" and "retry until the connection succeeds" are post-tested loops written as single steps.
+Drawn as loops, their exit conditions are on the page instead of buried in a verb, which is most
+of what the notation adds over a numbered list.
 
-**Do not manufacture branches.** "Season to taste" is a statement. A branch earns
-its place when the two paths genuinely diverge in what happens afterwards.
+**Draw a branch only where the paths differ.** "Season to taste" is a statement. A branch earns
+its place when its two paths do different things afterwards.
 
-**Extract before you nest deeply.** Past three levels the columns get too narrow
-for their text. Pull the inner section into its own diagram and reference it with
-a `call` node. Same judgement as extracting a function.
+**Extract before you nest deeply.** Past three levels the columns get too narrow for their text,
+and a wider canvas only postpones it. Pull the inner part into a diagram of its own and reference
+it with a `call` node, as you would extract a function.
 
 ## Delivering the result
 
-Prefer a file the user can open, print, or keep. If the host renders inline HTML,
-the `--fragment` output embeds directly. When the diagram is one of several
-alternatives under discussion, render each and let the user compare rather than
-picking for them.
+Prefer a file the user can open, print or keep; where the host renders inline HTML, the
+`--fragment` output embeds as it is. When the diagram is one of several alternatives under
+discussion, render each and let the user compare.
 
-Quantities have no place in the notation itself — there is no data or parameter
-notation. For a recipe, put the ingredient list beside the diagram rather than
-cramming amounts into the blocks.
+The notation has no way to show quantities. For a recipe, put the ingredient list beside the
+diagram rather than amounts in the blocks.
