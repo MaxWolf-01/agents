@@ -44,9 +44,23 @@ Committing the report is the last thing you do. A resumed round finds the round 
 </contract>
 
 <workflow>
-Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
+Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is its flow from intent to merge. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
 
-Durable docs: `GLOSSARY.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker.
+| Artefact | Where | Holds |
+| --- | --- | --- |
+| Glossary | `GLOSSARY.md`, at the repo root or one per context (`/mx:domain-modelling`) | domain terms |
+| ADR | `decisions/NNNN-slug.md`, beside its glossary | one hard-to-reverse decision and why |
+| Ticket | `agent/tickets/<slug>.md` | one piece of work (`/mx:tracker`) |
+| Board | `agent/board.html`, gitignored | the whole tracker as one page |
+| Research | `agent/research/NN-slug.md`, `NN` the next number, a `ticket:` frontmatter line naming the ticket that asked | detail too long for that ticket |
+| Prototype | `agent/prototypes/<slug>/` | throwaway code that answered a design question, and its `ANSWER.md` |
+| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for session work's; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
+| Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
+| Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
+
+A fact that fits none of these: an ADR if it constrained a decision, a code comment if it is code-local, the project's AGENTS.md if it is navigational.
+
+Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker.
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output. A skill's `WORKFLOW.md`, where it has one, is how that skill fits the mx workflow: read it with the skill's `SKILL.md`.
 
@@ -61,7 +75,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 - Use `git mv` rather than `mv` to rename a tracked file.
 - A commit subject is a conventional commit, `type(scope): imperative summary` (`fix(tracker): refuse a slug with spaces`), unless the repo's own history follows another convention; the body opens with what the change gives its reader, in a sentence, then the why.
 - Commit as you go without asking. You never merge, and pushing isn't your job: the agent that dispatched you takes your branch from where it is. Ship-shaped actions are never yours to trigger: releases, deploys, changes to running systems, issues or PRs on any project.
-- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADRs, the glossary) | `prototype` (prototypes) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
 
 <style>

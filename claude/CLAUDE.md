@@ -34,9 +34,23 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 </max>
 
 <workflow>
-Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
+Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is its flow from intent to merge. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
 
-Durable docs: `GLOSSARY.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `agent/` is a git repo of its own inside the project, which ignores it, holding what plans it (`/mx:orient` lists what goes where); `git -C agent` is how you commit there.
+| Artefact | Where | Holds |
+| --- | --- | --- |
+| Glossary | `GLOSSARY.md`, at the repo root or one per context (`/mx:domain-modelling`) | domain terms |
+| ADR | `decisions/NNNN-slug.md`, beside its glossary | one hard-to-reverse decision and why |
+| Ticket | `agent/tickets/<slug>.md` | one piece of work (`/mx:tracker`) |
+| Board | `agent/board.html`, gitignored | the whole tracker as one page |
+| Research | `agent/research/NN-slug.md`, `NN` the next number, a `ticket:` frontmatter line naming the ticket that asked | detail too long for that ticket |
+| Prototype | `agent/prototypes/<slug>/` | throwaway code that answered a design question, and its `ANSWER.md` |
+| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for session work's; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
+| Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
+| Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
+
+A fact that fits none of these: an ADR if it constrained a decision, a code comment if it is code-local, the project's AGENTS.md if it is navigational.
+
+Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `git -C agent` is how you commit in the agent repo.
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output. A skill's `WORKFLOW.md`, where it has one, is how that skill fits the mx workflow: read it with the skill's `SKILL.md`.
 
@@ -76,7 +90,7 @@ Commit messages:
   - Conventional -- unless a repo clearly follows another convention -- `type(scope): imperative summary (the what)`, the body carries the why (and optionally details on the what).
   - A merge commit's subject states what the branch as a whole delivered, with no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
   - A merge into the trunk opens its body with one paragraph on what the branch changed: draft it with `git diff <trunk>...<branch> | change-summary`, then correct what it gets wrong and add what the diff cannot show. Rulings and what was left follow it.
-  - Include a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+  - Include a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADRs, the glossary) | `prototype` (prototypes) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 
 Miscl hygiene:
 - Unless you have a very good reason not to, clone from the remote/github url and not `git clone /path/to/repo`. 

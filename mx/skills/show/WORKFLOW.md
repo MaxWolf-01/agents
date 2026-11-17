@@ -15,6 +15,10 @@ At a landing the per-shape table in `SKILL.md` says what its show holds. A landi
 
 Every artifact is built by a subagent or a fork, never by the session answering the user, so its render and debug loop stays out of that session's context. A subagent works from a prompt: the artifact, its output path, and the sources on disk to read; it runs at medium effort, since its work is a render-and-fix loop that its own render checks. A fork of the session (invoke `mx:fork`) is taken when the conversation itself is the source the artifact needs and no file carries it. The builder hands back the path once it has done all of Produce and present (`SKILL.md`): looked at its render and passed over its prose.
 
+## Committing a show
+
+A ticket's show is committed with the round or the landing that made it, in the agent repo's main checkout as a ticket file is, and leaves with the ticket (`/mx:tracker`, Retire).
+
 ## Promotion
 
 A figure, or an output, that a README or a PR description needs moves to where that document's assets live, a `docs/` or `assets/` directory the document already reads from: the render, its source, and the script that regenerates it travel together, and every reference is repointed in the same commit. No show directory outlives the work it belongs to, whatever still reads it, so a copy left behind in one is a stale figure waiting to be read as current. What the destination takes varies: a PNG the README embeds, committed with it; an image in an issue or a PR description, pushed with `gh-asset push` for its URL; a script that asserts moved under `make check`. The move is your own call and visible in the diff, so no ruling gates it.

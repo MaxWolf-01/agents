@@ -5,7 +5,7 @@ description: "Tracker conventions: the ticket tree, how a ticket is filed, fetch
 
 # Tracker
 
-One kind of file: a **ticket**, `agent/tickets/<slug>.md`, flat, the slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. A project's `agent/` is a git repo of its own inside the repo it plans, which ignores it: the **agent repo** holds the tickets and the rest of the planning (`/mx:orient` lays it out), and every tool finds it there, with nothing to configure. The tracker is its `tickets`, read in its main checkout.
+One kind of file: a **ticket**, one file per ticket in a flat directory, its slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. A project's `agent/` is a git repo of its own inside the repo it plans, which ignores it: the **agent repo** holds the tickets and the rest of the planning, and every tool finds it there, with nothing to configure. The tracker is its `tickets`, read in its main checkout.
 
 A project whose tickets also land in repos other than these two lists them in `agent/repos.toml`, and each ticket names the ones its work touches in `repos:`, written when it is filed or cut; `tracker repos --help` says what the list holds.
 
@@ -30,7 +30,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **`## Fog`**: in-scope work whose question cannot yet be stated (`/mx:grilling`, Fog and scope).
 - **`## Acceptance criteria`**, always: `- [ ]` items, what the work has to hold to be done.
 - **`## Questions`**: the calls only the user can make, below.
-- **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands in the ticket that asked for it, here or in the design sections, its detail in `agent/research/` (`/mx:research`).
+- **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands in the ticket that asked for it, here or in the design sections, its detail in a research file (`/mx:research`).
 
 Every section but the three marked always appears when it has content. Read [`/mx:grilling`'s DESIGN.md](../grilling/DESIGN.md) in the round that writes the design sections, User stories through Fog: it is how each one is written.
 
@@ -82,8 +82,8 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 A **finished tree** leaves the live tracker through `tracker retire`, whose `--help` says what a finished tree is and what goes with it. Dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`'s `WORKFLOW.md`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
-Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the session's records (`/mx:orient`, The artefacts). A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
+Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the session's records. A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows and how it is served. A ticket's row lists its show directory, and an executable file there (`/mx:show`, A runnable artifact) gets a button carrying the command that runs it from the code repo's root. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.
+The board is the tracker as one page; `board --help` says what it shows and how it is served. A ticket's row lists its show directory, and an executable file there (`/mx:show`, A runnable artifact) gets a button carrying the command that runs it from the code repo's root. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.

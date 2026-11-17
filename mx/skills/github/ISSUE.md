@@ -36,9 +36,9 @@ plainly as a single occurrence.
 
 Drilling down is slow and mostly mechanical, so hand it to a subagent and carry on
 with the session's real work. Give it the finding, the repo, this skill and this
-file, and name the two files it writes: `agent/research/upstream-<repo>-<slug>.md`,
+file, and name the two research files it writes, slugged `upstream-<repo>-<slug>`: one
 holding the title, the duplicate search and whatever it could not verify, and
-beside it `upstream-<repo>-<slug>.body.md`, holding the body alone, written per
+beside it the same name ending `.body.md`, holding the body alone, written per
 [The body](#the-body). It writes those files; it never files the issue.
 
 The main session then **sanity checks** the body against what the session actually

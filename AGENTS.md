@@ -2,7 +2,7 @@
 This is my coding agent setup (mainly claude code).
 `mx` is a plugin for skills, commands, etc. `claude/` is the global `~/.claude` config, symlinked live, so edits apply everywhere. The rest of my regular setup is in ~/.dotfiles, which will occasionaly be referenced here (./zsh/aliases ./zsh/functions bin/ ./setup interact with my agent setup)
 
-Audiences: `mx/README.md` is for humans learning the workflow and may restate what the skills say; agents orient via `/mx:orient`, and the skills stay the home of the process. `PRINCIPLES.md` is for agents changing the workflow or its harness.
+Audiences: `mx/README.md` is for humans learning the workflow and may restate what the skills say; agents learn where each artefact lives from the table in `claude/CLAUDE.md`'s workflow block and the flow from `/mx:orient`, and the skills stay the home of the process. `PRINCIPLES.md` is for agents changing the workflow or its harness.
 
 Dispatched workers never load `claude/CLAUDE.md`; `mx/skills/dispatch/worker-prompt.md` stands in for it and copies its workflow, style, tools and taste blocks, adapted to a worker. An edit to one of those blocks is checked against the copy.
 
