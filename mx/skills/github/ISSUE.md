@@ -1,6 +1,6 @@
 # An issue upstream
 
-Turn a finding into an issue its maintainers can act on. Load `/mx:writing-for-agents` beside writing-for-humans, since their agents read it too.
+Load `/mx:writing-for-agents` beside writing-for-humans, since their agents read it too.
 
 ## Earn the filing
 
@@ -8,9 +8,7 @@ Turn a finding into an issue its maintainers can act on. Load `/mx:writing-for-a
 maintainer more than it saves them, and it spends max's reputation. State the
 version you ran.
 
-**Search the tracker, closed issues included.** A fixed bug means the answer is
-"upgrade"; a rejected one means the behaviour is intended. `gh search issues` and
-`gh issue list --state all` both take a repo.
+**Search the tracker, closed issues included.**
 
 **Read the project's rules.** `CONTRIBUTING`, the issue templates, any policy on
 AI-assisted reports. Where a project rejects those, that decision is theirs and it
@@ -22,9 +20,7 @@ documentation gap goes on the form that fits it, which is rarely the one asking
 you to affirm you found a bug.
 
 **Drill down to a minimal reproduction.** The state you happened to hit it in is
-the starting point, not the report. Strip the setup one piece at a time until only
-what triggers it remains, and each removal that keeps the bug alive is one less
-thing the maintainer has to rule out. This mostly settles the privacy question on
+the starting point, not the report. This mostly settles the privacy question on
 its own: a minimal case rarely contains anything of max's.
 
 The files in the report are the files you ran: build the repro in an empty
