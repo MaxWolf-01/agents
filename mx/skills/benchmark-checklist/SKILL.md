@@ -12,7 +12,7 @@ For a quick ballpark the user asked for, one run is enough: check questions 4 an
 ## Before you run anything
 
 - Write down the claim you expect to make, in the words you would ship ("export is 30% faster at p50 on the 60k-row dataset"). The questions test that sentence.
-- Check the load (`uptime`) and the cores (`nproc`). On a busy machine, find out what runs; if you cannot stop it, interleave the sides so both see the same noise, and say so in the report.
+- Check the load (`uptime`) and the cores (`nproc`). On a busy machine, find out what runs. If you cannot stop it, interleave the sides so both see the same noise, and say so in the report.
 
 ## The questions
 

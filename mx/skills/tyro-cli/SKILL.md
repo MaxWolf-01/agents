@@ -31,7 +31,7 @@ When converting an existing script, list every third-party package its imports n
 #!/usr/bin/env -S uv run --script --quiet
 ```
 
-Without it, uv ignores the inline metadata and falls back to project resolution; with no project, the shebang re-invokes `uv run` until it hits the 100-call recursion limit.
+Without `--script`, uv ignores the inline metadata and falls back to project resolution; with no project, the shebang re-invokes `uv run` until it hits the 100-call recursion limit.
 
 ## Preferred Patterns
 

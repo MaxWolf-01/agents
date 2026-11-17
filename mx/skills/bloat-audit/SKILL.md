@@ -9,7 +9,7 @@ generated output. The audit is complete when every dependency and every
 source file has been cleared or flagged; a file only skimmed is a file not
 yet audited. Rank findings biggest cut first.
 
-Tags to orient by and to use in commit bodies and explainers:
+Tags you can orient by and use in commit body and explainers:
 - `delete:` dead code, unused flexibility, speculative feature, noops, comment/docs bloat, superfluous tests. `../code-review/SMELLS.md` and `../code-review/TEST-SMELLS.md` name the common offenders.
 - `stdlib:` hand-rolled thing the standard library ships. Name the function.
 - `native:` dependency or code doing what the platform already does. Name the feature.
@@ -17,7 +17,7 @@ Tags to orient by and to use in commit bodies and explainers:
 - `shrink:` same logic, fewer lines. Show the shorter form.
 - `refactor:` same logic, clearer form; wrappers that only delegate; one home instead of two, ...
 
-Deliverable: a diffview, plus a /mx:show artefact where it helps the reader see the diff.
+Deliverable: Diffview + /mx:show artefact for visual understanding of the diff iff applicable.
 
 Scope is over-engineering only; route correctness, security, and performance findings to a normal review pass. 
 For findings that touch the shape of seams, consult `/mx:improve-codebase-architecture`.
