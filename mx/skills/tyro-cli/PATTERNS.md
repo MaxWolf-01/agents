@@ -1,7 +1,5 @@
 # Subcommands, nested configs and tyro.conf
 
-The branch of [`tyro-cli`](SKILL.md) for a CLI that outgrows Pattern 1: subcommands, nested configs, and the `tyro.conf` features beyond a plain field.
-
 ## Pattern 2a: decorator subcommands (preferred for extensible CLIs)
 
 `tyro.extras.SubcommandApp`: click-inspired decorator API. Works with 1+ subcommands (unlike Union which needs 2+).
