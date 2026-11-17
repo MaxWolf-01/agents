@@ -21,7 +21,7 @@ Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-s
 ```
 
 Left is the **bottom**: `auth` is based on `main` and merges first. Right is the **top**. `up`
-moves away from trunk, `down` toward it. `references/stack-design.md` says how to choose the layers.
+moves away from trunk, `down` toward it.
 
 ## Setup
 
