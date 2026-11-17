@@ -6,8 +6,6 @@ argument-hint: [topic or question]
 
 Investigate a question, and be exhaustive on findings: skip the storytelling, no methodology recap and no intro or conclusion prose, every sentence a finding or a citation. Short is fine; findings that are inconclusive say so rather than padding to look complete.
 
-In the mx workflow, read [`WORKFLOW.md`](WORKFLOW.md) before step 4: where the findings land.
-
 1. Sharpen the question first if it's fuzzy.
 2. **Frame check**: when the question arrives with a diagnosis or option list attached (a ticket's options, an earlier session's plan), the options share a **frame**, the premise that makes them the menu. State that premise in one sentence, then name the strongest option *outside* it; drop the premise and check whether the problem dissolves. Agent-authored framing is an assumption to test; a frame the user decided (an ADR, a ticket's decision, a grilling verdict) stands, so surface a conflict rather than reopening it.
 3. Investigate against **primary sources** (official docs, source code, standards, first-party APIs), not a secondary write-up of them. Follow every claim back to the source that owns it.

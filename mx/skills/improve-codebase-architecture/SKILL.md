@@ -12,8 +12,6 @@ This command is _informed_ by the project's domain model and built on a shared d
 - Run `/mx:codebase-design`; use its terms exactly in every suggestion.
 - The domain language in `GLOSSARY.md` gives names to good seams; ADRs in `decisions/` record decisions this command should not re-litigate.
 
-In the mx workflow, read [`WORKFLOW.md`](WORKFLOW.md) before the scan: where the candidates are kept, and who builds the report.
-
 ## Process
 
 ### 1. Scan

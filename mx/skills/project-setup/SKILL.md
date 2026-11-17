@@ -9,8 +9,6 @@ Target preferences for a project's foundations. On a fresh project, build all of
 
 ## Core
 
-In the mx workflow, or to make a repo dispatchable, read [`WORKFLOW.md`](WORKFLOW.md) too: the agent repo and the tracker's hooks.
-
 - **Reproducible install is the one hard requirement.** One documented command takes a clean checkout to a working environment. Everything else here is preference.
 - **Make targets are the convention**: `install`, `check`, `test`, and where they apply `test-full-path` (`/mx:testing`), `run`, `format`, `fix`, `release-patch|minor|major`. Agents and humans alike answer "how do I check this project" by reading the Makefile.
 - **Git + GitHub**: init, sensible first commit, `gh repo create --private` (private always; the user makes things public themselves). The repo's `.gitignore` carries project-specific entries; the global gitignore already covers editors, caches, and build junk.

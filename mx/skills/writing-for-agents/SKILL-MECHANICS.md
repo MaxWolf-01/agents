@@ -23,11 +23,13 @@ When user-invoked skills multiply past what you can remember, that piled-up cogn
 
 ## Knowledge and workflow
 
-A skill carries two kinds of text. Its **knowledge** holds in any chat with any model: what to show, how to write, how to test. Its **workflow** text is about this setup's machinery: tickets, the session page, the hub, dispatch, forks, the agent repo and where files go in it. `SKILL.md` holds the knowledge. The workflow text goes in one file beside it, `WORKFLOW.md`, reached from `SKILL.md` by a single line that says when to read it, placed before the first section that text applies to. A skill with no workflow text has no `WORKFLOW.md`; a skill that is workflow by nature (`dispatch`, `tracker`) keeps it all in `SKILL.md`.
+A skill carries two kinds of text. Its **knowledge** holds in any chat with any model: what to show, how to write, how to test. A tool that ships with the skill (a script beside it, a command the plugin puts on `PATH`) is part of its knowledge, named at the step that uses it. Its **workflow** text is about this setup's machinery: tickets, the session page, the hub, dispatch, the agent repo and where files go in it.
 
-The test, run on a finished split:
+Most workflow text already has a home: `claude/CLAUDE.md`, `session-page/RULES.md`, `/mx:tracker`, `/mx:dispatch`, `/mx:orient`. A skill restates none of it, and names the home only where a sentence needs it. What is particular to one skill in the workflow goes in `WORKFLOW.md` beside its `SKILL.md`, as whole passages, each rule with its reason. A fact general to the workflow that has no home yet gets one, once, in the file that owns it. A skill whose workflow text all has homes elsewhere has no `WORKFLOW.md`. The one pointer to these files is the line in `claude/CLAUDE.md`'s workflow block, copied in `dispatch/worker-prompt.md` for workers; no `SKILL.md` carries one.
 
-1. Delete `WORKFLOW.md` and read `SKILL.md` as a reader with no tickets, no session page and no dispatch. It is a complete skill for them: no step waits on something only the workflow supplies, and no sentence leans on a section that left.
-2. Read `WORKFLOW.md` against the old skill: every rule the workflow carried is still read at the moment it applies, because the pointer line fires in every workflow session that reaches the rule.
+The test, run on a finished skill:
 
-The unit is the sentence. A clause naming the workflow moves only where the sentence stands without it; an example that happens to be about a ticket stays. Text is moved, never copied. The `description` keeps the triggers of both halves. A file reached only from `WORKFLOW.md` is workflow too. A file a script hands to a reader on its own (a review's catalogue) keeps its workflow clauses, since that reader never opens `WORKFLOW.md`.
+1. Read `SKILL.md` as a reader with no tickets, no session page and no dispatch. It is a complete skill for them: no step waits on something only the workflow supplies.
+2. Read `WORKFLOW.md` sentence by sentence and name the home of each fact. A sentence whose fact another home states is deleted; what is left is particular to this skill.
+
+An example that happens to be about a ticket stays in `SKILL.md`. The `description` keeps the triggers of the skill's workflow uses too. A file a script hands to a reader on its own (a review's catalogue) keeps its workflow clauses, since that reader never opens `WORKFLOW.md`.

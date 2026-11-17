@@ -1,11 +1,12 @@
 """A skill's WORKFLOW.md is read only where something points at it. Run: pytest
 test_skill_workflow.py, or `make check`.
 
-The convention is writing-for-agents' SKILL-MECHANICS.md, Knowledge and workflow: a workflow
-session reaches a skill's WORKFLOW.md by the one line in its SKILL.md that links it, and other
-documents name a section in it as "`/mx:<skill>`'s `WORKFLOW.md`, <heading>". A pointer line
-deleted, or a reference to a heading that moved, leaves the rule behind it unread with nothing
-failing, so both are held here.
+The convention is writing-for-agents' SKILL-MECHANICS.md, Knowledge and workflow: one line in
+claude/CLAUDE.md's workflow block says a skill's WORKFLOW.md is read with it, and
+dispatch/worker-prompt.md carries the same line for workers, who never load CLAUDE.md. Other
+documents name a section in one as "`/mx:<skill>`'s `WORKFLOW.md`, <heading>". The line dropped
+from either file, or a reference to a heading that moved, leaves the rules behind it unread with
+nothing failing, so both are held here.
 """
 
 import re
@@ -13,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-SKILLS = Path(__file__).parent / "skills"
+MX = Path(__file__).parent
+SKILLS = MX / "skills"
 REFERENCE = re.compile(r"/mx:([\w-]+)`'s `WORKFLOW\.md`, ([^)]+)\)")
 
 
@@ -21,10 +23,20 @@ def headings(path: Path) -> set[str]:
     return {line.lstrip("#").strip() for line in path.read_text().splitlines() if line.startswith("#")}
 
 
-@pytest.mark.parametrize("workflow", sorted(SKILLS.glob("*/WORKFLOW.md")), ids=lambda p: p.parent.name)
-def test_every_workflow_file_is_linked_from_its_skill(workflow):
-    assert "](WORKFLOW.md)" in (workflow.parent / "SKILL.md").read_text(), \
-        f"{workflow.parent.name}/SKILL.md has no line linking WORKFLOW.md"
+def pointer(path: Path) -> list[str]:
+    return [sentence for sentence in re.split(r"(?<=\.) ", path.read_text()) if "`WORKFLOW.md`" in sentence]
+
+
+def test_the_session_and_the_worker_are_told_alike_to_read_a_skills_workflow_file():
+    session, worker = pointer(MX.parent / "claude/CLAUDE.md"), pointer(SKILLS / "dispatch/worker-prompt.md")
+    assert len(session) == 1, f"claude/CLAUDE.md carries {len(session)} sentences naming `WORKFLOW.md`, not one"
+    assert worker == session, "dispatch/worker-prompt.md does not carry CLAUDE.md's line on WORKFLOW.md"
+
+
+@pytest.mark.parametrize("workflow", sorted(SKILLS.rglob("WORKFLOW.md")), ids=lambda p: str(p.relative_to(SKILLS)))
+def test_every_workflow_file_sits_beside_its_skill(workflow):
+    assert workflow.parent.parent == SKILLS and (workflow.parent / "SKILL.md").exists(), \
+        f"{workflow.relative_to(SKILLS)} is not beside a skill's SKILL.md, where the pointer reaches it"
 
 
 def test_every_named_workflow_section_exists():
@@ -33,5 +45,5 @@ def test_every_named_workflow_section_exists():
     assert references, "no reference of the form `/mx:<skill>`'s `WORKFLOW.md`, <heading>) was found"
     missing = [f"{path.relative_to(SKILLS)}: {skill} has no WORKFLOW.md heading {heading!r}"
                for path, skill, heading in references
-               if heading not in headings(SKILLS / skill / "WORKFLOW.md")]
+               if not (SKILLS / skill / "WORKFLOW.md").exists() or heading not in headings(SKILLS / skill / "WORKFLOW.md")]
     assert not missing, "\n".join(missing)

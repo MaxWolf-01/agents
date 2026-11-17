@@ -1,4 +1,4 @@
-"""The show conventions (`/mx:show`'s `WORKFLOW.md`), read from git: `make check` runs it.
+"""The show conventions (`/mx:show`), read from git: `make check` runs it.
 
 Two readings, one `path: message` line per violation, exit 1 when there is any:
 
