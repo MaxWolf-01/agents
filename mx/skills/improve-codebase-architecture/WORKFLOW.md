@@ -1,6 +1,6 @@
 # Improve codebase architecture in the mx workflow
 
-Where the candidates of [`SKILL.md`](SKILL.md) are kept, who builds their report, and what a grilling of them files.
+Where the candidates of [`SKILL.md`](SKILL.md) are kept, and who builds their report.
 
 ## A living report
 
@@ -13,7 +13,3 @@ In a repo with a living report they enter it as the rules above say, under the n
 ## 3. The report
 
 Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 4.
-
-## 4. Grilling
-
-Each grilling of a candidate, or of a group of related ones, files one ticket.
