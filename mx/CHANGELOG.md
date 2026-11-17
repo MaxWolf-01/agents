@@ -1,3 +1,8 @@
+## 1.0.125
+
+- The session page opens a to-do's card from the tenth to-do on
+  The timeline's row for turn N and the card of to-do AN shared the id `aN` once both numbers reached ten, so the page opened the wrong element for A10: an empty strip in place of the card. Timeline rows take the prefix `tl`. Asked for by max on a screenshot ("broken a10 window -- pls fix"); make check and make test pass on the merge result, and the session page's 42 browser tests pass on the branch. Left: a test that builds a session past ten turns and ten to-dos.
+
 ## 1.0.124
 
 - The gh-stack skill matches upstream v0.3.0
