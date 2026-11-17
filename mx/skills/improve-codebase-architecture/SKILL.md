@@ -12,7 +12,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 - Run `/mx:codebase-design`; use its terms exactly in every suggestion.
 - The domain language in `GLOSSARY.md` gives names to good seams; ADRs in `decisions/` record decisions this command should not re-litigate.
 
-**A repo with a living report keeps one list of candidates.** The report is `retro/report.md` in the agent repo of the project whose tracker plans the repo, the repo's own or one whose `agent/repos.toml` lists it. Run by hand on such a repo, read the report's candidates of the architecture code lens and its Dismissed section before the scan, and hold to the rules on ids and dismissals of [`../retro/REPORT.md`](../retro/REPORT.md). The scan's candidates go there, and each ruling the grilling gets on a candidate is written into that report as REPORT.md's max's verdicts section says.
+In the mx workflow, read [`WORKFLOW.md`](WORKFLOW.md) before the scan: where the candidates are kept, and who builds the report.
 
 ## Process
 
@@ -56,15 +56,15 @@ The scan is done when every candidate carries:
 
 ### 2. Write the candidates down
 
-In a repo with a living report they enter it as the rules above say, under the next ids. Elsewhere they go in `candidates.md`, in the show directory `/mx:show` gives the work, slug `architecture-review-<date>`. A scan you started on your own ends here, with a line naming the list where the user reads.
+They go in `candidates.md`. A scan you started on your own ends here, with a line naming the list where the user reads.
 
 ### 3. The report, when the user calls for it
 
-Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 4. The fork's directive: build the report [REPORT.md](REPORT.md) describes.
+Build the report [REPORT.md](REPORT.md) describes.
 
 ### 4. Grilling, when the user takes candidates up
 
-Run `/mx:grilling` through the candidates in order of impact, one grilling and one ticket per candidate or group of related ones; the user's comments, on the report or in the session, pick, drop or reorder them. Each grilling walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+Run `/mx:grilling` through the candidates in order of impact, one grilling per candidate or group of related ones; the user's comments, on the report or in the session, pick, drop or reorder them. Each grilling walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
 The grilling keeps the domain model current as it goes (`/mx:domain-modelling`). Two side effects are this skill's own:
 
