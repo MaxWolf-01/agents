@@ -4,15 +4,15 @@ Load `/mx:writing-for-agents` beside writing-for-humans, since their agents read
 
 ## Earn the filing
 
-**Reproduce every claim.** A report whose assertions were never run costs the
-maintainer more than it saves them, and it spends max's reputation. State the
-version you ran.
+**Reproduce every claim, and state the version you ran.** A report whose
+assertions were never run costs the maintainer more than it saves them, and it
+spends max's reputation.
 
 **Search the tracker, closed issues included.**
 
-**Read the project's rules.** `CONTRIBUTING`, the issue templates, any policy on
-AI-assisted reports. Where a project rejects those, that decision is theirs and it
-is max's account that would break it.
+**Read the project's rules**: `CONTRIBUTING`, the issue templates, any policy on
+AI-assisted reports. A project that rejects AI-assisted reports gets none from
+max's account.
 
 **Check what the templates allow.** `blank_issues_enabled: false` means the listed
 forms are the only route. A required checkbox is a statement the filer makes: a
@@ -20,8 +20,8 @@ documentation gap goes on the form that fits it, which is rarely the one asking
 you to affirm you found a bug.
 
 **Drill down to a minimal reproduction.** The state you happened to hit it in is
-the starting point, not the report. This mostly settles the privacy question on
-its own: a minimal case rarely contains anything of max's.
+the starting point, not the report, and a minimal case rarely contains anything
+of max's.
 
 The files in the report are the files you ran: build the repro in an empty
 directory, run it there, and paste that directory and its output. A repro
@@ -34,22 +34,20 @@ plainly as a single occurrence.
 
 ## Filing
 
-Drilling down is slow and mostly mechanical, so hand it to a subagent and carry on
-with the session's real work. Give it the finding, the repo, this skill and this
+Hand the drill-down to a subagent and carry on with the session's real work. Give it the finding, the repo, this skill and this
 file, and name the two research files it writes, slugged `upstream-<repo>-<slug>`: one
 holding the title, the duplicate search and whatever it could not verify, and
 beside it the same name ending `.body.md`, holding the body alone, written per
-[The body](#the-body). It writes those files; it never files the issue.
+[The body](#the-body). It writes those files and never files the issue.
 
-The main session then **sanity checks** the body against what the session actually
-knows, since the subagent worked from a prompt and can have drifted, and takes it
+The main session then **sanity checks** the body against what the session knows,
+since the subagent worked from a prompt and can have drifted, and takes it
 through the skill's publishing gate. After max's yes: `gh issue create -R <repo>
 --title <title> --body-file <body file>` with the label the template assigns.
 
 A gate that does not pass sends it round again: another subagent round when the
 gap is real work, a direct edit and a fresh yes when it is wording. A finding the
-session later invalidates, or max judges not worth filing, is dropped; the work
-already paid for itself by being understood.
+session later invalidates, or max judges not worth filing, is dropped.
 
 ## Title
 
@@ -65,10 +63,10 @@ request, the ask itself. The evidence a reader checks only if they doubt you, th
 repro's files, commands and output, a stack, a probe of the cause, goes inside
 `<details>` blocks.
 
-Where a template exists, fill **its** fields. The maintainers wrote it to get what
-they need, and a foreign structure laid over it reads as not having looked.
+Where a template exists, fill **its** fields; a foreign structure laid over it
+reads as not having looked.
 
-Where none exists, use this order, the same information a good template asks for:
+Where none exists, use this order:
 
 - **What happens**: one plain sentence.
 - **Why it matters**: what it costs someone. A bug: what breaks, and what a
@@ -81,25 +79,23 @@ Where none exists, use this order, the same information a good template asks for
 One report per problem. Several one-line corrections to the same document are one
 report; a crash and a documentation gap are two.
 
-These headings are available, not owed. A section you have nothing behind is a
-section to drop; inventing a cause or a consequence to fill one is the failure
-this skill exists to prevent, and a maintainer spots it immediately.
+These headings are available, not owed. Drop a section you have nothing behind;
+inventing a cause or a consequence to fill one is the failure this skill exists
+to prevent, and a maintainer spots it immediately.
 
 The value judgements that belong in an issue are the ones only max can make:
 expected against actual, and why it cost him something.
 
 ## Fix direction
 
-Report the finding and leave the fix to the maintainer. They know the codebase,
-they have their own agents, and they will find a better fix than an outsider
-working from one afternoon of reading.
+Report the finding and leave the fix to the maintainer, who knows the codebase
+and will find a better fix than an outsider working from one afternoon of reading.
 
 It earns a place only when the finding admits several plausible fixes, one of them
 clearly better for max and the difference invisible from where the maintainer
 sits. Then say which and why, because nobody else can supply that.
 
 Where the fix follows from the report (correct the sentence, return the error),
-naming it says nothing the maintainer had not already worked out by the end of the
-first paragraph.
+leave it unnamed: the maintainer has worked it out by the end of the first paragraph.
 
 Dont ever add "happy to PR" or bs like that unless the user explicitly asks!
