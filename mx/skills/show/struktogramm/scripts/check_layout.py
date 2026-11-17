@@ -200,6 +200,9 @@ def measure(html_path: str, *, width: int = 680, scheme: str = "light") -> dict:
             page = browser.new_page(viewport={"width": width, "height": 900}, device_scale_factor=dpr,
                                     color_scheme=scheme)
             page.goto("file://" + os.path.abspath(html_path))
+            # A diagram wider than the window scrolls sideways; measure all of it.
+            if (wide := page.evaluate("document.documentElement.scrollWidth")) > width:
+                page.set_viewport_size({"width": wide, "height": 900})
             geo = page.evaluate(PROBE)
             for band in geo["bands"]:
                 band["segs"] = band_lines(band)

@@ -79,6 +79,12 @@ The renderer needs nothing past Python's standard library. Its colours are the C
 `--text-primary`, `--text-secondary` and `--border-strong`: a host page that sets them themes the
 diagram, and without them it follows the reader's light or dark setting.
 
+Columns of one block are equal in width, so the diagram is at least as wide as its narrowest
+column needs to be to hold that column's longest word; `min_width(nodes)` says how wide, in
+pixels. A page narrower than that scrolls sideways, and a host that embeds the fragment in a
+narrower box gives the box `overflow-x: auto`. A diagram too wide to read is one to split with
+`call` nodes.
+
 ## Verify the layout
 
 Whether a Struktogramm is drawn right shows only in the rendered page; the markup of a broken one

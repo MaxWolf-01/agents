@@ -17,10 +17,15 @@ any size. Text is placed where the lines cannot reach it: a branch's condition i
 of the band's top half, its labels in the outer quarters of the bottom half, and the two halves
 are grid rows of equal height. The diagonals pass through the corners of those regions and
 through nothing else.
+
+Columns are equal by the notation, so a word too long for the narrowest column cannot widen that
+column alone. Instead the whole diagram gets a minimum width, estimated from every text's longest
+word, at which every column holds its longest word; a page narrower than that scrolls sideways.
 """
 
 import argparse
 import json
+import re
 import sys
 from html import escape
 
@@ -47,12 +52,12 @@ CSS = """
 .ns .loop.pre > .body { margin-bottom: -1px; }
 .ns .cond { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: 1fr 1fr; }
 .ns .cond > .q { grid-area: 1 / 2 / 2 / 4; padding: 8px 4px 2px; text-align: center; }
-.ns .cond > .yes, .ns .cond > .no { grid-row: 2; align-self: end; padding: 2px 8px 5px; overflow-wrap: anywhere; }
+.ns .cond > .yes, .ns .cond > .no { grid-row: 2; align-self: end; padding: 2px 8px 5px; }
 .ns .cond > .yes { grid-column: 1; }
 .ns .cond > .no { grid-column: 4; text-align: right; }
 .ns .case > .cond { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ns .case > .cond > .q { grid-area: 1 / 2 / 2 / 3; padding: 8px 14px 2px 8px; text-align: right; }
-.ns .lbls > * { padding: 5px 10px; text-align: center; overflow-wrap: anywhere; }
+.ns .lbls > * { padding: 5px 10px; text-align: center; }
 .ns .par > .cap { padding: 6px 30px; text-align: center; }
 .ns .ln { position: absolute; top: -1px; left: -1px; width: calc(100% + 2px); height: calc(100% + 2px);
           overflow: visible; pointer-events: none; stroke: var(--ns-line); stroke-width: 1px; fill: none; }
@@ -65,7 +70,12 @@ CSS = """
 
 def render(nodes: list) -> str:
     """The diagram alone, a <div class="ns">; it needs CSS beside it."""
-    return f'<div class="ns">{_seq(nodes)}</div>'
+    return f'<div class="ns" style="min-width: {min_width(nodes):.0f}px">{_seq(nodes)}</div>'
+
+
+def min_width(nodes: list) -> float:
+    """The narrowest the diagram can be, in px, with every column holding its longest word."""
+    return _need_seq(nodes) + 1
 
 
 def page(nodes: list) -> str:
@@ -85,9 +95,56 @@ def fragment(nodes: list) -> str:
 PAGE_CSS = """
 body { margin: 0; padding: 24px; background: #fdfdfb; font-family: system-ui, sans-serif; }
 @media (prefers-color-scheme: dark) { body { background: #262624; } }
-.wrap { max-width: 720px; margin: 0 auto; }
+.wrap { width: min(720px, 100%); min-width: fit-content; margin: 0 auto; }
 @media print { body { padding: 0; background: #fff; } }
 """
+
+
+# The width of each character in em, rounded up from DejaVu Sans, the widest of the common sans
+# faces: an estimate, since the fonts are the reader's. A character not listed is 0.65em, and a
+# CJK one 1em.
+_EM = {**dict.fromkeys("ijlI.,:;'!|", 0.3), **dict.fromkeys("frt()[]/\\-\"", 0.42),
+       **dict.fromkeys("ABCDGHKNOQRUVXYZw#&+<=>^~", 0.8), **dict.fromkeys("mMW%@\u2014", 1.0)}
+BODY, SMALL = 15, 12.5  # px: the font sizes the CSS gives text and captions
+
+
+def _word(text: str, size: float) -> float:
+    """The width in px of the longest word in `text`, set at `size` px. A line may break after a
+    hyphen, so each part of a hyphenated word counts alone."""
+    em = lambda c: _EM.get(c, 1.0 if ord(c) >= 0x2E80 else 0.65)
+    return max((sum(map(em, w)) * size for w in re.split(r"\s+|(?<=-)", text)), default=0)
+
+
+def _need_seq(nodes: list) -> float:
+    return max(map(_need, nodes), default=0)
+
+
+def _need(n: dict) -> float:
+    """The narrowest a block can be with no word split: its widest text's longest word plus that
+    text's padding, and for a block with columns, as many times its neediest column as it has."""
+    kind = n.get("type", "stmt")
+    text = max(_word(n.get("text", ""), BODY), _word(n.get("sub") or "", SMALL))
+    if kind == "stmt":
+        return text + 30
+    if kind == "call":
+        return text + 32
+    if kind == "exit":
+        return text + 50
+    if kind == "loop":
+        return max(_word(n["cond"], SMALL) + 30, 21 + _need_seq(n["body"]))
+    if kind == "if":
+        arms = [n.get("yes", {}), n.get("no", {})]
+        band = max(2 * (_word(n["cond"], BODY) + 10),
+                   *(4 * (_word(a.get("label", "yes"), SMALL) + 18) for a in arms))
+        return max(band, 2 * max(_need_seq(a.get("body", [])) for a in arms))
+    if kind == "case":
+        branches = n["branches"]
+        each = max(max(_word(b.get("label", ""), SMALL) + 22, _need_seq(b.get("body", []))) for b in branches)
+        return max(2 * (_word(n["cond"], BODY) + 24), len(branches) * each)
+    if kind == "par":
+        caps = max(_word(n.get("cap", "in parallel"), SMALL), _word(n.get("join", "wait for all"), SMALL)) + 62
+        return max(caps, len(n["tracks"]) * max(_need_seq(t) for t in n["tracks"]))
+    return 0
 
 
 def _seq(nodes: list) -> str:
