@@ -1,3 +1,8 @@
+## 1.0.123
+
+- The artefact table is always loaded, and orient holds the flow alone
+  Where each artefact of the workflow lives (glossary, ADR, ticket, board, research, prototype, show, handoff, retro) is now a table in claude/CLAUDE.md's workflow block and, word for word, in the worker prompt; make check fails when the two differ or either holds a second table. It replaces the Durable docs paragraph and costs about 450 tokens a session. Orient loses its table and the sections that described other skills and is 1710 words of flow from intent to merge. Skills that spelled out a path name the artefact instead, and the commit-trailer rule names artefacts where it listed paths.
+
 ## 1.0.122
 
 - Skills drop what a current model does unprompted
