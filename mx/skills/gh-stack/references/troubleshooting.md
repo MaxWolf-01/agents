@@ -56,12 +56,13 @@ Two resolution paths:
 
   ```bash
   gh stack unstack                  # removes the grouping; PRs and branches survive
+  gh stack init --base main branch-1 branch-2  # use your trunk and desired branch order
   gh stack submit --auto
   ```
 
 Neither path deletes pull requests or branches.
-Remote unstacking leaves PRs that are merging (auto-merge enabled) or are queued (in a merge queue)
-stacked. If needed, clear that state before retrying.
+Merged or queued PRs remain stacked on GitHub, but successful unstacking still removes local
+tracking. If every PR is locked, GitHub rejects the operation and local tracking is retained.
 
 ## Restructuring a stack
 
@@ -112,8 +113,9 @@ problem entirely, since they do not infer the stack from the current branch.
 ## Driving stacks from another tool or worktree
 
 `gh stack link` creates and updates stacks purely through the API, with no local tracking state.
-Use it when branches are managed by jj, Sapling, git-town, a separate worktree, or any workflow
-where the local `.git/gh-stack` file would be wrong or absent.
+Use it when branches are managed by jj, Sapling, git-town, or another external workflow that does
+not use gh-stack's local catalog. Linked worktrees themselves are supported: they share
+`<common-dir>/gh-stack` and do not require `link`.
 
 ```bash
 gh stack link branch-a branch-b branch-c        # bottom to top
@@ -125,11 +127,17 @@ gh stack link 7 feature-d                       # append to existing stack #7
 Because `link` writes no local state, the local navigation commands (`up`, `down`, `top`, `bottom`)
 will not work on the result. Use `gh stack checkout <stack-number>` if you later want local tracking.
 
+Legacy worktree catalogs are consolidated automatically only when their
+definitions agree or are disjoint; originals are preserved. On migration conflicts, reconcile the
+reported source definitions rather than choosing the newest file. Finish legacy operations in
+their original worktree first, and do not mix old and new gh-stack writers in one clone.
+
 ## Stack file is locked (exit 8)
 
-Another `gh stack` process holds the exclusive lock on `.git/gh-stack.lock`. The lock times out
-after about five seconds, so wait and retry. A persistent exit 8 means another process still holds
-the lock; identify and stop that process before retrying.
+Another `gh stack` process holds either the short catalog lock (`<common-dir>/gh-stack.lock`) or
+the clone-wide mutation lock (`<common-dir>/gh-stack-operation.lock`). Wait and retry; read-only
+views remain available. Do not delete lock files to bypass coordination. Paused operations are
+also guarded by shared recovery journals after their process lock has been released.
 
 ## An interrupted modify session (exit 10)
 

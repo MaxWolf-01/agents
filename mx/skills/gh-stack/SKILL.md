@@ -4,15 +4,15 @@ description: >
   Manages stacked PRs and splits multi-part work into reviewable branches with gh-stack.
   Use for stack creation, viewing, edits, push, submit, sync, rebase, merge, or checkout;
   when asked to split or isolate work for review; whenever a user mentions a stack,
-  branch layers, or gh stack; or when a stack is checked out; when work has to go through PRs, and those PRs are dependent on each ohter.
+  branch layers, or gh stack; or when a stack is checked out; when work has to go through PRs, and those PRs are dependent on each other.
 metadata:
   author: github
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # gh-stack
 
-Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md`, the line that points at it, and the line under Core loop that points at `/mx:github`, which are local. The local copy is also pruned of what a current model does unprompted, and a re-copy prunes it again.
+Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at v0.3.0 (2a49e67, 2026-10-26), MIT; update by re-copying, keeping `references/github-side.md`, the line that points at it, the line under Core loop that points at `/mx:github`, and the description's last clause, which are local. The local copy is also pruned of what a current model does unprompted, and a re-copy prunes it again.
 
 `gh stack` prints a stack trunk-first, left to right:
 
@@ -26,6 +26,8 @@ For how to choose the
 layers, read `references/stack-design.md`.
 
 ## Setup
+
+Requires Git 2.36+ and an authenticated GitHub CLI.
 
 ```bash
 gh extension install github/gh-stack
@@ -56,6 +58,9 @@ Agent harnesses differ, so always pass the flags below instead of relying on tha
 
 - **`checkout <pr>` when a different local stack already covers those branches** cannot be forced.
   Run `gh stack unstack --local` first (this keeps the stack on GitHub), then retry.
+- **Worktrees:** local stacks share one common-directory catalog. Use `--print-path` with
+  navigation or explicit-target `checkout` to locate a foreign-owned branch without stealing its
+  checkout. Unoccupied targets are checked out here first.
 
 ## Branch placement
 
@@ -158,6 +163,11 @@ an ancestor of the branch.
 ## Constraints
 
 - Stacks are strictly linear: one parent, at most one child. Use separate stacks for parallel work.
+- `rebase` and `sync` automatically update affected clean worktrees; they never auto-stash or
+  create/remove worktrees. Mutations serialize across the clone, and paused operations require
+  recovery in their recorded owners.
+- `modify` recovery flags may run from any worktree and use recorded native
+  operation owners; never resolve/stage in the caller's tree unless the diagnostic names it.
 - There is no non-interactive reorder or removal. Errors may suggest `gh stack modify`, but it is
   TUI-only — restructure with `unstack` then `init` instead.
 
@@ -167,7 +177,8 @@ Note that
 `gh stack help <command>` does **not** work — it prints the top-level help.
 
 - `references/github-side.md` — read before linking PRs that already exist into a stack, before
-  merging a layer, and when the merge box says the stack is out of date.
+  merging a layer, when the merge box says the stack is out of date, and when `sync` or `rebase`
+  asks for `--accept-base-change`.
 - `references/stack-design.md` — read before creating a stack, when deciding how many layers to
   use, what belongs in each one, or whether work belongs in a new stack.
 - `references/commands.md` — read when a command fails unexpectedly or you need its preconditions,
