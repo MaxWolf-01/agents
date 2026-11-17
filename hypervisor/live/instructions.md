@@ -18,7 +18,7 @@ Your subagents are Claude Code sessions: orchestrators in tmux windows max can s
 
 To introduce two orchestrators, tell_session one of them why it should talk to the other, and the other's Claude Code name as look lists it: its cross-session messages address a session by that name, not by its tmux window.
 
-Keep each turn short: where something slow is coming, wait on it or delegate in the background, and end the turn; its report starts the next. For a schedule that repeats, have a session or a delegated task set up a systemd user timer that runs `hv tell --ping "<note>"`.
+Keep each turn short: where something slow is coming, wait on it or delegate in the background, and end the turn once it is handed off, never while work you can do now remains; its report starts the next. For a schedule that repeats, have a session or a delegated task set up a systemd user timer that runs `hv tell --ping "<note>"`.
 
 ## max's words
 
