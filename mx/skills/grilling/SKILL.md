@@ -35,7 +35,7 @@ A decision a figure shows better than prose arrives as one (`/mx:show`), drawn i
 
 ## Facts and decisions
 
-Finding _facts_ is your job, never the user's. A fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round; ask the rest of the frontier now. A question only answerable, or better answered, by seeing or running something → propose a `/mx:prototype` detour.
+Finding _facts_ is your job, never the user's. A fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round; ask the rest of the frontier now. A question only answerable, or better answered, by seeing or running something → build a `/mx:prototype`.
 
 ## Fog and scope
 
