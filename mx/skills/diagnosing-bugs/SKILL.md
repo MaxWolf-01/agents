@@ -28,7 +28,11 @@ If the redacted output is not enough to diagnose the bug, say so and ask the use
 
 ### Tighten the loop
 
-Treat the loop as a product. Once you have _a_ loop, **tighten** it.
+Treat the loop as a product. Once you have _a_ loop, **tighten** it:
+
+- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
+- Can I make the signal sharper?
+- Can I make it more deterministic?
 
 A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight.
 
