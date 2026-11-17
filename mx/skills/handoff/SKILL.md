@@ -4,7 +4,7 @@ description: "Compact the current conversation into a handoff file a fresh sessi
 argument-hint: "What will the next session be used for?"
 ---
 
-A handoff is the conversation compacted into one file a fresh session starts from, written by the session that holds the context and read by the user before anything replaces it. That is its whole advantage over a summary a harness writes on its own: it can be proofread and corrected first.
+A handoff is the conversation compacted into one file a fresh session starts from, written by the session that holds the context and read by the user before anything replaces it.
 
 ## Purpose
 
