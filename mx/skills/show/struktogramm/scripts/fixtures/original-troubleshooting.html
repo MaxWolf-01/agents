@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body { margin: 0; padding: 24px; background: #fdfdfb; font-family: system-ui, sans-serif; }
+body.dark { --text-primary:#f0efe9; --text-secondary:#9c9a92; --border-strong:#4a4945; background:#262624; }
+.wrap { max-width: 720px; margin: 0 auto; }
+@media print { body { padding: 0; background: #fff; } }
+
+.ns { font-size: 15px; line-height: 1.4; color: var(--text-primary, #1a1a18); }
+.ns .seq { display: flex; flex-direction: column; min-height: 100%; }
+.ns .seq > * + * { margin-top: -1px; }
+.ns .seq > :last-child { flex: 1 1 auto; }
+.ns .col > .seq { height: 100%; }
+.ns .blk { border: 1px solid var(--border-strong, #c9c7bd); padding: 12px 14px; }
+.ns .sub { display: block; font-size: 12.5px; color: var(--text-secondary, #6b6a64); margin-top: 2px; }
+.ns .call { border-left-width: 5px; border-right-width: 5px; border-left-style: double; border-right-style: double; }
+.ns .loop { border: 1px solid var(--border-strong, #c9c7bd); }
+.ns .loop > .cap { padding: 7px 14px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); }
+.ns .loop > .body { padding-left: 20px; }
+.ns .loop.pre > .body { margin: -1px -1px -1px 0; }
+.ns .loop.post > .body { margin: -1px -1px 0 0; }
+.ns .fork { border: 1px solid var(--border-strong, #c9c7bd); }
+.ns .fork > .cond { background-repeat: no-repeat; }
+.ns .fork > .cond > .q { padding: 8px 14px 0; text-align: center; }
+.ns .fork > .cond > .yn { display: flex; justify-content: space-between; padding: 3px 12px 6px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); }
+.ns .fork > .cols { display: flex; margin: -1px -1px -1px 0; }
+.ns .fork > .cols > .col { flex: 1 1 0; min-width: 0; margin-right: -1px; }
+.ns .fork > .cols > .col:last-child { margin-right: 0; }
+.ns .case > .cond { min-height: 46px; }
+.ns .case > .cond > .q { text-align: right; padding: 8px 14px 8px 40%; }
+.ns .case > .lbls { display: flex; margin-right: -1px; }
+.ns .case > .cond { min-height: 46px; }
+.ns .case > .cond > .q { text-align: right; padding: 8px 14px 8px 40%; }
+.ns .case > .lbls > div { flex: 1 1 0; min-width: 0; margin-right: -1px; border: 1px solid var(--border-strong, #c9c7bd); border-top: none; padding: 5px 10px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); text-align: center; }
+.ns .case > .cols { margin-top: -1px; }
+.ns .empty { min-height: 22px; }
+.ns .par { border: 1px solid var(--border-strong, #c9c7bd); }
+.ns .par > .cap { padding: 6px 30px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); text-align: center; background-repeat: no-repeat; background-size: 26px 100%, 26px 100%; }
+.ns .par > .cap.top { background-position: left top, right top; background-image: linear-gradient(to bottom right, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)), linear-gradient(to bottom left, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)); }
+.ns .par > .cap.bot { background-position: left bottom, right bottom; background-image: linear-gradient(to top right, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)), linear-gradient(to top left, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)); }
+.ns .par > .cols { display: flex; margin: -1px -1px 0 0; }
+.ns .par > .cols > .col { flex: 1 1 0; min-width: 0; margin-right: -1px; }
+.ns .blk, .ns .loop, .ns .fork, .ns .par { break-inside: avoid; }
+</style><body class=""><div class="wrap"><div class="ns"><div class="seq"><div class="blk">Note the symptom<span class="sub">exact error text, when it started</span></div><div class="fork"><div class="cond" style="background-size:50% 100%,50% 100%;background-position:left top,right top;background-image:linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px)),linear-gradient(to bottom left,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px))"><div class="q">Does any other device on the same network work?</div><div class="yn"><span>yes</span><span>no</span></div></div><div class="cols"><div class="col"><div class="seq"><div class="blk">Problem is local to this device</div><div class="loop pre"><div class="cap">for each of: Wi-Fi off/on, forget-and-rejoin, reboot</div><div class="body"><div class="seq"><div class="blk">Apply the step, then retest</div><div class="fork"><div class="cond" style="background-size:50% 100%,50% 100%;background-position:left top,right top;background-image:linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px)),linear-gradient(to bottom left,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px))"><div class="q">Fixed?</div><div class="yn"><span>yes</span><span>no</span></div></div><div class="cols"><div class="col"><div class="seq"><div class="blk">Stop</div></div></div><div class="col"><div class="seq"><div class="blk empty"></div></div></div></div></div></div></div></div></div></div><div class="col"><div class="seq"><div class="blk">Problem is the network</div><div class="fork case"><div class="cond" style="background-repeat:no-repeat;background-size:33.3333% 100%,66.6667% 100%,100.0000% 100%;background-position:left top;background-image:linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px)),linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px)),linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px))"><div class="q">router status lights</div></div><div class="lbls"><div>all off</div><div>internet red</div><div>all normal</div></div><div class="cols" style="display:flex;margin:-1px -1px -1px 0"><div class="col" style="flex:1 1 0;min-width:0;margin-right:-1px"><div class="seq"><div class="blk">Check power and PSU brick</div></div></div><div class="col" style="flex:1 1 0;min-width:0;margin-right:-1px"><div class="seq"><div class="blk">Call the ISP, ask about an outage</div></div></div><div class="col" style="flex:1 1 0;min-width:0;margin-right:-1px"><div class="seq"><div class="blk">Power-cycle the router, wait 2 min</div></div></div></div></div></div></div></div></div><div class="loop post"><div class="body"><div class="seq"><div class="blk">Retest with a known-good site</div></div></div><div class="cap">until a page loads or 15 min have passed</div></div><div class="fork"><div class="cond" style="background-size:50% 100%,50% 100%;background-position:left top,right top;background-image:linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px)),linear-gradient(to bottom left,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px))"><div class="q">Still broken?</div><div class="yn"><span>yes</span><span>no</span></div></div><div class="cols"><div class="col"><div class="seq"><div class="blk">Escalate with the notes from step 1</div></div></div><div class="col"><div class="seq"><div class="blk">Record what fixed it</div></div></div></div></div></div></div></div></body>
