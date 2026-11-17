@@ -175,9 +175,12 @@ A `SKILL.md` that holds in any chat, with no tickets, session page or dispatch.
 | [`/mx:house-style`](skills/house-style/SKILL.md) | the look of your own pages and tools |
 | [`/mx:mermaid`](skills/mermaid/SKILL.md) | Mermaid diagrams, validated before they go anywhere |
 | [`/mx:ml`](skills/ml/SKILL.md) | ML project conventions: experiments, tracking, tensor code |
+| [`/mx:prototype`](skills/prototype/SKILL.md) | throwaway code when shapes are rivals or one has to be driven to be judged |
 | [`/mx:recap`](skills/recap/SKILL.md) | where the work stands: findings, decisions, open questions |
+| [`/mx:research`](skills/research/SKILL.md) | primary-source investigation of a question a decision waits on |
 | [`/mx:session-name`](skills/session-name/SKILL.md) | a `/rename` for the session |
 | [`/mx:sharpen`](skills/sharpen/SKILL.md) | aim the work at what the best expert would do |
+| [`/mx:testing`](skills/testing/SKILL.md) | what makes a test worth keeping, and the fast suite against the full-path checks |
 | [`/mx:to-questionnaire`](skills/to-questionnaire/SKILL.md) | turn a decision someone else must answer into a questionnaire |
 | [`/mx:tyro-cli`](skills/tyro-cli/SKILL.md) | Python CLIs with tyro, and `uv run` scripts |
 | [`/mx:unslop`](skills/unslop/SKILL.md) | the writing-for-humans pass over a file, a diff or a message |
@@ -189,17 +192,14 @@ A `SKILL.md` that holds in any chat, with no tickets, session page or dispatch.
 
 ### Both
 
-Knowledge in `SKILL.md`, and the text that fits it into the workflow in `WORKFLOW.md` beside it.
+Knowledge in `SKILL.md`, and in `WORKFLOW.md` beside it what is particular to that skill in the workflow, which `claude/CLAUDE.md` tells every session to read with it.
 
 | Skill | What it is for |
 | --- | --- |
 | [`/mx:grilling`](skills/grilling/SKILL.md) | sharpen a plan by interview, round by round; in the workflow the design lands in a ticket |
 | [`/mx:improve-codebase-architecture`](skills/improve-codebase-architecture/SKILL.md) | scan for deepening opportunities; in the workflow they go into the living report |
 | [`/mx:project-setup`](skills/project-setup/SKILL.md) | a project's foundations; in the workflow also its agent repo and the tracker's hooks |
-| [`/mx:prototype`](skills/prototype/SKILL.md) | throwaway code when shapes are rivals or one has to be driven to be judged |
-| [`/mx:research`](skills/research/SKILL.md) | primary-source investigation; in the workflow the findings land on the ticket that asked |
 | [`/mx:show`](skills/show/SKILL.md) | show, don't tell: a figure, a diagram, a demo, an explainer page; in the workflow, a landing's show |
-| [`/mx:testing`](skills/testing/SKILL.md) | what makes a test worth keeping, and the fast suite against the full-path checks |
 
 ### Workflow
 
