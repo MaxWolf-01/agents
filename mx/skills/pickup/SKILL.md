@@ -1,6 +1,6 @@
 ---
 name: pickup
-description: "Start this session from a handoff, a file in an agent/handoffs/ directory. Use when the user gives a handoff's path, or says to continue or pick up from one."
+description: "Start this session from a handoff file. Use when the user gives a handoff's path, or says to continue or pick up from one."
 argument-hint: "<handoff path>"
 ---
 

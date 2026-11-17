@@ -20,7 +20,7 @@ Several of those name a shape `/mx:show`'s table gives a figure. The call links 
 
 Leave out file paths and code snippets, which go stale fast; a link to a figure or a prototype is neither. The exception is a snippet a prototype produced that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape): inline it in the decision it settles, trimmed to the decision-rich part and marked as the prototype's.
 
-List any **floors**, prototypes (or aspects of one) the user promoted to minimum-quality references, with their `agent/prototypes/` paths, so the cut can stamp them onto the child tickets building those surfaces (`/mx:tracker`, SLICING.md).
+List any **floors**, prototypes (or aspects of one) the user promoted to minimum-quality references, with their paths, so the cut can stamp them onto the child tickets building those surfaces (`/mx:tracker`, SLICING.md).
 
 **Type every deferral.** A decision left to build time behaves differently by kind: an interchangeable part behind a settled seam (which test runner) defers safely; anything user-visible defers to agent taste; and a deferred dependency pick can silently defer the *capability* itself (no markdown library chosen → nothing renders markdown). For each deferred item, name what happens if nobody decides it.
 

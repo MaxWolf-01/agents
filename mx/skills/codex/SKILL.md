@@ -26,7 +26,7 @@ Codex has **zero context** from your session. Everything it needs must be in the
 
 **Give it orientation first:**
 - Codex loads the project's `AGENTS.md` itself; where the project keeps its instructions in a `CLAUDE.md` instead, tell it to read `./CLAUDE.md` for project context, knowledge map, and conventions
-- Point it to `GLOSSARY.md`, `decisions/`, and `agent/tickets/` when relevant; written records is more efficient than re-explaining what's already documented
+- Point it to the glossary, the ADRs and the ticket when relevant; written records is more efficient than re-explaining what's already documented
 
 **Add session context it can't get from files:**
 - Describe the current approach, decisions made, constraints discovered: things only in your conversation
