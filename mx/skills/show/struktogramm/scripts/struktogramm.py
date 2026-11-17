@@ -1,157 +1,171 @@
-"""Nassi-Shneiderman diagram (Struktogramm) renderer: nested dicts -> HTML."""
+#!/usr/bin/env python3
+"""Render a Nassi-Shneiderman diagram (Struktogramm) from a JSON node list to HTML.
+
+Standard library only. The node schema is in ../SKILL.md.
+
+Two layout rules hold every diagram together, and most of the CSS serves one or the other:
+
+- One line per boundary. Only cells draw borders, every cell draws all four, and every cell is
+  pulled 1px up and 1px left so its top and left borders land on the lines its neighbours
+  already drew. The root's 1px padding is where the outermost cells land. Containers (a branch,
+  a parallel block, a column) draw nothing.
+- No empty space. Every sequence is a flex column whose last block grows, and every container
+  grows its columns, so a block that stretches passes the stretch on down to its innermost cells.
+
+Band lines are inline SVG stretched over their band, so they meet the band's corners exactly at
+any size. Text is placed where the lines cannot reach it: a branch's condition in the middle half
+of the band's top half, its labels in the outer quarters of the bottom half, and the two halves
+are grid rows of equal height. The diagonals pass through the corners of those regions and
+through nothing else.
+"""
+
+import argparse
+import json
+import sys
 from html import escape
 
 CSS = """
-.ns { font-size: 15px; line-height: 1.4; color: var(--text-primary, #1a1a18); }
-.ns .seq { display: flex; flex-direction: column; min-height: 100%; }
-.ns .seq > * + * { margin-top: -1px; }
-.ns .seq > :last-child { flex: 1 1 auto; }
-.ns .col > .seq { height: 100%; }
-.ns .blk { border: 1px solid var(--border-strong, #c9c7bd); padding: 12px 14px; }
-.ns .sub { display: block; font-size: 12.5px; color: var(--text-secondary, #6b6a64); margin-top: 2px; }
-.ns .call { border-left-width: 5px; border-right-width: 5px; border-left-style: double; border-right-style: double; }
-.ns .loop { border: 1px solid var(--border-strong, #c9c7bd); }
-.ns .loop > .cap { padding: 7px 14px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); }
-.ns .loop > .body { padding-left: 20px; }
-.ns .loop.pre > .body { margin: -1px -1px -1px 0; }
-.ns .loop.post > .body { margin: -1px -1px 0 0; }
-.ns .fork { border: 1px solid var(--border-strong, #c9c7bd); }
-.ns .fork > .cond { background-repeat: no-repeat; }
-.ns .fork > .cond > .q { padding: 8px 14px 0; text-align: center; }
-.ns .fork > .cond > .yn { display: flex; justify-content: space-between; padding: 3px 12px 6px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); }
-.ns .fork > .cols { display: flex; margin: -1px -1px -1px 0; }
-.ns .fork > .cols > .col { flex: 1 1 0; min-width: 0; margin-right: -1px; }
-.ns .fork > .cols > .col:last-child { margin-right: 0; }
-.ns .case > .cond { min-height: 46px; }
-.ns .case > .cond > .q { text-align: right; padding: 8px 14px 8px 40%; }
-.ns .case > .lbls { display: flex; margin-right: -1px; }
-.ns .case > .cond { min-height: 46px; }
-.ns .case > .cond > .q { text-align: right; padding: 8px 14px 8px 40%; }
-.ns .case > .lbls > div { flex: 1 1 0; min-width: 0; margin-right: -1px; border: 1px solid var(--border-strong, #c9c7bd); border-top: none; padding: 5px 10px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); text-align: center; }
-.ns .case > .cols { margin-top: -1px; }
+.ns { --ns-ink: var(--text-primary, #1a1a18); --ns-dim: var(--text-secondary, #6b6a64); --ns-line: var(--border-strong, #c9c7bd);
+      font-size: 15px; line-height: 1.4; color: var(--ns-ink); padding: 1px 0 0 1px; overflow-wrap: break-word; }
+@media (prefers-color-scheme: dark) {
+  .ns { --ns-ink: var(--text-primary, #f0efe9); --ns-dim: var(--text-secondary, #9c9a92); --ns-line: var(--border-strong, #5a5954); }
+}
+.ns .seq, .ns .col, .ns .fork, .ns .par, .ns .loop, .ns .body { display: flex; flex-direction: column; }
+.ns .seq { flex: 1 1 auto; }
+.ns .seq > :last-child, .ns .fork > .cols, .ns .par > .cols, .ns .loop > .body { flex: 1 1 auto; }
+.ns .cols, .ns .lbls { display: flex; }
+.ns .cols > .col, .ns .lbls > * { flex: 1 1 0; min-width: 0; }
+.ns .cell { border: 1px solid var(--ns-line); margin: -1px 0 0 -1px; position: relative; break-inside: avoid; }
+.ns .blk { padding: 12px 14px; }
 .ns .empty { min-height: 22px; }
-.ns .par { border: 1px solid var(--border-strong, #c9c7bd); }
-.ns .par > .cap { padding: 6px 30px; font-size: 12.5px; color: var(--text-secondary, #6b6a64); text-align: center; background-repeat: no-repeat; background-size: 26px 100%, 26px 100%; }
-.ns .par > .cap.top { background-position: left top, right top; background-image: linear-gradient(to bottom right, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)), linear-gradient(to bottom left, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)); }
-.ns .par > .cap.bot { background-position: left bottom, right bottom; background-image: linear-gradient(to top right, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)), linear-gradient(to top left, transparent calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% - .5px), var(--border-strong, #c9c7bd) calc(50% + .5px), transparent calc(50% + .5px)); }
-.ns .par > .cols { display: flex; margin: -1px -1px 0 0; }
-.ns .par > .cols > .col { flex: 1 1 0; min-width: 0; margin-right: -1px; }
-.ns .blk, .ns .loop, .ns .fork, .ns .par { break-inside: avoid; }
+.ns .sub { display: block; font-size: 12.5px; color: var(--ns-dim); margin-top: 2px; }
+.ns .small { font-size: 12.5px; color: var(--ns-dim); }
+.ns .call { border-left: 5px double var(--ns-line); border-right: 5px double var(--ns-line); padding: 12px 10px; }
+.ns .exit { padding-left: 34px; }
+.ns .loop > .cap { padding: 7px 14px; }
+.ns .loop > .body { margin: 0 -1px 0 20px; }
+.ns .loop.pre > .body { margin-bottom: -1px; }
+.ns .cond { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: 1fr 1fr; }
+.ns .cond > .q { grid-area: 1 / 2 / 2 / 4; padding: 8px 4px 2px; text-align: center; }
+.ns .cond > .yes, .ns .cond > .no { grid-row: 2; align-self: end; padding: 2px 8px 5px; overflow-wrap: anywhere; }
+.ns .cond > .yes { grid-column: 1; }
+.ns .cond > .no { grid-column: 4; text-align: right; }
+.ns .case > .cond { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ns .case > .cond > .q { grid-area: 1 / 2 / 2 / 3; padding: 8px 14px 2px 8px; text-align: right; }
+.ns .lbls > * { padding: 5px 10px; text-align: center; overflow-wrap: anywhere; }
+.ns .par > .cap { padding: 6px 30px; text-align: center; }
+.ns .ln { position: absolute; top: -1px; left: -1px; width: calc(100% + 2px); height: calc(100% + 2px);
+          overflow: visible; pointer-events: none; stroke: var(--ns-line); stroke-width: 1px; fill: none; }
+.ns .ln path { vector-effect: non-scaling-stroke; }
+.ns .ln.l, .ns .ln.r { width: 26px; }
+.ns .ln.r { left: auto; right: -1px; }
+.ns .exit > .ln { width: 22px; }
 """
 
-# two half-width gradients: left half TL->bottom-centre, right half TR->bottom-centre
-_DIAG = ("background-size:50% 100%,50% 100%;background-position:left top,right top;"
-         "background-image:linear-gradient(to bottom right,transparent calc(50% - .5px),"
-         "var(--border-strong, #c9c7bd) calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px)),"
-         "linear-gradient(to bottom left,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),"
-         "var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px))")
 
-# n-way fan: one gradient per column, each spanning that column, drawn to the bottom-left origin
-def _fan(n):
-    layers, sizes = [], []
-    for i in range(1, n + 1):
-        layers.append(
-            "linear-gradient(to bottom right,transparent calc(50% - .5px),var(--border-strong, #c9c7bd) calc(50% - .5px),"
-            "var(--border-strong, #c9c7bd) calc(50% + .5px),transparent calc(50% + .5px))")
-        sizes.append(f"{i * 100 / n:.4f}% 100%")
-    return ("background-repeat:no-repeat;background-size:" + ",".join(sizes)
-            + ";background-position:left top;background-image:" + ",".join(layers))
+def render(nodes: list) -> str:
+    """The diagram alone, a <div class="ns">; it needs CSS beside it."""
+    return f'<div class="ns">{_seq(nodes)}</div>'
 
 
-def _txt(node):
+def page(nodes: list) -> str:
+    """A standalone HTML document, for a file the user opens or prints."""
+    return ('<!doctype html><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="color-scheme" content="light dark">'
+            f"<style>{PAGE_CSS}{CSS}</style>"
+            f'<body><div class="wrap">{render(nodes)}</div></body>')
+
+
+def fragment(nodes: list) -> str:
+    """<style> and the diagram, for embedding in a page whose theme it takes on."""
+    return f"<style>{CSS}</style>\n{render(nodes)}"
+
+
+PAGE_CSS = """
+body { margin: 0; padding: 24px; background: #fdfdfb; font-family: system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { body { background: #262624; } }
+.wrap { max-width: 720px; margin: 0 auto; }
+@media print { body { padding: 0; background: #fff; } }
+"""
+
+
+def _seq(nodes: list) -> str:
+    # An empty body is still one cell: the notation has no gaps, and an empty branch is a box.
+    inner = "".join(_node(n) for n in nodes) if nodes else '<div class="cell blk empty"></div>'
+    return f'<div class="seq">{inner}</div>'
+
+
+def _lines(d: str, cls: str = "") -> str:
+    """Band lines in a 100x100 box stretched over the band, so 0 and 100 are its edges."""
+    return (f'<svg class="ln {cls}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">'
+            f'<path d="{d}"/></svg>')
+
+
+def _txt(node: dict) -> str:
     out = escape(node["text"])
     if node.get("sub"):
         out += f'<span class="sub">{escape(node["sub"])}</span>'
     return out
 
 
-def _seq(nodes, depth=0):
-    # An empty branch is still wrapped in .seq: the stretch rule targets
-    # .seq > :last-child, and without the wrapper an empty branch would sit at
-    # its natural height and leave unbordered dead space beside a taller sibling.
-    inner = ("".join(_node(n, depth) for n in nodes) if nodes
-             else '<div class="blk empty"></div>')
-    return '<div class="seq">' + inner + "</div>"
+def _cols(bodies: list) -> str:
+    return '<div class="cols">' + "".join(f'<div class="col">{_seq(b)}</div>' for b in bodies) + "</div>"
 
 
-def _node(n, depth=0):
-    t = n.get("type", "stmt")
-    if t == "stmt":
-        return f'<div class="blk">{_txt(n)}</div>'
-    if t == "call":
-        return f'<div class="blk call">{_txt(n)}</div>'
-    if t == "loop":
+def _node(n: dict) -> str:
+    kind = n.get("type", "stmt")
+    if kind == "stmt":
+        return f'<div class="cell blk">{_txt(n)}</div>'
+    if kind == "call":
+        return f'<div class="cell blk call">{_txt(n)}</div>'
+    if kind == "exit":
+        return f'<div class="cell blk exit">{_lines("M100 0 L0 50 L100 100")}{_txt(n)}</div>'
+    if kind == "loop":
         post = n.get("kind") == "post"
-        cap = f'<div class="cap">{escape(n["cond"])}</div>'
-        body = f'<div class="body">{_seq(n["body"], depth+1)}</div>'
-        inner = body + cap if post else cap + body
-        return f'<div class="loop {"post" if post else "pre"}">{inner}</div>'
-    if t == "if":
+        cap = f'<div class="cap small">{escape(n["cond"])}</div>'
+        body = f'<div class="body">{_seq(n["body"])}</div>'
+        return f'<div class="cell loop {"post" if post else "pre"}">{body + cap if post else cap + body}</div>'
+    if kind == "if":
         yes, no = n.get("yes", {}), n.get("no", {})
-        cond = (f'<div class="cond" style="{_DIAG}"><div class="q">{escape(n["cond"])}</div>'
-                f'<div class="yn"><span>{escape(yes.get("label","yes"))}</span>'
-                f'<span>{escape(no.get("label","no"))}</span></div></div>')
-        cols = (f'<div class="cols"><div class="col">{_seq(yes.get("body", []), depth+1)}</div>'
-                f'<div class="col">{_seq(no.get("body", []), depth+1)}</div></div>')
-        return f'<div class="fork">{cond}{cols}</div>'
-    if t == "par":
-        cols = '<div class="cols">' + "".join(
-            f'<div class="col">{_seq(t_, depth+1)}</div>' for t_ in n["tracks"]) + "</div>"
-        return (f'<div class="par"><div class="cap top">{escape(n.get("cap", "in parallel"))}</div>'
-                f'{cols}<div class="cap bot">{escape(n.get("join", "wait for all"))}</div></div>')
-    if t == "case":
-        br = n["branches"]
-        cond = f'<div class="cond" style="{_fan(len(br))}"><div class="q">{escape(n["cond"])}</div></div>'
+        cond = (f'<div class="cell cond">{_lines("M0 0 L50 100 L100 0")}'
+                f'<div class="q">{escape(n["cond"])}</div>'
+                f'<div class="yes small">{escape(yes.get("label", "yes"))}</div>'
+                f'<div class="no small">{escape(no.get("label", "no"))}</div></div>')
+        return f'<div class="fork">{cond}{_cols([yes.get("body", []), no.get("body", [])])}</div>'
+    if kind == "case":
+        branches = n["branches"]
+        fan = " ".join(f"M0 0 L{k * 100 / len(branches):.4f} 100" for k in range(1, len(branches) + 1))
+        cond = f'<div class="cell cond">{_lines(fan)}<div class="q">{escape(n["cond"])}</div></div>'
         lbls = '<div class="lbls">' + "".join(
-            f'<div>{escape(b.get("label",""))}</div>' for b in br) + "</div>"
-        cols = '<div class="cols" style="display:flex;margin:-1px -1px -1px 0">' + "".join(
-            f'<div class="col" style="flex:1 1 0;min-width:0;margin-right:-1px">{_seq(b.get("body", []), depth+1)}</div>'
-            for b in br) + "</div>"
-        return f'<div class="fork case">{cond}{lbls}{cols}</div>'
-    raise ValueError(t)
+            f'<div class="cell small">{escape(b.get("label", ""))}</div>' for b in branches) + "</div>"
+        return f'<div class="fork case">{cond}{lbls}{_cols([b.get("body", []) for b in branches])}</div>'
+    if kind == "par":
+        top = _lines("M0 100 L100 0", "l") + _lines("M100 100 L0 0", "r")
+        bot = _lines("M0 0 L100 100", "l") + _lines("M100 0 L0 100", "r")
+        return (f'<div class="par"><div class="cell cap top small">{top}{escape(n.get("cap", "in parallel"))}</div>'
+                f'{_cols(n["tracks"])}'
+                f'<div class="cell cap bot small">{bot}{escape(n.get("join", "wait for all"))}</div></div>')
+    raise ValueError(f"unknown node type {kind!r}; the types are stmt, call, exit, loop, if, case, par")
 
 
-def render(nodes):
-    return f'<div class="ns">{_seq(nodes)}</div>'
-
-
-# --- standalone page + CLI ---------------------------------------------------
-
-PAGE_SHIM = """
-body { margin: 0; padding: 24px; background: #fdfdfb; font-family: system-ui, sans-serif; }
-body.dark { --text-primary:#f0efe9; --text-secondary:#9c9a92; --border-strong:#4a4945; background:#262624; }
-.wrap { max-width: 720px; margin: 0 auto; }
-@media print { body { padding: 0; background: #fff; } }
-"""
-
-
-def page(nodes, dark=False, extra_css=""):
-    """Full standalone HTML document. Use for files the user opens or prints."""
-    return (f'<!doctype html><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<style>{PAGE_SHIM}{CSS}{extra_css}</style>'
-            f'<body class="{"dark" if dark else ""}"><div class="wrap">{render(nodes)}</div></body>')
-
-
-def _load(path):
-    import json
-    with open(path) as f:
-        return json.load(f)
-
-
-if __name__ == "__main__":
-    import argparse, sys
+def main() -> int:
     ap = argparse.ArgumentParser(description="Render a Struktogramm from a JSON node list.")
-    ap.add_argument("input", help="JSON file containing the node list")
-    ap.add_argument("-o", "--output", help="write here instead of stdout")
-    ap.add_argument("--dark", action="store_true", help="dark theme")
-    ap.add_argument("--fragment", action="store_true",
-                    help="emit <style>+<div> only, for embedding in a host page")
+    ap.add_argument("input", help="JSON file holding the node list")
+    ap.add_argument("-o", "--output", help="write here instead of to stdout")
+    ap.add_argument("--fragment", action="store_true", help="emit <style> and the diagram only, for embedding")
     a = ap.parse_args()
-    nodes = _load(a.input)
-    out = f"<style>{CSS}</style>\n{render(nodes)}" if a.fragment else page(nodes, a.dark)
+    with open(a.input) as f:
+        nodes = json.load(f)
+    out = fragment(nodes) if a.fragment else page(nodes)
     if a.output:
-        open(a.output, "w").write(out)
+        with open(a.output, "w") as f:
+            f.write(out)
         print(f"wrote {a.output}", file=sys.stderr)
     else:
         print(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

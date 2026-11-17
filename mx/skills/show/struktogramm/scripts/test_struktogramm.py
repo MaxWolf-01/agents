@@ -70,3 +70,54 @@ def test_checker_names_every_fault_of_the_original_render(fixture: str) -> None:
     found = faults_of(FIXTURES / f"{fixture}.html")
     missing = [kind for kind in ORIGINAL_FAULTS[fixture] if not any(f.startswith(kind) for f in found)]
     assert missing == [], "\n".join(found)
+
+
+def page_of(nodes: list, tmp_path: Path, name: str) -> Path:
+    from struktogramm import page
+
+    out = tmp_path / f"{name}.html"
+    out.write_text(page(nodes))
+    return out
+
+
+@pytest.mark.full_path
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_every_example_passes_the_checker(example: Path, scheme: str, tmp_path: Path) -> None:
+    import json
+
+    assert faults_of(page_of(json.loads(example.read_text()), tmp_path, example.stem), scheme) == []
+
+
+TALL = {"type": "stmt", "text": "A sibling three lines tall", "sub": "so the block beside it has to stretch to its height"}
+
+
+def holding(outer: str, inner: dict) -> dict:
+    """The construct `outer` with `inner` inside it, beside a taller sibling where it has columns."""
+    if outer in ("pre", "post"):
+        return {"type": "loop", "kind": outer, "cond": f"{outer}-tested loop", "body": [inner]}
+    if outer == "if":
+        return {"type": "if", "cond": "Branch?", "yes": {"body": [inner]}, "no": {"body": [TALL]}}
+    if outer == "case":
+        return {"type": "case", "cond": "case of", "branches": [
+            {"label": "one", "body": [inner]}, {"label": "two", "body": [TALL]}, {"label": "three", "body": []}]}
+    return {"type": "par", "cap": "in parallel", "join": "wait for both", "tracks": [[inner], [TALL]]}
+
+
+INNER = {
+    "stmt": {"type": "stmt", "text": "A statement"},
+    "call": {"type": "call", "text": "A call", "sub": "its own diagram"},
+    "exit": {"type": "exit", "text": "leave the loop"},
+    "pre": {"type": "loop", "cond": "while inner", "body": [{"type": "stmt", "text": "step"}]},
+    "post": {"type": "loop", "kind": "post", "cond": "until inner", "body": [{"type": "stmt", "text": "step"}]},
+    "if": {"type": "if", "cond": "Inner?", "yes": {"body": [{"type": "stmt", "text": "do"}]}, "no": {"body": []}},
+    "case": {"type": "case", "cond": "inner case", "branches": [{"label": "a", "body": []}, {"label": "b", "body": []}]},
+    "par": {"type": "par", "tracks": [[{"type": "stmt", "text": "left"}], [{"type": "stmt", "text": "right"}]]},
+}
+
+
+@pytest.mark.full_path
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_every_construct_nested_in_every_other_passes_the_checker(scheme: str, tmp_path: Path) -> None:
+    nodes = [holding(outer, inner) for outer in ("pre", "post", "if", "case", "par") for inner in INNER.values()]
+    assert faults_of(page_of(nodes, tmp_path, "nested"), scheme, width=900) == []

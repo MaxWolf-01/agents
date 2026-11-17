@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
-"""Render a Struktogramm and screenshot it, so you can look at your own output.
+"""Render a Struktogramm and screenshot it in headless Chromium, to look at.
 
-Struktogramm layout depends on flexbox height propagation and CSS gradient
-geometry. Both are things you cannot verify by reading the markup -- a column
-that fails to stretch, or a fan of diagonals that lands as a sawtooth, looks
-completely fine in source. Screenshot and view the PNG.
-
-Degrades gracefully: if no headless browser is present it still writes the HTML
-and tells you so, rather than failing.
+Needs a Chromium binary and nothing else; check_layout.py is the measurement, this is the
+picture. Without a browser it still writes the HTML and says the layout is unseen.
 """
 import argparse
 import json
@@ -39,7 +34,7 @@ def main():
     ap.add_argument("-o", "--out", default="preview", help="output basename (default: preview)")
     ap.add_argument("--width", type=int, default=680)
     ap.add_argument("--height", type=int, default=1400, help="viewport height; make it taller than the diagram")
-    ap.add_argument("--dark", action="store_true")
+    ap.add_argument("--scheme", choices=["light", "dark"], default="light", help="colour scheme the page is shown in")
     ap.add_argument("--scale", type=float, default=2.0, help="device pixel ratio; 2 makes hairlines legible")
     a = ap.parse_args()
 
@@ -48,12 +43,12 @@ def main():
 
     html = os.path.abspath(a.out + ".html")
     with open(html, "w") as f:
-        f.write(page(nodes, dark=a.dark))
+        f.write(page(nodes))
     print(f"html: {html}")
 
     browser = find_browser()
     if not browser:
-        print("no headless browser found -- open the HTML manually to check the layout",
+        print("no headless browser found: the layout is unseen; open the HTML to look at it",
               file=sys.stderr)
         return 0
 
@@ -62,13 +57,14 @@ def main():
            f"--force-device-scale-factor={a.scale}",
            f"--window-size={a.width},{a.height}",
            f"--screenshot={png}", html]
+    if a.scheme == "dark":
+        cmd.insert(1, "--force-dark-mode")  # what prefers-color-scheme reads
     r = subprocess.run(cmd, capture_output=True, text=True)
     if not os.path.exists(png):
         print(f"screenshot failed:\n{r.stderr[-800:]}", file=sys.stderr)
         return 1
     print(f"png:  {png}")
-    print("Now view the PNG. Check: columns stretch to equal height, diagonals meet the "
-          "corners cleanly, no doubled borders, nothing clipped at the bottom.")
+    print("Now look at the PNG: what the checker cannot judge is whether the diagram reads well.")
     return 0
 
 
