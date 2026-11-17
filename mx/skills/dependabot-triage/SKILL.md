@@ -13,14 +13,9 @@ Triage open Dependabot alerts for the current repository. The goal is distinguis
 gh api -X GET repos/{owner}/{repo}/dependabot/alerts --jq '.[] | select(.state == "open") | {number, severity: .security_advisory.severity, package: .security_vulnerability.package.name, ecosystem: .security_vulnerability.package.ecosystem, summary: .security_advisory.summary, cve: .security_advisory.cve_id, manifest: .dependency.manifest_path}'
 ```
 
-If zero open alerts, say so and stop.
-
 ## Trace each alert
 
-For each alert, trace the dependency to understand how it enters the project:
-
-- **npm**: `npm ls <package>` in the directory containing the manifest
-- **pip**: check pyproject.toml, requirements files, or `uv pip list`
+For each alert, trace the dependency to understand how it enters the project.
 
 Then classify:
 
@@ -31,8 +26,6 @@ Then classify:
 | **Build-only** | devDependencies, CI tools, linters, bundler plugins |
 | **Tree-shaken** | In dep tree but bundler (Vite/webpack) strips it from runtime output |
 | **Unused path** | Transitive dep via a code path we don't exercise |
-
-Key questions: Is it direct or transitive? Does it run at runtime or only during build/test? For frontend JS, does it end up in the browser bundle? Does our code use the vulnerable function?
 
 ## Report
 
