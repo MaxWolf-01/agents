@@ -10,10 +10,9 @@ Fetch the PR, then run `/mx:code-review` with the PR's merge-base as fixed point
 
 ## Process
 
-1. **Fetch the PR**: `gh pr view <n>` (title, description), `gh pr view <n> --comments` (prior discussion), `gh pr view <n> --json baseRefName,headRefName`.
-2. **Get the code locally**: if the head branch isn't already checked out here, clone the repo fresh and `gh pr checkout <n>` in the clone.
-3. **Run `/mx:code-review`** with:
+1. **Get the code locally**: if the head branch isn't already checked out here, clone the repo fresh and `gh pr checkout <n>` in the clone.
+2. **Run `/mx:code-review`** with:
    - fixed point = the PR's base branch (the three-dot diff lands on the merge-base),
    - one spec file holding the PR title, description, any linked issues, and the prior review discussion, so settled points aren't relitigated: the reviewers read what it says and nothing else of the thread,
    - the tests reviewer left off an incoming PR (`--reviewers read`) unless you would run that PR's suite on this machine anyway, since that reviewer runs the author's code.
-4. **Report**: code-review's step 5 is the delivery, on its branch for a PR the caller does not own: every finding is one of the user's calls, and `**What it does**: 1–2 sentences, end to end.` opens the message. A clean PR gets a short review; don't invent concerns to fill space.
+3. **Report**: code-review's step 5 is the delivery, on its branch for a PR the caller does not own: every finding is one of the user's calls, and `**What it does**: 1–2 sentences, end to end.` opens the message.
