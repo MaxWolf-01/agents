@@ -1,0 +1,9 @@
+[
+ {"type":"loop","kind":"post","cond":"until the queue is empty","body":[
+  {"type":"case","cond":"message kind","branches":[
+    {"label":"ping","body":[{"type":"stmt","text":"reply pong"}]},
+    {"label":"data","body":[
+      {"type":"if","cond":"checksum ok?","yes":{"body":[{"type":"stmt","text":"append to log"}]},"no":{"body":[{"type":"stmt","text":"request resend"},{"type":"stmt","text":"increment error count"}]}}]},
+    {"label":"close","body":[{"type":"stmt","text":"flush and exit"}]},
+    {"label":"unknown","body":[]}]}]}
+]

@@ -1,0 +1,16 @@
+[
+ {"type":"inputs","title":"inputs","items":["urls: the addresses to fetch","attempts: 3 per url","out: the file to write"]},
+ {"type":"par","cap":"in parallel","join":"wait for both","time":"about 1 min","tracks":[
+   {"uses":"the connection pool","body":[
+     {"type":"loop","cond":"for each url","body":[
+       {"type":"loop","kind":"post","cond":"until answered or attempts run out","body":[
+         {"type":"stmt","text":"Request the url","time":"≤ 10 s"},
+         {"type":"if","cond":"Answered?","yes":{"body":[{"type":"exit","text":"the retry loop"}]},
+          "no":{"body":[{"type":"stmt","text":"Wait","time":"2 s"}]}}]},
+       {"type":"if","cond":"Answered?","yes":{"body":[{"type":"stmt","text":"Queue the response"}]},
+        "no":{"body":[{"type":"exit","kind":"raise","text":"DownloadError(url)"}]}}]}]},
+   {"uses":"the output file","body":[
+     {"type":"loop","cond":"while responses are queued or still coming","body":[
+       {"type":"stmt","text":"Append the next response","time":"~50 ms"}]}]}]},
+ {"type":"exit","kind":"return","text":"the count of urls written"}
+]

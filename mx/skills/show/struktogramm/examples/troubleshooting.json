@@ -1,0 +1,20 @@
+[
+ {"type":"stmt","text":"Note the symptom","sub":"exact error text, when it started"},
+ {"type":"if","cond":"Does any other device on the same network work?",
+  "yes":{"body":[
+    {"type":"stmt","text":"Problem is local to this device"},
+    {"type":"loop","cond":"for each of: Wi-Fi off/on, forget-and-rejoin, reboot","body":[
+      {"type":"stmt","text":"Apply the step, then retest"},
+      {"type":"if","cond":"Fixed?","yes":{"body":[{"type":"exit","text":"Leave the for-each loop"}]},"no":{"body":[]}}]}]},
+  "no":{"body":[
+    {"type":"stmt","text":"Problem is the network"},
+    {"type":"case","cond":"router status lights","branches":[
+      {"label":"all off","body":[{"type":"stmt","text":"Check power and PSU brick"}]},
+      {"label":"internet red","body":[{"type":"stmt","text":"Call the ISP, ask about an outage"}]},
+      {"label":"all normal","body":[{"type":"stmt","text":"Power-cycle the router, wait 2 min"}]}]}]}},
+ {"type":"loop","kind":"post","cond":"until a page loads or 15 min have passed","body":[
+   {"type":"stmt","text":"Retest with a known-good site"}]},
+ {"type":"if","cond":"Still broken?",
+  "yes":{"label":"yes","body":[{"type":"stmt","text":"Escalate with the notes from step 1"}]},
+  "no":{"label":"no","body":[{"type":"stmt","text":"Record what fixed it"}]}}
+]

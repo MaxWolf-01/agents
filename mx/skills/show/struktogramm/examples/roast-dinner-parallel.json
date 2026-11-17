@@ -1,0 +1,11 @@
+[
+ {"type":"stmt","text":"Heat oven to 220 °C"},
+ {"type":"par","cap":"in parallel","join":"wait for both, then plate","tracks":[
+   [{"type":"stmt","text":"Season chicken, roast 20 min"},
+    {"type":"loop","cond":"every 15 min until 74 °C at the thigh","body":[{"type":"stmt","text":"Baste with pan juices"}]},
+    {"type":"stmt","text":"Rest 15 min under foil"}],
+   [{"type":"stmt","text":"Parboil potatoes 8 min, drain, shake"},
+    {"type":"if","cond":"Oven free?","yes":{"body":[{"type":"stmt","text":"Roast alongside"}]},"no":{"body":[{"type":"stmt","text":"Hold in cold water"}]}}]]},
+ {"type":"call","text":"Make the gravy","sub":"separate diagram"},
+ {"type":"stmt","text":"Carve and serve"}
+]

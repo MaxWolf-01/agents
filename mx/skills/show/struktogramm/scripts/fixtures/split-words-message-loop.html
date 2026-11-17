@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><style>
+body { margin: 0; padding: 24px; background: #fdfdfb; font-family: system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { body { background: #262624; } }
+.wrap { max-width: 720px; margin: 0 auto; }
+@media print { body { padding: 0; background: #fff; } }
+
+.ns { --ns-ink: var(--text-primary, #1a1a18); --ns-dim: var(--text-secondary, #6b6a64); --ns-line: var(--border-strong, #c9c7bd);
+      font-size: 15px; line-height: 1.4; color: var(--ns-ink); padding: 1px 0 0 1px; overflow-wrap: break-word; }
+@media (prefers-color-scheme: dark) {
+  .ns { --ns-ink: var(--text-primary, #f0efe9); --ns-dim: var(--text-secondary, #9c9a92); --ns-line: var(--border-strong, #5a5954); }
+}
+.ns .seq, .ns .col, .ns .fork, .ns .par, .ns .loop, .ns .body { display: flex; flex-direction: column; }
+.ns .seq { flex: 1 1 auto; }
+.ns .seq > :last-child, .ns .fork > .cols, .ns .par > .cols, .ns .loop > .body { flex: 1 1 auto; }
+.ns .cols, .ns .lbls { display: flex; }
+.ns .cols > .col, .ns .lbls > * { flex: 1 1 0; min-width: 0; }
+.ns .cell { border: 1px solid var(--ns-line); margin: -1px 0 0 -1px; position: relative; break-inside: avoid; }
+.ns .blk { padding: 12px 14px; }
+.ns .empty { min-height: 22px; }
+.ns .sub { display: block; font-size: 12.5px; color: var(--ns-dim); margin-top: 2px; }
+.ns .small { font-size: 12.5px; color: var(--ns-dim); }
+.ns .call { border-left: 5px double var(--ns-line); border-right: 5px double var(--ns-line); padding: 12px 10px; }
+.ns .exit { padding-left: 34px; }
+.ns .loop > .cap { padding: 7px 14px; }
+.ns .loop > .body { margin: 0 -1px 0 20px; }
+.ns .loop.pre > .body { margin-bottom: -1px; }
+.ns .cond { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: 1fr 1fr; }
+.ns .cond > .q { grid-area: 1 / 2 / 2 / 4; padding: 8px 4px 2px; text-align: center; }
+.ns .cond > .yes, .ns .cond > .no { grid-row: 2; align-self: end; padding: 2px 8px 5px; overflow-wrap: anywhere; }
+.ns .cond > .yes { grid-column: 1; }
+.ns .cond > .no { grid-column: 4; text-align: right; }
+.ns .case > .cond { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ns .case > .cond > .q { grid-area: 1 / 2 / 2 / 3; padding: 8px 14px 2px 8px; text-align: right; }
+.ns .lbls > * { padding: 5px 10px; text-align: center; overflow-wrap: anywhere; }
+.ns .par > .cap { padding: 6px 30px; text-align: center; }
+.ns .ln { position: absolute; top: -1px; left: -1px; width: calc(100% + 2px); height: calc(100% + 2px);
+          overflow: visible; pointer-events: none; stroke: var(--ns-line); stroke-width: 1px; fill: none; }
+.ns .ln path { vector-effect: non-scaling-stroke; }
+.ns .ln.l, .ns .ln.r { width: 26px; }
+.ns .ln.r { left: auto; right: -1px; }
+.ns .exit > .ln { width: 22px; }
+</style><body><div class="wrap"><div class="ns"><div class="seq"><div class="cell loop post"><div class="body"><div class="seq"><div class="fork case"><div class="cell cond"><svg class="ln " viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0 L25.0000 100 M0 0 L50.0000 100 M0 0 L75.0000 100 M0 0 L100.0000 100"/></svg><div class="q">message kind</div></div><div class="lbls"><div class="cell small">ping</div><div class="cell small">data</div><div class="cell small">close</div><div class="cell small">unknown</div></div><div class="cols"><div class="col"><div class="seq"><div class="cell blk">reply pong</div></div></div><div class="col"><div class="seq"><div class="fork"><div class="cell cond"><svg class="ln " viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0 L50 100 L100 0"/></svg><div class="q">checksum ok?</div><div class="yes small">yes</div><div class="no small">no</div></div><div class="cols"><div class="col"><div class="seq"><div class="cell blk">append to log</div></div></div><div class="col"><div class="seq"><div class="cell blk">request resend</div><div class="cell blk">increment error count</div></div></div></div></div></div></div><div class="col"><div class="seq"><div class="cell blk">flush and exit</div></div></div><div class="col"><div class="seq"><div class="cell blk empty"></div></div></div></div></div></div></div><div class="cap small">until the queue is empty</div></div></div></div></div></body>
