@@ -1,3 +1,8 @@
+## 1.0.124
+
+- The gh-stack skill matches upstream v0.3.0
+  The vendored skill is re-copied from github/gh-stack at v0.3.0 (2a49e67) and pruned again, with the local additions put back. What it now says that the v0.1.1 copy got wrong: every worktree of a clone shares one stack catalog, so an agent in a worktree runs the same commands as in the main checkout and finds a branch held elsewhere with --print-path, where the old text sent it to `gh stack link`; pushes are atomic unless --no-atomic; the lock files sit in the common dir; checkout has a flag; the unstack recovery path has its init step. One section is local, because upstream's skill leaves the case out: what to do when GitHub moved a stack to a new base (--accept-base-change).
+
 ## 1.0.123
 
 - The artefact table is always loaded, and orient holds the flow alone
