@@ -96,7 +96,7 @@ def faults_of(html: Path, scheme: str = "light", width: int = 680) -> list[str]:
 # also measured at 900px, where its potato track is the short one.
 FAULTY_RENDERS = {
     ("original-troubleshooting", 680): [
-        'dead-space: div.loop.pre "for each of',  # a stretched loop whose body does not stretch with it
+        "dead-space: ",  # a stretched block whose inside does not stretch with it; the fonts decide which block
         'doubled-border: left of div.fork "Does any other device',
         'overflow: div. "all normal"',  # the case's label row, past the outer right border
         'text-crossed: a line runs through "Does any other device',
