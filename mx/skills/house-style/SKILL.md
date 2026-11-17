@@ -65,4 +65,4 @@ Copy on the page is artefact text: `/mx:writing-for-humans` binds every label an
 - `PARTS.md`: one line per part (button, icon, tooltip, keys, input, table, note, overlay, chart, motion), and the Tailwind v4 mapping. Read it before building anything the user clicks or types into.
 - `demo.html`: every token, role and part rendered, with the toggle and the `?theme=` reading to copy. Open it to see the floor.
 
-Before presenting anything built on this, lint it, look at both schemes and drive it, as `/mx:show` says under Produce and present, in its `SKILL.md` and its `WORKFLOW.md`.
+Before presenting anything built on this, lint it, look at both schemes and drive it, as `/mx:show` says under Produce and present.

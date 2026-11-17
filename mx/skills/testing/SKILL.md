@@ -17,8 +17,6 @@ Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Two kinds of run
 
-In the mx workflow, read [`WORKFLOW.md`](WORKFLOW.md) too: who runs each kind, and where a ticket names the seams and properties.
-
 **The fast suite** is `make test`: it touches nothing outside the checkout and a scratch directory of its own, with no browser, desktop, network or sleeps. A test that runs the project's own script as a subprocess in that scratch directory belongs in it. It runs on every change, and the three jobs live in it.
 
 **Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and on a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched.
@@ -39,7 +37,7 @@ Every expected value comes from outside the implementation: a sentence of the ti
 
 A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
 
-An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is a sign the seam is wrong: a finding for `/mx:improve-codebase-architecture`, not a reason for more test code.
+An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is a sign the seam is wrong: a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
 
 ## The inputs
 

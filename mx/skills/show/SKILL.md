@@ -7,8 +7,6 @@ description: "Show, don't tell: the artifacts that make a thing visible, so a re
 
 A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, have what the table names for the thing's shape built, look at it, put it in front of the reader.
 
-In the mx workflow (a ticket, a landing, a session page), read [`WORKFLOW.md`](WORKFLOW.md) before building: who builds the artifact, where it goes, what a landing's show holds, and how it is linted, presented and promoted there.
-
 ## What a reader can be shown
 
 It sits on two axes. The **level** is what they look at: the **concept** (how it fits and why, drawn), the **code** (what is written: code, config, a prompt, a skill's prose) or the **output** (what it produces: a printout, a record, a render, what an agent answers). The **form** is the thing as it is, or how it changed.
@@ -28,7 +26,7 @@ A **demo**, in the user's words, is a show made of the built thing's own output,
 
 ## What each level looks like, per shape
 
-The code level is the same for every shape, the diff, so a show quotes code only for an interface (what an agent or the user types) or the snippet a concept needs.
+The code level is the same for every shape, the diff on the review page, so a show quotes code only for an interface (what an agent or the user types) or the snippet a concept needs.
 
 | Shape | Concept | Output |
 | --- | --- | --- |
@@ -43,7 +41,7 @@ The code level is the same for every shape, the diff, so a show quotes code only
 
 Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it. Every document takes this table, an ADR included, and most ADRs hit no row.
 
-The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants. Where it explains a process of several parts, its figure can grow as the reader goes: each step draws the last again with one part added and that part in focus, the whole figure comes at the end, and a toggle shows every step at once.
+The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants. Where it explains a process of several parts, its figure can grow as the reader goes: each step draws the last again with one part added and that part in focus, the whole figure comes at the end, and a toggle shows every step at once (`docs/figures/story/` in the agents repo is a first, rough instance).
 
 ## A figure
 
@@ -66,18 +64,19 @@ Every artifact, in every medium, reads like a good README: it states, it never s
 
 How a row's medium gets made. An open set, not a menu; combining media is normal, and anything that carries the thing qualifies:
 
-- **Diagram**: Mermaid, drawn by [Pele](https://github.com/obsidianmd/pele) (invoke `mx:mermaid` first), when layout should be solved for you; hand-placed SVG (read `SVG-FIGURES.md`) when the figure is the artifact and deserves the control. Either way the classic families apply: UML, flowcharts, sequence and state charts, Nassi-Shneiderman, and the rest.
-- **Struktogramm**: a procedure as nested boxes with no arrows (Nassi-Shneiderman), when its loops and branches are what the reader has to see; read `struktogramm/SKILL.md`.
-- **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, two rendered variants side by side, or a blind test (`blind-test`) where the reader is to choose between them by taste (`/mx:grilling`, A blind test).
-- **Runnable code**: the smallest script that exhibits the behavior; run it and show the output. When the question grows into "does this design/state model feel right?", that's `/mx:prototype`.
-- **HTML/JS page**, the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition (prose interleaved with figures the reader can poke at). Read `PAGES.md`.
+- **Diagram**: a structure or a flow, drawn. Mermaid, drawn by [Pele](https://github.com/obsidianmd/pele) (`/mx:mermaid`), when the layout should be solved for you; a hand-placed SVG ([`SVG-FIGURES.md`](SVG-FIGURES.md)) when the figure is the artifact and deserves the control.
+- **Struktogramm**: a procedure as nested boxes with no arrows (Nassi-Shneiderman), when its loops and branches are what the reader has to see ([`struktogramm/SKILL.md`](struktogramm/SKILL.md)).
+- **Comparison**: a difference shown instead of described: a code diff (`diffview`), a table, two rendered variants side by side, or a blind test (`blind-test`, `/mx:grilling`) when the reader is to choose between them by taste.
+- **Runnable code**: a behaviour, exhibited by the smallest script that shows it and its output (A runnable artifact, above). A design or a state model to be felt is `/mx:prototype`.
+- **HTML/JS page**: the most flexible medium, for interactive figures, animations, side-by-side panels and whole explainers ([`PAGES.md`](PAGES.md)).
 - **LaTeX/TikZ**: publication-grade figures.
-- **Animation**: a process unfolding over time. Interactive JS (the reader steps and scrubs) usually beats a linear video; manim is the option for math-heavy scenes when video is the right form.
+- **Animation**: a process unfolding over time. Interactive JS the reader steps and scrubs usually beats a linear video; manim is for math-heavy scenes.
 
 ## Produce and present
 
 - Facts in an artifact come from primary sources (the config, the code, the live system), never only from prose docs about them. Docs drift, and the artifact inherits the drift; a figure states things with more authority than the README it was cribbed from.
 - Anything opened in a browser wears the house style (`/mx:house-style`: tokens, type, parts, and the scheme toggle) unless the artifact has a reason to look otherwise, and ships both color schemes; the reader's system setting is the default, not a constraint. Look at both before presenting.
-- A script a page loads from outside itself names an exact version (`pele@1.13.0`, never `@1`) and carries its `integrity` hash: a classic script in its `<script src integrity crossorigin>`, a module and every chunk it imports in an import map's `integrity` entries. Where a package ships a one-file classic build, load that: it needs one pin. The browser refuses a file whose hash does not match. jsDelivr lists each file's hash, which goes after `sha256-`, at `https://data.jsdelivr.com/v1/packages/npm/<package>@<version>?structure=flat`. An update is a deliberate edit of version and hash together.
-- Look at your own render before presenting: Read the PNG, run what runs, open the page. A page or a UI the user will use is also driven the way they will drive it, in a browser you script: through the task it is for, by keyboard and by pointer, hovering what they would hover. The friction and the ugliness met on the way are fixed before it is shown. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
+- A script a page loads from outside itself names an exact version (`pele@1.13.0`, never `@1`) and carries its `integrity` hash: a classic script in its `<script src integrity crossorigin>`, a module and every chunk it imports in an import map's `integrity` entries. Where a package ships a one-file classic build, load that: it needs one pin. Every page an agent opens is served from one local origin together with every agent directory, so a script changed at its CDN could read them all and send them off; the browser refuses a file whose hash does not match. jsDelivr lists each file's hash, which goes after `sha256-`, at `https://data.jsdelivr.com/v1/packages/npm/<package>@<version>?structure=flat`. An update is a deliberate edit of version and hash together.
+- Look at your own render before presenting: `render-lint` an HTML page first (its `--help` says what it reports; `--narrow` for an app or a page someone reads in a narrow window or zoomed in) and fix every fatal finding, then Read the PNG, run what runs, open the page. A page or a UI the user will use is also driven the way they will drive it, in a browser you script: through the task it is for, by keyboard and by pointer, hovering what they would hover. The friction and the ugliness met on the way are fixed before it is shown. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
+- Run one `/mx:writing-for-humans` pass over the artifact's text and fix what it finds.
 - Present it: open it and give one line on what it shows and its absolute path.
