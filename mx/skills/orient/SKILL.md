@@ -5,7 +5,7 @@ description: "The mx flow from intent to merge: which route an intent takes (gri
 
 # Orient
 
-Most work travels one **main flow** through the skills, from an intent to its merge. A skill off it is reached by its own description.
+Most work travels one **main flow** through the skills, from an intent to its merge.
 
 ## The main flow: intent → ship
 

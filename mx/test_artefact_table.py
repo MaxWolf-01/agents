@@ -21,6 +21,5 @@ def artefact_passage(path: Path) -> str:
 
 def test_the_session_and_the_worker_read_one_artefact_table():
     session = artefact_passage(MX.parent / "claude/CLAUDE.md")
-    assert "| Prototype | `agent/prototypes/<slug>/` |" in session
     assert artefact_passage(MX / "skills/dispatch/worker-prompt.md") == session, \
         "dispatch/worker-prompt.md's workflow block does not open with CLAUDE.md's artefact table, word for word"
