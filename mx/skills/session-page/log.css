@@ -1,9 +1,10 @@
-/* The tool-call log (log.js): a drawer on the right, over the timeline column. */
+/* The tool-call log (log.js): a drawer over the tasks and the timeline, from the tasks' left edge, which
+   log.js sets; and the turn under way's newest steps in the tasks (#working). */
 .bar .log-toggle { display: inline-flex; align-items: center; gap: 0.35em; padding: 0.15rem 0.35rem; border: none; background: none; color: var(--muted); font: 400 0.78rem var(--font-mono); cursor: pointer; }
 .bar .log-toggle:hover, .bar .log-toggle[aria-expanded="true"] { color: var(--accent); }
 
-.log { position: fixed; z-index: 40; top: var(--bar); right: 0; bottom: 0; width: min(38rem, 94vw); display: none; flex-direction: column; box-sizing: border-box;
-  background: var(--ground); color: var(--body); border-left: 1px solid var(--edge); box-shadow: -10px 0 30px rgb(0 0 0 / 0.08);
+.log { position: fixed; z-index: 40; top: var(--bar); left: 0; right: 0; bottom: 0; display: none; flex-direction: column; box-sizing: border-box;
+  background: var(--ground); color: var(--body); border-left: 1px solid var(--edge);
   font: 400 0.78rem/1.45 var(--font-mono); }
 .log.open { display: flex; }
 .log-head { flex: none; display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--edge); }
@@ -25,17 +26,38 @@
 .log .step .failed { flex: none; color: light-dark(#9c3d22, #d98a6c); }
 .log .step .took.running { color: var(--accent); opacity: 1; }
 /* the turn under way: a dot that breathes before its name in the head */
-.log-head .pulse { display: inline-block; width: 0.5em; height: 0.5em; margin-right: 0.45em; border-radius: 50%; background: var(--accent);
+.log-head .pulse, .live-log .pulse { display: inline-block; flex: none; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--accent);
   animation: log-pulse 1.6s ease-in-out infinite; }
+.log-head .pulse { margin-right: 0.45em; }
 @keyframes log-pulse { 50% { opacity: 0.25; } }
-@media (prefers-reduced-motion: reduce) { .log-head .pulse { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .log-head .pulse, .live-log .pulse { animation: none; } }
+
+/* the turn under way's newest steps, a box in the tasks that opens the log on it; the older steps fainter */
+.live-log { display: block; width: 100%; margin: 0.45rem 0 0.2rem; padding: 0.45rem 0.55rem 0.35rem; box-sizing: border-box; text-align: left; cursor: pointer;
+  border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2); color: var(--body); font: 400 0.76rem/1.45 var(--font-mono); }
+.live-log[hidden] { display: none; }
+.live-log:hover, .live-log:focus-visible { border-color: var(--accent); outline: none; }
+.live-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.2rem; color: var(--muted); }
+.live-name { color: var(--strong); }
+.live-count { margin-left: auto; }
+.live-step { display: flex; align-items: baseline; gap: 0.45rem; padding: 0.1rem 0; }
+.live-step:not(:last-child) { opacity: 0.72; }
+.live-step .verb { flex: none; color: var(--muted); }
+.live-step .subject { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-step .subject.thought { font-family: var(--font-body); font-style: italic; color: var(--muted); }
+.live-step.now .subject { color: var(--strong); }
+.live-step .took { flex: none; color: var(--muted); opacity: 0.75; }
+.live-step .took.running { color: var(--accent); opacity: 1; }
+.live-none { color: var(--muted); }
+.live-all { display: block; margin-top: 0.25rem; text-align: right; color: var(--muted); font-size: 0.7rem; }
+.live-log:hover .live-all { color: var(--accent); }
 /* the step the keys are on, while the log holds them */
 .log.keyed .log-head { border-bottom-color: var(--accent); }
 .log .step.cur > button { box-shadow: inset 2px 0 0 var(--accent); background: var(--wash-ink); }
 .log .step.thinking .subject { font-family: var(--font-body); font-style: italic; font-size: 0.86rem; white-space: normal;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .log .step.thinking.open .subject { display: block; }
-.log .ico { flex: none; width: 13px; height: 13px; transform: translateY(2px); color: var(--muted); }
+.log .ico, .live-log .ico { flex: none; width: 13px; height: 13px; transform: translateY(2px); color: var(--muted); }
 .log .detail { padding: 0 0.9rem 0.6rem 2.3rem; }
 .log .detail .label { color: var(--muted); font-size: 0.7rem; margin: 0.4rem 0 0.15rem; }
 .log .detail .path { color: var(--muted); font-size: 0.72rem; margin: 0.35rem 0 0.2rem; overflow-wrap: anywhere; }

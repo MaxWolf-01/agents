@@ -493,25 +493,6 @@ const onTasks = (e) => {
 if (waiting) [waiting, dialog].forEach((el) => el.addEventListener("click", onTasks, true))
 draw()
 
-// ---- a turn under way: the tasks say so while one runs. The page is a file the hub reloads as each
-// turn renders, so nothing tells it a turn began; it reads the live hook's file every few seconds.
-const working = document.getElementById("working")
-const liveSrc = document.getElementById("log-toggle").dataset.live
-const poll = () => {
-  if (document.hidden || !working) return
-  const s = Object.assign(document.createElement("script"), { src: `${liveSrc}?${Date.now()}` })
-  const show = () => {
-    s.remove()
-    const live = window.liveCalls
-    working.hidden = !live
-    if (live) working.querySelector(".t-txt").textContent = `A turn is running: ${live.prompt || "no prompt"}`.slice(0, 160)
-  }
-  s.onload = show
-  s.onerror = () => { window.liveCalls = null; show() }
-  document.head.append(s)
-}
-if (working) { poll(); setInterval(poll, 4000) }
-
 // ---- a phone: the turns, or the tasks and the timeline, one at a time; the bar's button flips them
 const viewToggle = document.getElementById("view-toggle")
 const setView = (view) => {

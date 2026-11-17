@@ -1870,8 +1870,11 @@ def tasks_column(v: View) -> str:
     for step in v.session.plan:
         visit(step, None, -1)
     looks = [look_row(t, s) for t, s in v.looks]
-    working = (f'<div class="t-task doing" id="working" hidden><span class="si"{tip(STATE_TIPS["doing"])}>{ICONS["doing"]}</span>'
-               '<span class="t-txt">A turn is running</span></div>')
+    # the turn under way's newest steps, which log.js draws from the live hook's file while there is one
+    working = ('<button type="button" class="live-log" id="working" hidden>'
+               '<span class="live-head"><span class="pulse" aria-hidden="true"></span><span class="live-name">live</span>'
+               '<span class="live-count"></span></span><span class="live-steps"></span>'
+               '<span class="live-all">open the log</span></button>')
     body = ("".join(sections["needs"])
             + (f'<div class="t-gap"></div><div class="t-label v-meta">to look at</div>{"".join(looks)}' if looks else "")
             + f'<div class="t-gap"></div>{working}{"".join(sections["doing"])}'

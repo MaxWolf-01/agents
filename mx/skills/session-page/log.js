@@ -1,19 +1,21 @@
-// The tool-call log: a drawer on the right, over the timeline, showing what the focused turn did
-// (page.js marks that turn's block .cur); with none focused, the turn under way's, else the newest
-// turn's; k on the newest turn goes on to the turn under way. The bar's control or l opens and
-// closes it, and Esc closes it. O opens or closes all its steps. Tab, or a click on a step, hands
+// The tool-call log: a drawer over the right side, the tasks and the timeline both, showing what the
+// focused turn did (page.js marks that turn's block .cur); with none focused, the turn under way's,
+// else the newest turn's; k on the newest turn goes on to the turn under way. The bar's control or l
+// opens and closes it, and Esc closes it. While a turn is under way, the tasks show its newest steps
+// (#working), and a click on them opens the log on that turn. O opens or closes all its steps. Tab, or a click on a step, hands
 // the keys to the open log: j and k walk its steps, o and Enter open one, and Tab hands the keys
 // back to the turns. The steps live beside the
 // page in tool-calls.js, which the first opening loads, with the highlighter; until then the page
 // holds none of them. The turn under way's are in live-calls.js, which the live hook rewrites as
-// each call starts and ends, and which the open log loads again every POLL. It runs after page.js
+// each call starts and ends, and which the page loads again every POLL while it is in view. It runs after page.js
 // in the same page, and uses its `pane`, `blocks` and `typing`.
 (() => {
   const toggleButton = document.getElementById("log-toggle")
   const HLJS = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"
   const HLJS_SRI = "sha384-RH2xi4eIQ/gjtbs9fUXM68sLSi99C7ZWBRX1vDrVv6GQXRibxXLbwO2NGZB74MbU"
   const CUT = 1500  // the characters of a request or a result a step shows until "show all"
-  const POLL = 2000  // ms between two loads of the turn under way's calls, while the log is open
+  const POLL = 2000  // ms between two loads of the turn under way's calls
+  const NEWEST = 4  // the steps of the turn under way the tasks show
 
   const ICON = {
     command: '<path d="M4 17l6-5-6-5M12 19h8"/>',
@@ -117,6 +119,12 @@
   const panel = Object.assign(document.createElement("aside"), { className: "log", id: "log" })
   panel.setAttribute("aria-label", "the focused turn's tool calls")
   document.body.append(panel)
+  // its left edge is the tasks' left edge, whatever width they have (folded, the narrow layout's single
+  // column), so it covers the tasks and the timeline whole; where they are hidden (a phone, on the turns), the window
+  const tasks = document.querySelector(".tasks")
+  const place = () => (panel.style.left = `${tasks ? tasks.getBoundingClientRect().left : 0}px`)
+  if (tasks) new ResizeObserver(place).observe(tasks)
+  addEventListener("resize", place)
   const cursor = () => blocks.find((b) => b.classList.contains("cur"))
   const focused = () => cursor() || blocks[0]
   // the turn under way shows where no turn is focused, or where the reader went on to it from the newest turn
@@ -124,7 +132,7 @@
   const target = () => (window.liveCalls && (toLive || !cursor()) ? LIVE : focused())
   const LIVE = "live"
   const label = (b) => {
-    if (b === LIVE) return `<span class="pulse" aria-hidden="true"></span>under way <span class="hl">· ${esc(window.liveCalls.prompt || "no prompt")}</span>`
+    if (b === LIVE) return `<span class="pulse" aria-hidden="true"></span>live <span class="hl">· ${esc(window.liveCalls.prompt || "no prompt")}</span>`
     if (!b) return "no turn yet"
     return `${esc(b.matches("details.turn") ? `turn ${b.id.slice(1)}` : "chat turn")} <span class="hl">· ${esc(gist(b))}</span>`
   }
@@ -236,32 +244,48 @@
   // a click anywhere else hands the keys back to the turns
   document.addEventListener("mousedown", (e) => { if (keyed && !panel.contains(e.target)) steer(false) })
 
-  // while open, the turn under way's calls are loaded again every POLL; the log is drawn again where
-  // they changed, and its running calls' times move on where they did not
-  let polling = null, liveWas = null
+  // ---- the turn under way's newest steps, in the tasks
+  const working = document.getElementById("working")
+  const brief = (s) => `<span class="live-step${s.done ? "" : " now"}">${icon(s.kind)}` + (s.kind === "thinking"
+    ? `<span class="subject thought">${esc(s.output)}</span>`
+    : `<span class="verb">${esc(s.verb)}</span><span class="subject">${esc(s.subject)}</span>${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}`) + "</span>"
+  function drawNewest() {
+    const live = window.liveCalls
+    working.hidden = !live
+    if (!live) return
+    const n = live.steps.length
+    working.querySelector(".live-count").textContent = `${n} step${n === 1 ? "" : "s"}`
+    working.querySelector(".live-steps").innerHTML = n ? live.steps.slice(-NEWEST).map(brief).join("") : '<span class="live-none">no tool calls yet</span>'
+  }
+
+  // The page is a file the hub reloads as each turn renders, so nothing tells it a turn began: while it
+  // is in view, it loads the turn under way's calls again every POLL. What changed is drawn again, the
+  // tasks' steps and the open log's; where nothing did, the running calls' times move on.
+  let liveWas, ready = false
   const poll = async () => {
+    if (document.hidden) return
     await loadLive()
     const live = JSON.stringify(window.liveCalls ?? null)
-    if (live !== liveWas || target() !== shownFor) draw()
-    else panel.querySelectorAll(".took.running").forEach((el) => (el.textContent = `${took(secs(el.dataset.at, new Date().toISOString()))}…`))
+    if (live !== liveWas && working) drawNewest()
+    if (isOpen() && ready && (live !== liveWas || target() !== shownFor)) draw()
+    else document.querySelectorAll(".took.running").forEach((el) => (el.textContent = `${took(secs(el.dataset.at, new Date().toISOString()))}…`))
     liveWas = live
   }
 
   const isOpen = () => panel.classList.contains("open")
   async function toggle(open = !isOpen()) {
     toggleButton.setAttribute("aria-expanded", String(open))
-    clearInterval(polling)
     if (!open) { steer(false); return panel.classList.remove("open") }
-    if (!window.toolCalls) { panel.innerHTML = '<p class="log-empty">loading the tool calls…</p>'; panel.classList.add("open"); await load() }
+    if (!ready) { panel.innerHTML = '<p class="log-empty">loading the tool calls…</p>'; panel.classList.add("open"); await load(); ready = true }
     if (toggleButton.getAttribute("aria-expanded") !== "true") return  // closed while it loaded
-    liveWas = JSON.stringify(window.liveCalls ?? null)
+    place()
     draw()
     panel.classList.add("open")
-    // opened again, it shows what it last had at once, and the turn under way as of now a moment later
-    poll()
-    polling = setInterval(poll, POLL)
   }
   toggleButton.addEventListener("click", () => toggle())
+  working?.addEventListener("click", () => { toLive = true; isOpen() ? draw() : toggle(true) })
+  poll()
+  setInterval(poll, POLL)
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return
     if (e.key === "l") { toggle(); e.preventDefault() }
