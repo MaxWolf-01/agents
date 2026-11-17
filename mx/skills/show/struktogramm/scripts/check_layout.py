@@ -13,6 +13,8 @@ Checks:
   doubled-border     two parallel lines under 3px apart where one shared line belongs
   overflow           a block reaching past the diagram's outer rectangle
   text-crossed       a band's line drawn through the box of a text
+  broken-word        a line break inside a word, where a column narrower than the word's
+                     own width split it; a break after a hyphen in the text is a word break
   text-contrast      a text whose colour stands out from the diagram's background by less
                      than 3:1, the WCAG minimum for large text, as when a colour scheme's
                      text colour is the other scheme's
@@ -76,7 +78,7 @@ PROBE = r"""
     }
   });
 
-  const texts = [];
+  const texts = [], breaks = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (!n.data.trim()) continue;
@@ -85,6 +87,17 @@ PROBE = r"""
       if (r.width > 0 && r.height > 0)
         texts.push({ text: n.data.trim().slice(0, 40), rect: [r.left, r.top, r.right, r.bottom],
                      color: getComputedStyle(n.parentElement).color.match(/[\d.]+/g).slice(0, 3).map(Number) });
+    // A new line starting between two letters of one word, which is a line box the next
+    // character begins below the one before it.
+    const at = i => { const c = document.createRange(); c.setStart(n, i); c.setEnd(n, i + 1); return c.getBoundingClientRect(); };
+    for (let i = 1; i < n.data.length; i++) {
+      if (/[\s\-\u00ad\/]/.test(n.data[i - 1]) || /\s/.test(n.data[i])) continue;
+      const a = at(i - 1), b = at(i);
+      if (b.width > 0 && a.width > 0 && b.top >= a.bottom - 1) {
+        const from = n.data.lastIndexOf(' ', i) + 1, to = n.data.indexOf(' ', i);
+        breaks.push(n.data.slice(from, i) + '/' + n.data.slice(i, to < 0 ? undefined : to));
+      }
+    }
   }
 
   const bands = [...root.querySelectorAll('.fork > .cond')].map(el => ({
@@ -96,7 +109,7 @@ PROBE = r"""
 
   const blocks = root.querySelectorAll('.blk, .cell, .loop, .fork, .par').length;
 
-  return { root: box(root), containers, borders, texts, bands, groups, blocks,
+  return { root: box(root), containers, borders, texts, breaks, bands, groups, blocks,
            elements: all.map(el => ({ desc: desc(el), box: box(el) })) };
 }
 """
@@ -231,6 +244,9 @@ def faults(geo: dict) -> list[str]:
     for text, n in zip(geo["texts"], geo["crossed"]):
         if n >= 4:
             out.append(f"text-crossed: a line runs through \"{text['text']}\" ({n} line pixels inside its box)")
+
+    for word in geo["breaks"]:
+        out.append(f"broken-word: \"{word}\" is split across two lines")
 
     for text in geo["texts"]:
         if (ratio := _contrast(text["color"], geo["background"])) < 3:

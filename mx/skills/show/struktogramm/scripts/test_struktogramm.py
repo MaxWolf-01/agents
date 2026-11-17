@@ -88,10 +88,10 @@ def faults_of(html: Path, scheme: str = "light", width: int = 680) -> list[str]:
     return [line.removeprefix("FAIL ") for line in done.stdout.splitlines() if line.startswith("FAIL ")]
 
 
-# Each fault the original render shows, by the start of the line the checker names it in. Which
+# Each fault a faulty render shows, by the start of the line the checker names it in. Which
 # column of a branch comes out shorter depends on the fonts and the width, so the roast dinner is
 # also measured at 900px, where its potato track is the short one.
-ORIGINAL_FAULTS = {
+FAULTY_RENDERS = {
     ("original-troubleshooting", 680): [
         'dead-space: div.loop.pre "for each of',  # a stretched loop whose body does not stretch with it
         'doubled-border: left of div.fork "Does any other device',
@@ -111,14 +111,20 @@ ORIGINAL_FAULTS = {
     ("original-roast-dinner-parallel", 900): [
         'dead-space: div.fork "Oven free?',  # a stretched branch whose columns do not stretch with it
     ],
+    # The message loop as this renderer drew it before it sized the diagram by its longest words:
+    # at 680px its narrowest columns split words.
+    ("split-words-message-loop", 680): [
+        'broken-word: "checksu/m"',
+        'broken-word: "incre/ment"',
+    ],
 }
 
 
 @pytest.mark.full_path
-@pytest.mark.parametrize("fixture,width", sorted(ORIGINAL_FAULTS))
-def test_checker_names_every_fault_of_the_original_render(fixture: str, width: int) -> None:
+@pytest.mark.parametrize("fixture,width", sorted(FAULTY_RENDERS))
+def test_checker_names_every_fault_of_a_faulty_render(fixture: str, width: int) -> None:
     found = faults_of(FIXTURES / f"{fixture}.html", width=width)
-    missing = [fault for fault in ORIGINAL_FAULTS[fixture, width] if not any(f.startswith(fault) for f in found)]
+    missing = [fault for fault in FAULTY_RENDERS[fixture, width] if not any(f.startswith(fault) for f in found)]
     assert missing == [], "\n".join(found)
 
 
