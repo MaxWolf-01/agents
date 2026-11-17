@@ -11,14 +11,12 @@ outer rectangle belongs to exactly one block.
 
 ## Drawing one
 
-1. Write the procedure as a node list (Modelling, then Node schema). This is the step that takes
-   judgement.
+1. Write the procedure as a node list (Modelling, then Node schema).
 2. Render it: `python scripts/struktogramm.py diagram.json -o out.html`.
 3. Check it: `python scripts/check_layout.py out.html`, then again with `--scheme dark`. The
    step is done when both print PASS; `--help` lists what each FAIL means. Then render a picture
    with `python scripts/preview.py diagram.json` and look at it, for what no check judges: whether
    the diagram reads well. Where neither script can run, say the layout is unverified.
-4. Deliver it (Delivering).
 
 ## Modelling
 
@@ -67,7 +65,7 @@ so constructs nest to any depth.
   empty `body` is an empty box.
 - `case` has one column per branch, each under its `label`.
 - `par` tracks run at the same time, and nothing below the block starts until every track has
-  finished. It is the one construct a single thread does not read top to bottom.
+  finished.
 
 ## Extensions
 
