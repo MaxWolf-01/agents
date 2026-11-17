@@ -384,8 +384,8 @@ def test_the_page_shows_each_turns_date_the_count_and_span_and_where_no_message_
         chat.stem: True, "04": False, "03": True, "02": False, "01": False}
     assert [row.key for row in page.rows if row.when not in text[row.key]] == []
     assert f" 5 turns · {page.span} · " in text_of(rendered)
-    assert text_of(elements(rendered, "a01")["a01"]) == "01 Round 1, as text: two axes, and a page per session"
-    assert text_of(elements(rendered, f"a-{chat.stem}")[f"a-{chat.stem}"]) == "Still building.", "a chat turn is a row of the timeline"
+    assert text_of(elements(rendered, "tl01")["tl01"]) == "01 Round 1, as text: two axes, and a page per session"
+    assert text_of(elements(rendered, f"tl-{chat.stem}")[f"tl-{chat.stem}"]) == "Still building.", "a chat turn is a row of the timeline"
     # when each turn ended, to the second, which the hub reads; none for record 3, whose write the transcript lacks
     ended = dict(re.findall(r'id="(t\d+|chat-[^"]+)"[^>]*?data-at="([^"]+)"', rendered))
     assert sorted(ended) == sorted(f"t{row.key}" if isinstance(row.turn, Turn) else row.key for row in page.rows if row.key != "03")
@@ -937,7 +937,7 @@ def test_an_artefact_waits_until_a_line_of_the_users_message_names_it(tmp_path: 
     write_transcript(transcript, ["Lint the repo", "Reword the message",
                                   "agent/show/lint/texts.html: seen\nhttps://github.com/HELFERLINE/devops/issues/2: the legend is wrong"])
     assert view_of(directory, transcript).looks == (), "a note on an artefact sends it as looked at too"
-    timeline = elements(render_session(directory, transcript, now=NOW), "a02")["a02"]
+    timeline = elements(render_session(directory, transcript, now=NOW), "tl02")["tl02"]
     assert re.search(r'<li class="seen"[^>]*>.*?The six PR texts, reworded', timeline) and "devops#2" in timeline
 
 
@@ -955,7 +955,7 @@ def test_a_record_retires_an_artefact_by_its_path_and_a_batch_sweeps_nothing(tmp
     assert looks() == ["devops#2"]
     page = render_session(directory, transcript, now=NOW)
     assert "texts.html retired: you reviewed the texts on GitHub" in text_of(sections_of(page)["03"])
-    assert "The six PR texts, reworded" in elements(page, "a02")["a02"], "the timeline keeps a retired artefact"
+    assert "The six PR texts, reworded" in elements(page, "tl02")["tl02"], "the timeline keeps a retired artefact"
     (directory / "turns" / "04.md").write_text(
         "---\ndate: 2026-10-31\n---\n\n# Reworded again\n\n## Links\n\n- [The texts, third take](agent/show/lint/texts.html): again\n")
     assert looks() == ["devops#2", "The texts, third take"]
