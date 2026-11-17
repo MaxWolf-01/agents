@@ -31,7 +31,6 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
   "skillOverrides": {
     "loop": "off",
     "security-review": "user-invocable-only",
@@ -97,6 +96,13 @@
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "dialogExpiry": "never",
+  "pluginConfigs": {
+    "cc-plugin-easel@builtin": {
+      "options": {
+        "autoCharts": false
+      }
+    }
+  },
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
   "voice": {
@@ -116,6 +122,7 @@
   "autoContinueAtUsageLimit": false,
   "autoScrollEnabled": true,
   "fileCheckpointingEnabled": false,
+  "terminalProgressBarEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
@@ -149,5 +156,6 @@
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754064350328
-  }
+  },
+  "model": "opus"
 }
