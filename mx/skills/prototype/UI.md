@@ -71,8 +71,6 @@ Behaviour:
 
 Where the axes are exposed beside the wholes (step 2), the bar also carries one control per axis, each kept in its own search param beside `?variant=` (e.g. `?variant=B&panel=left`) so a combination is shareable and reload-stable too. Cycling to a variant resets every axis to that variant's answers.
 
-Put the switcher in a single shared component so both sub-shapes can reuse it.
-
 ### 5. Hand it over
 
 Give the user the URL and the `?variant=` keys. The useful feedback is usually **"I want the header from B with the sidebar from C"**: that is the design they want, and the next round offers it built whole.
