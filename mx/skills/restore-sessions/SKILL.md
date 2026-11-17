@@ -7,14 +7,6 @@ allowed-tools: Bash(uv run -q ${CLAUDE_SKILL_DIR}/scripts/scan_sessions.py --hel
 
 # Restore Sessions
 
-Find and classify Claude Code sessions from a project's session directory. Produces a comprehensive table of sessions with completion status, so the user can quickly identify unfinished work.
-
-## When to Use
-
-- User lost track of open sessions (crash, restart, etc.)
-- User wants to find unfinished work from a time range
-- User needs session IDs for continuation (`claude --resume <id>`)
-
 ## Process
 
 ### 1. Run the scanner
@@ -57,7 +49,6 @@ For each session, assign one of these statuses:
 
 **Key judgment calls:**
 - A session can have `signals.commit: true` but still be UNFINISHED if work continued after the commit. Check `last_assistant`: does it reference the commit as final, or is there subsequent work?
-- Sessions where last_user is a question or request and last_assistant doesn't resolve it → UNFINISHED.
 
 ### 3. Present results
 
@@ -76,10 +67,3 @@ Column guidelines:
 - **Notes**: Brief context on what was happening / what's left. 10-20 words max.
 
 Present the FULL table first, then optionally add a brief summary section highlighting the most urgent items (sessions from the last 1-3 days that are clearly unfinished).
-
-### 4. Handle follow-up
-
-The user may ask to:
-- Resume a session: provide `claude --resume <session_id>`
-- Get more detail on a specific session: re-read the `.jsonl` file's last ~10 messages
-- Filter differently: re-run the script with adjusted parameters
