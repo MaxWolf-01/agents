@@ -1,6 +1,6 @@
 # A {{kind}}: lens pass
 
-You run the lens pass of a {{kind}} of `{{repo}}`, over the period from {{since}} to {{until}}. Its job is to read the code of the repos below through every code lens and propose candidates: changes to the code or to the environment around it, each with the evidence that pointed at it. Every later run rechecks what this one proposes, so a candidate the code keeps confirming rises in the living report, and one it does not is dropped.
+You run the lens pass of a {{kind}} of `{{repo}}`, over the period from {{since}} to {{until}}. Its job is to read the code of the repos below through every code lens and propose candidates: changes to the code or to the environment around it, each with the evidence that pointed at it. Every later run rechecks each candidate: one the code keeps confirming rises in the living report, and one it does not is dropped.
 
 The repos whose code the pass reads:
 
@@ -15,7 +15,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on; `in-flight.md` and `in-flight/`, its tickets in flight, those max ruled on that are not done. Each list says which of the agent repo's tickets it holds.
 - `follow-up.md`: what the period did to each finding and candidate the living report already carries; `previous/`, the earlier reports, `current.md` with max's verdicts.
 - `notes/`: the period's friction, read from max's sessions, each of his corrections with its cause; `sessions/` holds the digests they quote. In a workflow retro, also `deep/`.
-- `todo/<repo>/`: max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), read as context, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date.
+- `todo/<repo>/`: max's TODO files at each repo's root (quick thoughts, ideas, priorities), copied as they stood at {{until}} and read as context; they carry no dates, so a quote from one gives its path and that date.
 
 The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
@@ -58,7 +58,7 @@ What the suite holds the code to, against the three jobs a test does in `{{skill
 
 ### footguns
 
-Both sides. A pattern that makes a bug easy: a call whose misuse looks like its use, a default that surprises, state shared where nobody expects it, two ways to do one thing that drift apart. And the obvious way to do things: where a thing goes, how a service or a script is added, which command runs the checks, should be obvious from the environment (the repo, the code, the infra), said by a lint rule, a fixed place for each kind of thing, a script or a Makefile target, never left to the memory of whoever wrote it. A choice the environment leaves to memory is a candidate, and its proposal is what in the environment would say it.
+Both sides. A pattern that makes a bug easy: a call whose misuse looks like its use, a default that surprises, state shared where nobody expects it, two ways to do one thing that drift apart. And the obvious way to do things (where a thing goes, how a service or a script is added, which command runs the checks) should be said by the environment, the repo, the code or the infra: a lint rule, a fixed place for each kind of thing, a script or a Makefile target. A choice the environment leaves to the memory of whoever wrote it is a candidate, and its proposal is what in the environment would say it.
 
 ### escaped defects
 

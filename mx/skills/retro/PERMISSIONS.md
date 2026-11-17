@@ -1,6 +1,6 @@
 # Permissions: the data and the entries
 
-What the workflow retro's permissions worker reads, and the shape of an entry it proposes. max works in auto mode, where a classifier judges every shell command outside Claude Code's built-in read-only set and every other call no rule settles. Its mistakes are the permission friction, in two directions, and what fixes them is prose the classifier reads: an `autoMode` entry.
+max works in auto mode, where a classifier judges every shell command outside Claude Code's built-in read-only set and every other call no rule settles. Its mistakes are the permission friction, in two directions, and what fixes them is prose the classifier reads: an `autoMode` entry.
 
 ## The data
 
@@ -10,7 +10,7 @@ What the workflow retro's permissions worker reads, and the shape of an entry it
 
 ## The two directions
 
-- **A false block** is a denial max wanted through: he approved or retried it, told the agent to go ahead, or let a way around it stand. It becomes an `allow` entry, an exception to the soft-deny rule its `Reason:` names, or an `environment` entry where the classifier lacked a fact: a trusted destination, one of max's own CLIs, a sensitive target.
+- **A false block** is a denial max wanted through: he approved or retried it, told the agent to go ahead, or let a way around it stand. It becomes an `allow` entry, an exception to the soft-deny rule its `Reason:` names, or, where the classifier lacked a fact, an `environment` entry: a trusted destination, one of max's own CLIs, a sensitive target.
 - **A false allow** is a `[classifier allowed]` call max stopped, undid or corrected afterwards, and an incident nothing blocked: work lost, a commit or push on the wrong branch, a destructive command. A block an agent got past by rephrasing the same action is a false allow of the rephrased call, where the block was right. It becomes a `soft_deny` entry, which max's intent in the conversation can still clear, or a `hard_deny` entry for a line no intent may cross.
 
 ## An entry
