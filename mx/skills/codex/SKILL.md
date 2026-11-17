@@ -15,7 +15,7 @@ job run codex-<slug> -- codex exec -s read-only -c 'sandbox_permissions=["disk-f
 
 - `-s read-only` + `disk-full-read-access`: codex reads any file on disk and writes none, so it cannot conflict with your work.
 - `-o`: the file codex writes its final answer to, which you read when the wait returns.
-- Model and reasoning effort ride the codex config defaults. Add `-c 'model_reasoning_effort="high"'` (or `"xhigh"`) only for a hard bug or a subtle design question.
+- Model and reasoning effort ride the codex config defaults. Add `-c 'model_reasoning_effort="high"'` (or `"xhigh"`) only for especially reasoning-intensive tasks, such as a hard bug or a subtle design question.
 - Reviewing a different project: `job run --cwd <dir>` rather than codex's own `-C`, so the pane is there too if you attach.
 
 Then run `job wait codex-<slug> --deadline <secs>` as a background task, the deadline sized to what you asked (a whole-codebase read takes longer than one file); it only keeps a wedged `codex exec` from waiting out the session. Read `/tmp/codex-<slug>.md`, `job log codex-<slug>` if it failed, then `job rm codex-<slug>`. `/mx:tmux` has the rest.

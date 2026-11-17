@@ -61,6 +61,6 @@ Columns:
 - **Topic**: 5-10 word summary derived from `first_user`. Strip command prefixes (`mx:task`, `/mx:task`, etc.)
 - **Date**: From `modified`, just date + time (e.g., "Feb 6 01:55")
 - **Status**: One of: **DONE**, **UNFINISHED**, **MID-FIX**, **MID-DISCUSSION**, **MID-INVESTIGATION**, **MID-IMPLEMENTATION**, **MID-DESIGN**, **COMMIT PENDING**. Give an UNFINISHED session the specific mid-* label wherever its sub-state is clear.
-- **Notes**: What was happening and what is left, in 10-20 words.
+- **Notes**: What was happening and what is left, in 10-20 words, never more.
 
 Present the full table first, then optionally a brief summary of the most urgent items (sessions from the last 1-3 days that are clearly unfinished).
