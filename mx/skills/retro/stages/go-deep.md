@@ -1,6 +1,6 @@
 # A workflow retro: go deep
 
-You run the go-deep stage of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}, for the repo `{{repo}}`. Its job is depth: a few patterns traced to the lines that produce them, with the smallest fix for each; a search of the whole period for the retro's leading words; and a reading of what auto mode's classifier blocked that max wanted, and let through that he did not. max found a broad, ranked list of findings mostly noise; what he used from the first retro, run by hand in October 2026, was its two deep-dives.
+You run the go-deep stage of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}, for the repo `{{repo}}`. Its job is depth: a few patterns traced to the lines that produce them, with a fix at the cause for each; a search of the whole period for the retro's leading words; and a reading of what auto mode's classifier blocked that max wanted, and let through that he did not. max found a broad, ranked list of findings mostly noise; what he used from the first retro, run by hand in October 2026, was its two deep-dives.
 
 {{focus}}
 
@@ -22,7 +22,7 @@ The stage is done when `deep/` holds a file per pattern, `deep/leading-words.md`
 
 Pattern: <the pattern, and the notes and follow-up sections it comes from>. Write `{{run}}/deep/<a slug for the pattern>.md`.
 
-Read the sources qualitatively, past the notes: the digests the pattern shows in, the git history of what produces it, the skill text and scripts in the agents repo. Find where it happens and where it does not, and what differs. Trace it to its cause: the skill line, script, check, hook or config that produces it, by path and line, with the commit that added it and the failure that commit names, or the habit when no line produces it. Then propose the smallest fix: a deletion or a narrowing first; a mechanism only where the pattern recurs and nothing smaller would hold, with its upkeep named. Weigh it as REPORT.md's weighing says.
+Read the sources qualitatively, past the notes: the digests the pattern shows in, the git history of what produces it, the skill text and scripts in the agents repo. Find where it happens and where it does not, and what differs. Trace it to its cause: the skill line, script, check, hook or config that produces it, by path and line, with the commit that added it and the failure that commit names, or the habit when no line produces it. Then propose the fix at that cause which leaves the least to keep up: a deletion or a narrowing first; a mechanism only where the pattern recurs and no deletion or narrowing would hold, with its upkeep named. Weigh it as REPORT.md's weighing says.
 
 The file: the pattern in a sentence; how often and where, with quotes, each with its source and absolute date; the cause; the proposal, naming what it deletes or narrows and where it lands; the weighing; and what you could not settle. Reply with the file's path alone.
 
