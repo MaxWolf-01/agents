@@ -14,7 +14,7 @@ That's it. An ADR can be a single paragraph. The value is in recording *that* a 
 
 ## Optional sections
 
-Only include these when they add genuine value. Most ADRs won't need them.
+Most ADRs won't need them.
 
 - **Status** frontmatter (`proposed | accepted | deprecated | superseded by ADR-NNNN`): useful when decisions are revisited
 - **Considered Options**: only when the rejected alternatives are worth remembering
