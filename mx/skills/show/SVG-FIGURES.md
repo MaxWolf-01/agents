@@ -61,7 +61,7 @@ Then Read the PNG and fix what you see: overlaps, collisions, drift, dead space,
 
 ## The skin
 
-Load `/mx:house-style` and inline its `tokens.css` into the file; the tokens, the type roles and the three habits are its, and only what a figure adds is here. Replace the skin as a set: the pieces are balanced against each other.
+Load `/mx:house-style` and inline its `tokens.css` into the file; the tokens, the type roles and the habits are its, and only what a figure adds is here. Replace the skin as a set: the pieces are balanced against each other.
 
 ### Tokens
 
