@@ -1,3 +1,10 @@
+## 1.0.126
+
+- The session page dismisses an artefact, and folds its tasks to a slim strip
+  On the session page's tasks, an artefact under "to look at" can now be dismissed, by its ✕ or `x`, instead of only marked seen: the batch tells the agent `<path>: dismissed`, it shows struck through, and choosing seen or dismissed clears the other. Folded beside the timeline, the tasks are a narrow strip of their buttons with no heading, and the count of what waits on the user sits as a superscript on the play icon. A test now guards the to-do card ids that faca732a fixed.
+- fix(session-page): the live log keeps a running turn's calls when a message arrives
+  The live hook no longer empties live-calls.js on a prompt that arrives before the turn ended (a message sent mid-turn, a background agent reporting back, a cross-session message, or the prompt after an Esc). The Stop hook deletes the file when a turn really ends, so a prompt that finds it continues the turn under way and keeps its calls and first prompt. Previously the drawer lost every call of the running turn until the Stop render.
+
 ## 1.0.125
 
 - The session page opens a to-do's card from the tenth to-do on
