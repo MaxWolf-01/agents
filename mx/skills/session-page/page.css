@@ -194,6 +194,7 @@ button.id:hover { color: var(--accent); }
   .tasks.folded .t-head { flex-direction: column; gap: 0.35rem; padding-top: 0.5rem; }
   .tasks.folded :is(.t-title, .cnt, .grow) { display: none; }
   .tasks.folded .fold { order: -1; }
+  .tasks.folded .pn b { right: 0; top: -0.3rem; }
 }
 @media (max-width: 73.75rem) { .tasks .pn .when-folded { display: none; } }
 .t-task[hidden] { display: none; }
