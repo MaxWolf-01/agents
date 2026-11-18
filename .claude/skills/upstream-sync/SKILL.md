@@ -43,7 +43,7 @@ Everything else upstream is unadopted; flag interesting new skills, don't auto-a
 
 ## Cursor's pstack
 
-`https://github.com/cursor/plugins`, the path `pstack/` alone (MIT, Lauren Tan). **Baseline**: `d1715e0` (2026-10-17), the commit session cfabdcfe and aaa2fc5b read pstack at.
+`https://github.com/cursor/plugins`, the path `pstack/` alone (MIT, Lauren Tan). **Baseline**: `e1cc031` (2026-11-16).
 
 Vocabulary: a playbook of `/poteto-mode` → an mx skill or flow (`/mx:orient` routes); a `principle-*` skill → an mx skill or a line of `PRINCIPLES.md`; Cursor's subagents and model roles → `/mx:dispatch` and the Agent tool.
 
