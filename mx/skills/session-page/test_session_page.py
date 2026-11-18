@@ -129,6 +129,13 @@ def test_a_timeline_artefact_is_one_cell_after_its_key(worked_example: Path, tra
     assert re.search(r'<li[^>]*><kbd class="n">1</kbd><span class="tl-art">.*?<a class="artefact"', column, re.S)
 
 
+def test_a_to_do_card_and_the_timeline_never_share_an_id(worked_example: Path, transcript: Path) -> None:
+    """A to-do's card is found by its tag, `a3`, so the timeline's turns go by `tl3`: a session with as many turns as
+    its to-do's number drew that to-do's card empty, the timeline's turn taking the card's id."""
+    page = render_session(worked_example, transcript, now=NOW)
+    assert re.findall(r'<section class="group[^"]*" id="(\w+)"', page) and not re.findall(r'<section class="group[^"]*" id="a\d+"', page)
+
+
 def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path, transcript: Path) -> None:
     """The ids the checks find a turn and a question by are the ones the page's own links jump to,
     and each names one part: an anchor that breaks, or a part shown twice, fails here."""

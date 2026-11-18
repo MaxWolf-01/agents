@@ -1427,7 +1427,7 @@ KEYS = [
     ("Enter", "on an item: open its card, where [ ] move between the cards and Esc goes back"),
     ("a b c", "on a question: pick that option"),
     ("d x", "on a to-do: done, dismissed"),
-    ("o O s", "on an artefact: open it, open it in a new tab, mark it seen; it leaves once the batch is sent"),
+    ("o O s x", "on an artefact: open it, open it in a new tab, mark it seen, dismiss it; it leaves once the batch is sent"),
     ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on an item: clear what is staged"),
     ("q", "fold or show the tasks"),
@@ -1882,7 +1882,7 @@ def tasks_column(v: View) -> str:
     count = len(v.waiting) + len(v.todos)
     return f"""
     <section class="tasks{'' if count or looks else ' quiet'}" id="{QUESTIONS}" aria-labelledby="tasks-title" tabindex="-1">
-      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.") if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}>{ICONS["up"].replace('class="ico"', 'class="ico when-open"')}{ICONS["down"].replace('class="ico"', 'class="ico when-folded"')}</button></div>
+      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.", "pn").replace("</button>", f'<b class="v-num when-folded">{count}</b></button>') if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}>{ICONS["up"].replace('class="ico"', 'class="ico when-open"')}{ICONS["down"].replace('class="ico"', 'class="ico when-folded"')}</button></div>
       <div class="t-list">{body}</div>
     </section>"""
 
@@ -1939,6 +1939,7 @@ def look_row(turn: Turn, s: Shown) -> str:
     return (f'<div class="t-row art" data-handle="{esc(s.link.path)}" data-kind="look">{type_icon(s.link.path)}'
             f'<span class="t-h">{artefact(s, "art-title open")}</span>'
             f'<span class="t-acts">{button("note", "n", "note", "Add a note on it")}'
+            f'{button("x", "x", "dismissed", "Dismiss it" + chr(10) + "You need not look at it. It leaves this list when you send, and the agent is told.")}'
             f'<a class="ib" href="{esc(s.href)}" target="_blank" rel="noopener" aria-keyshortcuts="o" aria-label="open it"{tip("Open it" + chr(10) + "Nothing opens by itself.")}>{ICONS["open"]}</a></span>'
             f'<span class="t-pick"><button type="button" class="seen-btn" data-act="seen" aria-pressed="false" aria-keyshortcuts="s"'
             f'{tip("Mark it seen" + chr(10) + "It leaves this list when you send, and the agent is told.")}>{ICONS["eye"]}<span>Mark seen</span></button></span></div>')

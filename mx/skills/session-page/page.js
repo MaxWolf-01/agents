@@ -207,6 +207,7 @@ const stage = (h, patch, redraw = true) => {
 const toggle = (h, key, value) => stage(h, { [key]: st(h)[key] === value ? null : value })
 const see = (h, on = !seenOf(h)) => {
   state.seen = state.seen.filter((x) => x !== h).concat(on ? [h] : [])
+  if (on && st(h).act === "dismissed") stage(h, { act: null }, false)  // seen and dismissed say opposite things
   persist()
   draw()
 }
@@ -288,6 +289,7 @@ const drawRow = (row, n) => {
   row.hidden = !!state.sent[h]
   row.classList.toggle("at", n === at)
   row.classList.toggle("st", goes(h))
+  row.classList.toggle("dismissed", s.act === "dismissed")
   row.querySelectorAll(".pill").forEach((p) => p.classList.toggle("on", p.dataset.pick === s.pick))
   row.querySelectorAll("[data-act=done], [data-act=dismissed]").forEach((b) => b.classList.toggle("on", b.dataset.act === s.act))
   const noteButton = row.querySelector("[data-act=note]")
@@ -461,7 +463,10 @@ const bandKey = (key) => {
   if (!loaded && /^[a-z]$/.test(key)) { say("what you staged is still being read"); return true }
   if (kind === "decide" && key.length === 1 && (row.dataset.options || "").includes(key)) { toggle(h, "pick", key); return true }
   switch (key) {
-    case "d": case "x": if (kind !== "do") return false; toggle(h, "act", key === "d" ? "done" : "dismissed"); return true
+    case "d": case "x":
+      if (kind === "look" && key === "x") { rowAct(row, "dismissed"); return true }
+      if (kind !== "do") return false
+      toggle(h, "act", key === "d" ? "done" : "dismissed"); return true
     case "s": if (kind !== "look") return false; see(h); return true
     case "n": note(row); return true
     case "u": stage(h, { pick: null, act: null, note: null }); if (kind === "look") see(h, false); return true
@@ -473,7 +478,10 @@ const rowAct = (row, act) => {
   at = items().indexOf(row)
   if (act === "note") note(row)
   else if (act === "seen") see(h)
-  else toggle(h, "act", act)
+  else {
+    if (act === "dismissed" && seenOf(h)) see(h, false)
+    toggle(h, "act", act)
+  }
 }
 // the tasks' clicks and the dialog's, which sits outside the column over the whole window
 const onTasks = (e) => {
