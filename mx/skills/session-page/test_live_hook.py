@@ -66,8 +66,24 @@ def test_a_turns_calls_show_as_they_start_and_as_they_come_back(directory: Path,
         {"tool_name": "Read", "tool_input": READ, "tool_use_id": "b", "tool_response": [{"type": "text", "text": "1→const a"}]},
     ])
     assert lines(directory) == [("ran", "Run the suite", "Exit code 2\n3 failed", True, True), ("read", "/repo/page.js", "1→const a", False, True)]
+
+
+def test_a_prompt_before_the_turn_ended_keeps_its_calls(directory: Path, run: Callable[..., None]) -> None:
+    """A message sent mid-turn, or after an interrupt, fires no Stop between: the turn goes on."""
+    run("UserPromptSubmit", prompt="fix the log")
+    run("PreToolUse", tool_name="Read", tool_input=READ, tool_use_id="b")
+    run("UserPromptSubmit", prompt="also the tests")
+    run("PreToolUse", tool_name="Bash", tool_input=BASH, tool_use_id="a")
+    assert live(directory)["prompt"] == "fix the log"
+    assert lines(directory) == [("read", "/repo/page.js", "", False, False), ("ran", "Run the suite", "", False, False)]
+
+
+def test_a_prompt_after_the_turn_ended_starts_anew(directory: Path, run: Callable[..., None]) -> None:
+    run("UserPromptSubmit", prompt="fix the log")
+    run("PreToolUse", tool_name="Read", tool_input=READ, tool_use_id="b")
+    (directory / LIVE).unlink()  # as the Stop hook does once the page holds the turn
     run("UserPromptSubmit", prompt="next")
-    assert live(directory) == {"prompt": "next", "steps": []}, "a new prompt starts the turn under way anew"
+    assert live(directory) == {"prompt": "next", "steps": []}
 
 
 def test_a_result_before_its_calls_own_event_adds_the_call(directory: Path, run: Callable[..., None]) -> None:
