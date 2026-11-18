@@ -9,8 +9,11 @@ turn ends, and its log (`session_page.LOG`) holds only turns that ended.
 
 It runs on four events, each handing it its JSON on stdin:
 
-- UserPromptSubmit starts the file anew, holding the prompt and no calls. A turn the user
-  interrupted fires no Stop, so its calls are dropped here, as the next one starts.
+- UserPromptSubmit starts the file, holding the prompt and no calls, where no file is there.
+  One that finds a file arrived before the Stop hook took it away: a message sent mid-turn, a
+  background agent reporting back, or the prompt after a turn the user interrupted, which fires no
+  Stop. Each continues the turn under way, which the next render pairs with the same record, so
+  its calls stay.
 - PreToolUse adds the call, with no result yet.
 - PostToolBatch gives each call of the batch its result, the text the model reads.
 - PostToolUseFailure marks the call failed.
@@ -61,9 +64,10 @@ def main() -> None:
 def update(path: Path, hook: dict, now: datetime) -> None:
     """Apply the event `hook` describes to the live file at `path`, as of `now`."""
     event = hook["hook_event_name"]
+    live = read(path)
     if event == "UserPromptSubmit":
-        return write(path, {"prompt": first_line(hook.get("prompt", "")), "steps": []})
-    if (live := read(path)) is None:
+        return None if live else write(path, {"prompt": first_line(hook.get("prompt", "")), "steps": []})
+    if live is None:
         return
     calls = {s["id"]: s for s in live["steps"]}
 
