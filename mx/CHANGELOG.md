@@ -1,3 +1,8 @@
+## 1.0.127
+
+- attack-the-premise loses two lines; pstack baseline moves to e1cc031
+  The skill keeps only the case it exists for, a premise the evidence contradicts. The upstream-sync baseline for pstack moves to e1cc031 with the rejections recorded in its commit (max's rulings, Q15/Q16 in the prompt-audit session).
+
 ## 1.0.126
 
 - The session page dismisses an artefact, and folds its tasks to a slim strip
