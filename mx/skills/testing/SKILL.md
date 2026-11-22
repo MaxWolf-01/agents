@@ -37,7 +37,7 @@ Every expected value comes from outside the implementation: a sentence of the ti
 
 A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
 
-A **model-based test** is the property test for a seam that holds state: it drives the real code and a small reference model of it (often a dict or a list) through the same generated operations and compares the two after every step, so the model is the oracle. For a rewrite, the previous version is the model.
+The repertoire, by name and not as its boundary: property and metamorphic tests, model-based tests (a small reference model as the oracle), differential tests against the previous version, deterministic simulation (time and I/O behind an interface, every run from one seed), mutation to see a test fail. Reach for the lightest one that can falsify the claim.
 
 An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is a sign the seam is wrong: a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
 
