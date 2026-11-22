@@ -1,3 +1,8 @@
+## 1.0.128
+
+- Comments only for outside-forced behaviour; a new test's red; the testing repertoire by name; state-diagram labels
+  The agent instructions now allow a code comment or docstring only for behaviour forced from outside (a dependency, platform, vendor or protocol), with a link to its issue where one exists. Anything else has another home: a property in a test or assertion, a decision in an ADR or the commit message, a hack in a ticket. The rule replaces the style block's comment sentence, its copy in the worker prompt, and the reviewer's Narrating Comments entry. The artefact table no longer sends a leftover fact into a code comment, and a timer kept where no event exists says why in its name. A new test is seen red before it is kept. The testing skill names its repertoire (property, metamorphic, model-based and differential tests, deterministic simulation, mutation) without explaining it, and no longer rests the standard on who reads the tests. show labels a state diagram in the reader's words.
+
 ## 1.0.127
 
 - attack-the-premise loses two lines; pstack baseline moves to e1cc031
