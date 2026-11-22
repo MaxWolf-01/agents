@@ -50,7 +50,7 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 | Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
 | Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
 
-A fact that fits none of these: an ADR if it constrained a decision, a code comment if it is code-local, the project's AGENTS.md if it is navigational.
+A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
 
 Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `git -C agent` is how you commit in the agent repo.
 
@@ -103,7 +103,7 @@ Miscl hygiene:
 </git>
 
 <style>
-**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. A comment earns its line by explaining non-obvious behavior, warning of a trap, or unpacking hard code, in plain words. `/mx:writing-for-humans` is its standard. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message, the diffview notes, or the ticket's closing comment. Organize files top-down (newspaper style).
+**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. A comment or docstring says only what the code can't: behaviour forced on us from outside (a dependency, platform, vendor, protocol), with a link to its issue where one exists. A property goes in a test or an assertion, a decision in an ADR or the commit message, a hack in a ticket. `/mx:writing-for-humans` is its standard. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message, the diffview notes, or the ticket's closing comment. Organize files top-down (newspaper style).
 </style>
 
 <permissions>

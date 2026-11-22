@@ -5,13 +5,13 @@ description: "Use when writing or changing tests, deciding what a piece of work 
 
 # Testing
 
-Agents write the code and the user reads little of it, so a test earns its place by one of three jobs:
+A test earns its place by one of three jobs:
 
 1. **It holds a behaviour the user relies on**, at a seam the next agent will touch, so that agent's change cannot break it unnoticed. It states the behaviour, never the bytes or the internals: a test that fails on a refactor that kept the behaviour is a defect of the test.
 2. **It is the regression test for a bug that reached the user or a live run.** A bug a reviewer only imagined earns no test.
 3. **It states an invariant of a seam**, as a property test, where stating it is how the seam gets clear.
 
-A test doing none of them is deleted. A test that flakes is fixed or deleted the day it flakes: a suite that sometimes fails for no reason gets rerun until it passes, and its failures stop being read.
+A test doing none of them is deleted. A new test is seen red before it is kept: run before the code that makes it pass, or, where that code came first, run once with it broken on purpose. A test that flakes is fixed or deleted the day it flakes: a suite that sometimes fails for no reason gets rerun until it passes, and its failures stop being read.
 
 Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
@@ -36,6 +36,8 @@ Every expected value comes from outside the implementation: a sentence of the ti
 ## Property tests
 
 A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
+
+The repertoire, by name and not as its boundary: property and metamorphic tests, model-based tests (a small reference model as the oracle), differential tests against the previous version, deterministic simulation (time and I/O behind an interface, every run from one seed), mutation to see a test fail. Reach for the lightest one that can falsify the claim.
 
 An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is a sign the seam is wrong: a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
 
