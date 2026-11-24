@@ -3,6 +3,14 @@ source = mx
 omit =
     */test_*.py
     */conftest.py
+    # Each of these runs only inside headless Chromium, which only the full-path checks start.
+    mx/skills/show/render_lint.py
+    # serve() and all it calls answer a Chromium context's DevTools requests.
+    mx/skills/show/page_cache.py
+    # Measures a rendered page in Chromium. Its one fast test runs it under `python -I -S`, which no coverage enters.
+    mx/skills/show/struktogramm/scripts/check_layout.py
+    # The board's browser probes: test code of test_board_layout.py's full-path checks, run by Playwright.
+    mx/skills/tracker/board_probe_*.py
 patch = subprocess
 parallel = true
 
