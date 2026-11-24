@@ -1,3 +1,8 @@
+## 1.0.130
+
+- The session page's timeline folds to a strip, giving the turns its width
+  The timeline gets a chevron in its head, and the key Q, that folds it to a strip of its controls; with the tasks folded too (q), the whole side is two thin strips and the turns take the width, which is what max asked for when the session page shares the hub with an artefact. On a narrow window the folded timeline leaves its head under the tasks, which take the column's height. A reload keeps the fold; a phone's timeline sheet does not fold.
+
 ## 1.0.129
 
 - A bug is fixed once a run shows it, a review fix corrects or removes, and the retro's architecture lens reads what its tests lens found
