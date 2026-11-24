@@ -483,6 +483,17 @@ const rowAct = (row, act) => {
     toggle(h, "act", act)
   }
 }
+// Q and the timeline head's chevron fold the timeline to a strip, which gives the turns, and a page beside them, its room
+const foldTimelineButton = document.getElementById("fold-timeline")
+const foldTimeline = (on = !column.classList.contains("folded")) => {
+  column.classList.toggle("folded", on)
+  foldTimelineButton.setAttribute("aria-expanded", !on)
+  foldTimelineButton.setAttribute("aria-label", on ? "show the timeline" : "fold the timeline")
+  foldTimelineButton.dataset.tip = on ? "Show the timeline" : "Fold the timeline\nThe turns get the room."
+  refade()
+}
+foldTimelineButton?.addEventListener("click", () => foldTimeline())
+
 // the tasks' clicks and the dialog's, which sits outside the column over the whole window
 const onTasks = (e) => {
   const t = e.target, k = t.closest("[data-key]"), row = t.closest(".t-row"), act = t.closest("[data-act]"), c = t.closest(".card")
@@ -571,6 +582,7 @@ const place = () => {
     seen,
     card: open && current() ? current().dataset.card : null,
     folded: !!waiting && waiting.classList.contains("folded"),
+    timelineFolded: !!column && column.classList.contains("folded"),
   }
 }
 const save = () => { try { sessionStorage.setItem(KEY, JSON.stringify(place())) } catch {} }
@@ -585,6 +597,7 @@ const restore = (s) => {
   cur = s.cur && !follows ? blocks.findIndex((b) => b.id === s.cur) : -1
   mark()
   if (waiting) { pending = s.card; fold(!!s.folded) }
+  if (foldTimelineButton) foldTimeline(!!s.timelineFolded)
   const anchor = s.anchor && document.getElementById(s.anchor)
   const go = () => { pane.scrollTop = follows || s.top || !anchor ? 0 : offsetIn(anchor) + s.into; reach() }
   go()
@@ -800,6 +813,7 @@ document.addEventListener("keydown", (e) => {
     case "t": if (numbers.length) { typed = ""; say("turn …", true) } break
     case "[": case "]": if (items().length) { fold(false); focusRow(at < 0 ? 0 : at) } break
     case "q": if (waiting) fold(); break
+    case "Q": if (foldTimelineButton) foldTimeline(); break
     case "r": if (waiting) openReview(); break
     case "Enter": if (focused && focused.matches("details")) focused.open = !focused.open; break
     case "o": { const open = !turns.every((t) => t.open); turns.forEach((t) => (t.open = open)); break }

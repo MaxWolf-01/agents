@@ -197,6 +197,40 @@ button.id:hover { color: var(--accent); }
   .tasks.folded .pn b { right: 0; top: -0.3rem; }
 }
 @media (max-width: 73.75rem) { .tasks .pn .when-folded { display: none; } }
+/* The timeline folds to a strip of its head's controls, beside the tasks or, where the tasks sit over it, under them,
+   which then take the column's height; with the tasks folded too, the two strips are the whole side, and the turns
+   get its width. A phone shows the timeline as a sheet, which does not fold. */
+.column-head .grow { flex: 1; }
+.column:not(.folded) .when-folded { display: none; }
+@media (max-width: 44rem) { #fold-timeline { display: none; } }
+@media (min-width: 44.0625rem) {
+  .column.folded > :not(.column-head) { display: none; }
+  .column.folded { padding: 0 0.3rem; overflow: hidden; }
+  .column.folded .column-head { flex-direction: column; justify-content: flex-start; gap: 0.35rem; padding-top: 0.5rem; }
+  .column.folded :is(#column-title, .grow) { display: none; }
+  .column.folded .fold { order: -1; }
+  .column.folded .when-open { display: none; }
+}
+@media (min-width: 73.8125rem) {
+  main.panes:has(.column.folded) { grid-template-columns: minmax(0, 1fr) var(--tasks) auto; }
+  main.panes:has(.tasks.folded):has(.column.folded) { grid-template-columns: minmax(0, 1fr) auto auto; }
+}
+@media (min-width: 44.0625rem) and (max-width: 73.75rem) {
+  .side .column.folded { flex: none; padding: 0 1rem; }
+  .side .column.folded .column-head { flex-direction: row; padding-top: 0; }
+  .side .column.folded :is(#column-title, .grow) { display: revert; }
+  .side .column.folded .grow { display: block; }
+  .side:has(.column.folded) .tasks { flex: 1 1 auto; max-height: none; }
+  main.panes:has(.tasks.folded):has(.column.folded) { grid-template-columns: minmax(0, 1fr) auto; }
+  .side:has(.tasks.folded):has(.column.folded) .tasks { flex: none; padding: 0 0.3rem; border-bottom: 0; }
+  .side:has(.tasks.folded):has(.column.folded) .t-head { flex-direction: column; gap: 0.35rem; padding-top: 0.5rem; }
+  .side:has(.tasks.folded):has(.column.folded) :is(.t-title, .cnt, .grow, #column-title) { display: none; }
+  .side:has(.tasks.folded):has(.column.folded) .fold { order: -1; }
+  .side:has(.tasks.folded):has(.column.folded) .pn .when-folded { display: inline; }
+  .side:has(.tasks.folded):has(.column.folded) .pn b { right: 0; top: -0.3rem; }
+  .side:has(.tasks.folded):has(.column.folded) .column { padding: 0 0.3rem; }
+  .side:has(.tasks.folded):has(.column.folded) .column-head { flex-direction: column; padding-top: 0.5rem; }
+}
 .t-task[hidden] { display: none; }
 .t-label { padding: 0.2rem 0 0.15rem; }
 .t-row { display: grid; grid-template-columns: 2.9rem minmax(0, 1fr) auto auto; align-items: start; gap: 0.5rem; min-height: 2.6rem; padding: 0.4rem 0.45rem; margin: 0 -0.45rem; border-radius: var(--radius); font-size: 0.93rem; line-height: 1.35; cursor: pointer; }

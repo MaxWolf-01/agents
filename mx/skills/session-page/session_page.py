@@ -1431,6 +1431,7 @@ KEYS = [
     ("n", "a note on the item in focus, from anywhere, or the answer in words where there is no option; Enter keeps it, Esc drops the edit"),
     ("u", "on an item: clear what is staged"),
     ("q", "fold or show the tasks"),
+    ("Q", "fold or show the timeline"),
     ("r", "review the batch, from anywhere on the page: Enter there sends it as one message, Esc goes back"),
     ("1 to 9", "open the turn's nth artefact, or the open card's"),
     ("l", "show or close the focused turn's tool calls; where none is picked, the turn under way's, else the newest turn's; "
@@ -1711,7 +1712,7 @@ def column(rows: tuple[Row, ...], session: Session) -> str:
     earlier = timeline_end(session, "previous", session.previous) if session.previous else ""
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(rows)}</div>{later}{groups or '<p class="v-meta">no turn yet</p>'}{earlier}
+    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2><span class="grow"></span>{newest_control(rows)}<button type="button" class="ib fold" id="fold-timeline" aria-keyshortcuts="Q" aria-expanded="true" aria-label="fold the timeline"{tip("Fold the timeline" + chr(10) + "The turns get the room.")}>{ICONS["right"].replace('class="ico"', 'class="ico when-open"')}{ICONS["left"].replace('class="ico"', 'class="ico when-folded"')}</button></div>{later}{groups or '<p class="v-meta">no turn yet</p>'}{earlier}
   </aside>"""
 
 
@@ -1809,6 +1810,8 @@ ICONS = {
     "newest": svg('<path d="M17 18 12 13l-5 5"/><path d="M17 11 12 6l-5 5"/>'),
     "up": svg('<path d="m18 15-6-6-6 6"/>'),
     "down": svg('<path d="m6 9 6 6 6-6"/>'),
+    "right": svg('<path d="m9 18 6-6-6-6"/>'),
+    "left": svg('<path d="m15 18-6-6 6-6"/>'),
     "log": svg('<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>'),
 }
 # What an artefact is, by its path, as its icon says: (the icon, its name in the tooltip).
