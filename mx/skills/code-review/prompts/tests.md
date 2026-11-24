@@ -12,4 +12,4 @@ The checkout holds what the commit holds, with nothing an install would add, and
 
 Report: (a) every test-smell from `TEST-SMELLS.md`: name it and quote the hunk; (b) for each test the diff adds, which of the three jobs in `testing-jobs.md` it does; one that does none is a finding, and its fix is the deletion.
 
-Each finding: the test, the mutation or input it would not catch, the fix.
+Each finding: the test, the mutation or input it would not catch, and the first fix that fits: the code deleted, where nothing relies on what the mutation changed; an existing test sharpened, by an input or an assertion; a new test, only for behaviour the spec names.

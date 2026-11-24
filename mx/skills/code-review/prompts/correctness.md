@@ -4,4 +4,4 @@ Report only findings that survive three filters: (a) it's a real problem, not an
 
 Not findings: style the change is internally consistent about, validation for inputs that can't arrive, API semantics that match existing conventions, "what if X" where the system prevents X.
 
-Each finding: the scenario that breaks, file:line, fix.
+Each finding: the scenario that breaks, as a run the branch's owner can make (the input or the command, what should come back, what comes back instead), file:line, fix.
