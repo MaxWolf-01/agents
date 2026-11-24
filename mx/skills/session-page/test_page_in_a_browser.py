@@ -575,7 +575,7 @@ with sync_playwright() as pw:
         SHOWN = '''(() => { const log = document.getElementById("log"), steps = [...log.querySelectorAll(".step")]
           return {which: log.querySelector(".which").textContent.split(" · ")[0], keyed: log.classList.contains("keyed"),
                   cur: steps.findIndex((s) => s.classList.contains("cur")), open: steps.flatMap((s, n) => s.classList.contains("open") ? [n] : []),
-                  all: log.querySelector("[data-all]")?.textContent ?? null} })()'''
+                  all: log.querySelector("[data-all]")?.getAttribute("aria-label") ?? null} })()'''
         page.keyboard.press("l")
         page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
         out["opened"] = page.evaluate(SHOWN)
@@ -593,7 +593,7 @@ with sync_playwright() as pw:
         context, page = open_page(1280, 800)
         live = Path(args["live"])
         SHOWN = '''(() => { const log = document.getElementById("log")
-          return {which: log.querySelector(".which").textContent, buttons: [...log.querySelectorAll(".log-head button")].map((b) => b.textContent),
+          return {which: log.querySelector(".which").textContent, buttons: [...log.querySelectorAll(".log-head button")].map((b) => b.getAttribute("aria-label")),
                   steps: [...log.querySelectorAll(".step")].map((s) => [s.querySelector(".kind").dataset.tip,
                     s.querySelector(".subject").textContent, s.querySelector(".took").classList.contains("running")])} })()'''
         live.write_text(args["first"])
