@@ -238,7 +238,7 @@ def _node(n: dict) -> str:
     raise ValueError(f"unknown node type {kind!r}; the types are stmt, call, exit, inputs, loop, if, case, par")
 
 
-def main() -> int:  # pragma: no cover: run only under python -I -S, which no coverage hook enters
+def main() -> int:
     ap = argparse.ArgumentParser(description="Render a Struktogramm from a JSON node list.")
     ap.add_argument("input", help="JSON file holding the node list")
     ap.add_argument("-o", "--output", help="write here instead of to stdout")

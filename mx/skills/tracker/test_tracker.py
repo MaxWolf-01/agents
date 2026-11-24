@@ -3003,10 +3003,14 @@ def test_a_remote_that_stops_answering_after_refusing_the_push_leaves_the_commit
 
 
 def test_a_push_that_loses_the_race_every_round_gives_up_for_now_and_exits_1(machines: tuple[Machine, Machine, Path]) -> None:
-    """`in_step.ROUNDS`: pushes refused because the other checkout pushed first, before the sync
-    gives up for now. The laptop fetches from a copy of origin taken before pc pushed, so every
-    fetch says it is up to date and every push is refused again."""
+    """Three pushes refused because the other checkout pushed first, before the sync gives up for
+    now. The laptop fetches from a copy of origin taken before pc pushed, so every fetch says it is
+    up to date and every push is refused again."""
     laptop, pc, origin = machines
+    tries = laptop.code / "pushes"
+    hooks = Path(git(laptop.agent, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
+    (hooks / "pre-push").write_text(f'#!/bin/sh\necho push >> "{tries}"\n')
+    (hooks / "pre-push").chmod(0o755)
     stale = origin / "stale.git"
     git(origin, "clone", "-q", "--bare", str(origin / "agent.git"), str(stale))
     ticket(pc.tickets, "from-pc")
@@ -3018,7 +3022,8 @@ def test_a_push_that_loses_the_race_every_round_gives_up_for_now_and_exits_1(mac
     git(laptop.agent, "remote", "set-url", "origin", str(stale))
     git(laptop.agent, "remote", "set-url", "--push", "origin", url)
     said = run(laptop.code, "sync")
-    assert said.code == 1 and str(in_step.ROUNDS) in said.err, said.said
+    assert said.code == 1 and "moved on before each of" in said.err, said.said
+    assert tries.read_text().splitlines() == ["push"] * 3, "a push per round, three rounds"
     assert upstream(origin, "agent") == tip(pc.agent, "main")
 
 
@@ -3026,17 +3031,18 @@ def test_a_remote_that_answers_nothing_is_given_up_on_and_the_commit_waits(
         machines: tuple[Machine, Machine, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     """A captive portal answers nothing rather than refusing (`in_step.NETWORK_SECONDS`): the push is
     given up on once that long has passed, and the commit waits. The ssh that never answers sleeps
-    past the second this check allows it."""
+    well past the second this check allows it; git is killed at the second and the sleep left behind
+    holds nothing the sync waits on."""
     laptop, _, origin = machines
     before = upstream(origin, "agent")
     monkeypatch.setattr(in_step, "NETWORK_SECONDS", 1)
     git(laptop.agent, "remote", "set-url", "--push", "origin", "ssh://portal.invalid/agent.git")
-    git(laptop.agent, "config", "core.sshCommand", "sleep 2; :")
+    git(laptop.agent, "config", "core.sshCommand", "sleep 5; :")
     ticket(laptop.tickets, "on-the-train")
     git(laptop.agent, "add", "-A")
     git(laptop.agent, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "file on-the-train")
     said = run(laptop.code, "sync")
-    assert said.code == 0 and "1s" in said.err, said.said
+    assert said.code == 0 and "did not answer (no answer in 1s)" in said.err, said.said
     assert upstream(origin, "agent") == before
 
 

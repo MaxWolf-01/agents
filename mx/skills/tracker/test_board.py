@@ -537,6 +537,22 @@ def test_board_opens_the_file_where_diffview_never_comes_back(
     assert "diffview" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("serving", [True, False], ids=["served", "no diffview"])
+def test_board_open_opens_the_page_in_the_browser_diffview_pages_open_in(
+    repo: Path, tracker: Path, path_with: Callable[..., Path], listening: str, monkeypatch: pytest.MonkeyPatch, serving: bool,
+) -> None:
+    """`--open`'s help: the page opens in $DIFFVIEW_BROWSER, at the address the diffview server over
+    the agent repo answers on, else as the file."""
+    out = tracker.parent / "board.html"
+    if serving:
+        path_with("diffview", f'echo "diffview: serving $2 at {listening}/"')
+    opens = path_with("browser")
+    monkeypatch.setenv("DIFFVIEW_BROWSER", str(opens.with_suffix("")))
+    board.main(board.Args(tickets_root=tracker, out=out, open=True, watch=False))
+    assert until(lambda: runs(opens) != [], 10), "no browser was opened"
+    assert runs(opens) == [f"{listening}/board.html" if serving else str(out)]
+
+
 def test_the_watcher_says_so_when_the_server_comes_back_at_another_address_than_the_open_tabs(
     repo: Path, tracker: Path, stub_diffview: Callable[[str], Path], listening: str, capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -2615,12 +2631,11 @@ def test_the_watcher_tries_changed_code_once_per_change_and_hands_itself_on_with
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Broken code tried and said every pass would be the helferline log again; retried a while on,
-    it says nothing new."""
+    it says nothing new. A module the watcher's code holds that is not on disk yet changes once it
+    is written."""
     out = tmp_path / "board.html"
     render(tracker, repo, out)
     module = tmp_path / "tracker.py"
-    assert board.on_disk([module]) == ((module, None, None),), "a module not on disk has no time and no size"
-    module.write_text("FIELDS = ('status',)\n")
     watching = board.Watch(Seen(), board.Briefer(repo, out), code=board.on_disk([module]))
     tried: list[str] = []
     monkeypatch.setattr(board, "starts", lambda: tried.append(module.read_text()) or "SyntaxError: '(' was never closed")

@@ -193,17 +193,17 @@ def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(
 
 
 @pytest.mark.parametrize("answer, words", [
-    ("echo '{\"type\": \"result\", \"is_error\": true}'", ""),
+    ("echo '{\"type\": \"result\", \"is_error\": true}'", None),  # an error that gives no words of its own
     ("echo 'Invalid API key · Please run /login' >&2; exit 1", "Invalid API key"),  # a login that lapsed prints no JSON at all
 ])
 def test_a_ping_the_session_does_not_answer_leaves_the_cache_where_it_is(
-    tmp_path: Path, path_with: Callable[..., Path], answer: str, words: str
+    tmp_path: Path, path_with: Callable[..., Path], answer: str, words: str | None
 ) -> None:
     path_with("claude", answer)
     cached = Briefing("where things stand", START, "abc-123", START, START, 3)
     assert ping(cached, "new: agent/tickets/a-chore.md", tmp_path, START + timedelta(minutes=20)) is None
     assert briefing.SILENT, "a run that answered nothing said nothing of itself"
-    assert words in briefing.SILENT, "the page does not say it in the words the run used"
+    assert words is None or words in briefing.SILENT, "the page does not say it in the words the run used"
 
 
 def test_a_run_that_cannot_start_writes_no_briefing_and_says_why_in_its_own_words(

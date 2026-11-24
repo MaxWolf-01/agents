@@ -82,9 +82,12 @@ def test_a_session_reads_as_its_topic_its_last_words_and_what_it_finished(tmp_pa
     assert s["interrupted"] is False
 
 
-def test_a_session_whose_last_message_is_an_interruption_reads_as_interrupted(tmp_path: Path) -> None:
+# What Claude Code writes when the user presses Esc, outside a tool call and during one.
+@pytest.mark.parametrize("marker", ["[Request interrupted by user]", "[Request interrupted by user for tool use]"],
+                         ids=["plain", "tool use"])
+def test_a_session_whose_last_message_is_an_interruption_reads_as_interrupted(tmp_path: Path, marker: str) -> None:
     transcript(tmp_path, "s1", prompt("rename the ledger's banks"), said("assistant", "Renaming the first bank now."),
-               said("user", "[Request interrupted by user for tool use]"))
+               said("user", marker))
     [s] = scanned(str(tmp_path))
     assert s["interrupted"] is True
     assert s["last_user"] == "rename the ledger's banks", "an interruption is no message of the user's"

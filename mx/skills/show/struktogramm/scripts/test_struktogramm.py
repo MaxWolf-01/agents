@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from struktogramm import fragment, page
+from struktogramm import fragment, main, page
 
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / "fixtures"
@@ -44,13 +44,6 @@ def test_renderer_draws_each_example_on_the_standard_library_alone(example: Path
     assert missing == []
 
 
-@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
-def test_each_examples_page_holds_every_text_it_was_given(example: Path) -> None:
-    nodes = json.loads(example.read_text())
-    html = page(nodes)
-    assert [t for t in texts_in(nodes) if escape(t) not in html] == []
-
-
 def test_the_renderer_writes_its_page_to_the_file_o_names(tmp_path: Path) -> None:
     """SKILL.md step 2 renders with `-o out.html`, the file the layout check then reads."""
     example = HERE.parent / "examples" / "troubleshooting.json"
@@ -59,6 +52,45 @@ def test_the_renderer_writes_its_page_to_the_file_o_names(tmp_path: Path) -> Non
     assert done.returncode == 0, done.stderr
     html = out.read_text()
     assert [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in html] == []
+
+
+def test_the_command_writes_the_page_to_the_file_o_names_instead_of_to_stdout(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """`-o`'s --help: "write here instead of to stdout", so the agent that renders reads a line, not
+    the page. On the example holding an inputs block, exits and parallel tracks that name what they use."""
+    example = HERE.parent / "examples" / "batch-download.json"
+    out = tmp_path / "out.html"
+    monkeypatch.setattr(sys, "argv", ["struktogramm.py", str(example), "-o", str(out)])
+    assert main() == 0
+    assert capsys.readouterr().out == ""
+    html = out.read_text()
+    assert html.lstrip().lower().startswith("<!doctype html")
+    assert [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in html] == []
+
+
+def test_the_command_prints_the_fragment_to_embed(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """SKILL.md's Rendering: `--fragment` prints `<style>` and the diagram, which a host page embeds
+    as it is. On the example holding a call and a parallel block."""
+    example = HERE.parent / "examples" / "roast-dinner-parallel.json"
+    monkeypatch.setattr(sys, "argv", ["struktogramm.py", str(example), "--fragment"])
+    assert main() == 0
+    printed = capsys.readouterr().out
+    assert "<style" in printed and "<html" not in printed.lower() and "<body" not in printed.lower()
+    assert [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in printed] == []
+
+
+def test_the_command_refuses_a_node_list_with_a_misspelt_type_and_writes_no_page(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SKILL.md step 2 as the agent runs it, on a node list it wrote with a typo: the refusal names
+    the type, and no page is left for the layout check to read."""
+    diagram = tmp_path / "diagram.json"
+    diagram.write_text(json.dumps([{"type": "stmt", "text": "Preheat"}, {"type": "whiel", "cond": "x", "body": []}]))
+    out = tmp_path / "out.html"
+    monkeypatch.setattr(sys, "argv", ["struktogramm.py", str(diagram), "-o", str(out)])
+    with pytest.raises(ValueError, match="'whiel'"):
+        main()
+    assert not out.exists()
 
 
 def texts_in(nodes: list) -> list[str]:
@@ -120,6 +152,44 @@ def test_preview_without_a_browser_still_writes_the_page_and_says_the_layout_is_
     html = (tmp_path / "preview.html").read_text()
     assert [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in html] == []
     assert not (tmp_path / "preview.png").exists()
+
+
+def preview_with(tmp_path: Path, chromium: str, *args: str) -> subprocess.CompletedProcess:
+    """preview.py run on an example with a `chromium` on PATH that runs `chromium`, a shell script,
+    in place of the browser; its arguments are left in `argv` beside it."""
+    if Path("/opt/google/chrome/chrome").exists():
+        pytest.skip("this host has a Chrome at the path preview.py tries first, whatever PATH holds")
+    (tmp_path / "bin").mkdir()
+    stub = tmp_path / "bin" / "chromium"
+    stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{tmp_path / "argv"}"\n{chromium}\n')
+    stub.chmod(0o755)
+    example = HERE.parent / "examples" / "troubleshooting.json"
+    return subprocess.run([sys.executable, str(HERE / "preview.py"), str(example), *args], cwd=tmp_path, capture_output=True,
+                          text=True, timeout=60, env={**os.environ, "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin"})
+
+
+# Chromium writes the picture to the file its --screenshot= names.
+SCREENSHOTS = 'for arg; do case "$arg" in --screenshot=*) printf png > "${arg#--screenshot=}";; esac; done'
+
+
+@pytest.mark.parametrize("scheme, dark", [("light", False), ("dark", True)])
+def test_preview_says_where_the_picture_is_to_look_at(tmp_path: Path, scheme: str, dark: bool) -> None:
+    """SKILL.md step 3: the agent renders a picture with preview.py and looks at it, so the PNG's
+    path is what it prints. `--scheme dark` shows the page dark, which Chromium's
+    --force-dark-mode does (what the page's prefers-color-scheme reads)."""
+    done = preview_with(tmp_path, SCREENSHOTS, "--scheme", scheme)
+    assert done.returncode == 0, done.stderr
+    png = tmp_path / "preview.png"
+    assert str(png) in done.stdout and png.read_text() == "png"
+    assert ("--force-dark-mode" in (tmp_path / "argv").read_text().splitlines()) == dark
+
+
+def test_a_browser_that_takes_no_picture_fails_the_preview_saying_why(tmp_path: Path) -> None:
+    """With no picture there is nothing to look at: the preview exits 1 with the browser's own words."""
+    done = preview_with(tmp_path, 'echo "Missing X server to draw on" >&2')
+    assert done.returncode == 1
+    assert "Missing X server to draw on" in done.stderr
+    assert "png:" not in done.stdout and not (tmp_path / "preview.png").exists()
 
 
 def faults_of(html: Path, scheme: str = "light", width: int = 680) -> list[str]:

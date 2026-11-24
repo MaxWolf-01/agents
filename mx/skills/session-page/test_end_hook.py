@@ -250,7 +250,7 @@ def test_a_session_that_ends_in_no_project_commits_nothing(tmp_path_factory: pyt
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook)))
     end_hook.main()
     (entry,) = [json.loads(line) for line in attended.read_text().splitlines()]
-    assert entry["directory"] is None and entry["why"] != "commit started"
+    assert (entry["directory"], entry["why"]) == (None, "no project with an agent repo")
 
 
 def test_a_commit_that_raises_says_so_in_the_log(agent: Path, end: Callable[[], list[dict]]) -> None:

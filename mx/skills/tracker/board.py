@@ -177,7 +177,7 @@ def started(args: Args, tickets_root: Path, repo: Path, out: Path) -> "Watch":
     except tracker.Refused as refused:
         sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
     address = None
-    if args.open:  # pragma: no cover: opens the user's browser on the page; `served` is checked on its own
+    if args.open:
         address = served(tickets_root.parent, out)
         browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
         subprocess.Popen([browser, address or str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

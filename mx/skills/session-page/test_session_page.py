@@ -309,6 +309,24 @@ def test_a_question_put_for_a_ticket_is_a_session_question_until_its_ticket_reco
     assert waiting(view_of(directory, transcript)) == []
 
 
+@pytest.mark.parametrize("since", ["retired", "dropped the question"])
+def test_a_question_put_for_a_ticket_that_no_longer_holds_it_shows_its_handle_alone(tmp_path: Path, since: str) -> None:
+    """A ticket's question is ruled, and its ticket retired, long after the record that asked it
+    (`check_ticket_questions`). A Qn put for a ticket that retired it, or holds the question no
+    longer, waits no more (`Question.ruled`), and the page still renders it, its handle plain text
+    with no link to a question the ticket holds no longer."""
+    directory, transcript = ticket_session(tmp_path, ASKED_FOR_THE_TICKET)
+    ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
+    if since == "retired":
+        ticket.unlink()
+    else:
+        ticket.write_text(TICKET.replace("- [D5] **Sync on every commit, or on a timer?** A timer batches; a commit hook is immediate.\n", ""))
+    assert waiting(view_of(directory, transcript)) == []
+    card = elements(render_session(directory, transcript, now=NOW), "q2")["q2"]
+    assert f"{TWO_MAIN} D5" in text_of(card)
+    assert [text for _, text in anchors(card) if TWO_MAIN in text] == [], "a handle the ticket holds no longer links nowhere"
+
+
 def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
     """`fewer-workflow-concepts`' tag rule: a ticket's question, detail entry, property and
     assumption, a retro entry, and another session's question, named in prose by their qualified
