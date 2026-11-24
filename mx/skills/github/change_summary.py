@@ -74,16 +74,19 @@ def artifact_rules(catalogue: str) -> str:
 def ask(model: str, effort: str, system: str, prompt: str) -> str:
     """One bare `claude -p` call through `model-runs`, from an empty directory so no project file is in reach."""
     with tempfile.TemporaryDirectory() as empty:
-        proc = subprocess.run(
-            [str(MODEL_RUNS), "run", "--site", "change-summary", "--timeout", "600", "--",
-             "claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
-             "--setting-sources", "", "--strict-mcp-config", "--tools", "",
-             "--disable-slash-commands", "--no-session-persistence"],
-            input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
-            # FORCE_PROMPT_CACHING_5M (undocumented in Claude Code 2.1.309) writes the cache at the
-            # 5-minute rate, 1.25x input instead of the 1-hour 2x; one call, so nothing reads it later.
-            env={**os.environ, "CLAUDECODE": "", "FORCE_PROMPT_CACHING_5M": "1"},
-        )
+        try:
+            proc = subprocess.run(
+                [str(MODEL_RUNS), "run", "--site", "change-summary", "--timeout", "600", "--",
+                 "claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
+                 "--setting-sources", "", "--strict-mcp-config", "--tools", "",
+                 "--disable-slash-commands", "--no-session-persistence"],
+                input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
+                # FORCE_PROMPT_CACHING_5M (undocumented in Claude Code 2.1.309) writes the cache at the
+                # 5-minute rate, 1.25x input instead of the 1-hour 2x; one call, so nothing reads it later.
+                env={**os.environ, "CLAUDECODE": "", "FORCE_PROMPT_CACHING_5M": "1"},
+            )
+        except subprocess.TimeoutExpired as e:
+            raise Failure(f"claude did not run: {e}") from e
     if proc.returncode != 0:
         raise Failure(f"claude exited {proc.returncode}: {(proc.stderr.strip() or proc.stdout.strip())[-500:]}")
     if not proc.stdout.strip():

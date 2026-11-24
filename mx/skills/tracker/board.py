@@ -162,7 +162,7 @@ def main(args: Args) -> None:
     repo = (args.repo or toplevel(tickets_root) or project(tickets_root)).resolve()
     out = (args.out or tickets_root.parent / "board.html").resolve()
     watching = taken(repo, out) or started(args, tickets_root, repo, out)
-    if args.watch:  # pragma: no cover - the watch loop runs until Ctrl-C; its passes are checked through `turn` and `watch`
+    if args.watch:  # pragma: no cover: the watch loop runs until Ctrl-C; its passes are checked through `turn` and `watch`
         try:
             restart(watch(watching, tickets_root, repo, out), out)
         except KeyboardInterrupt:
@@ -177,7 +177,7 @@ def started(args: Args, tickets_root: Path, repo: Path, out: Path) -> "Watch":
     except tracker.Refused as refused:
         sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
     address = None
-    if args.open:  # pragma: no cover - opens the user's browser on the page; `served` is checked on its own
+    if args.open:  # pragma: no cover: opens the user's browser on the page; `served` is checked on its own
         address = served(tickets_root.parent, out)
         browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
         subprocess.Popen([browser, address or str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

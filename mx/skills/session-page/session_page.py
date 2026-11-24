@@ -2534,7 +2534,7 @@ def path_target(text: str) -> str | None:
         return None
     try:
         found = local_file(path, root).exists()
-    except OSError:  # pragma: no cover - a name too long for the filesystem: Path.exists raises on one up to Python 3.13, the suite runs 3.14
+    except OSError:  # pragma: no cover: a name too long for the filesystem: Path.exists raises on one up to Python 3.13, the suite runs 3.14
         return None
     return href(path) if found else None
 
