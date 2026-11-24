@@ -1,3 +1,8 @@
+## 1.0.136
+
+- The turn review keeps the session's plan honest, flagging only a step the records contradict
+  Each turn record's review now also reads the session's plan and sends back at most one finding where the records contradict it (a step still open that shipped, a step waiting on an answered question, an open question or running work with no step), so a stale plan is caught when it goes stale and a correct one costs nothing. max's pick (Q4 a). On this session's own history it flagged the stale plan of turn 08 and passed the current one twice; make check and make test (1008) pass on the branch, whose tree the merge result is.
+
 ## 1.0.135
 
 - Every question and to-do card says the hour and minute it was put
