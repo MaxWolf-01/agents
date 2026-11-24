@@ -1,3 +1,8 @@
+## 1.0.133
+
+- The session page in a narrow hub pane no longer leaves an empty black column
+  With the tasks folded, a session page narrower than 44rem (a phone, or a narrow pane in the hub) split into a 170px column and an empty one, since the folded tasks' grid rule outranked the phone layout's single column. It is one column again. Reported by max on a screenshot; the 42 browser tests pass on the branch, whose tree the merge result is.
+
 ## 1.0.132
 
 - The session page's log opens and closes all its steps from an icon
