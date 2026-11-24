@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+import check_layout
+from check_layout import band_lines, faults
 from struktogramm import fragment, main, page
 
 HERE = Path(__file__).resolve().parent
@@ -136,6 +138,126 @@ def test_checker_without_playwright_says_the_layout_is_unverified(tmp_path: Path
     assert done.returncode == 2
     assert "UNVERIFIED" in done.stderr
     assert "PASS" not in done.stdout
+
+
+def measured(**changed: object) -> dict:
+    """What the checker measures on a diagram 200x100px with nothing wrong in it: one block filling
+    it, holding one black text on white, with `changed` in place of what it names."""
+    root = [0, 0, 200, 100]
+    return {"root": root, "containers": [{"desc": 'div.ns ""', "box": root, "exempt": [], "kids": [root]}],
+            "borders": [], "elements": [{"desc": 'div.ns ""', "box": root}, {"desc": 'div.blk "Preheat"', "box": root}],
+            "texts": [{"text": "Preheat", "rect": [10, 10, 60, 30], "color": [0, 0, 0]}], "crossed": [0], "breaks": [],
+            "bands": [], "shapes": [], "groups": [], "background": [255, 255, 255], "blocks": 1} | changed
+
+
+def container(kids: list, exempt: list | None = None) -> dict:
+    return {"containers": [{"desc": 'div.col ""', "box": [0, 0, 200, 100], "exempt": exempt or [], "kids": kids}]}
+
+
+def borders(apart: float) -> dict:
+    """The bottom border of one block and the top border of the block below it, `apart` px apart."""
+    return {"borders": [
+        {"el": 1, "desc": 'div.blk "Preheat"', "side": "Bottom", "vertical": False, "rect": [0, 49, 200, 50]},
+        {"el": 2, "desc": 'div.blk "Roast"', "side": "Top", "vertical": False, "rect": [0, 50 + apart, 200, 51 + apart]}]}
+
+
+def band(kind: str = "if", missing: int = 0, stray: int = 0) -> dict:
+    return {"bands": [{"desc": 'div.cond "Fixed?"', "kind": kind, "box": [0, 0, 200, 40], "bounds": [100, 200]}],
+            "shapes": [{"samples": 100, "missing": missing, "stray": stray}]}
+
+
+# Each check of the checker's --help on measurements that break it, by the start of its line.
+FAULTY_MEASUREMENTS = {
+    "a column stopping short of its edge": (container([[0, 0, 200, 60]]), 'dead-space: div.col "" leaves 200x40px at (0, 60)'),
+    "two lines 1px apart": (borders(1), 'doubled-border: bottom of div.blk "Preheat" and top of div.blk "Roast"'),
+    "a block past the outer rectangle": (
+        {"elements": [{"desc": 'div.ns ""', "box": [0, 0, 200, 100]}, {"desc": 'div.lbls ""', "box": [0, 0, 210, 100]}]},
+        'overflow: div.lbls "" reaches 10.0px past'),
+    "a line through a text": ({"crossed": [30]}, 'text-crossed: a line runs through "Preheat"'),
+    "a word split across lines": ({"breaks": ["checksu/m"]}, 'broken-word: "checksu/m"'),
+    # #999 on white is 2.85:1, under the 3:1 WCAG minimum for large text.
+    "grey text on white": ({"texts": [{"text": "Preheat", "rect": [10, 10, 60, 30], "color": [153, 153, 153]}]},
+                           'text-contrast: "Preheat"'),
+    "dark text on the dark scheme's background": ({"background": [34, 34, 34]}, 'text-contrast: "Preheat"'),
+    "a band with half its line unpainted": (band(missing=50), 'band-shape: div.cond "Fixed?" is not drawn as an if band'),
+    "a band with line drawn off its lines": (band("case", stray=200), 'band-shape: div.cond "Fixed?" is not drawn as a case band'),
+    "columns of one group at unequal widths": ({"groups": [{"desc": 'div.fork ""', "widths": [90, 110]}]},
+                                               'column-widths: div.fork ""'),
+}
+
+
+@pytest.mark.parametrize("changed, fault", FAULTY_MEASUREMENTS.values(), ids=FAULTY_MEASUREMENTS)
+def test_checker_names_the_fault_a_measurement_shows(changed: dict, fault: str) -> None:
+    found = faults(measured(**changed))
+    assert len(found) == 1 and found[0].startswith(fault), found
+
+
+SOUND_MEASUREMENTS = {
+    "a loop whose strip left of its body is its own": container([[40, 0, 200, 100]], exempt=[[0, 0, 40, 100]]),
+    "a column a pixel short of its edge, as fractional flex widths round": container([[0, 0, 199, 100]]),
+    "two blocks' lines far apart": borders(10),
+    "a thick line ending a pixel short of a thick line across it": {"borders": [
+        {"el": 2, "desc": 'div.col ""', "side": "Left", "vertical": True, "rect": [101, 30, 107, 100]},
+        {"el": 1, "desc": 'div.blk "Preheat"', "side": "Bottom", "vertical": False, "rect": [0, 44, 100, 50]}]},
+    # #767676 on white is 4.54:1.
+    "the darkest grey that reads on white": {"texts": [{"text": "Preheat", "rect": [10, 10, 60, 30], "color": [118, 118, 118]}]},
+    # Pure red on white is 4.0:1: the eye weighs green far over red.
+    "red text on white": {"texts": [{"text": "Preheat", "rect": [10, 10, 60, 30], "color": [255, 0, 0]}]},
+    "a band drawn as its lines": band("case"),
+    "columns within a pixel of each other": {"groups": [{"desc": 'div.fork ""', "widths": [100, 100.4]}]},
+}
+
+
+@pytest.mark.parametrize("changed", SOUND_MEASUREMENTS.values(), ids=SOUND_MEASUREMENTS)
+def test_checker_finds_no_fault_in_a_sound_measurement(changed: dict) -> None:
+    assert faults(measured(**changed)) == []
+
+
+def test_an_if_band_runs_from_its_top_corners_to_the_column_boundary_and_a_case_band_fans_from_its_top_left() -> None:
+    """band-shape in the checker's --help: band [0, 0, 200, 40] over columns ending at 120 and 200."""
+    assert band_lines({"kind": "if", "box": [0, 0, 200, 40], "bounds": [120, 200]}) == [[0, 0, 120, 40], [200, 0, 120, 40]]
+    assert band_lines({"kind": "case", "box": [0, 0, 200, 40], "bounds": [60, 120, 200]}) == [
+        [0, 0, 60, 40], [0, 0, 120, 40], [0, 0, 200, 40]]
+
+
+def check(monkeypatch: pytest.MonkeyPatch, measure, *args: str) -> int:
+    """The checker's command line on diagram.html, measuring it with `measure`."""
+    monkeypatch.setattr(sys, "argv", ["check_layout.py", "diagram.html", *args])
+    return check_layout.main(measure)
+
+
+def test_checker_passes_a_sound_diagram_measured_at_the_width_and_scheme_asked_for(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    asked = []
+    assert check(monkeypatch, lambda html, **how: asked.append((html, how)) or measured(), "--width", "900", "--scheme", "dark") == 0
+    assert asked == [("diagram.html", {"width": 900, "scheme": "dark"})]
+    out = capsys.readouterr().out
+    assert "PASS" in out and "FAIL" not in out
+
+
+def test_checker_fails_a_faulty_diagram_naming_each_fault(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    assert check(monkeypatch, lambda html, **how: measured(crossed=[30], breaks=["checksu/m"])) == 1
+    out = capsys.readouterr().out
+    assert [line.split(":")[0] for line in out.splitlines() if line.startswith("FAIL ")] == [
+        "FAIL text-crossed", "FAIL broken-word"]
+    assert "PASS" not in out
+
+
+def test_a_page_the_checker_could_not_measure_is_unverified_rather_than_passed(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def no_browser(html: str, **how: object) -> dict:
+        raise FileNotFoundError("no chromium on PATH")
+
+    assert check(monkeypatch, no_browser) == 2
+    said = capsys.readouterr()
+    assert "UNVERIFIED" in said.err and "no chromium on PATH" in said.err
+    assert "PASS" not in said.out
+
+
+def test_dump_prints_the_raw_measurements_as_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    assert check(monkeypatch, lambda html, **how: measured(), "--dump") == 0
+    dumped, _ = json.JSONDecoder().raw_decode(capsys.readouterr().out)
+    assert dumped == measured()
 
 
 def test_preview_without_a_browser_still_writes_the_page_and_says_the_layout_is_unseen(tmp_path: Path) -> None:

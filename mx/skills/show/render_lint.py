@@ -70,6 +70,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated
 
 import tyro
@@ -307,12 +308,10 @@ class Args:
     """Emit findings as a JSON array. Schema: [{"file": str, "width": int, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}], and a clipped finding adds "cutters": [str], every box that cuts off what the boxes inside it left showing."""
 
 
-def main(args: Args) -> None:
-    from playwright.sync_api import sync_playwright
+def chromium(args: Args) -> list[dict]:  # pragma: no cover: drives Chromium, which test_render_lint.py's checks run
+    from playwright.sync_api import TimeoutError, sync_playwright
 
     findings: list[dict] = []
-    if args.crops:
-        args.crops.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
         # the run it belongs to, as `browsers --help` defines it
         browser = pw.chromium.launch(executable_path=browser_path(),
@@ -327,12 +326,19 @@ def main(args: Args) -> None:
 
                 serve(context, args.cache)
             try:
-                for f in measure(page, spec, args):
+                for f in measure(page, spec, args, TimeoutError):
                     findings.append({"file": str(spec), "crop": None} | f)
             finally:
                 page.close()
         browser.close()
+    return findings
 
+
+def main(args: Args, browse: Callable[[Args], list[dict]] = chromium) -> int:
+    """Measure every page `args` names in `browse`, print what it found, and return the exit code."""
+    if args.crops:
+        args.crops.mkdir(parents=True, exist_ok=True)
+    findings = browse(args)
     if args.json:
         print(json.dumps(findings, indent=1))
     else:
@@ -343,18 +349,18 @@ def main(args: Args) -> None:
         fatal = sum(f["kind"] not in SOFT for f in findings)
         print(f"{len(findings)} findings, {fatal} fatal", file=sys.stderr)
     if any(f["kind"] == "unmeasurable" for f in findings):
-        sys.exit(2)
-    sys.exit(1 if any(f["kind"] not in SOFT for f in findings) else 0)
+        return 2
+    return 1 if any(f["kind"] not in SOFT for f in findings) else 0
 
 
-def measure(page: Page, spec: Path, args: Args) -> list[dict]:
+def measure(page: Page, spec: Path, args: Args, slow: type[Exception],
+            clock: Callable[[], float] = time.monotonic) -> list[dict]:
     """One address, in a tab of its own, at each width: at rest, in a window as tall as the page, at
-    the top. A later width resizes the same tab rather than loading the page again.
+    the top. A later width resizes the same tab rather than loading the page again. `slow` is what
+    the page raises when it outlasts the patience it was given to load.
 
     The patience is each width's, not each wait's: the rests and the scroll at one width share one
     deadline, and the load shares the first width's."""
-    from playwright.sync_api import TimeoutError
-
     head, mark, fragment = str(spec).partition("#")
     path, _, query = head.partition("?")
     url = Path(path).resolve().as_uri() + (f"?{query}" if query else "") + (mark + fragment)
@@ -362,10 +368,10 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
     page.on("request", lambda r: loading.add(r))
     page.on("requestfinished", lambda r: loading.discard(r))
     page.on("requestfailed", lambda r: loading.discard(r))
-    until = time.monotonic() + args.patience
+    until = clock() + args.patience
     try:
         page.goto(url, timeout=args.patience * 1000)
-    except TimeoutError:
+    except slow:
         return [unmeasurable(args.width, f"still loading after {args.patience:g}s")]
     found: list[dict] = []
     made: set[tuple] = set()
@@ -373,17 +379,17 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
     for n, width in enumerate([args.width, *(narrower if args.narrow else [])]):
         if n:
             # The window keeps the last width's height, so a page that is as tall here costs one rest.
-            until = time.monotonic() + args.patience
+            until = clock() + args.patience
             page.set_viewport_size({"width": width, "height": page.viewport_size["height"]})
-        still = at_rest(page, loading, args, until)
+        still = at_rest(page, loading, args, until, clock)
         tall = page.evaluate("document.documentElement.scrollHeight")
         if still and tall != page.viewport_size["height"]:
             page.set_viewport_size({"width": width, "height": tall})
-            still = at_rest(page, loading, args, until)
+            still = at_rest(page, loading, args, until, clock)
         if still and page.evaluate("scrollX || scrollY"):
             # instant, because a page set to scroll smoothly would still be travelling on the next call
             page.evaluate("scrollTo({top: 0, left: 0, behavior: 'instant'})")
-            still = at_rest(page, loading, args, until)
+            still = at_rest(page, loading, args, until, clock)
         if not still:
             return [*found, unmeasurable(width, f"still {'loading' if loading else 'moving'} after {args.patience:g}s")]
         here = page.evaluate(MEASURE, args.pad)
@@ -408,7 +414,7 @@ def unmeasurable(width: int, why: str) -> dict:
     return {"width": width, "kind": "unmeasurable", "where": "page", "el": "", "by": 0, "text": why, "box": {"x": 0, "y": 0, "w": 0, "h": 0}}
 
 
-def at_rest(page: Page, loading: set, args: Args, until: float) -> bool:
+def at_rest(page: Page, loading: set, args: Args, until: float, clock: Callable[[], float]) -> bool:
     """Block until AGREE readings of the page's geometry in a row agree with none of its requests
     in flight, or `until` passes. A request pending drops every reading before it, since what it
     brings (a module, a stylesheet, a font) moves the page when it lands."""
@@ -417,12 +423,12 @@ def at_rest(page: Page, loading: set, args: Args, until: float) -> bool:
         seen = [] if loading else [*seen, page.evaluate(STILL)]
         if seen and seen[-AGREE:].count(seen[-1]) == AGREE:
             return True
-        if time.monotonic() > until:
+        if clock() > until:
             return False
         page.wait_for_timeout(args.settle * 1000)
 
 
-def browser_path() -> str | None:
+def browser_path() -> str | None:  # pragma: no cover: as chromium
     for name in ("chromium", "chromium-browser", "google-chrome", "chrome"):
         if found := shutil.which(name):
             return found
@@ -435,12 +441,11 @@ def cli() -> None:
     except SystemExit as stop:  # argparse answers a usage error with 2, which a page holds here
         raise SystemExit(3 if stop.code else 0) from None
     try:
-        main(args)
-    except SystemExit:
-        raise
+        code = main(args)
     except Exception:
         traceback.print_exc()
-        sys.exit(3)
+        code = 3
+    sys.exit(code)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ CAUGHT: weakref.WeakSet = weakref.WeakSet()
 WATCHED: weakref.WeakSet = weakref.WeakSet()
 
 
-def serve(context: BrowserContext, root: Path) -> None:
+def serve(context: BrowserContext, root: Path) -> None:  # pragma: no cover: a live context; test_render_lint.py's --cache checks hold it
     """Answer every http(s) request of every page in `context` from `root`: the pages open now,
     and the windows they open later. A page the caller opens is announced only once it has started
     loading, so a caller serves the context again after opening one and before loading it."""
@@ -54,27 +54,28 @@ def serve(context: BrowserContext, root: Path) -> None:
         context.on("page", lambda page: intercept(context, page, root, offline))
 
 
-def intercept(context: BrowserContext, page: Page, root: Path, offline: bool) -> None:
+def intercept(context: BrowserContext, page: Page, root: Path, offline: bool) -> None:  # pragma: no cover: as serve
+    from playwright.sync_api import Error
+
     if page in CAUGHT:
         return
     CAUGHT.add(page)
     cdp = context.new_cdp_session(page)
-    cdp.on("Fetch.requestPaused", lambda paused: answer(cdp, paused, root, offline))
+    cdp.on("Fetch.requestPaused", lambda paused: answer(cdp, paused, root, offline, Error))
     cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "http*"}]})
 
 
-def answer(cdp: CDPSession, paused: dict, root: Path, offline: bool) -> None:
+def answer(cdp: CDPSession, paused: dict, root: Path, offline: bool, refused: type[Exception]) -> None:
     """One request paused on its way out, or its response on the way back in. A response whose body
     the protocol will not hand over goes on as it came; a request the page
-    dropped meanwhile, by navigating away or closing, is past answering."""
-    from playwright.sync_api import Error
-
+    dropped meanwhile, by navigating away or closing, is past answering. `refused` is what `cdp`
+    raises for a request it will not act on."""
     try:
         settle(cdp, paused, root, offline)
-    except Error:
+    except refused:
         try:
             cdp.send("Fetch.continueRequest", {"requestId": paused["requestId"]})
-        except Error:
+        except refused:
             pass
 
 

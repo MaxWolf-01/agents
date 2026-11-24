@@ -256,5 +256,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover: run only under python -I -S, which no coverage hook enters
+if __name__ == "__main__":  # pragma: no cover: test_struktogramm.py runs it as a script only under python -I -S (stdlib_python), which no coverage hook enters
     sys.exit(main())
