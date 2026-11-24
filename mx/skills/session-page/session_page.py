@@ -2049,8 +2049,6 @@ def qualified_link(text: str, path: str, preview: str) -> str:
 
 
 def options(q: Question, answer: str | None = None) -> str:
-    if not q.options:
-        return ""
     items = []
     for o in q.options:
         state = "chosen" if answer == o.letter else "passed" if answer else ""
@@ -2532,11 +2530,8 @@ def path_target(text: str) -> str | None:
     path = re.sub(r":\d+(?::\d+)?$", "", text.strip())
     if root is None or re.search(r"\s", path) or not ("/" in path or Path(path).suffix):
         return None
-    try:
-        found = local_file(path, root).exists()
-    except OSError:  # pragma: no cover: a name too long for the filesystem: Path.exists raises on one up to Python 3.13, the suite runs 3.14
-        return None
-    return href(path) if found else None
+    # os.path.exists: Path.exists raises on a name too long for the filesystem up to Python 3.13
+    return href(path) if os.path.exists(local_file(path, root)) else None
 
 
 def esc(s: str) -> str:

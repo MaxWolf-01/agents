@@ -42,7 +42,7 @@ from live_hook import LIVE
 from session_checks import (
     BEFORE_IT, DRAWN, LEFT_ALONE, LISTS_A_QUESTION, LONG, SPOKEN_AFTER, TASK_DONE, TURN_ANCHOR, TURN_ENDED, TURN_STARTS,
     UNPARSEABLE, appended, asked_in_order, elements, logged, messages_of, payload, project_of, sessions, text_of, turns_on,
-    unreachable, view_of, with_write, write_tickets,
+    WOKEN, unreachable, view_of, with_write, write_tickets,
 )
 from session_checks import record as drawn_record
 from session_page import AGENT_REPO, LOG, PAGE, PREVIOUS, SESSIONS, pages_directory
@@ -1053,6 +1053,18 @@ def test_a_turn_the_user_did_not_start_still_records_its_reply_as_a_chat_turn(
     for record in (worked_example / "turns").iterdir():
         os.utime(record, (BEFORE_IT, BEFORE_IT))
     decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", *start), reply=LONG), worked_example)
+    assert (decision.verb, decision.why) == ("render", "chat reply recorded")
+
+
+def test_a_turn_whose_transcript_marks_no_start_records_its_reply_as_a_chat_turn(
+    worked_example: Path, tmp_path: Path,
+) -> None:
+    """A scheduled prompt with no turn before it to end marks no start in the transcript, so no
+    record can have changed since this turn began: the records the transcript never writes are not
+    sent back as written through the shell, and the reply is this turn's chat turn."""
+    transcript = tmp_path / "woken.jsonl"
+    transcript.write_text(json.dumps(WOKEN) + "\n")
+    decision = decide(payload(worked_example, transcript, reply=LONG), worked_example)
     assert (decision.verb, decision.why) == ("render", "chat reply recorded")
 
 

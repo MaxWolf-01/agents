@@ -36,7 +36,7 @@ BEFORE_IT = datetime(2026, 9, 23, 1, 31, tzinfo=UTC).timestamp()
 def unreachable(system: str, prompt: str) -> list[dict]:
     """A reviewer stand-in for a check where no model call may be made. It fails the check through
     `pytest.fail`, which the review's fail-open handler does not catch."""
-    pytest.fail("the reviewer was called where no model call may be made")  # pragma: no cover: runs only when the check it guards fails
+    pytest.fail("the reviewer was called where no model call may be made")
 
 
 # ---- sessions drawn as data ------------------------------------------------

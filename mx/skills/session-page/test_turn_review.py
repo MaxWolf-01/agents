@@ -17,7 +17,7 @@ import pytest
 
 import session_page
 import turn_review
-from session_checks import CATALOGUE_FIXTURE, RULES_FIXTURE
+from session_checks import CATALOGUE_FIXTURE, RULES_FIXTURE, unreachable
 
 # ---- the catalogue's chat rules ---------------------------------------------
 
@@ -64,6 +64,20 @@ def test_the_turn_record_the_rules_give_the_agent_parses(tmp_path: Path) -> None
     assert question.recap and question.links and turn.todos[0].recap and turn.todos[0].links
     assert cited.ticket and not question.ticket, "a ticket's question put to the user as a session Qn"
     session_page.check_current_forms(record)
+
+
+# ---- the reviewer no check may reach ------------------------------------------
+
+
+def test_a_check_that_reaches_the_unreachable_reviewer_fails_through_the_reviews_fail_open(
+    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review fails open on whatever its reviewer raises, so a stand-in that raised an ordinary
+    error would leave every check that relies on it passing with the reviewer called."""
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    session = session_page.read_session(worked_example, transcript)
+    with pytest.raises(pytest.fail.Exception):
+        turn_review.feedback_on(session, session.turns[-1])
 
 
 if __name__ == "__main__":

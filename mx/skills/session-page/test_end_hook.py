@@ -303,5 +303,22 @@ def test_a_session_with_no_records_commits_nothing(
     assert git(agent, "rev-parse", "HEAD") == head
 
 
+def test_a_session_whose_turns_directory_is_empty_commits_nothing_and_leaves_what_another_session_staged(
+    agent: Path, worked_example: Path,
+) -> None:
+    """A `turns/` with its records deleted still stands, so the hook starts the commit; with no
+    record to name, the commit would take the whole index, another session's staged ticket with it.
+    The agent repo holds an earlier session's records, as it does once any session has ended."""
+    (agent / "sessions" / "an-earlier-session").mkdir(parents=True)
+    (worked_example / "session.md").unlink()
+    (worked_example / "plan").unlink()
+    for record in (worked_example / "turns").iterdir():
+        record.unlink()
+    head = git(agent, "rev-parse", "HEAD")
+    end_hook.commit_records(worked_example)
+    assert git(agent, "rev-parse", "HEAD") == head
+    assert git(agent, "status", "--porcelain").splitlines() == ["A  tickets/other.md"]
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
