@@ -1,3 +1,8 @@
+## 1.0.135
+
+- Every question and to-do card says the hour and minute it was put
+  Where the transcript shows no write of a turn's record, its cards fell back to the day alone; they now take the record file's own time. Asked for by max, who ruled merging; make check, make test (1007) and the 42 browser tests pass on the branch, whose tree the merge result is.
+
 ## 1.0.134
 
 - The session page's tasks column labels its sections and dates its cards
