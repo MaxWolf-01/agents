@@ -1,0 +1,13 @@
+[run]
+source = mx
+omit =
+    */test_*.py
+    */conftest.py
+patch = subprocess
+parallel = true
+
+[report]
+include_namespace_packages = true
+fail_under = 100
+show_missing = true
+skip_covered = true

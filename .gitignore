@@ -7,3 +7,5 @@ __pycache__/
 docs/figures/story/site/
 node_modules/
 .hypothesis/
+.coverage
+.coverage.*
