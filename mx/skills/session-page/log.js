@@ -38,7 +38,8 @@
   const guess = (text) => Math.ceil([...text].length / 4)
   const about = (text) => `≈${guess(text).toLocaleString("en")} tokens`
   const amount = (glyph, count) => `<span class="amount"><svg class="glyph" aria-hidden="true"><use href="#g-${glyph}"/></svg>${count}</span>`
-  const took = (s) => (s == null ? "" : s < 1 ? "<1s" : s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`)
+  const took = (s) => (s == null ? "" : s < 1 ? "<1s" : s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+    : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`)
 
   // ---- loading, once: the steps and the highlighter, each a script; a highlighter that fails to load leaves the code plain
 
@@ -149,17 +150,23 @@
     return `<span class="size" data-tip="${esc(tip)}">${amount("wrote", size(bytes(made)))}${read ? amount("read", size(bytes(read))) : ""}</span>`
   }
   const running = (s) => `<span class="took running" data-at="${esc(s.at)}">${took(secs(s.at, new Date().toISOString()))}…</span>`
-  const step = (s, n) => s.kind === "thinking"
-    ? `<div class="step thinking" data-n="${n}"><button type="button">${icon("thinking")}<span class="subject">${esc(s.output)}</span>${spent(s)}</button></div>`
-    : `<div class="step" data-n="${n}"><button type="button">${icon(s.kind)}<span class="verb">${esc(s.verb)}</span><span class="subject">${esc(s.subject)}</span>` +
-      `${s.failed ? '<span class="failed" title="failed">✕</span>' : ""}${spent(s)}${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}</button></div>`
+  // when a step started, on the clock
+  const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) : "")
+  // a step's icon, its verb (ran, read, …) in the icon's tooltip
+  const kind = (s) => `<span class="kind" data-tip="${esc(s.kind === "thinking" ? "thought" : s.verb)}">${icon(s.kind)}</span>`
+  // a step's row: its icon, what it acted on, then in columns of their own whether it failed, its sizes, how long it took and when it started
+  const step = (s, n) => `<div class="step${s.kind === "thinking" ? " thinking" : ""}" data-n="${n}"><button type="button">${kind(s)}` +
+    `<span class="subject">${esc(s.kind === "thinking" ? s.output : s.subject)}</span>` +
+    `<span class="failed"${s.failed ? ' data-tip="failed">✕' : ">"}</span>${spent(s)}` +
+    `${s.kind === "thinking" ? '<span class="took"></span>' : s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}` +
+    `<span class="at">${clock(s.at)}</span></button></div>`
 
   // Drawn again over the same turn, as its calls come in, the log keeps the steps the reader opened
   // and where they scrolled to, and follows the newest call where they were at the end.
   function draw() {
     const was = panel.querySelector(".log-steps"), now = target()
     const kept = now === shownFor && was && { open: [...was.querySelectorAll(".step.open")].map((el) => +el.dataset.n),
-      top: was.scrollTop, end: was.scrollTop + was.clientHeight >= was.scrollHeight - 4 }
+      top: was.scrollTop }
     shownFor = now
     const steps = (shownFor === LIVE ? window.liveCalls.steps : window.toolCalls && shownFor && window.toolCalls[shownFor.id]) || []
     shownSteps = steps
@@ -176,15 +183,12 @@
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
         ${steps.some((s) => s.kind !== "thinking") ? '<button type="button" class="all" data-all aria-keyshortcuts="O">open all</button>' : ""}
       </div>
-      <div class="log-steps">${steps.length ? steps.map(step).join("") : `<p class="log-empty">${empty}</p>`}</div>`
+      <div class="log-steps">${steps.length ? steps.map(step).reverse().join("") : `<p class="log-empty">${empty}</p>`}</div>`
     const box = panel.querySelector(".log-steps")
     if (kept) {
       kept.open.forEach((n) => flip(box.querySelector(`.step[data-n="${n}"]`)))
-      box.scrollTop = kept.end ? box.scrollHeight : kept.top
-    } else {
-      at = -1
-      if (shownFor === LIVE) box.scrollTop = box.scrollHeight
-    }
+      box.scrollTop = kept.top
+    } else at = -1
     nameAll()
     point(at, false)
   }
@@ -220,7 +224,7 @@
   function steer(on) {
     keyed = on
     panel.classList.toggle("keyed", on)
-    if (on && at < 0) at = shownFor === LIVE ? stepEls().length - 1 : 0
+    if (on && at < 0) at = 0
     point(at)
   }
 
@@ -246,16 +250,16 @@
 
   // ---- the turn under way's newest steps, in the tasks
   const working = document.getElementById("working")
-  const brief = (s) => `<span class="live-step${s.done ? "" : " now"}">${icon(s.kind)}` + (s.kind === "thinking"
+  const brief = (s) => `<span class="live-step${s.done ? "" : " now"}">${kind(s)}` + (s.kind === "thinking"
     ? `<span class="subject thought">${esc(s.output)}</span>`
-    : `<span class="verb">${esc(s.verb)}</span><span class="subject">${esc(s.subject)}</span>${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}`) + "</span>"
+    : `<span class="subject">${esc(s.subject)}</span>${s.done ? `<span class="took">${took(secs(s.at, s.done))}</span>` : running(s)}`) + "</span>"
   function drawNewest() {
     const live = window.liveCalls
     working.hidden = !live
     if (!live) return
     const n = live.steps.length
     working.querySelector(".live-count").textContent = `${n} step${n === 1 ? "" : "s"}`
-    working.querySelector(".live-steps").innerHTML = n ? live.steps.slice(-NEWEST).map(brief).join("") : '<span class="live-none">no tool calls yet</span>'
+    working.querySelector(".live-steps").innerHTML = n ? live.steps.slice(-NEWEST).map(brief).reverse().join("") : '<span class="live-none">no tool calls yet</span>'
   }
 
   // The page is a file the hub reloads as each turn renders, so nothing tells it a turn began: while it

@@ -14,14 +14,20 @@
 .log-head .tally span { display: inline-flex; align-items: center; gap: 0.15rem; }
 .log-head button { border: none; background: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0.1rem 0.3rem; }
 .log-head button:hover { color: var(--accent); }
-.log-steps { flex: 1; min-height: 0; overflow-y: auto; padding: 0.2rem 0; }
+.log-steps { flex: 1; min-height: 0; overflow-y: auto; padding: 0.2rem 0; container-type: inline-size; }
+/* a narrow drawer gives the sizes' columns to what a step acted on */
+@container (max-width: 40rem) {
+  .log .log-steps .step > button { grid-template-columns: auto minmax(0, 1fr) 0.8rem 4.4rem 4.6rem; }
+  .log .log-steps .step .size { display: none; }
+}
 .log-empty { padding: 1rem 0.9rem; color: var(--muted); }
 .log .step { border-bottom: 1px solid color-mix(in srgb, var(--edge) 55%, transparent); }
-.log .step > button { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; padding: 0.32rem 0.9rem; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.log .step > button { display: grid; grid-template-columns: auto minmax(0, 1fr) 0.8rem 11rem 4.4rem 4.6rem; align-items: baseline; gap: 0.5rem; width: 100%; padding: 0.32rem 0.9rem; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .log .step > button:hover { background: var(--wash-ink); }
-.log .step .verb { flex: none; color: var(--muted); }
+.log .step .at { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.log .step .took { text-align: right; }
 .log .step .subject { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--body); }
-.log .step .size { flex: none; display: inline-flex; gap: 0.6em; align-self: center; color: var(--muted); opacity: 0.7; font-size: 0.7rem; }
+.log .step .size { display: grid; grid-template-columns: 1fr 1fr; justify-items: end; gap: 0.6em; align-self: center; color: var(--muted); opacity: 0.7; font-size: 0.7rem; }
 .log .step .took { flex: none; color: var(--muted); opacity: 0.7; }
 .log .step .failed { flex: none; color: light-dark(#9c3d22, #d98a6c); }
 .log .step .took.running { color: var(--accent); opacity: 1; }
@@ -41,8 +47,7 @@
 .live-name { color: var(--strong); }
 .live-count { margin-left: auto; }
 .live-step { display: flex; align-items: baseline; gap: 0.45rem; padding: 0.1rem 0; }
-.live-step:not(:last-child) { opacity: 0.72; }
-.live-step .verb { flex: none; color: var(--muted); }
+.live-step:not(:first-child) { opacity: 0.72; }
 .live-step .subject { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-step .subject.thought { font-family: var(--font-body); font-style: italic; color: var(--muted); }
 .live-step.now .subject { color: var(--strong); }
@@ -57,6 +62,7 @@
 .log .step.thinking .subject { font-family: var(--font-body); font-style: italic; font-size: 0.86rem; white-space: normal;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .log .step.thinking.open .subject { display: block; }
+.kind { display: inline-flex; }
 .log .ico, .live-log .ico { flex: none; width: 13px; height: 13px; transform: translateY(2px); color: var(--muted); }
 .log .detail { padding: 0 0.9rem 0.6rem 2.3rem; }
 .log .detail .label { color: var(--muted); font-size: 0.7rem; margin: 0.4rem 0 0.15rem; }

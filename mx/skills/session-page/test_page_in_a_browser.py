@@ -536,9 +536,9 @@ with sync_playwright() as pw:
         SHOWN = '''(() => { const log = document.getElementById("log")
           return {open: !!log && log.checkVisibility(), which: log?.querySelector(".which")?.textContent ?? null,
                   steps: [...(log?.querySelectorAll(".step") ?? [])].map((s) => s.classList.contains("thinking")
-                    ? ["thinking", s.querySelector(".subject").textContent] : [s.querySelector(".verb").textContent, s.querySelector(".subject").textContent])} })()'''
+                    ? ["thinking", s.querySelector(".subject").textContent] : [s.querySelector(".kind").dataset.tip, s.querySelector(".subject").textContent])} })()'''
         LOADED = "'toolCalls' in window"
-        STEP = '''(verb) => [...document.querySelectorAll("#log .step")].find((s) => s.querySelector(".verb")?.textContent === verb)'''
+        STEP = '''(verb) => [...document.querySelectorAll("#log .step")].find((s) => s.querySelector(".kind")?.dataset.tip === verb)'''
         out["closed"] = page.evaluate(SHOWN) | {"loaded": page.evaluate(LOADED)}
         page.keyboard.press("l")
         page.wait_for_function("document.querySelector('#log .log-steps')", timeout=10000)
@@ -594,7 +594,7 @@ with sync_playwright() as pw:
         live = Path(args["live"])
         SHOWN = '''(() => { const log = document.getElementById("log")
           return {which: log.querySelector(".which").textContent, buttons: [...log.querySelectorAll(".log-head button")].map((b) => b.textContent),
-                  steps: [...log.querySelectorAll(".step")].map((s) => [s.querySelector(".verb").textContent,
+                  steps: [...log.querySelectorAll(".step")].map((s) => [s.querySelector(".kind").dataset.tip,
                     s.querySelector(".subject").textContent, s.querySelector(".took").classList.contains("running")])} })()'''
         live.write_text(args["first"])
         page.keyboard.press("l")
@@ -611,7 +611,7 @@ with sync_playwright() as pw:
         out["newest_again"] = page.evaluate(SHOWN)
         # the tasks' box of its newest steps: a click opens the log on the turn under way, though a turn is picked
         out["box"] = page.evaluate('''[...document.querySelectorAll("#working .live-step")].map((s) =>
-          [s.querySelector(".verb").textContent, s.querySelector(".subject").textContent])''')
+          [s.querySelector(".kind").dataset.tip, s.querySelector(".subject").textContent])''')
         out["box_count"] = page.text_content("#working .live-count")
         page.keyboard.press("Escape")
         page.click("#working")
@@ -1120,8 +1120,8 @@ def test_the_log_opens_on_demand_on_the_focused_turns_tool_calls(rendered: tuple
     assert seen["closed"] == {"open": False, "which": None, "steps": [], "loaded": False}
     newest = seen["newest"]
     assert newest["open"] and newest["loaded"] and newest["which"].startswith("turn 04 · "), newest
-    assert newest["steps"][:3] == [["ran", "Run the suite"], ["edited", "/repo/page.css"], ["read", "/repo/lines.py"]]
-    assert [verb for verb, _ in newest["steps"][3:]] == ["wrote"], "the Write of record 04 comes last"
+    assert [verb for verb, _ in newest["steps"][:1]] == ["wrote"], "the newest step on top: the Write of record 04"
+    assert newest["steps"][1:] == [["read", "/repo/lines.py"], ["edited", "/repo/page.css"], ["ran", "Run the suite"]]
     assert seen["after_jj"]["which"].startswith("turn 03 · ")
     assert [s for s in seen["after_jj"]["steps"] if s[0] == "thinking"] == [["thinking", "The grid wants a leading word."]]
     bash, ran = seen["bash"]
@@ -1155,11 +1155,11 @@ def test_the_log_shows_the_turn_under_way_as_its_calls_come_in(rendered: tuple[P
     seen = probe(page, "live", live=str(page.parent / LIVE), first=calls(("make test", at)),
                  second=calls(("make test", at), ("make check", None)))
     assert seen["first"] == {"which": "live · make the log live", "buttons": ["open all"], "steps": [["ran", "make test", False]]}
-    assert seen["second"]["steps"] == [["ran", "make test", False], ["ran", "make check", True]]
+    assert seen["second"]["steps"] == [["ran", "make check", True], ["ran", "make test", False]], "the newest on top"
     assert seen["turn"]["which"].startswith("turn 04 ") and seen["turn"]["buttons"] == ["open all"]
     assert seen["back"] == seen["second"], "k on the newest turn goes on to the turn under way"
     assert seen["newest_again"]["which"] == seen["turn"]["which"], "and j goes back to the newest turn"
-    assert seen["box"] == [["ran", "make test"], ["ran", "make check"]] and seen["box_count"] == "2 steps"
+    assert seen["box"] == [["ran", "make check"], ["ran", "make test"]] and seen["box_count"] == "2 steps"
     assert seen["clicked"] == "live · make the log live", "a click on the tasks' box shows the turn under way, a turn picked or not"
     assert seen["edges"][0] == seen["edges"][1], "the open log covers the tasks and the timeline whole"
     assert not seen["ended"]["which"].startswith("live") and not seen["box_after"]
