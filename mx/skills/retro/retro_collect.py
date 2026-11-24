@@ -509,8 +509,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
         lines.append(f"[{at:%H:%M}] {text}" if at else text)
 
     for e in entries:
-        if e.get("isSidechain"):
-            continue
         at = parse_time(e["timestamp"]) if e.get("timestamp") else None
         if at and isinstance(e.get("cwd"), str) and e["cwd"]:
             paths.setdefault(at.date().isoformat(), set()).add(e["cwd"])
@@ -522,8 +520,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
             if at and message.get("model") and message["model"] != "<synthetic>":
                 seen(models, message["model"], at)
             for block in message.get("content") or []:
-                if not isinstance(block, dict):
-                    continue
                 if block.get("type") == "text" and block.get("text", "").strip():
                     put(at, f"A: {block['text'].strip()}")
                 elif block.get("type") == "tool_use":
@@ -581,8 +577,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                 parents[parent] += 1
                 if parents[parent] > 1:
                     tag = "MAX REWOUND and re-sent (the agent's turn after the first send was abandoned)"
-            if e.get("promptSource") == "queued":
-                tag += " (queued while the agent worked)"
             put(at, f"{tag}: {t}")
 
     interactive = any(e.get("entrypoint") == "cli" for e in entries)

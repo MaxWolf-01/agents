@@ -48,6 +48,7 @@ WEEK = timedelta(weeks=1)
 # command line, one argument per line, the order the stages ran in, and what the run directory
 # held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
+# The stage $STUB_FAILS_AT names exits 1 instead, writing nothing, as a model run that errored does.
 # With $STUB_SYNTHESIS_FAILS set, synthesis writes an empty report and no page. With $STUB_HANG set it starts a child
 # and waits on it instead, recording both pids, and takes a second to end on TERM, as a model run
 # ending its work does; the child ends only by its own TERM. Run as `claude auto-mode config`, as
@@ -60,6 +61,7 @@ printf '%s\n' "$@" > "$STUB_LOG/$stage.argv"
 echo "$stage" >> "$STUB_LOG/order"
 find . -path ./prompts -prune -o -type f -print | sort > "$STUB_LOG/$stage.seen"
 if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo "$$ $!" > "$STUB_LOG/$stage.pids.tmp" && mv "$STUB_LOG/$stage.pids.tmp" "$STUB_LOG/$stage.pids"; wait; fi
+[ "$stage" = "${STUB_FAILS_AT:-}" ] && { echo "API Error: overloaded"; exit 1; }
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
@@ -367,6 +369,16 @@ def test_a_resumed_run_keeps_its_period_and_runs_only_the_stages_that_left_out_a
     assert last_logged(tmp_path, name).startswith("committed ")
 
 
+def test_a_stage_that_outlives_its_grace_after_term_is_killed() -> None:
+    """A stopped run ends its stage before it exits, also a stage that ignores TERM."""
+    process = subprocess.Popen(["bash", "-c", "trap '' TERM; echo ready; exec sleep 60"], stdout=subprocess.PIPE, text=True)
+    assert process.stdout.readline() == "ready\n", "TERM is ignored from here on"
+
+    retro_run.end(process, grace=0.2)
+
+    assert process.returncode == -signal.SIGKILL
+
+
 def test_a_run_leaves_its_callers_signal_handlers_as_it_found_them(tmp_path: Path, stub: Path, repo: Path) -> None:
     """A run in-process once left TERM ignored, and every process started after it unstoppable."""
     found = {s: signal.getsignal(s) for s in retro_run.STOP}
@@ -392,6 +404,35 @@ def test_a_run_is_not_resumed_over_a_verdict_committed_since_it_began(
     assert git(agent, "log", "-1", "--format=%s") == "verdict\n", "nothing was committed over it"
 
 
+@pytest.mark.parametrize("why", ["it is in no run's directory", "it is given its own period", "it is of another repo"])
+def test_a_resume_of_a_run_it_cannot_continue_is_refused_naming_the_run_and_runs_no_stage(
+        tmp_path: Path, stub: Path, repo: Path, code: Path, monkeypatch: pytest.MonkeyPatch, why: str) -> None:
+    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST, SINCE)
+    monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
+    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
+    for argv in stub.glob("*.argv"):
+        argv.unlink()
+    resumed, since = repo, None
+    if why == "it is in no run's directory":
+        run = tmp_path / "data/agents/runs/by-hand"
+        run.mkdir()
+    elif why == "it is given its own period":
+        since = SINCE - WEEK
+    else:
+        resumed = code
+
+    with pytest.raises(SystemExit) as refused_:
+        retro_run.run_retro(resumed, tmp_path / "data", [tmp_path / ".claude/projects"], since, resume=run)
+
+    assert str(run) in str(refused_.value.code)
+    if why == "it is of another repo":
+        assert str(repo) in str(refused_.value.code), "it names the repo the run is of"
+    assert not list(stub.glob("*.argv"))
+    assert not (repo / "agent/retro/report.md").exists() and not (code / "agent/retro/report.md").exists()
+
+
 def commit_by(repo: Path, author: str, when: datetime) -> None:
     """A commit in `repo` whose author is `author` and whose committer is max, as a worker's is once merged."""
     (repo / f"{when:%H%M%S}-{author.split()[0]}").write_text(author)
@@ -415,6 +456,24 @@ def test_a_week_with_no_session_or_commit_of_maxs_is_skipped_and_the_run_log_say
     assert last_logged(tmp_path) == f"skipped: no session or commit of max's since {retro_run.stamp(SINCE)}"
     assert not list(stub.glob("*.argv")), "no stage ran"
     assert not (repo / "agent/retro/report.md").exists()
+
+
+def test_an_if_active_run_where_git_knows_no_author_fails_saying_so_and_is_not_skipped(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Max's commits are told apart by the author identity the repo commits with; with none, no
+    commit can be his, and a skip would hide that every week."""
+    for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly", "GIT_CONFIG_VALUE_0": "true"}.items():
+        monkeypatch.setenv(key, value)  # git guesses no identity from the host's name
+    (tmp_path / ".claude/projects").mkdir(parents=True)
+
+    with pytest.raises(SystemExit) as failed:
+        retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], SINCE, until=FIRST, if_active=True)
+
+    assert failed.value.code == 1
+    assert str(repo) in last_logged(tmp_path) and "author identity" in last_logged(tmp_path)
+    assert not list(stub.glob("*.argv"))
 
 
 @pytest.mark.parametrize("sign", ["a message", "a commit"])
@@ -557,6 +616,104 @@ def test_a_run_that_fails_before_its_stages_says_why_as_its_last_line(tmp_path: 
     assert failed.value.code == 1
     assert last_logged(tmp_path) == f"failed: the check for something new: {tmp_path / 'moved-away'} is no git repo"
     assert not list(stub.glob("*.argv"))
+
+
+@pytest.mark.parametrize("wrong", ["the project is not there", "two seeds share a name", "a first workflow run has no --since",
+                                   "the workflow retro's repo list is missing", "a repo retro's repo list has a repo with no path"])
+def test_a_run_refused_before_its_stages_names_what_is_wrong_and_runs_none(
+        tmp_path: Path, stub: Path, repo: Path, code: Path, wrong: str) -> None:
+    since, seed, project = SINCE, [], repo
+    if wrong == "the project is not there":
+        project = names = tmp_path / "moved-away"
+    elif wrong == "two seeds share a name":
+        seed = [tmp_path / d / "REPORT.md" for d in ("retro-2026-09", "retro-2026-10")]
+        for p in seed:
+            p.parent.mkdir()
+            p.write_text("an earlier report\n")
+        names = "seed"
+    elif wrong == "a first workflow run has no --since":
+        since, names = None, "--since"
+    elif wrong == "the workflow retro's repo list is missing":
+        (repo / "agent/retro/repos").unlink()
+        names = repo / "agent/retro/repos"
+    else:
+        project, names = code, "[quartz]"
+        commit(code / "agent", {"repos.toml": '[quartz]\nintegration = "v4"\n'}, "list quartz", SINCE)
+
+    with pytest.raises(SystemExit) as refused_:
+        retro_run.run_retro(project, tmp_path / "data", [tmp_path / ".claude/projects"], since, seed=seed, until=FIRST)
+
+    assert str(names) in str(refused_.value.code)
+    if wrong == "a repo retro's repo list has a repo with no path":
+        assert "`path`" in str(refused_.value.code)
+    if wrong == "the project is not there":
+        assert f"{project}/agent" not in str(refused_.value.code), "the project is named missing, not its agent repo"
+    assert not list(stub.glob("*.argv"))
+    assert not (repo / "agent/retro/report.md").exists() and not (code / "agent/retro/report.md").exists()
+
+
+def test_a_stage_that_fails_ends_the_run_there_and_the_run_log_names_it(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUB_FAILS_AT", "follow up")
+
+    with pytest.raises(SystemExit) as failed:
+        retro(tmp_path, repo, FIRST, SINCE)
+
+    assert failed.value.code == 1
+    assert (stub / "order").read_text().split() == ["read", "fresh", "follow", "up"], "no stage after it ran"
+    assert last_logged(tmp_path).startswith("failed: follow-up exited 1"), "a stage that failed reads apart from one that left out a file"
+    assert not (repo / "agent/retro/report.md").exists()
+
+
+def test_a_run_that_fails_on_an_error_nobody_foresaw_says_what_it_was_as_its_last_line(
+        tmp_path: Path, stub: Path, repo: Path) -> None:
+    seed = tmp_path / "retro-2026-10" / "REPORT.md"  # never written: a typo in --seed
+    projects = tmp_path / ".claude/projects"
+    Transcript(projects, str(repo), FIRST - timedelta(days=2)).says("why is the suite so slow")
+
+    with pytest.raises(OSError):
+        retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, seed=[seed], until=FIRST)
+
+    assert last_logged(tmp_path).startswith("failed: follow-up") and str(seed) in last_logged(tmp_path)
+
+
+def test_the_later_stages_read_the_seed_as_earlier_reports_and_read_fresh_does_not(
+        tmp_path: Path, stub: Path, repo: Path) -> None:
+    seed = tmp_path / "retro-2026-10" / "REPORT.md"
+    seed.parent.mkdir()
+    seed.write_text("# An earlier retro, from before the report was in git\n")
+    projects = tmp_path / ".claude/projects"
+    Transcript(projects, str(repo), FIRST - timedelta(days=2)).says("why is the suite so slow")
+
+    run = retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, seed=[seed], until=FIRST)
+
+    assert "./previous/seed/REPORT.md" in (stub / "follow up.seen").read_text().split()
+    assert (run / "previous/seed/REPORT.md").read_text() == seed.read_text()
+    assert "seed" not in (stub / "read fresh.seen").read_text()
+
+
+@pytest.mark.parametrize("report", ["a first report", "a later report"])
+def test_a_commit_another_git_process_holds_the_index_for_leaves_the_agent_repo_as_it_was(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, report: str) -> None:
+    agent = repo / "agent"
+    if report == "a later report":
+        retro(tmp_path, repo, FIRST, SINCE)
+    until = FIRST + WEEK if report == "a later report" else FIRST
+    head = git(agent, "rev-parse", "HEAD")
+    monkeypatch.setenv("STUB_BEFORE_SYNTHESIS", f"touch {agent}/.git/index.lock")
+
+    with pytest.raises(SystemExit) as failed:
+        retro(tmp_path, repo, until, None if report == "a later report" else SINCE)
+
+    (agent / ".git/index.lock").unlink()
+    assert failed.value.code == 1
+    assert git(agent, "rev-parse", "HEAD") == head
+    assert git(agent, "status", "--porcelain", "--untracked-files=all") == "M  tickets/a.md\n", \
+        "the report's files are as HEAD has them, and the session's staged ticket still staged"
+    run = tmp_path / "data/agents/runs" / retro_run.dirname(until)
+    said = (tmp_path / "data/agents/runs.log").read_text().split(f" {run.name} not committed: ", 1)  # git's message spans lines
+    assert len(said) == 2 and "index.lock" in said[1] and str(run) in said[1], "the run log says why, and where the report is"
+    assert (run / "report.md").is_file(), "the report stays in the run directory"
 
 
 # ── the repos a tracker plans ────────────────────────────────────────────────

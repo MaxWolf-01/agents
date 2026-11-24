@@ -3,6 +3,7 @@ PATH that records the profile it was run under. Run: make test, or pytest on thi
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -12,9 +13,11 @@ SCRIPT = Path(__file__).resolve().parent / "auto_mode_critique.py"
 ENTRY = "Force Push [named+specifics — must name: the branch]: a force push to a branch the session did not create."
 
 # Records the settings and the files of the profile it runs under into $STUB_SAW, then prints
-# $STUB_SAYS as the real critique prints its findings.
+# $STUB_SAYS as the real critique prints its findings; with $STUB_EXITS set, it prints $STUB_SAYS
+# to stderr and exits with that status instead, as a critique that could not run does.
 STUB = r"""#!/usr/bin/env bash
 [ "$*" = "auto-mode critique" ] || exit 2
+[ -n "${STUB_EXITS:-}" ] && { printf '%s\n' "$STUB_SAYS" >&2; exit "$STUB_EXITS"; }
 cp "$CLAUDE_CONFIG_DIR/settings.json" "$STUB_SAW/settings.json"
 readlink "$CLAUDE_CONFIG_DIR/.credentials.json" > "$STUB_SAW/credentials"
 echo "Analyzing your auto mode rules…"
@@ -36,12 +39,14 @@ def saw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "saw"
 
 
-def critique(run: Path, proposed: object, says: str) -> tuple[int, str]:
+def critique(run: Path, proposed: object, says: str, **env: str) -> tuple[int, str]:
+    """Run the script on `run`, its `deep/auto-mode.json` holding `proposed` as JSON, or the text itself where it is a
+    string, and the stub `claude` saying `says`."""
     if proposed is not None:
         (run / "deep").mkdir(parents=True)
-        (run / "deep" / "auto-mode.json").write_text(json.dumps(proposed))
+        (run / "deep" / "auto-mode.json").write_text(proposed if isinstance(proposed, str) else json.dumps(proposed))
     done = subprocess.run([str(SCRIPT), str(run)], capture_output=True, text=True, timeout=120,
-                          env={**os.environ, "STUB_SAYS": says})
+                          env={**os.environ, "STUB_SAYS": says, **env})
     return done.returncode, (run / "deep" / "critique.md").read_text()
 
 
@@ -88,3 +93,26 @@ def test_entries_in_another_shape_than_auto_modes_are_refused_with_the_shape_it_
     assert status == 1
     assert "No critique:" in written and "soft_deny" in written and "list of entries" in written
     assert not (saw / "settings.json").exists()
+
+
+def test_entries_that_are_no_json_are_no_critique_and_fail(tmp_path: Path, saw: Path) -> None:
+    status, written = critique(tmp_path / "run", '{"soft_deny": ["' + ENTRY + '"', "unused")
+
+    assert status == 1
+    assert "No critique: deep/auto-mode.json" in written
+    assert not (saw / "settings.json").exists()
+
+
+@pytest.mark.parametrize("why", ["claude cannot be started", "claude exits with an error"])
+def test_a_critique_that_could_not_run_is_written_as_none_saying_why_and_fails(
+        tmp_path: Path, saw: Path, why: str) -> None:
+    path = {}
+    if why == "claude cannot be started":  # a PATH that finds `uv`, which runs the script, and no `claude`
+        (tmp_path / "uv-alone").mkdir()
+        (tmp_path / "uv-alone" / "uv").symlink_to(shutil.which("uv"))
+        path = {"PATH": str(tmp_path / "uv-alone")}
+    status, written = critique(tmp_path / "run", {"allow": [ENTRY]}, "Not logged in.", STUB_EXITS="1", **path)
+
+    assert status == 1
+    assert "No critique:" in written
+    assert ("No such file" if why == "claude cannot be started" else "Not logged in.") in written
