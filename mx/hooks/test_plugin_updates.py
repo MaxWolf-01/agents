@@ -1,9 +1,9 @@
-"""plugin_updates.py, run as Claude Code runs it: from a copy of mx in a scratch directory, with
-its own version and CHANGELOG.md, the hook JSON on stdin and $CLAUDE_PLUGIN_DATA set."""
+"""plugin_updates.py, run as Claude Code runs it: by its path in a scratch mx tree, with that
+tree's own version and CHANGELOG.md, the hook JSON on stdin and $CLAUDE_PLUGIN_DATA set. The tree
+holds the hook as a symlink to the real one, so the code run is the code measured."""
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -32,7 +32,7 @@ def plugin(tmp_path: Path) -> Path:
     (root / ".claude-plugin").mkdir()
     (root / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "mx", "version": "1.0.56"}))
     (root / "CHANGELOG.md").write_text(CHANGELOG)
-    shutil.copy(HOOK, root / "hooks" / HOOK.name)
+    (root / "hooks" / HOOK.name).symlink_to(HOOK)
     return root
 
 

@@ -81,14 +81,51 @@ def test_a_pickup_from_a_linked_worktree_writes_previous_in_the_sessions_one_dir
     assert not (worktree / "agent").exists()
 
 
-@pytest.mark.parametrize("marker, value", [("DISPATCH_WORKLOG", "/tmp/log"), ("CLAUDE_CODE_SESSION_ATTENDED", "0")])
-def test_a_worker_or_a_print_mode_session_picks_up_and_links_nothing(tmp_path: Path, marker: str, value: str) -> None:
-    """every-session-gets-a-page#P4: neither gets a page, so neither gets a session directory."""
+@pytest.mark.parametrize("marker, value", [("DISPATCH_WORKLOG", "/tmp/log"), ("CLAUDE_CODE_SESSION_ATTENDED", "0"),
+                                           ("CLAUDE_CODE_SESSION_ID", "")], ids=["a worker", "a print-mode session", "no session"])
+def test_a_worker_a_print_mode_session_or_no_session_picks_up_and_links_nothing(tmp_path: Path, marker: str, value: str) -> None:
+    """every-session-gets-a-page#P4: neither a worker nor a print-mode session gets a page, so
+    neither gets a session directory; nor does a pickup run outside any Claude Code session, which
+    has no session id to name one by."""
     repo = project(tmp_path)
     done = pickup(repo, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path, **{marker: value})
     assert done.returncode == 0, done.stderr
     assert done.stdout == HANDOFF
     assert not (tmp_path / "claude-config" / "session-pages").exists()
+
+
+def test_a_pickup_from_outside_any_project_prints_and_retires_the_handoff_and_links_nothing(tmp_path: Path) -> None:
+    """A fresh session may start anywhere; the handoff it is pointed at is still read and retired,
+    and with no agent repo at its working directory it has no session directory to link from."""
+    repo = project(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    done = pickup(elsewhere, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == HANDOFF
+    assert not (repo / "agent" / "handoffs" / "2026-10-06-ledger.md").exists()
+    assert not (tmp_path / "claude-config" / "session-pages").exists()
+
+
+def test_a_page_before_that_cannot_be_rendered_still_lets_the_handoff_be_picked_up(tmp_path: Path) -> None:
+    """The page of the session that wrote the handoff is rendered again so it links forward; a
+    record of that session's that does not parse leaves that page as it was and says why, and the
+    handoff is printed, linked and retired all the same."""
+    repo = project(tmp_path)
+    config = tmp_path / "claude-config"
+    before = config / "session-pages" / "old-1"
+    before.mkdir(parents=True)
+    (before / "index.html").write_text("the page as it was")
+    (before / "session.md").write_text("# The ledger\n\n## No such section\n")
+    (config / "projects" / "-lamp").mkdir(parents=True)
+    (config / "projects" / "-lamp" / "old-1.jsonl").write_text("")
+    done = pickup(repo, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == HANDOFF
+    assert str(before / "session.md") in done.stderr
+    assert (before / "index.html").read_text() == "the page as it was"
+    assert (config / "session-pages" / "new-1" / "previous").read_text() == "old-1\n"
+    assert not (repo / "agent" / "handoffs" / "2026-10-06-ledger.md").exists()
 
 
 def test_a_file_outside_a_handoffs_directory_is_refused_untouched(tmp_path: Path) -> None:

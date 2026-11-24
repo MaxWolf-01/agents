@@ -24,7 +24,7 @@ def find_browser():
     for c in CANDIDATES:
         p = c if os.path.isfile(c) and os.access(c, os.X_OK) else shutil.which(c)
         if p:
-            return p
+            return p  # pragma: no cover - the screenshot needs a browser
     return None
 
 
@@ -52,23 +52,23 @@ def main():
               file=sys.stderr)
         return 0
 
-    png = os.path.abspath(a.out + ".png")
+    png = os.path.abspath(a.out + ".png")  # pragma: no cover - the screenshot needs a browser
     # --mx-run names the run that launched the browser, so a stuck one can be killed without
     # touching another run's on a shared host. Chromium ignores a flag it does not know.
-    cmd = [browser, "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
+    cmd = [browser, "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",  # pragma: no cover - the screenshot needs a browser
            f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}",
            f"--force-device-scale-factor={a.scale}",
            f"--window-size={max(a.width, round(min_width(nodes)) + 48)},{a.height}",  # 48: the page's padding
            f"--screenshot={png}", html]
-    if a.scheme == "dark":
+    if a.scheme == "dark":  # pragma: no cover - the screenshot needs a browser
         cmd.insert(1, "--force-dark-mode")  # what prefers-color-scheme reads
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if not os.path.exists(png):
+    r = subprocess.run(cmd, capture_output=True, text=True)  # pragma: no cover - the screenshot needs a browser
+    if not os.path.exists(png):  # pragma: no cover - the screenshot needs a browser
         print(f"screenshot failed:\n{r.stderr[-800:]}", file=sys.stderr)
         return 1
-    print(f"png:  {png}")
-    print("Now look at the PNG: what the checker cannot judge is whether the diagram reads well.")
-    return 0
+    print(f"png:  {png}")  # pragma: no cover - the screenshot needs a browser
+    print("Now look at the PNG: what the checker cannot judge is whether the diagram reads well.")  # pragma: no cover - the screenshot needs a browser
+    return 0  # pragma: no cover - the screenshot needs a browser
 
 
 if __name__ == "__main__":

@@ -71,7 +71,6 @@ def extract_text(content):
             if isinstance(p, dict) and p.get("type") == "text":
                 parts.append(p.get("text", ""))
         return " ".join(parts)
-    return ""
 
 
 def extract_tool_signals(content):
@@ -79,8 +78,6 @@ def extract_tool_signals(content):
     if not isinstance(content, list):
         return signals
     for part in content:
-        if not isinstance(part, dict):
-            continue
         if part.get("type") == "tool_use":
             inp = str(part.get("input", ""))
             if "git commit" in inp or "git push" in inp:
@@ -107,17 +104,12 @@ def scan_session(filepath: Path) -> dict | None:
 
     with open(filepath) as f:
         for line in f:
-            line = line.strip()
-            if not line:
-                continue
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
 
             msg = entry.get("message", {})
-            if not isinstance(msg, dict):
-                continue
 
             etype = entry.get("type", "")
             role = msg.get("role", "")
@@ -231,7 +223,7 @@ def main(args: Args) -> None:
     # Top-level files only: subagent transcripts sit in <session-id>/subagents/.
     candidates = [
         f for f in sessions_dir.glob("*.jsonl")
-        if not f.name.endswith(".wakatime") and f.stem not in exclude_ids
+        if f.stem not in exclude_ids
     ]
     candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
 

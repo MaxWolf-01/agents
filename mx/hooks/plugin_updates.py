@@ -25,7 +25,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).parents[1]
 CHANGELOG = ROOT / "CHANGELOG.md"
 SHOWN = 20  # changelog lines the agent reads at most; the rest stay in CHANGELOG.md
 KEPT = 60 * 86400  # a record of a session that has not run this long is deleted when another session starts

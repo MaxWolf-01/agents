@@ -20,23 +20,17 @@ and not checked here.
 
 Exit code 1 when any finding was reported.
 
-JSON schema (--json):
-
-    [{"path": "str", "line": 0, "term": "str", "kind": "words|sentences|code", "detail": "str"}]
-
 Examples:
 
     glossary-lint                      # ./GLOSSARY.md
     glossary-lint GLOSSARY.md src/billing/GLOSSARY.md
-    glossary-lint --json | jq '.[] | select(.kind == "code")'
 """
 
 from __future__ import annotations
 
-import json
 import re
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
@@ -104,17 +98,12 @@ class Args:
     """Words a definition may run to."""
     max_sentences: int = 2
     """Sentences a definition may run to."""
-    json: bool = False
-    """Emit the findings as JSON to stdout."""
 
 
 def main(args: Args) -> int:
     found = [f for p in args.paths for f in check(Path(p), args.max_words, args.max_sentences)]
-    if args.json:
-        print(json.dumps([asdict(f) for f in found], indent=1, ensure_ascii=False))
-    else:
-        for f in found:
-            print(f"{f.path}:{f.line}: {f.term}: {f.kind}: {f.detail}")
+    for f in found:
+        print(f"{f.path}:{f.line}: {f.term}: {f.kind}: {f.detail}")
     return 1 if found else 0
 
 

@@ -16,6 +16,7 @@ rather than passing it; the renderer itself needs nothing past Python's standard
 """
 
 import json
+import os
 import subprocess
 import sys
 from html import escape
@@ -41,6 +42,23 @@ def test_renderer_draws_each_example_on_the_standard_library_alone(example: Path
     assert done.returncode == 0, done.stderr
     missing = [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in done.stdout]
     assert missing == []
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_each_examples_page_holds_every_text_it_was_given(example: Path) -> None:
+    nodes = json.loads(example.read_text())
+    html = page(nodes)
+    assert [t for t in texts_in(nodes) if escape(t) not in html] == []
+
+
+def test_the_renderer_writes_its_page_to_the_file_o_names(tmp_path: Path) -> None:
+    """SKILL.md step 2 renders with `-o out.html`, the file the layout check then reads."""
+    example = HERE.parent / "examples" / "troubleshooting.json"
+    out = tmp_path / "out.html"
+    done = stdlib_python(str(HERE / "struktogramm.py"), str(example), "-o", str(out))
+    assert done.returncode == 0, done.stderr
+    html = out.read_text()
+    assert [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in html] == []
 
 
 def texts_in(nodes: list) -> list[str]:
@@ -73,6 +91,12 @@ def test_each_branch_body_is_drawn_under_its_own_label() -> None:
     assert order("LABEL-0", "LABEL-1", "LABEL-2", "BODY-0", "BODY-1", "BODY-2")
 
 
+def test_a_node_of_no_known_type_is_refused_naming_it() -> None:
+    """A misspelt type in the node list the agent wrote, nested where it is easy to miss."""
+    with pytest.raises(ValueError, match="'whiel'"):
+        fragment([{"type": "if", "cond": "c", "yes": {"body": [{"type": "whiel", "cond": "x", "body": []}]}}])
+
+
 def test_checker_without_playwright_says_the_layout_is_unverified(tmp_path: Path) -> None:
     page = tmp_path / "diagram.html"
     page.write_text((FIXTURES / "original-roast-dinner-parallel.html").read_text())
@@ -80,6 +104,22 @@ def test_checker_without_playwright_says_the_layout_is_unverified(tmp_path: Path
     assert done.returncode == 2
     assert "UNVERIFIED" in done.stderr
     assert "PASS" not in done.stdout
+
+
+def test_preview_without_a_browser_still_writes_the_page_and_says_the_layout_is_unseen(tmp_path: Path) -> None:
+    """preview.py's docstring: needs a Chromium binary, and without one still writes the HTML and
+    says the layout is unseen. Its PATH here holds no browser."""
+    if Path("/opt/google/chrome/chrome").exists():
+        pytest.skip("this host has a Chrome at the path preview.py tries first, whatever PATH holds")
+    example = HERE.parent / "examples" / "troubleshooting.json"
+    (tmp_path / "bin").mkdir()
+    done = subprocess.run([sys.executable, str(HERE / "preview.py"), str(example)], cwd=tmp_path, capture_output=True,
+                          text=True, timeout=60, env={**os.environ, "PATH": str(tmp_path / "bin")})
+    assert done.returncode == 0, done.stderr
+    assert "unseen" in done.stderr
+    html = (tmp_path / "preview.html").read_text()
+    assert [t for t in texts_in(json.loads(example.read_text())) if escape(t) not in html] == []
+    assert not (tmp_path / "preview.png").exists()
 
 
 def faults_of(html: Path, scheme: str = "light", width: int = 680) -> list[str]:
