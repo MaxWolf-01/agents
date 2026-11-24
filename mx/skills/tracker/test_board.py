@@ -537,6 +537,46 @@ def test_board_opens_the_file_where_diffview_never_comes_back(
     assert "diffview" in capsys.readouterr().err
 
 
+def test_a_briefing_run_that_fails_says_why_and_leaves_what_the_session_was_told(
+    repo: Path, tracker: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`Briefer.write`: the board renders without the model, a run of it that fails included, and
+    what the session was told waits for the run that reaches it. A ticket saved half-written after
+    the pass that started the run read the tracker is one such failure: the run cannot read the
+    state it hands a fresh session."""
+    out = tmp_path / "board.html"
+    session = board.Briefer(repo, out)
+    refuse(tracker / "second.md", "flavour")
+    session.write(tracker, None, None, tracker_snapshot(tracker, repo), (("second", "open"),))
+    assert "`flavour` is no ticket field" in capsys.readouterr().err, "the failed run did not say why"
+    assert not cache_path(out).exists()
+    assert (session.told, session.told_statuses) == ((), None), "a run that failed counted as told"
+
+
+def test_board_watch_re_renders_on_a_change_under_the_tracker_until_ctrl_c(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--watch`'s help: keep running and re-render whenever anything under the tracker changes,
+    until Ctrl-C, which lands in the wait between two passes and ends the board without a
+    traceback. No claude on the PATH, so no briefing run starts, and the code on disk is held to
+    the code running, whatever is edited beside it while the suite runs."""
+    out = tmp_path / "board.html"
+    monkeypatch.setattr(board, "starts", lambda: "held to the code running")
+    monkeypatch.setattr(board.os, "execv", lambda *_: pytest.fail("the watcher restarted"))
+    waits = [0]
+
+    def sleep(_: float) -> None:
+        waits[0] += 1
+        if waits[0] == 1:
+            ticket(tracker / "second.md", "open", parent=TREE, name="Renamed while watched")
+        else:
+            raise KeyboardInterrupt
+    monkeypatch.setattr(board.time, "sleep", sleep)
+    board.main(board.Args(tickets_root=tracker, out=out, open=False, watch=True))
+    assert waits[0] == 2
+    assert "Renamed while watched" in out.read_text(), "the change under the tracker was not rendered"
+
+
 @pytest.mark.parametrize("serving", [True, False], ids=["served", "no diffview"])
 def test_board_open_opens_the_page_in_the_browser_diffview_pages_open_in(
     repo: Path, tracker: Path, path_with: Callable[..., Path], listening: str, monkeypatch: pytest.MonkeyPatch, serving: bool,

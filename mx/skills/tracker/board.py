@@ -162,7 +162,7 @@ def main(args: Args) -> None:
     repo = (args.repo or toplevel(tickets_root) or project(tickets_root)).resolve()
     out = (args.out or tickets_root.parent / "board.html").resolve()
     watching = taken(repo, out) or started(args, tickets_root, repo, out)
-    if args.watch:  # pragma: no cover: the watch loop runs until Ctrl-C; its passes are checked through `turn` and `watch`
+    if args.watch:
         try:
             restart(watch(watching, tickets_root, repo, out), out)
         except KeyboardInterrupt:
@@ -1226,8 +1226,6 @@ def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
     titles: dict[str, str] = {}
     cwds: dict[str, None] = {}
     for line in path.read_text(errors="replace").splitlines():
-        if not any(key in line for key in (*TITLES, "cwd")):
-            continue
         try:
             record = json.loads(line)
         except json.JSONDecodeError:  # a line the session was still writing when the board read it

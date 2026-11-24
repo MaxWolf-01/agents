@@ -181,8 +181,6 @@ def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
     them is kept for the page to say once, in the words the run itself used, since a login that has
     lapsed is a different thing to fix from a machine that never had the model."""
     global SILENT
-    if not available():
-        return None
     # The run inherits nothing from the machine: no settings file, so none of the user's CLAUDE.md,
     # output style, hooks, allowlist or plugins; no MCP server, connectors included; no skill; no
     # memory. A briefing session is none of the user's conversations, and the repo's own AGENTS.md or
