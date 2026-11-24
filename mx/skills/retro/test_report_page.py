@@ -313,5 +313,36 @@ def test_the_page_in_a_browser_opens_entries_shows_their_timeline_and_artefacts_
     assert [(c["id"], c["entry"], c["text"]) for c in saved["comments"]] == [("C1", "A1", "which repo is this?")]
     assert {"j", "k", "/", "g", "c", "y", "w", "?", "1", "a", "s", "n", "t"} <= set(seen["held"]), seen["held"]
     assert seen["let go"] == 0
-    assert seen["list"] >= 15
+    assert seen["list"] == len(report_page.PAGE_KEYS), "the ? list renders from page-keys"
     assert seen["errors"] == []
+
+
+# How the page's script names a key it handles, and how page-keys names it.
+SHOWN_AS = {"Escape": "Esc", "ArrowDown": "↓", "ArrowUp": "↑", "ArrowLeft": "←", "ArrowRight": "→",
+            "Enter": "Ctrl+Enter", "Control": "Ctrl+Alt", "Alt": "Ctrl+Alt"}
+
+
+def test_every_key_the_page_handles_is_in_its_page_keys_which_its_list_and_the_hub_read(agent: Path) -> None:
+    """hub-lists-the-framed-pages-keys reads the page-keys block to list a framed page's keys; the page's
+    own `?` list renders from it, so a key missing there is missing from both."""
+    script = (Path(report_page.__file__).with_name("report_page.html")).read_text()
+    actions = script[script.index("const ACTIONS = {"):].split("};", 1)[0]
+    handled = set(re.findall(r"e\.key === '([^']+)'", script))
+    handled |= {a or b for a, b in re.findall(r"(?<![\w$.(])(?:'([^']+)'|\b([a-z])\b)\s*:", actions)}
+    handled |= set(re.findall(r"\b(Arrow\w+):", script))
+    if "/^[1-5]$/.test(e.key)" in script:
+        handled |= set("12345")
+    page, _ = rendered(agent)
+    block = json.loads(re.search(r'<script type="application/json" id="page-keys">(.*?)</script>', page, re.S).group(1))
+    assert block["title"] == "Workflow retro: agents"
+    listed = {k for entry in block["keys"] for k in entry["keys"].split()}
+    assert all(entry["does"] for entry in block["keys"])
+    assert len(handled) > 20, handled
+    assert {SHOWN_AS.get(k, k) for k in handled} <= listed, {SHOWN_AS.get(k, k) for k in handled} - listed
+
+
+def test_the_rendered_page_holds_no_em_dash(agent: Path) -> None:
+    """max: "no em dashes in the copy". The fixture's report holds none, so any the page shows are its own."""
+    (agent / "retro/report.html.state.json").write_text(json.dumps({"comments": []}))
+    page, _ = rendered(agent)
+    assert "—" not in page and "&mdash;" not in page and "\\u2014" not in page

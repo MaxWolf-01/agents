@@ -35,7 +35,7 @@ from typing import Annotated
 # ---------------------------------------------------------------------------------------------------
 # Area mapping. An entry's area is the commonest area among the paths it cites in Files and Cause
 # (the whole entry when those cite none); a bare `:123` line reference counts toward the path before
-# it. A tie goes to the area cited first. No mapped path gives "—".
+# it. A tie goes to the area cited first. No mapped path gives "no area".
 
 # Matched against a cited path (its `:line` suffix stripped), first match wins. `\1` takes a group.
 AREA_RULES: list[tuple[str, str]] = [
@@ -133,7 +133,7 @@ class Entry:
     state: str = ""
     fields: dict[str, str] = field(default_factory=dict)
     anchor: str = ""
-    area: str = "—"
+    area: str = "no area"
     area_counts: list[tuple[str, int]] = field(default_factory=list)
     state_class: str = ""
     state_others: list[str] = field(default_factory=list)
@@ -231,7 +231,7 @@ def classify_state(state: str) -> tuple[str, list[str]]:
             hits.append((m.start(), name))
     if not hits:
         first = re.match(r"[a-z-]+(?: [a-z]+)?\b", state.strip(), flags=re.I)
-        return (first.group(0).lower() if first else "—"), []
+        return (first.group(0).lower() if first else "no state"), []
     hits.sort()
     return hits[0][1], [n for _, n in hits[1:]]
 
@@ -416,7 +416,7 @@ def row(e: Entry, group_lens: str | None, home: bool = False) -> str:
         f'<a class="row"{f' id="{e.anchor}"' if home else ""} href="#{e.anchor}" data-a="{e.anchor}" data-area="{html.escape(e.area)}" '
         f'data-state="{html.escape(e.state_class)}" data-q="{html.escape((e.id + " " + e.title).lower())}">'
         f'<span class="rk" title="Rank {e.rank} in its section, the report\'s weighing order">{e.rank}</span>'
-        f'<span class="id">{e.id or "—"}</span>'
+        f'<span class="id">{e.id}</span>'
         f'<span class="ar" title="{html.escape(area_tip)}">{html.escape(e.area)}</span>'
         f'<span class="tt">{md.renderInline(e.title)}{top}<span class="ln">{html.escape(lens)}</span></span>'
         f"{chip_state(e)}</a>"
@@ -448,7 +448,7 @@ def overview(entries: list[Entry]) -> tuple[str, str]:
         else:
             groups: dict[str, list[Entry]] = {}
             for e in es:
-                first = re.split(r",|\s+and\s+", e.lens)[0].strip() or "—"
+                first = re.split(r",|\s+and\s+", e.lens)[0].strip() or "no lens"
                 groups.setdefault("\0" + e.group if e.group else first, []).append(e)
             for name, ges in groups.items():
                 label = (
@@ -640,7 +640,7 @@ def timelines(history: list[tuple[str, list[Entry]]]) -> dict[str, list[tuple[st
     first date, and a version without the id reads "not in the report" once the id has appeared."""
     seen: dict[str, list[tuple[str, str]]] = {}
     for date, entries in history:
-        present = {e.id: state_key(e) or e.state_class or "—" for e in entries if e.id}
+        present = {e.id: state_key(e) or e.state_class or "no state" for e in entries if e.id}
         for i in present.keys() | seen.keys():
             state = present.get(i, "not in the report")
             line = seen.setdefault(i, [])
@@ -744,7 +744,7 @@ def render(report: Path, page: Path) -> None:
     states = Counter(e.state_class for e in entries)
     area_pills = "".join(
         f'<button class="pill" data-area="{html.escape(a)}"{"" if i else " aria-keyshortcuts=\"a\""}>{html.escape(a)} <span class="n">{n}</span></button>'
-        for i, (a, n) in enumerate(sorted(areas.items(), key=lambda kv: (kv[0] == "—", -kv[1], kv[0])))
+        for i, (a, n) in enumerate(sorted(areas.items(), key=lambda kv: (kv[0] == "no area", -kv[1], kv[0])))
     )
     state_order = ["live", "back", "to take up", "taken up", "fix landed", "held", "dismissed"]
     state_pills = "".join(
@@ -787,9 +787,35 @@ def render(report: Path, page: Path) -> None:
         .replace("__GROUPED__", grouped)
         .replace("__FLAT__", flat)
         .replace("__FULL__", full_report(title, run_line, intro, sections, entries, ids))
+        .replace("__PAGEKEYS__", json.dumps({"title": title, "keys": PAGE_KEYS}).replace("</", "<\\/"))
         .replace("__DATA__", json.dumps(page_data).replace("</", "<\\/"))
     )
 
+
+# Every key the page answers to, which its `?` list shows and the container hub lists beside its own
+# for a page it frames; `keys` holds them space-separated, as the page names them.
+PAGE_KEYS = [
+    {"keys": "j k", "does": "Next and previous entry, opened in the sheet"},
+    {"keys": "↓ ↑", "does": "Next and previous entry, from outside the sheet"},
+    {"keys": "Esc", "does": "Close the sheet or this list, or leave a box"},
+    {"keys": "/", "does": "Filter by id or title"},
+    {"keys": "a", "does": "Go to the area filters"},
+    {"keys": "s", "does": "Go to the state filters"},
+    {"keys": "← →", "does": "Move between the filters in a row; Enter toggles one"},
+    {"keys": "1 2 3 4 5", "does": "What changed: new, state moved, reworked, dropped, unchanged"},
+    {"keys": "g", "does": "Group by lens, or list in the report's order"},
+    {"keys": "c", "does": "Show only entries with a comment"},
+    {"keys": "n", "does": "Comment on the open entry"},
+    {"keys": "e", "does": "Edit the open entry's newest comment"},
+    {"keys": "d", "does": "Delete the open entry's newest comment"},
+    {"keys": "Ctrl+Enter", "does": "Add or save the comment"},
+    {"keys": "y", "does": "Copy every comment as markdown"},
+    {"keys": "r", "does": "Show the rulings read before this run"},
+    {"keys": "w", "does": "Go to the whole report"},
+    {"keys": "t", "does": "Switch day and night"},
+    {"keys": "?", "does": "List these keys"},
+    {"keys": "Ctrl+Alt", "does": "Held, shows each control's key over it"},
+]
 
 SUN = '<svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
 MOON = '<svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>'

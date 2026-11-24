@@ -221,6 +221,7 @@ __HEADER__
   <div class="sh-body prose" id="sh-body"></div>
 </aside>
 <dialog id="help" aria-label="Keys"><table id="help-keys"></table></dialog>
+<script type="application/json" id="page-keys">__PAGEKEYS__</script>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
@@ -359,18 +360,10 @@ $('prev').onclick = () => step(-1);
 $('next').onclick = () => step(1);
 /* ---- the keys ----
    Every control carries its key in aria-keyshortcuts; Ctrl+Alt held shows each over its control, and only
-   then: the container hub's own keys are Ctrl+Alt and another key, so the page takes none of those, but for
-   Ctrl+Alt+? where no hub frames it. */
-const KEYS = [
-  ['j  k', 'next and previous entry, opened in the sheet'], ['Esc', 'close the sheet, this list, or leave a box'],
-  ['/', 'filter by id or title'], ['a', 'the area filters: ← → move, Enter toggles'], ['s', 'the state filters'],
-  ['1 – 5', 'what changed: new, state moved, reworked, dropped, unchanged'],
-  ['g', "grouped by lens, or the report's order"], ['c', 'only entries with a comment'],
-  ['n', 'comment on the open entry'], ['e  d', 'edit or delete its newest comment; Tab reaches the others'], ['Ctrl+Enter', 'add or save the comment'],
-  ['y', 'copy every comment as markdown'], ['r', 'the rulings read before this run'], ['w', 'the whole report'],
-  ['t', 'day or night'], ['?', 'this list'], ['Ctrl+Alt held', "each control's key over it"],
-];
-$('help-keys').innerHTML = KEYS.map(([k, what]) => `<tr><td>${esc(k)}</td><td>${esc(what)}</td></tr>`).join('');
+   then: the container hub's own keys are Ctrl+Alt and another key, so the page takes none of those. */
+// The list is the page-keys block, which the hub reads to list a framed page's keys beside its own.
+$('help-keys').innerHTML = JSON.parse($('page-keys').textContent).keys
+  .map(k => `<tr><td>${esc(k.keys)}</td><td>${esc(k.does)}</td></tr>`).join('');
 const help = $('help');
 const toggleHelp = () => (help.open ? help.close() : help.showModal());
 $('keys').onclick = toggleHelp;
@@ -391,7 +384,6 @@ const showKeys = () => {
 addEventListener('keydown', e => {
   if (e.ctrlKey && e.altKey && (e.key === 'Control' || e.key === 'Alt')) { if (!overKeys.length) showKeys(); return; }
   hideKeys();
-  if (e.ctrlKey && e.altKey && e.key === '?' && window.top === window) { e.preventDefault(); toggleHelp(); }
 }, true);
 addEventListener('keyup', e => { if (e.key === 'Control' || e.key === 'Alt') hideKeys(); }, true);
 addEventListener('blur', hideKeys);
