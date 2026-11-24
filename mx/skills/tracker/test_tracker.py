@@ -1247,6 +1247,8 @@ DANGLING = [
 
 
 @given(ref=st.from_regex(r"\A[a-z][a-z-]{2,20}[a-z]\Z"), naming=st.sampled_from(DANGLING))
+# a reference that is no slug at all: two hyphens join no words
+@example(ref="one--flow", naming=DANGLING[0])
 @settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_reference_that_names_no_ticket_or_property_is_refused_with_its_file_and_line(
     tickets: Path, repo: Path, ref: str, naming: tuple
@@ -1257,6 +1259,8 @@ def test_p3_a_reference_that_names_no_ticket_or_property_is_refused_with_its_fil
     said = run(repo, "check", str(path))
     assert said.code == 1, (what, said.said)
     assert f"{path}:{line_of(path, ref)}: " in said.out, (what, said.out)
+    if "--" in ref:  # the one way the drawn words fail to be a slug: two hyphens join no words
+        assert "no slug" in said.out, (what, said.out)
 
     held = ticket(tickets, "one-flow", body.replace("{slug}", "on-the-tracker"), **meta("on-the-tracker"))
     resolves = run(repo, "check", str(held))
@@ -1562,6 +1566,8 @@ def test_p2_a_landing_on_the_parents_branch_leaves_every_child_in_review(
 
 
 @given(tree=leaves(("open", "claimed", "review", "done")))
+# a done sibling frees the leaf it blocks
+@example(tree=[Leaf("one-flow-0", "done", True), Leaf("one-flow-1", "open", False, ("one-flow-0",))])
 @settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_leaf_builds_on_an_unruled_sibling_only_once_it_is_merged(
     tickets: Path, repo: Path, tree: list[Leaf]
