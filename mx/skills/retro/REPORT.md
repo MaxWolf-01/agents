@@ -21,7 +21,7 @@ Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
 - **A candidate the report lacks**, from a session's own architecture scan, enters it under the next id, with its verdict where max ruled on it: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
 
-What changed is the next run's to write.
+What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
 
 ## max's comments
 
@@ -29,7 +29,7 @@ The page saves each comment max types on an entry beside it, in `retro/report.ht
 
 - **A comment weighs as a message of max's in a session**: context for its entry, unless it clearly rules ("dismiss this", "take this up"). Between a comment and his words in a session, the newer counts.
 - **A ruling in a comment is a verdict**, written as max's verdicts above say, quoting the comment with its id and date. A ruling to take an entry up gets the State `to take up, C<n>`, since a run files nothing: the session that works the report files its ticket, and the State becomes `taken up as <ticket>`.
-- **Every comment a run read is answered** in its entry's History: `answered C<n> <date>: <what the run did with it>`, or, for an entry no longer in the report, in a line of What changed. That line is what closes the comment. An entry carrying a comment not yet answered is not dropped. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
+- **Every comment a run read is answered** in its entry's History: `answered C<n> <date>: <what the run did with it>`, or, for an entry no longer in the report, in a line of What changed. Once a committed version of the report holds that line, the comment is closed, whatever later versions keep of it. An entry carrying a comment not yet answered is not dropped.
 
 ## The weighing
 
@@ -76,7 +76,7 @@ In order of the weighing.
 ### F<n> <what the friction is, in plain words>
 
 - **Lens**: max | agents | mechanism
-- **Area**: what it is about, a repo or the part of one (`dispatch`, `jarvis`, `hub`), where its paths alone would not say
+- **Area**: what it is about, a repo or the part of one, in a word or two (`dispatch`, `jarvis`, `hub`)
 - **State**: live | to take up, C<n> | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
 - **Evidence**: two or three quotes, each `"<verbatim>"` (<source>, <date>)
 - **Cause**: what produces it, by path and line where it is a file (`mx/skills/dispatch/SKILL.md:42`), or the habit
@@ -90,6 +90,7 @@ In order of the weighing.
 What the lens pass proposes for the code, every code lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
 
 - **Code lens**: the section of `stages/lens-pass.md`'s The code lenses it came from
+- **Area**, as a finding's
 - **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them, its **Proposal** standing for the solution (benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
 - **Pointed at by**: the commits, proposed tickets, friction or corrections of max's that pointed the pass at it, each with its date
 - **State** and **History**, as a finding's

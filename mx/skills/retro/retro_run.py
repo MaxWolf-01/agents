@@ -516,11 +516,10 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
     shutil.rmtree(previous, ignore_errors=True)
     previous.mkdir()
     if blob(agent, REPORT_PATH):
-        current = git(agent, "show", f"HEAD:{REPORT_PATH}")
-        (previous / "current.md").write_text(current)
+        (previous / "current.md").write_text(git(agent, "show", f"HEAD:{REPORT_PATH}"))
         comments = agent / COMMENTS_PATH
         state = json.loads(comments.read_text()) if comments.is_file() else None
-        (previous / "comments.md").write_text(report_page.open_comments(current, state))
+        (previous / "comments.md").write_text(report_page.open_comments(agent / REPORT_PATH, state))
     for sha, until in runs[:3]:
         (previous / f"{dirname(until)}.md").write_text(git(agent, "show", f"{sha}:{REPORT_PATH}"))
     if seed:
@@ -548,23 +547,26 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
         changes = ", ".join(line[3:] for line in changed.splitlines())
         return False, f"not committed: {changes} has changes of its own in {agent}; the report stays in {run}"
     (agent / qualified.RETRO).mkdir(parents=True, exist_ok=True)
-    shutil.copy(run / "report.md", agent / REPORT_PATH)
-    report_page.render(agent / REPORT_PATH, agent / PAGE_PATH)
-    link_tags(agent)
-    if (agent / COMMENTS_PATH).is_file():
-        paths.append(COMMENTS_PATH)
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
+        shutil.copy(run / "report.md", agent / REPORT_PATH)
+        # the page reads the report's history beside it, so it is built where the report is committed
+        report_page.render(agent / REPORT_PATH, agent / PAGE_PATH)
+        link_tags(agent)
+        if (agent / COMMENTS_PATH).is_file():
+            paths.append(COMMENTS_PATH)
         # `--only` stages a tracked file itself, so a commit that fails leaves it unstaged; a first
         # run's files, untracked, need the add.
         if new := [path for path in paths if blob(agent, path) is None]:
             git(agent, "add", "--", *new)
         git(agent, "commit", "--quiet", "--only", "-m", message, "--", *paths)
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         restore(agent, [REPORT_PATH, PAGE_PATH])
         subprocess.run(["git", "-C", str(agent), "reset", "--quiet", "--", COMMENTS_PATH], capture_output=True)
-        return False, f"not committed: git {e.cmd[3]} failed ({(e.stderr or e.stdout).strip()}); the report stays in {run}"
+        why = (f"git {e.cmd[3]} failed ({(e.stderr or e.stdout).strip()})" if isinstance(e, subprocess.CalledProcessError)
+               else f"its page failed ({failure(e)})")
+        return False, f"not committed: {why}; the report stays in {run}"
     return True, f"committed {git(agent, 'rev-parse', '--short', 'HEAD').strip()} in {agent}"
 
 

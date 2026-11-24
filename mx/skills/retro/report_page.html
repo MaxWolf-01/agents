@@ -369,7 +369,7 @@ const KEYS = [
   ['/', 'filter by id or title'], ['a', 'the area filters: ← → move, Enter toggles'], ['s', 'the state filters'],
   ['1 – 5', 'what changed: new, state moved, reworked, dropped, unchanged'],
   ['g', "grouped by lens, or the report's order"], ['c', 'only entries with a comment'],
-  ['n', 'comment on the open entry'], ['e', 'edit its newest comment'], ['Ctrl+Enter', 'add or save the comment'],
+  ['n', 'comment on the open entry'], ['e  d', 'edit or delete its newest comment; Tab reaches the others'], ['Ctrl+Enter', 'add or save the comment'],
   ['y', 'copy every comment as markdown'], ['r', 'the rulings read before this run'], ['w', 'the whole report'],
   ['t', 'day or night'], ['?', 'this list'], ['Ctrl+Alt held', "each control's key over it"],
 ];
@@ -406,13 +406,13 @@ function newComment() {
   const ta = $('cm')?.querySelector('.new textarea');
   if (ta) ta.focus(); else toast('Comments are read-only here.');
 }
-function editNewest() {
-  const b = current && $('cm')?.querySelector('.cmt:last-child .edit');
-  if (b) b.click(); else toast(current ? 'No comment of yours on this entry to edit.' : 'No entry is open: j opens one.');
-}
+const onNewest = which => () => {
+  const b = current && $('cm')?.querySelector(`.cmt:last-child .${which}`);
+  if (b) b.click(); else toast(current ? 'This entry has no comment to change here.' : 'No entry is open: j opens one.');
+};
 const ACTIONS = {
   j: () => step(1), k: () => step(-1), '/': () => $('q').focus(), a: firstPill('areas'), s: firstPill('states'),
-  g: () => $('view').click(), c: () => $('commented').click(), n: newComment, e: editNewest, y: () => $('copy').click(),
+  g: () => $('view').click(), c: () => $('commented').click(), n: newComment, e: onNewest('edit'), d: onNewest('del'), y: () => $('copy').click(),
   r: () => document.querySelector('.fold summary')?.click(), w: () => $('whole').click(), t: () => $('scheme').click(), '?': toggleHelp,
 };
 document.addEventListener('keydown', e => {
@@ -643,6 +643,7 @@ function drawComments(fresh) {
     + (SERVED ? '<button class="btn ghost edit">edit</button><button class="btn ghost del">delete</button>' : '')
     + `</div><div class="txt">${esc(c.text)}</div></div>`).join('');
   list.querySelector('.cmt:last-child .edit')?.setAttribute('aria-keyshortcuts', 'e');
+  list.querySelector('.cmt:last-child .del')?.setAttribute('aria-keyshortcuts', 'd');
   for (const el of list.querySelectorAll('.cmt')) {
     const id = el.dataset.id;
     el.querySelector('.del')?.addEventListener('click', () => deleteComment(id));

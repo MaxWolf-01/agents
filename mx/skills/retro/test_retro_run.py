@@ -206,6 +206,7 @@ def test_each_qualified_tag_on_the_committed_page_links_to_what_it_names_or_is_s
     links, gone = re.findall(r"<a [^>]*>held D1</a>", page), re.findall(r"<s [^>]*>retro F9</s>", page)
     assert links and all('href="../tickets/held.md"' in a and 'title="held D1 · Ship it? Or wait."' in a for a in links)
     assert gone and all("href" not in s and "no longer in the retro" in s for s in gone)
+    assert "retro F9" not in re.sub(r"<s [^>]*>retro F9</s>", "", page), "every mention is struck"
     assert "held D1" not in re.sub(r"<a [^>]*>held D1</a>", "", page), "every mention is linked"
 
 
@@ -229,6 +230,23 @@ def test_max_s_comments_on_the_page_reach_the_next_run_unless_answered_and_are_c
     assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == [
         "retro/report.html", "retro/report.html.state.json", "retro/report.md"]
     assert "dismiss this" in git(agent, "show", "HEAD:retro/report.html"), "the page bakes the comments in"
+
+
+def test_a_commit_that_fails_leaves_the_agent_repo_as_it_was_and_max_s_comments_unstaged(
+        tmp_path: Path, stub: Path, repo: Path) -> None:
+    agent = repo / "agent"
+    (agent / "retro/report.html.state.json").write_text('{"comments": []}')
+    hook = agent / ".git/hooks/pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    head = git(agent, "rev-parse", "HEAD")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST, SINCE)
+    assert last_logged(tmp_path).startswith("not committed: git commit failed")
+    assert git(agent, "rev-parse", "HEAD") == head
+    assert not (agent / "retro/report.md").exists() and not (agent / "retro/report.html").exists()
+    assert git(agent, "diff", "--cached", "--name-only").split() == ["tickets/a.md"], "the comments are not left staged"
+    assert (agent / "retro/report.html.state.json").read_text() == '{"comments": []}'
 
 
 @pytest.mark.parametrize("operation", ["rebase", "merge"])

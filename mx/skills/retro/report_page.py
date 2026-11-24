@@ -54,14 +54,7 @@ AREA_RULES: list[tuple[str, str]] = [
 ]
 
 # A path whose first segment is an mx skill, cited from inside mx/skills (`dispatch/SKILL.md`).
-SKILLS = (
-    "attack-the-premise benchmark-checklist bloat-audit changelog code-review codebase-design codex "
-    "dependabot-triage diagnosing-bugs dispatch domain-modelling fork gh-stack github grilling handoff "
-    "house-style improve-codebase-architecture mermaid ml model-runs orient permissions-review pickup "
-    "project-setup prototype recap research restore-sessions retro review-pr session-name session-page "
-    "sharpen show testing tmux to-questionnaire tracker triage tyro-cli unslop verify wait-what wizard "
-    "wrap writing-for-agents writing-for-humans"
-).split()
+SKILLS = {d.name for d in Path(__file__).resolve().parent.parent.iterdir() if d.is_dir()}
 
 # Files the report cites by bare name, and where they live (agents and dotfiles, as of 2026-11).
 BARE_NAMES: dict[str, str] = {
@@ -146,7 +139,6 @@ class Entry:
     changed: list[str] = field(default_factory=list)  # rendered What changed lines naming it
     in_top: bool = False
     group: str = ""  # the `###` heading of a grouped-bullets block, for an entry that is one of its bullets
-    alias: str = ""  # anchor of the entry whose bullet this one shares
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -360,8 +352,6 @@ def parse(text: str):
                         st = re.search(r"\*\*State\*\*:\s*(.*?)(?:\s\*\*History\*\*|$)", bullet)
                         e.state = st.group(1) if st else h
                         e.state_class = group_state(h)
-                        if i:
-                            e.alias = named[0][0].lower()
                         entries.append(e)
         elif heading == "Dismissed":
             lines = [l[2:] for l in body.splitlines() if l.startswith("- ")]
@@ -381,7 +371,11 @@ def parse(text: str):
                 e.state = "dismissed"
                 entries.append(e)
     for e in entries:
-        e.anchor = e.id.lower() if e.id else f"d{e.rank}"
+        # a Dismissed line with no id is known by its words, which stay put when lines above it come and go
+        e.anchor = e.id.lower() if e.id else f"d-{slug(e.title)}"
+    for i, e in enumerate(entries):
+        if any(o.anchor == e.anchor for o in entries[:i]):
+            e.anchor += f"-{e.rank}"
     return title, run_line, intro, sections, entries
 
 
@@ -630,7 +624,6 @@ def changes_block(changes: dict[str, list[dict]], prev_run: str) -> str:
 
 @dataclass(frozen=True)
 class Version:
-    sha: str
     date: str  # the commit's date
     text: str
 
@@ -647,7 +640,7 @@ def versions(report: Path) -> list[Version]:
         sha, date = line.split()
         shown = subprocess.run(["git", "-C", str(where), "show", f"{sha}:./{report.name}"],
                                capture_output=True, text=True, check=True)
-        out.append(Version(sha[:8], date, shown.stdout))
+        out.append(Version(date, shown.stdout))
     return out
 
 
@@ -698,12 +691,19 @@ def state_file(page: Path) -> Path:
     return page.with_name(page.name + ".state.json")
 
 
-def open_comments(report_text: str, state: dict | None) -> str:
-    """max's comments on the page that are neither deleted nor answered in the report, as markdown
-    grouped by entry, for a run's stages to read."""
-    entries = load(report_text)[4]
-    titles = {e.id: plain(e.title) for e in entries if e.id}
-    answered = set(ANSWERED.findall(report_text))
+def answered_in(texts: list[str]) -> set[str]:
+    """The comments any of these versions of the report answered: an answer stays one once a later
+    version drops its line, as a rewritten What changed or a dropped entry's History does."""
+    return {i for t in texts for i in ANSWERED.findall(t)}
+
+
+def open_comments(report: Path, state: dict | None) -> str:
+    """max's comments on the page that are neither deleted nor answered in any version of the report,
+    as markdown grouped by entry, for a run's stages to read."""
+    text = report.read_text()
+    entries = load(text)[4]
+    titles = {e.id or e.anchor.upper(): plain(e.title) for e in entries}
+    answered = answered_in([v.text for v in versions(report)] + [text])
     pending = [c for c in (state or {}).get("comments", []) if not c.get("deleted") and c["id"] not in answered]
     if not pending:
         return "No comment of max's on the report's page is open.\n"
@@ -788,7 +788,7 @@ def render(report: Path, page: Path) -> None:
     saved_at = state_file(page)
     saved = json.loads(saved_at.read_text()) if saved_at.is_file() else None
     page_data = {"entries": data, "run": run_date(run_line), "title": title, "key": str(page.resolve()),
-                 "saved": saved, "answered": sorted(set(ANSWERED.findall(text)))}
+                 "saved": saved, "answered": sorted(answered_in([v.text for v in committed] + [text]))}
     page.write_text(
         TEMPLATE.replace("__TITLE__", html.escape(f"{title}, {run_date(run_line)}"))
         .replace("__HEADER__", header)

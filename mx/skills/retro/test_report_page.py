@@ -42,6 +42,16 @@ Run 2026-10-12, over 2026-10-05 to 2026-10-12. ids: F2, A1
 - **Code lens**: architecture
 - **Files**: `container-hub`
 - **State**: live
+
+### A2 Name the area beside every id
+
+- **Code lens**: footguns
+- **Files**: `mx/skills/tracker/board.py`, `mx/skills/dispatch/SKILL.md:3`, `mx/skills/dispatch/SKILL.md:9`
+- **State**: live
+
+## Dismissed
+
+- **Pages that explain themselves**: dismissed by max 2026-10-10, "no".
 """
 
 SECOND = """# Workflow retro: agents
@@ -70,6 +80,17 @@ Run 2026-10-19, over 2026-10-12 to 2026-10-19. ids: F3, A1
 - **Code lens**: architecture
 - **Files**: `container-hub`
 - **State**: live
+
+### A2 Name the area beside every id
+
+- **Code lens**: footguns
+- **Files**: `mx/skills/tracker/board.py`, `mx/skills/dispatch/SKILL.md:3`, `mx/skills/dispatch/SKILL.md:9`
+- **State**: live
+
+## Dismissed
+
+- **Retro comments in the board**: dismissed by max 2026-10-15, "later".
+- **Pages that explain themselves**: dismissed by max 2026-10-10, "no".
 """
 
 
@@ -102,12 +123,12 @@ def changes(page: str) -> dict[str, list[str]]:
 def test_the_overview_has_one_row_per_entry_whose_element_carries_its_id(agent: Path) -> None:
     page, _ = rendered(agent)
     homes = re.findall(r'<a class="row" id="([^"]+)"', page)
-    assert sorted(homes) == ["a1", "f1", "f3"]
+    assert sorted(homes) == ["a1", "a2", "d-pages-that-explain-themselves", "d-retro-comments-in-the-board", "f1", "f3"]
 
 
 def test_what_changed_is_derived_entry_by_entry_against_the_previous_committed_version(agent: Path) -> None:
     page, data = rendered(agent)
-    assert changes(page) == {"new": ["F3"], "moved": ["F1"], "reworked": ["A1"], "dropped": ["F2"], "unchanged": []}
+    assert changes(page) == {"new": ["F3"], "moved": ["F1"], "reworked": ["A1"], "dropped": ["F2"], "unchanged": ["A2"]}
     assert "live → taken up as faster-suite" in page
     assert data["entries"]["f2"]["kind"] == "dropped" and "Pages lose comments" in data["entries"]["f2"]["prev"]
 
@@ -125,45 +146,65 @@ def test_each_sheet_carries_the_entrys_state_across_every_version(agent: Path) -
     assert data["entries"]["f1"]["line"] == [["2026-10-12", "live"], ["2026-10-19", "taken up as faster-suite"]]
     assert data["entries"]["f2"]["line"] == [["2026-10-12", "live"], ["2026-10-19", "not in the report"]]
     assert data["entries"]["f3"]["line"] == [["2026-10-19", "live"]]
+    assert data["entries"]["a2"]["line"] == [["2026-10-12", "live"]], "a run of one state keeps its first date"
 
 
 def test_an_entrys_area_is_its_area_field_or_else_read_from_the_paths_it_cites(agent: Path) -> None:
     page, _ = rendered(agent)
     area = dict(re.findall(r'<a class="row" id="(\w+)"[^>]*data-area="([^"]*)"', page))
-    assert area == {"f1": "dispatch", "f3": "jarvis", "a1": "hub"}
+    assert area == {"f1": "dispatch", "f3": "jarvis", "a1": "hub", "a2": "dispatch"}, \
+        "A2 cites tracker once and dispatch twice: the commonest wins"
 
 
 def test_comments_saved_beside_the_page_are_baked_into_it_and_the_answered_ones_named(agent: Path) -> None:
     (agent / "retro/report.md").write_text(SECOND.replace("- **State**: live\n- **Cause**: `mx/skills/tracker",
                                                           "- **State**: live\n- **History**: answered C1 2026-10-19: kept\n- **Cause**: `mx/skills/tracker"))
     saved = {"writer": "w", "savedAt": 1, "comments": [
-        {"id": "C1", "entry": "F3", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "is this jarvis?"}]}
+        {"id": "C1", "entry": "F3", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "is this jarvis?"},
+        {"id": "C2", "entry": "A1", "at": "2026-10-13T10:00:00Z", "report": "2026-10-12", "text": "see </script> here"}]}
     (agent / "retro/report.html.state.json").write_text(json.dumps(saved))
     _, data = rendered(agent)
-    assert data["saved"] == saved and data["answered"] == ["C1"]
+    assert data["saved"] == saved, "C2's text would end the page's data early, unescaped"
+    assert data["answered"] == ["C1"]
 
 
-def test_open_comments_leave_out_the_deleted_and_the_answered_and_name_an_entry_that_left() -> None:
+def test_open_comments_leave_out_the_deleted_and_the_answered_and_name_an_entry_that_left(agent: Path) -> None:
     report = SECOND.replace("- **State**: taken up", "- **History**: answered C2 2026-10-19: taken up\n- **State**: taken up")
     comments = [{"id": "C1", "entry": "F2", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "dismiss this"},
                 {"id": "C2", "entry": "F1", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "take this up"},
                 {"id": "C3", "entry": "F3", "at": "2026-10-14T09:00:00Z", "report": "2026-10-19", "text": "x", "deleted": True},
-                {"id": "C4", "entry": "F3", "at": "2026-10-14T10:00:00Z", "report": "2026-10-19", "text": "which repo?\nreally"}]
-    text = report_page.open_comments(report, {"comments": comments})
+                {"id": "C4", "entry": "F3", "at": "2026-10-14T10:00:00Z", "report": "2026-10-19", "text": "which repo?\nreally"},
+                {"id": "C5", "entry": "D-PAGES-THAT-EXPLAIN-THEMSELVES", "at": "2026-10-14T11:00:00Z", "report": "2026-10-19", "text": "fine"}]
+    (agent / "retro/report.md").write_text(report)
+    text = report_page.open_comments(agent / "retro/report.md", {"comments": comments})
     assert "## F2 (no longer in the report)" in text and "C1, 2026-10-13T09:00:00Z, on the run of 2026-10-12: dismiss this" in text
     assert "## F3 Jarvis loses messages" in text and "which repo?\n  really" in text
     assert "C2" not in text and "C3" not in text
+    assert "## D-PAGES-THAT-EXPLAIN-THEMSELVES Pages that explain themselves" in text, "a Dismissed line with no id keeps its comments"
+
+
+def test_a_comment_answered_once_stays_answered_when_a_later_version_drops_the_answer(agent: Path) -> None:
+    """A run answers C1 on F2 in its What changed; the next run's What changed no longer says so."""
+    git(agent, "add", "retro/report.md")
+    git(agent, "commit", "-qm", "run", when=datetime(2026, 10, 19, 3, tzinfo=UTC))
+    (agent / "retro/report.md").write_text(SECOND.replace("## Findings", "## What changed\n\n- F2 dropped; answered C1 2026-10-19: gone\n\n## Findings"))
+    git(agent, "commit", "-qam", "run with the answer", when=datetime(2026, 10, 26, 3, tzinfo=UTC))
+    (agent / "retro/report.md").write_text(SECOND)
+    comment = {"id": "C1", "entry": "F2", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "dismiss this"}
+    assert "C1" not in report_page.open_comments(agent / "retro/report.md", {"comments": [comment]})
+    assert rendered(agent)[1]["answered"] == ["C1"]
 
 
 def test_an_artefact_an_entry_names_is_embedded_where_it_is_an_image_or_a_page_and_linked_otherwise(agent: Path) -> None:
     (agent / "retro/report.md").write_text(SECOND.replace(
         "- **Code lens**: architecture\n",
-        "- **Code lens**: architecture\n- **Artefacts**: `show/hub/before-after.svg`, `show/hub/index.html`, `research/01-hub.md`\n"))
+        "- **Code lens**: architecture\n- **Artefacts**: `show/hub/before-after.svg`, `show/hub/index.html`, `research/01-hub.md`, `https://example.org/a.png`\n", 1))
     _, data = rendered(agent)
     assert data["entries"]["a1"]["art"] == [
         {"href": "../show/hub/before-after.svg", "name": "show/hub/before-after.svg", "how": "img"},
         {"href": "../show/hub/index.html", "name": "show/hub/index.html", "how": "frame"},
-        {"href": "../research/01-hub.md", "name": "research/01-hub.md", "how": "link"}]
+        {"href": "../research/01-hub.md", "name": "research/01-hub.md", "how": "link"},
+        {"href": "https://example.org/a.png", "name": "https://example.org/a.png", "how": "img"}]
 
 
 # The page in headless Chromium, served as the container hub serves it: `/.health` says it saves, and a
@@ -199,7 +240,7 @@ with sync_playwright() as pw:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(f"http://127.0.0.1:{server.server_port}/{page_path}")
-    page.wait_for_function("!!document.querySelector('#cm .new textarea') || document.readyState === 'complete'")
+    page.wait_for_selector(".row")
     page.keyboard.press("j")
     seen["pos"] = page.inner_text("#pos")
     seen["timeline"] = page.inner_text("#sh-body .tl")
@@ -219,8 +260,8 @@ with sync_playwright() as pw:
     page.keyboard.up("Alt"); page.keyboard.up("Control")
     seen["let go"] = page.eval_on_selector_all(".key-over", "els => els.length")
     page.keyboard.press("?")
-    seen["list"] = page.evaluate("document.getElementById('help').open && document.getElementById('help-keys').rows.length")
-    page.wait_for_timeout(300)
+    page.wait_for_function("document.getElementById('help').open")
+    seen["list"] = page.evaluate("document.getElementById('help-keys').rows.length")
     seen["errors"] = errors
     browser.close()
 server.shutdown()
@@ -240,7 +281,7 @@ def test_the_page_in_a_browser_opens_entries_shows_their_timeline_and_artefacts_
     (agent / "show/hub").mkdir(parents=True)
     (agent / "show/hub/before-after.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
     (agent / "retro/report.md").write_text(SECOND.replace(
-        "- **Code lens**: architecture\n", "- **Code lens**: architecture\n- **Artefacts**: `show/hub/before-after.svg`\n"))
+        "- **Code lens**: architecture\n", "- **Code lens**: architecture\n- **Artefacts**: `show/hub/before-after.svg`\n", 1))
     rendered(agent)
     done = subprocess.run(["uv", "run", "--quiet", "--with", "playwright", "python", "-", str(agent), "retro/report.html"],
                           input=PROBE, capture_output=True, text=True, timeout=180, env=os.environ)
