@@ -1,12 +1,5 @@
-#!/usr/bin/env -S uv run --script --quiet
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
-# ///
 """Gather what a retro reads, for the period since a given start, into a run directory outside
-every git work tree. `retro_run.py` runs it as a run's collect stage; its subcommands run it alone.
-
-`sessions`, what a retro reads of sessions and git, writes into the run directory:
+every git work tree: `retro_run.py`'s collect stage. What it writes there:
 
 - `sessions/<id>.md`: a digest of every interactive session with an entry in the period, from
   every Claude Code profile given, holding the period's days alone; in a repo retro, of those
@@ -20,7 +13,9 @@ every git work tree. `retro_run.py` runs it as a run's collect stage; its subcom
   retro, from those that worked in its repos.
 - `sessions.jsonl`: one row per digest above: id, profile, project, start, end, max's messages,
   and which of the two it is in.
-- `git/<repo>.md` and `versions.md`, as `git` writes the first.
+- `git/<repo>.md` for each repo: its commits in the period with their messages, its reverts,
+  and, where the repo holds an agent repo, the tickets filed, every status change, the tickets
+  deleted, and the worker reports committed in the period; and `versions.md`.
 - `todo/<repo>/<file>`: each repo's TODO files, where max jots quick thoughts, ideas and
   priorities, mostly gitignored, as they stand at collect time: every file at the repo's root
   named `TODO` or `todos`, in any case and with or without an extension.
@@ -31,22 +26,11 @@ every git work tree. `retro_run.py` runs it as a run's collect stage; its subcom
   the permission rules and auto mode settings of the profile's own settings files; and
   `auto-mode.json`, the effective auto mode config `claude auto-mode config` prints for it, or
   `auto-mode.failed` saying why there is none.
-
-`git` writes `git/<repo>.md` alone, for each repo given: its commits in the period with their
-messages, its reverts, and, where the repo holds an agent repo, the tickets filed, every status
-change, the tickets deleted, and the worker reports committed in the period.
-
-Both kinds also get `touched.md`, the files the period's commits touched in the repos whose code
-the lens pass reads.
+- `touched.md`: the files the period's commits touched in the repos whose code the lens pass
+  reads.
 
 Digests are cached per session in the cache directory and digested again only once the
 transcript or its session page changed.
-
-Examples:
-
-    retro_collect.py sessions --since 2026-10-05 --run ~/.local/share/retro/runs/2026-10-12 \\
-        --repos ~/repos/github/MaxWolf-01/agents ~/.dotfiles
-    retro_collect.py git --since 2026-10-05 --run /tmp/run --repos ~/.dotfiles
 """
 
 from __future__ import annotations
@@ -759,56 +743,3 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
         out += [f"- {k}: first seen {min(days)}, last seen {max(days)}, in {sessions[k]} sessions"
                 for k, days in sorted(ran.items(), key=lambda kv: min(kv[1]))]
     return "\n".join(out) + "\n"
-
-
-# ── command line ─────────────────────────────────────────────────────────────
-
-
-@dataclass
-class Sessions:
-    """What a workflow retro collects but `touched.md`: the period's session digests, the older sample, git across the repos, their TODO files, the versions, the tickets and the permissions."""
-
-    since: str
-    """The period's start, an ISO date or time; UTC where it names no offset."""
-    run: Path
-    """The run directory, written into; outside every git work tree."""
-    repos: list[Path] = field(default_factory=list)
-    """The repos whose commits, tickets and TODO files are collected, and whose agent repos hold session pages."""
-    projects: list[Path] = field(default_factory=profiles)
-    """Each profile's directory of transcripts; by default every `~/.claude*/projects`."""
-    cache: Path | None = None
-    """Where digests are cached; by default `digest-cache` beside the run directory."""
-    agent: Path | None = None
-    """The agent repo whose tickets `proposed.md` and `in-flight.md` name; none by default."""
-
-
-@dataclass
-class Git:
-    """The commits and tickets of the given repos since the period's start, alone."""
-
-    since: str
-    """The period's start, an ISO date or time; UTC where it names no offset."""
-    run: Path
-    """The run directory, written into; outside every git work tree."""
-    repos: list[Path] = field(default_factory=list)
-    """The repos whose commits and tickets are collected."""
-
-
-def main(command: Sessions | Git) -> None:
-    since = parse_time(command.since)
-    refuse_unless_git(command.repos)
-    if isinstance(command, Git):
-        refuse_inside_git(command.run)
-        collect_git(since, command.run, command.repos)
-        return
-    cache = command.cache or command.run.parent / "digest-cache"
-    refuse_inside_git(command.run, cache)
-    collect_sessions(since, datetime.now(UTC), command.run, cache, command.projects, command.repos, agent=command.agent)
-    collect_permissions(command.run, command.projects)
-
-
-if __name__ == "__main__":
-    import tyro
-
-    args = tyro.extras.subcommand_cli_from_dict({"sessions": Sessions, "git": Git}, description=__doc__)
-    main(args)
