@@ -1977,8 +1977,10 @@ def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: 
 
 
 def asked_in(turn: Turn, verb: str = "asked") -> str:
-    """Which turn put the item to the user, and when: the time the transcript shows its record written, else its day."""
-    when = turn.written.astimezone().strftime("%Y-%m-%d %H:%M") if turn.written else turn.date
+    """Which turn put the item to the user, and when: the time the transcript shows its record written, else the time
+    its record file was last written, which a record is only once."""
+    at = turn.written or datetime.fromtimestamp(turn.path.stat().st_mtime)
+    when = at.astimezone().strftime("%Y-%m-%d %H:%M")
     return f'{verb} in <a href="#t{turn.key}">turn {turn.key}</a> · {esc(when)}'
 
 
