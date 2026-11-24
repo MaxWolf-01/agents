@@ -307,7 +307,7 @@ def main(measure: Callable[..., dict] = measure) -> int:
 
     try:
         geo = measure(a.html, width=a.width, scheme=a.scheme)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover: test_checker_without_playwright_says_the_layout_is_unverified holds it, under python -I -S, which no coverage hook enters
         print(f"could not measure: {type(exc).__name__}: {exc}", file=sys.stderr)
         print("layout is UNVERIFIED: do not claim it is correct", file=sys.stderr)
         return 2

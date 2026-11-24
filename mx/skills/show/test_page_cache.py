@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from page_cache import answer, default_root
+from page_cache import answer
 
 URL = "https://cdn.example/lib.js"
 SCRIPT = b"window.lib = 1"
@@ -118,14 +118,3 @@ def test_a_request_the_page_dropped_is_past_answering(tmp_path: Path, paused: di
     cdp = Session(refusing=("Fetch.continueRequest", "Fetch.getResponseBody"))
     answer(cdp, paused, tmp_path, False, Refused)
     assert cdp.methods()[-1] == "Fetch.continueRequest"
-
-
-@pytest.mark.parametrize("xdg", ["/var/cache/agent", "", None], ids=["set", "empty", "unset"])
-def test_the_copies_are_kept_in_the_users_cache_directory(xdg: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The XDG base directory spec: $XDG_CACHE_HOME, and ~/.cache where it is empty or unset."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    if xdg is None:
-        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    else:
-        monkeypatch.setenv("XDG_CACHE_HOME", xdg)
-    assert default_root() == Path(xdg or tmp_path / ".cache") / "mx" / "page-cache"

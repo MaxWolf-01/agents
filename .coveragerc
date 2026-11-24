@@ -7,6 +7,8 @@ parallel = true
 omit =
     */test_*.py
     */conftest.py
+    # What a skill's checks share beside their fixtures: test code imported only by its test files.
+    */*_checks.py
     # The board's browser probes: test code of test_board_layout.py's full-path checks, run by Playwright.
     mx/skills/tracker/board_probe_*.py
 include_namespace_packages = true

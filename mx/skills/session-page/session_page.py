@@ -2049,6 +2049,8 @@ def qualified_link(text: str, path: str, preview: str) -> str:
 
 
 def options(q: Question, answer: str | None = None) -> str:
+    if not q.options:
+        return ""
     items = []
     for o in q.options:
         state = "chosen" if answer == o.letter else "passed" if answer else ""

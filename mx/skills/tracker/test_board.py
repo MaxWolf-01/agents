@@ -558,10 +558,8 @@ def test_board_watch_re_renders_on_a_change_under_the_tracker_until_ctrl_c(
 ) -> None:
     """`--watch`'s help: keep running and re-render whenever anything under the tracker changes,
     until Ctrl-C, which lands in the wait between two passes and ends the board without a
-    traceback. No claude on the PATH, so no briefing run starts, and the code on disk is held to
-    the code running, whatever is edited beside it while the suite runs."""
+    traceback. No claude on the PATH, so no briefing run starts."""
     out = tmp_path / "board.html"
-    monkeypatch.setattr(board, "starts", lambda: "held to the code running")
     monkeypatch.setattr(board.os, "execv", lambda *_: pytest.fail("the watcher restarted"))
     waits = [0]
 

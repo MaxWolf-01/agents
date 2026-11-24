@@ -137,6 +137,7 @@ def test_checker_without_playwright_says_the_layout_is_unverified(tmp_path: Path
     done = stdlib_python(str(HERE / "check_layout.py"), str(page))
     assert done.returncode == 2
     assert "UNVERIFIED" in done.stderr
+    assert "playwright" in done.stderr, "it says why it could not measure"
     assert "PASS" not in done.stdout
 
 
@@ -241,17 +242,6 @@ def test_checker_fails_a_faulty_diagram_naming_each_fault(monkeypatch: pytest.Mo
     assert [line.split(":")[0] for line in out.splitlines() if line.startswith("FAIL ")] == [
         "FAIL text-crossed", "FAIL broken-word"]
     assert "PASS" not in out
-
-
-def test_a_page_the_checker_could_not_measure_is_unverified_rather_than_passed(
-        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    def no_browser(html: str, **how: object) -> dict:
-        raise FileNotFoundError("no chromium on PATH")
-
-    assert check(monkeypatch, no_browser) == 2
-    said = capsys.readouterr()
-    assert "UNVERIFIED" in said.err and "no chromium on PATH" in said.err
-    assert "PASS" not in said.out
 
 
 def test_dump_prints_the_raw_measurements_as_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

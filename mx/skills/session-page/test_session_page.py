@@ -170,9 +170,10 @@ def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
     assert waiting(view_of(worked_example, transcript)) == ["Q7"]
 
 
-def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: Path) -> None:
+def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick_and_answered_draws_no_options(tmp_path: Path) -> None:
     """A blind question is one the user answers on its test page, which holds the options and the
-    agent's pick: the top shows it with a link to that page, and no option or pick of its own."""
+    agent's pick: the top shows it with a link to that page, and no option or pick of its own. Once
+    answered, its turn shows the answer under it and still no options."""
     directory = tmp_path / "agent" / "sessions" / DRAWN
     (directory / "turns").mkdir(parents=True)
     (directory / "turns" / "01.md").write_text(
@@ -186,6 +187,11 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     top = waiting_and_cards(render_session(directory, transcript, now=NOW))
     assert f'href="{(tmp_path / "agent/show/refusals/blind-q1.html").as_uri()}"' in top
     assert "my pick" not in text_of(top)
+
+    (directory / "turns" / "02.md").write_text("---\ndate: 2026-10-14\nanswered:\n  Q1: the second way reads kinder\n---\n\n# Answered\n")
+    answered = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
+    assert "the second way reads kinder" in text_of(answered)
+    assert 'class="opts"' not in answered
 
 
 # A ticket as the tracker holds one, with a question open, a question ruled, a property, a worker's

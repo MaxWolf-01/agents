@@ -68,9 +68,9 @@ import shutil
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated
 
 import tyro
@@ -428,7 +428,7 @@ def at_rest(page: Page, loading: set, args: Args, until: float, clock: Callable[
         page.wait_for_timeout(args.settle * 1000)
 
 
-def browser_path() -> str | None:  # pragma: no cover: as chromium
+def browser_path() -> str | None:
     for name in ("chromium", "chromium-browser", "google-chrome", "chrome"):
         if found := shutil.which(name):
             return found

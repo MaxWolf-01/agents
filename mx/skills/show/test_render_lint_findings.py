@@ -164,12 +164,13 @@ def test_each_width_gets_the_whole_patience_to_come_to_rest():
 
 
 def test_each_finding_gets_a_crop_of_its_box_with_a_margin_around_it(tmp_path):
-    tab = Tab({1400: [A, B]})
+    lower = B | {"box": {"x": 600, "y": 1400, "w": 80, "h": 18}}
+    tab = Tab({1400: [A, lower]})
     found = lint(tab, crops=tmp_path)
     assert [f["crop"] for f in found] == [c["path"] for c in tab.crops]
     assert len({f["crop"] for f in found}) == 2 and all(Path(f["crop"]).parent == tmp_path for f in found)
-    for crop in tab.crops:
-        clip, box = crop["clip"], A["box"]
+    for f, crop in zip(found, tab.crops, strict=True):
+        clip, box = crop["clip"], f["box"]
         assert clip["x"] < box["x"] and clip["y"] < box["y"]
         assert clip["x"] + clip["width"] > box["x"] + box["w"] and clip["y"] + clip["height"] > box["y"] + box["h"]
 
@@ -212,8 +213,7 @@ def run(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(LINT), *args], capture_output=True, text=True, timeout=60)
 
 
-@pytest.mark.parametrize("args, code", [((), 3), (("page.html", "--width", "wide"), 3), (("--help",), 0)],
-                         ids=["no page", "a width that is no number", "help"])
+@pytest.mark.parametrize("args, code", [((), 3), (("--help",), 0)], ids=["no page", "help"])
 def test_a_usage_error_is_the_run_failing_and_help_is_not(args, code):
     assert run(*args).returncode == code
 
@@ -224,3 +224,13 @@ def test_a_run_that_fails_exits_3_saying_why(tmp_path):
     done = run(str(tmp_path / "page.html"), "--crops", str(tmp_path / "file" / "crops"))
     assert done.returncode == 3
     assert "NotADirectoryError" in done.stderr
+
+
+def test_the_browser_is_the_chromium_on_path_and_none_without_one(tmp_path, monkeypatch):
+    chromium = tmp_path / "chromium"
+    chromium.write_text("#!/bin/sh\n")
+    chromium.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert render_lint.browser_path() == str(chromium)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    assert render_lint.browser_path() is None

@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 DROPPED = {"content-encoding", "content-length", "transfer-encoding"}
 
 
-def default_root() -> Path:
+def default_root() -> Path:  # pragma: no cover: test support; only the full-path checks and their probes call it
     return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "mx" / "page-cache"
 
 
