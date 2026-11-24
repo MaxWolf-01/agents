@@ -1,6 +1,6 @@
 # The living report
 
-One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
+One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run. Runs read it as markdown; max reads its page, `retro/report.html`, which `report_page.py` builds from it at each run's commit, and comments on its entries there. Sessions write max's verdicts into it between runs, so a run reads them there.
 
 ## Rules
 
@@ -21,7 +21,15 @@ Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
 - **A candidate the report lacks**, from a session's own architecture scan, enters it under the next id, with its verdict where max ruled on it: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
 
-What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
+What changed is the next run's to write.
+
+## max's comments
+
+The page saves each comment max types on an entry beside it, in `retro/report.html.state.json`, each under an id `C<n>`; a run commits that file with the report. A run reads the comments it has not answered, deleted ones left out, in `previous/comments.md`.
+
+- **A comment weighs as a message of max's in a session**: context for its entry, unless it clearly rules ("dismiss this", "take this up"). Between a comment and his words in a session, the newer counts.
+- **A ruling in a comment is a verdict**, written as max's verdicts above say, quoting the comment with its id and date. A ruling to take an entry up gets the State `to take up, C<n>`, since a run files nothing: the session that works the report files its ticket, and the State becomes `taken up as <ticket>`.
+- **Every comment a run read is answered** in its entry's History: `answered C<n> <date>: <what the run did with it>`, or, for an entry no longer in the report, in a line of What changed. That line is what closes the comment. An entry carrying a comment not yet answered is not dropped. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
 
 ## The weighing
 
@@ -68,12 +76,12 @@ In order of the weighing.
 ### F<n> <what the friction is, in plain words>
 
 - **Lens**: max | agents | mechanism
-- **State**: live | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
+- **State**: live | to take up, C<n> | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
 - **Evidence**: two or three quotes, each `"<verbatim>"` (<source>, <date>)
 - **Cause**: what produces it, by path and line where it is a file (`mx/skills/dispatch/SKILL.md:42`), or the habit
 - **Proposal**: the fix at the cause: what it deletes or narrows, and where it lands (a deletion, a check, a line of the reviewer's baseline, a skill line, a tool)
 - **Weighing**: cost of the friction, upkeep of the fix, how often, how robust
-- **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back
+- **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back; answered C<n> <date>: <what the run did with it>
 
 ## Candidates
 

@@ -33,10 +33,11 @@ copied into it, under `previous/`. A repo retro's stages read sessions as the di
 directory alone: they may not read the session pages in its agent repos, and run no git command
 there.
 
-The commit holds the report and its page, `report.html` beside it, alone, and leaves whatever else
-is staged in the agent repo staged. It is not made, and the report stays in the run directory, when
-the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when either file has changes
-of its own there, or when the report was committed to while the run ran. Nothing is pushed.
+The commit holds the report, its page, `report.html` beside it, which `report_page.py` builds from it,
+and the comments max saved on the page, `report.html.state.json`, alone, and leaves whatever else is
+staged in the agent repo staged. It is not made, and the report stays in the run directory, when the
+agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when the report or its page has
+changes of its own there, or when the report was committed to while the run ran. Nothing is pushed.
 A run that ends without its commit, there, in collect or at a stage that failed or left out a file
 it owes, exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the
 stage it is in, and whatever that stage started, before it exits; one stopped during the commit lets the
@@ -82,6 +83,7 @@ import tyro
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import report_page  # noqa: E402
 import retro_collect  # noqa: E402
 import qualified  # noqa: E402  what a qualified tag on the report's page names, which the page links
 from retro_collect import git, parse_time, stamp  # noqa: E402
@@ -92,8 +94,9 @@ SKIPPED = 3  # the exit status of an --if-active run that found nothing new
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_WEEKS = 8  # how far back a repo retro's first run reads, given no --since; --first-weeks overrides it
-REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
-REPORT_PATH = f"{qualified.RETRO}/report.md"  # in the agent repo
+REPORT_PATH = f"{qualified.RETRO}/report.md"  # in the agent repo, which synthesis writes
+PAGE_PATH = f"{qualified.RETRO}/report.html"
+COMMENTS_PATH = f"{qualified.RETRO}/report.html.state.json"  # the container hub writes it as max comments on the page
 MODEL_RUNS = HERE.parent / "model-runs" / "model-runs"
 AUTO_MODE_CRITIQUE = HERE / "auto_mode_critique.py"
 # `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
@@ -130,7 +133,7 @@ READ_FRESH = Stage("read-fresh", ("notes/{batch}.md", "notes/git.md"), fresh=Tru
 LENS_PASS = Stage("lens-pass", tuple(f"lens-pass/{lens}.md" for lens in
                                      ("architecture", "bloat", "tests", "footguns", "escaped-defects")))
 FOLLOW_UP = Stage("follow-up", ("follow-up.md",))
-SYNTHESIZE = Stage("synthesize", REPORT)
+SYNTHESIZE = Stage("synthesize", ("report.md",))
 WORKFLOW = Kind("workflow retro", (
     READ_FRESH,
     FOLLOW_UP,
@@ -505,14 +508,19 @@ def run_commits(agent: Path) -> list[tuple[str, datetime]]:
 
 def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], seed: list[Path]) -> None:
     """`previous/`: the report as it stands now, verdicts since the last run included, as
-    `current.md`; the last three runs' reports, each named for the end of its period; and the
-    seed, the reports a first run takes as its previous ones, under `seed/`. Built beside it and
-    renamed into place, so a `previous/` a stopped run left is whole."""
+    `current.md`, with the comments of max's on its page that it has not answered as `comments.md`;
+    the last three runs' reports, each named for the end of its period; and the seed, the reports a
+    first run takes as its previous ones, under `seed/`. Built beside it and renamed into place, so a
+    `previous/` a stopped run left is whole."""
     previous = run / "previous.partial"
     shutil.rmtree(previous, ignore_errors=True)
     previous.mkdir()
     if blob(agent, REPORT_PATH):
-        (previous / "current.md").write_text(git(agent, "show", f"HEAD:{REPORT_PATH}"))
+        current = git(agent, "show", f"HEAD:{REPORT_PATH}")
+        (previous / "current.md").write_text(current)
+        comments = agent / COMMENTS_PATH
+        state = json.loads(comments.read_text()) if comments.is_file() else None
+        (previous / "comments.md").write_text(report_page.open_comments(current, state))
     for sha, until in runs[:3]:
         (previous / f"{dirname(until)}.md").write_text(git(agent, "show", f"{sha}:{REPORT_PATH}"))
     if seed:
@@ -527,9 +535,10 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
 
 def commit_report(agent: Path, run: Path, base: str | None, since: datetime, until: datetime,
                   kind: Kind) -> tuple[bool, str]:
-    """Copy the run's report and page into the report's directory and commit those two files alone.
-    Whether it committed, and the line the run log gets, saying what was committed or why nothing was."""
-    paths = [f"{qualified.RETRO}/{name}" for name in REPORT]
+    """Copy the run's report into the report's directory, build its page there, and commit those with
+    the page's comments alone. Whether it committed, and the line the run log gets, saying what was
+    committed or why nothing was."""
+    paths = [REPORT_PATH, PAGE_PATH]
     gitdir = Path(git(agent, "rev-parse", "--absolute-git-dir").strip())
     if busy := [op for marker, op in IN_PROGRESS.items() if (gitdir / marker).exists()]:
         return False, f"not committed: {agent} is mid-{busy[0]}; the report stays in {run}"
@@ -539,9 +548,11 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
         changes = ", ".join(line[3:] for line in changed.splitlines())
         return False, f"not committed: {changes} has changes of its own in {agent}; the report stays in {run}"
     (agent / qualified.RETRO).mkdir(parents=True, exist_ok=True)
-    for name in REPORT:
-        shutil.copy(run / name, agent / qualified.RETRO / name)
+    shutil.copy(run / "report.md", agent / REPORT_PATH)
+    report_page.render(agent / REPORT_PATH, agent / PAGE_PATH)
     link_tags(agent)
+    if (agent / COMMENTS_PATH).is_file():
+        paths.append(COMMENTS_PATH)
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
@@ -551,7 +562,8 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
             git(agent, "add", "--", *new)
         git(agent, "commit", "--quiet", "--only", "-m", message, "--", *paths)
     except subprocess.CalledProcessError as e:
-        restore(agent, paths)
+        restore(agent, [REPORT_PATH, PAGE_PATH])
+        subprocess.run(["git", "-C", str(agent), "reset", "--quiet", "--", COMMENTS_PATH], capture_output=True)
         return False, f"not committed: git {e.cmd[3]} failed ({(e.stderr or e.stdout).strip()}); the report stays in {run}"
     return True, f"committed {git(agent, 'rev-parse', '--short', 'HEAD').strip()} in {agent}"
 
