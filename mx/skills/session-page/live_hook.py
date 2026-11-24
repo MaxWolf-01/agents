@@ -88,8 +88,6 @@ def update(path: Path, hook: dict, now: datetime) -> None:
     elif event == "PostToolUseFailure":
         step = call(hook)
         step.update(failed=True, done=step["done"] or now.isoformat(), output=step["output"] or str(hook.get("error", "")))
-    else:
-        return
     write(path, live)
 
 

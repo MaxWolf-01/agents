@@ -36,7 +36,7 @@ BEFORE_IT = datetime(2026, 9, 23, 1, 31, tzinfo=UTC).timestamp()
 def unreachable(system: str, prompt: str) -> list[dict]:
     """A reviewer stand-in for a check where no model call may be made. It fails the check through
     `pytest.fail`, which the review's fail-open handler does not catch."""
-    pytest.fail("the reviewer was called where no model call may be made")
+    pytest.fail("the reviewer was called where no model call may be made")  # pragma: no cover - runs only when the check it guards fails
 
 
 # ---- sessions drawn as data ------------------------------------------------
@@ -320,6 +320,37 @@ UNPARSEABLE = {
         "04.md", "---\ndate: 2026-09-23\nanswered:\n  A9: done\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 4),
     "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
     "a link item that is no link": ("04.md", f"{ROUND_3}## Links\n\n- the round's page\n", 9),
+    "answered that is no table of tags": (
+        "04.md", "---\ndate: 2026-09-23\nanswered: Q1\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 3),
+    "answered naming what is no question's tag nor a to-do's": (
+        "04.md", "---\ndate: 2026-09-23\nanswered:\n  B1: a\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 4),
+    "frontmatter with no date": ("04.md", "---\nanswered: {}\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 2),
+    "a second headline": ("04.md", f"{ROUND_3}# Round 3, again\n\n## Details\n\nThe round.\n", 7),
+    "a section twice": ("04.md", f"{ROUND_3}## Details\n\nThe round.\n\n## Details\n\nAgain.\n", 11),
+    "text between the headline and the first section": ("04.md", f"{ROUND_3}The round.\n\n## Details\n\nThe round.\n", 7),
+    "frontmatter and nothing else": ("04.md", "---\ndate: 2026-09-23\n---\n\n", None),
+    "a second Recap": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Recap: the hook.\n  - Recap: the hook again.\n"
+                 "  - (a) A light review.\n  - (b) None.\n", 11),
+    "a question's link that climbs out of the repo": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - [The round](../round.html): it\n"
+                 "  - (a) A light review.\n  - (b) None.\n", 10),
+    "text before the first question": ("04.md", f"{ROUND_3}## Questions\n\nTwo questions this round.\n", 9),
+    "a second Blind": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Blind: agent/show/r/blind-q7.html\n"
+                 "  - Blind: agent/show/r/blind-q7b.html\n", 11),
+    "a Blind that climbs out of the repo": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Blind: ../blind-q7.html\n", 10),
+    "a second Ticket": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **Sync on every commit?**\n  - Ticket: two-main-checkouts D5\n"
+                 "  - Ticket: two-main-checkouts D6\n  - (a) Yes.\n  - (b) No.\n", 11),
+    "a question's sub-item of no kind it has": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Note: ask again.\n"
+                 "  - (a) A light review.\n  - (b) None.\n", 10),
+    "a line back at the margin under a question": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review.\n  - (b) None.\n"
+                 "Which one?\n", 12),
+    "a to-do listed twice": ("04.md", f"{ROUND_3}## To do\n\n- [A1] **Review devops #3**\n- [A1] **Review devops #4**\n", None),
 }
 
 

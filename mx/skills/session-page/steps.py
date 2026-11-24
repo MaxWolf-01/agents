@@ -41,8 +41,6 @@ def steps_of(entries: list[dict]) -> list[Step]:
             continue
         at = datetime.fromisoformat(entry["timestamp"])
         for b in content:
-            if not isinstance(b, dict):
-                continue
             if b.get("type") == "thinking" and str(b.get("thinking") or "").strip():
                 steps.append(Step(at, "", output=b["thinking"]))
             elif b.get("type") == "tool_use":
@@ -139,8 +137,6 @@ KINDS = {"Bash": "command", "Read": "read", "Grep": "read", "Glob": "read", "Wri
 
 def summary(step: Step) -> tuple[str, str]:
     """A step's line: the words it opens with, and the first line of what it acted on."""
-    if not step.tool:
-        return "thought", step.output.strip().splitlines()[0]
     verb, fields = SUMMARIES.get(step.tool, (step.tool.removeprefix("mcp__").split("__")[-1], ()))
     values = [step.input.get(f) for f in fields] or list(step.input.values())
     subject = next((str(v) for v in values if isinstance(v, (str, int, float)) and str(v).strip()), "")

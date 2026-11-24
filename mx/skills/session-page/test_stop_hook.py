@@ -998,15 +998,20 @@ def test_the_turns_end_runs_no_review(
 ) -> None:
     """turns-end-on-their-recap#P3: the review ran when the record was written, or not at all, and a
     turn that wrote a record renders with the hook's message either way. The log says
-    which of the two it was."""
+    which of the two it was. The log is every session's: another session's review this turn is not
+    this one's, and a line of this session's cut short by a concurrent write is no review."""
+    others = [json.dumps(REVIEWED_04 | {"session_id": FRESH}), json.dumps({"session_id": worked_example.name} | REVIEWED_04)[:-20]]
+    attended.write_text("".join(line + "\n" for line in others))
     if reviewed:
-        attended.write_text(json.dumps(REVIEWED_04 | {"session_id": worked_example.name}) + "\n")
+        with attended.open("a") as log:
+            log.write(json.dumps(REVIEWED_04 | {"session_id": worked_example.name}) + "\n")
     monkeypatch.setattr(turn_review, "review", unreachable)
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript, reply="Round 3 is on the page.\nQ7, what reviews a turn's prose, waits on you."))
     assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
-    assert logged(attended, "verb")[-1]["why"] == ("record reviewed this turn" if reviewed else "record not reviewed this turn")
+    after = [json.loads(line) for line in attended.read_text().splitlines()[len(others):]]
+    assert [e for e in after if "verb" in e][-1]["why"] == ("record reviewed this turn" if reviewed else "record not reviewed this turn")
 
 
 def test_the_records_as_the_turn_ended_are_logged_beside_their_review(
@@ -1197,6 +1202,21 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
     assert (worked_example / PAGE).read_text() != stale_page
 
 
+def test_the_hook_as_claude_code_runs_it_sends_back_a_broken_record(
+    worked_example: Path, transcript: Path, stale_page: str,
+) -> None:
+    """The script itself, in a process of its own with the Stop JSON on stdin, as the plugin's
+    hooks.json has Claude Code run it."""
+    record = worked_example / "turns" / "04.md"
+    record.write_text("no frontmatter\n")
+    (worked_example / PAGE).write_text(stale_page)
+    done = subprocess.run([sys.executable, Path(stop_hook.__file__)], input=json.dumps(payload(worked_example, transcript)),
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout)["hookSpecificOutput"]["additionalContext"].startswith(f"{record}:1: ")
+    assert (worked_example / PAGE).read_text() == stale_page
+
+
 # ---- pages across handoffs ----------------------------------------------------
 # The link is written by the handoff skill's pickup command, run here as the agent runs it; the
 # Stop hook renders the fresh session's page from it.
@@ -1262,9 +1282,11 @@ def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_befor
     continuation handoff gets `previous`, naming the session that wrote the handoff; its page links
     to that one's, and that one's, rendered again, links forward; each link resolves on disk."""
     directory, _ = first_turn
+    (directory.parent / BEFORE / "session.md").write_text("# Ledger: the second bank\n")
     before = handed_over(CONTINUATION)
     assert (directory / PREVIOUS).read_text().strip() == BEFORE
     assert links_to(directory / PAGE) == [BEFORE]
+    assert "previous Ledger: the second bank" in text_of((directory / PAGE).read_text()), "the link reads as the title of the session before"
     assert links_to(before / PAGE) == [FRESH]
     assert f'href="{(before / PAGE).as_uri()}"' in (directory / PAGE).read_text()
     assert f'href="{(directory / PAGE).as_uri()}"' in (before / PAGE).read_text()

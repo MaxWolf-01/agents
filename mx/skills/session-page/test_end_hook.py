@@ -14,6 +14,7 @@ and are committed as it ends, read off git's own record of the commit and of `gi
 
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -238,6 +239,46 @@ def test_an_agent_directory_inside_the_code_repo_gets_no_commit(worked_example: 
 
 UNREAD = {"a dispatched worker": ("DISPATCH_WORKLOG", "/tmp/worklog", "dispatched worker"),
           "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0", "print-mode session")}
+
+
+def test_a_session_that_ends_in_no_project_commits_nothing(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch,
+                                                           attended: Path) -> None:
+    """SessionEnd fires in every session, wherever it ran: one in no project with an agent repo, and
+    with no directory of its own, ends with no commit and no directory resolved."""
+    hook = {"session_id": "0f0e0d0c-0000-0000-0000-000000000000", "cwd": str(tmp_path_factory.mktemp("loose")),
+            "reason": "prompt_input_exit", "transcript_path": "", "hook_event_name": "SessionEnd"}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook)))
+    end_hook.main()
+    (entry,) = [json.loads(line) for line in attended.read_text().splitlines()]
+    assert entry["directory"] is None and entry["why"] != "commit started"
+
+
+def test_a_commit_that_raises_says_so_in_the_log(agent: Path, end: Callable[[], list[dict]]) -> None:
+    """The detached commit's stderr goes nowhere, so the log is where a failure shows: here the
+    agent repo's `sessions` is a file, which no record can be copied under."""
+    (agent / "sessions").write_text("not a directory\n")
+    head = git(agent, "rev-parse", "HEAD")
+    (said,) = [entry["committed"] for entry in end() if "committed" in entry]
+    assert "Not a directory" in said, "the log carries the error, in the words the OS gave it"
+    assert git(agent, "rev-parse", "HEAD") == head
+
+
+def test_records_are_committed_without_the_artefacts_where_git_cannot_say_which_it_ignores(
+    agent: Path, worked_example: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The records still go; the artefacts wait for the next end, and the result carries git's own
+    words on why."""
+    (worked_example / "show").mkdir()
+    (worked_example / "show" / "figure.html").write_text("<svg/>")
+    real = shutil.which("git")
+    stand_in = tmp_path / "bin" / "git"
+    stand_in.parent.mkdir()
+    stand_in.write_text(f'#!/bin/sh\n[ "$3" = check-ignore ] && {{ echo "fatal: the ignore rules are unreadable" >&2; exit 128; }}\nexec {real} "$@"\n')
+    stand_in.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{stand_in.parent}:{os.environ['PATH']}")
+    said = end_hook.commit_records(worked_example)
+    assert "the ignore rules are unreadable" in said
+    assert committed(agent) == [f"sessions/{worked_example.name}/{path}" for path in RECORDS]
 
 
 @pytest.mark.parametrize("variable, value, why", UNREAD.values(), ids=UNREAD)
