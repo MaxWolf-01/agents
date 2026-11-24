@@ -62,11 +62,13 @@ test-all: $(EXTENSION)/node_modules
 	node --test "$(EXTENSION)/tests/**/*.test.ts"
 
 # The fast suite's line coverage of mx's Python, against .coveragerc. The scripts the tests start run in environments
-# `uv run --script` builds, which hold no coverage, so PYTHONPATH carries coverage and tools/coverage/sitecustomize.py into them.
+# `uv run --script` builds, which hold no coverage, so PYTHONPATH carries tools/coverage/sitecustomize.py and a directory
+# holding coverage alone into them.
 coverage:
-	@rm -f .coverage .coverage.*; site=$$($(UV_RUN) --with pytest-cov python -c 'import coverage, os; print(os.path.dirname(os.path.dirname(coverage.__file__)))') && \
-	COVERAGE_FILE=$(CURDIR)/.coverage PYTHONPATH=$(CURDIR)/tools/coverage:$$site $(UV_RUN) --with pytest-cov pytest -p no:cacheprovider -n $(JOBS) \
-	  -q -m 'not full_path' --cov --cov-report=term-missing:skip-covered mx/
+	@rm -f .coverage .coverage.*; only=$$(mktemp -d) && trap 'rm -r "$$only"' EXIT && \
+	ln -s "$$($(UV_RUN) --with pytest-cov python -c 'import coverage, os; print(os.path.dirname(coverage.__file__))')" "$$only/coverage" && \
+	COVERAGE_FILE=$(CURDIR)/.coverage PYTHONPATH=$(CURDIR)/tools/coverage:$$only $(UV_RUN) --with pytest-cov pytest -p no:cacheprovider -n $(JOBS) \
+	  -q -m 'not full_path' --cov --cov-report=term mx/
 
 # A .ts file in TESTS is one of the extension's full-path checks, which node runs; the rest go to pytest.
 test-full-path: $(EXTENSION)/node_modules
