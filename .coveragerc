@@ -1,5 +1,9 @@
 [run]
 source = mx
+patch = subprocess
+parallel = true
+
+[report]
 omit =
     */test_*.py
     */conftest.py
@@ -11,10 +15,6 @@ omit =
     mx/skills/show/struktogramm/scripts/check_layout.py
     # The board's browser probes: test code of test_board_layout.py's full-path checks, run by Playwright.
     mx/skills/tracker/board_probe_*.py
-patch = subprocess
-parallel = true
-
-[report]
 include_namespace_packages = true
 fail_under = 100
 show_missing = true
