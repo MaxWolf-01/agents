@@ -525,6 +525,33 @@ def test_a_server_that_does_not_come_back_leaves_the_watcher_nothing_to_keep(
     assert board.kept(tracker.parent, tracker.parent / "board.html", gone) is None
 
 
+def test_board_opens_the_file_where_diffview_never_comes_back(
+    tracker: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A diffview that hangs past the minute `served` gives it: the page opens as the file, and the
+    board says why."""
+    def hangs(args: list[str], **given: object) -> None:
+        raise subprocess.TimeoutExpired(args, 60)
+    monkeypatch.setattr(board.subprocess, "run", hangs)
+    assert board.served(tracker.parent, tracker.parent / "board.html") is None
+    assert "diffview" in capsys.readouterr().err
+
+
+def test_the_watcher_says_so_when_the_server_comes_back_at_another_address_than_the_open_tabs(
+    repo: Path, tracker: Path, stub_diffview: Callable[[str], Path], listening: str, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """diffview brings a server back on the port it had, which is the one an open page knows; where
+    it comes back elsewhere, the tab no longer follows the tracker, and the watcher says where to go."""
+    out = tracker.parent / "board.html"
+    render(tracker, repo, out)
+    stub_diffview(listening)
+    gone = f"http://127.0.0.1:{free_port()}/board.html"
+    watching = board.turn(board.Watch(Seen(), board.Briefer(repo, out), gone), tracker, repo, out)
+    assert watching.address == f"{listening}/board.html"
+    said = capsys.readouterr().err
+    assert f"{listening}/board.html" in said and gone in said, said
+
+
 def test_every_board_carries_the_note_a_served_page_shows_when_its_server_stops_answering(tracker: Path) -> None:
     """Pins the format: the page's script shows the note it finds by its source, once its polls go
     unanswered."""
@@ -689,6 +716,8 @@ def test_markdown_at_the_tracker_root_that_no_reader_can_read_is_refused_by_the_
     (tracker / "needs-human.md").write_text("# Needs human\n\n- rule on loose-idea :: built while proposed\n")
     with pytest.raises(tracker_module.Refused, match=r"needs-human\.md:1: no frontmatter"):
         render(tracker, repo, tmp_path / "out" / "board.html")
+    with pytest.raises(SystemExit, match=r"needs-human\.md:1: no frontmatter"):  # `board` itself, started on it
+        board.main(board.Args(tickets_root=tracker, out=tmp_path / "out" / "board.html", open=False, watch=False))
 
 
 def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(tracker: Path) -> None:
@@ -1032,6 +1061,9 @@ def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path
 
     assert board.find_tracker(code / "src") == tickets, "found from anywhere in the code repo"
     assert board.find_tracker(code / "agent") == tickets, "and from inside the agent repo"
+    (elsewhere := tmp_path / "elsewhere").mkdir()
+    with pytest.raises(SystemExit, match=r"^board: .*no tracker"):
+        board.find_tracker(elsewhere)
 
     out = tmp_path / "board.html"
     board.main(board.Args(tickets_root=tickets, out=out, open=False, watch=False))
@@ -1662,6 +1694,8 @@ def test_a_transcript_written_between_two_renders_is_read_by_the_second(worked: 
     out = tmp_path / "board.html"
     assert "Back on this machine" not in [s.title for s in sessions_in(rows_read(root, repo, out)["map-columns"])]
     write_transcript(board.TRANSCRIPTS, AWAY, str(repo), "Back on this machine")
+    with (board.TRANSCRIPTS / re.sub(r"[^A-Za-z0-9]", "-", str(repo)) / f"{AWAY}.jsonl").open("a") as still_writing:
+        still_writing.write('{"type": "assistant", "cwd": "' + str(repo) + '", "message": {"content": "half')
     assert "Back on this machine" in [s.title for s in sessions_in(rows_read(root, repo, out)["map-columns"])]
 
 
@@ -1727,6 +1761,16 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
     ]
     assert S4 not in repr(rows), "the worker built it on another host, where the user cannot resume it"
     assert [title for title, _ in pages_in(row)] == ["Grilling the CSV import"], "only the grilling needed a page"
+
+
+def test_the_demo_tracker_script_builds_a_tracker_and_prints_its_root(tmp_path: Path) -> None:
+    """How a person gets the demo to look at (the script's docstring): `demo_tracker.py <dest>`
+    builds it and prints the tracker root, which the board is pointed at."""
+    script = Path(build_demo.__code__.co_filename)
+    done = subprocess.run([str(script), str(tmp_path / "demo")], capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr
+    root = Path(done.stdout.strip())
+    assert root.is_dir() and root.is_relative_to(tmp_path / "demo") and any(root.glob("*.md"))
 
 
 FILED = "b4c5d6e7-1111-4111-8111-111111111111"  # filed both tickets, before either moved
@@ -2309,7 +2353,7 @@ def status_moved(
 
 
 def test_a_briefing_the_session_wrote_does_not_disarm_githubs_clock(
-    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Two slices share one `elif`: the briefing's re-render and GitHub's answer running out. Only
     the second is a render that asks GitHub again, so only it is done with the answer it asked
@@ -2328,6 +2372,15 @@ def test_a_briefing_the_session_wrote_does_not_disarm_githubs_clock(
     watching = look(watching, session, tracker, repo, out)
     assert watching.armed is None, "the briefing's re-render took GitHub's answer as one it had asked about"
     assert run_out(watching.asked - github.LIFETIME, watching.armed), "so nothing would ever ask again"
+
+    later = datetime.now().astimezone() + github.LIFETIME + timedelta(minutes=1)
+    monkeypatch.setattr(board, "now", lambda: later)  # the answer has run out of its lifetime
+    rendered = out.stat().st_mtime_ns
+    watching = look(watching, session, tracker, repo, out)
+    assert out.stat().st_mtime_ns != rendered, "an answer past its lifetime re-renders"
+    rendered = out.stat().st_mtime_ns
+    look(watching, session, tracker, repo, out)
+    assert out.stat().st_mtime_ns == rendered, "and having had that render, the same answer asks for no other"
 
 
 def test_a_run_of_the_model_that_answers_nothing_reaches_the_open_tab(
@@ -2441,6 +2494,35 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     assert sources(board.read(tracker, repo, out)).count("model") == 1
 
 
+def test_the_watcher_starts_no_model_run_while_one_is_in_flight_or_while_the_tracker_is_still_moving(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """`Briefer`: one run at a time, and a ping waits out QUIET from the last status to move however
+    long ago the last run was (briefing.on_change)."""
+    said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
+    claude = path_with("claude", f"printf '%s\\n' {shlex.quote(json.dumps(said))}")
+    out = tmp_path / "board.html"
+    at = datetime.now().astimezone()
+    long_ago = at - 3 * CADENCE
+    Briefing("where things stand", long_ago, "abc-123", long_ago, long_ago, 0).write(cache_path(out))
+    statuses = board.statuses(load_tickets(tracker, repo, tracker.parent))
+    snapshot = tracker_snapshot(tracker, repo)
+    watcher = board.Briefer(repo, out, told=snapshot, told_statuses=(), changed_at=at)
+
+    watcher.tick(tracker, snapshot, statuses, at + timedelta(minutes=1))
+    assert watcher.running is None and runs(claude) == [], "a status moved a minute ago, and the tracker may move again"
+
+    gate = threading.Event()
+    in_flight = watcher.running = threading.Thread(target=gate.wait)
+    in_flight.start()
+    watcher.tick(tracker, snapshot, statuses, at + QUIET + timedelta(minutes=1))
+    gate.set()
+    in_flight.join(30)
+    if watcher.running is not in_flight:
+        watcher.running.join(30)
+    assert runs(claude) == [], "a second run started beside the one in flight"
+
+
 def refuse(path: Path, *fields: str) -> None:
     """Give the ticket at `path` fields the tracker does not know, in this order from its first line."""
     path.write_text(path.read_text().replace("---\n", "---\n" + "".join(f"{f}: [x]\n" for f in fields), 1))
@@ -2494,8 +2576,34 @@ def test_failing_passes_say_each_error_once_and_mark_the_open_board_stale_until_
     assert polled(out)["Stale"] is None
 
 
+def test_a_failing_pass_with_no_page_to_mark_stale_leaves_the_watcher_running(repo: Path, tracker: Path, tmp_path: Path) -> None:
+    """`restamp`: no page drawn yet, so no tab to tell; the pass fails as any failing pass does, and
+    the watcher goes on to the next one."""
+    out = tmp_path / "board.html"
+    refuse(tracker / "second.md", "flavour")
+    watching = board.turn(board.Watch(Seen(), board.Briefer(repo, out)), tracker, repo, out)
+    assert watching.failing and "`flavour` is no ticket field" in watching.failing.error
+    board.stamp_path(out).write_text("written by something else\n")
+    refuse(tracker / "second.md", "texture")
+    watching = board.turn(watching, tracker, repo, out)
+    assert "`texture` is no ticket field" in watching.failing.error
+
+
 def test_the_watcher_watches_every_module_it_loaded() -> None:
     assert {"board.py", "tracker.py", "briefing.py", "github.py"} <= {path.name for path, _, _ in board.CODE}
+
+
+def test_new_code_is_tried_through_its_shebang_and_answers_with_the_last_line_it_said(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`starts`: None where the script on disk starts, else the last line it said, so the watcher
+    hands itself on only to code that starts."""
+    script = tmp_path / "board.py"
+    monkeypatch.setattr(board, "SCRIPT", script)
+    assert str(script) in (board.starts() or ""), "a script that is not there does not start"
+    script.write_text("#!/bin/sh\necho 'board.py:12: a first line' >&2\necho \"SyntaxError: '(' was never closed\" >&2\nexit 1\n")
+    script.chmod(0o755)
+    assert board.starts() == "SyntaxError: '(' was never closed"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    assert board.starts() is None
 
 
 class Stopped(Exception):
@@ -2511,6 +2619,7 @@ def test_the_watcher_tries_changed_code_once_per_change_and_hands_itself_on_with
     out = tmp_path / "board.html"
     render(tracker, repo, out)
     module = tmp_path / "tracker.py"
+    assert board.on_disk([module]) == ((module, None, None),), "a module not on disk has no time and no size"
     module.write_text("FIELDS = ('status',)\n")
     watching = board.Watch(Seen(), board.Briefer(repo, out), code=board.on_disk([module]))
     tried: list[str] = []
