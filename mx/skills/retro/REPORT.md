@@ -76,12 +76,14 @@ In order of the weighing.
 ### F<n> <what the friction is, in plain words>
 
 - **Lens**: max | agents | mechanism
+- **Area**: what it is about, a repo or the part of one (`dispatch`, `jarvis`, `hub`), where its paths alone would not say
 - **State**: live | to take up, C<n> | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
 - **Evidence**: two or three quotes, each `"<verbatim>"` (<source>, <date>)
 - **Cause**: what produces it, by path and line where it is a file (`mx/skills/dispatch/SKILL.md:42`), or the habit
 - **Proposal**: the fix at the cause: what it deletes or narrows, and where it lands (a deletion, a check, a line of the reviewer's baseline, a skill line, a tool)
 - **Weighing**: cost of the friction, upkeep of the fix, how often, how robust
 - **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back; answered C<n> <date>: <what the run did with it>
+- **Artefacts**, where one exists: each by its path from the agent repo's root (`show/<slug>/before-after.svg`); the page shows an image or a page in the entry's sheet and links anything else
 
 ## Candidates
 

@@ -422,6 +422,7 @@ def row(e: Entry, group_lens: str | None, home: bool = False) -> str:
     """An entry's row; its `home` row, the grouped view's, carries the entry's id as its element's, which
     a qualified tag elsewhere links to (tracker/qualified.py)."""
     area_tip = (
+        "Area, as its Area field names it" if e.fields.get("Area") else
         "Area, read from the paths it cites: " + ", ".join(f"{a} ×{n}" for a, n in e.area_counts)
         if e.area_counts
         else "No path it cites maps to an area."
@@ -437,8 +438,8 @@ def row(e: Entry, group_lens: str | None, home: bool = False) -> str:
         f'data-state="{html.escape(e.state_class)}" data-q="{html.escape((e.id + " " + e.title).lower())}">'
         f'<span class="rk" title="Rank {e.rank} in its section, the report\'s weighing order">{e.rank}</span>'
         f'<span class="id">{e.id or "—"}</span>'
-        f'<span class="tt">{md.renderInline(e.title)}{top}<span class="ln">{html.escape(lens)}</span></span>'
         f'<span class="ar" title="{html.escape(area_tip)}">{html.escape(e.area)}</span>'
+        f'<span class="tt">{md.renderInline(e.title)}{top}<span class="ln">{html.escape(lens)}</span></span>'
         f"{chip_state(e)}</a>"
     )
 
@@ -617,7 +618,7 @@ def changes_block(changes: dict[str, list[dict]], prev_run: str) -> str:
                 f'<a class="crow" href="#{r["a"]}"><span class="id">{r["id"]}</span>'
                 f'<span class="tt">{md.renderInline(r["title"])}</span>{extra}</a>'
             )
-        pills.append(f'<button class="pill cgb" data-k="{kind}">{label} <span class="n">{len(rows)}</span></button>')
+        pills.append(f'<button class="pill cgb" data-k="{kind}" aria-keyshortcuts="{len(pills) + 1}">{label} <span class="n">{len(rows)}</span></button>')
         lists.append(f'<div class="clist" data-k="{kind}" hidden>{"".join(items) or "<p class=v-meta>none</p>"}</div>')
     return (
         f'<section class="changes"><div class="line"><span class="lbl">since {html.escape(prev_run)}</span>{"".join(pills)}</div>'
@@ -753,13 +754,13 @@ def render(report: Path, page: Path) -> None:
     areas = Counter(e.area for e in entries)
     states = Counter(e.state_class for e in entries)
     area_pills = "".join(
-        f'<button class="pill" data-area="{html.escape(a)}">{html.escape(a)} <span class="n">{n}</span></button>'
-        for a, n in sorted(areas.items(), key=lambda kv: (kv[0] == "—", -kv[1], kv[0]))
+        f'<button class="pill" data-area="{html.escape(a)}"{"" if i else " aria-keyshortcuts=\"a\""}>{html.escape(a)} <span class="n">{n}</span></button>'
+        for i, (a, n) in enumerate(sorted(areas.items(), key=lambda kv: (kv[0] == "—", -kv[1], kv[0])))
     )
     state_order = ["live", "back", "to take up", "taken up", "fix landed", "held", "dismissed"]
     state_pills = "".join(
-        f'<button class="pill" data-state="{html.escape(s)}">{html.escape(s)} <span class="n">{n}</span></button>'
-        for s, n in sorted(states.items(), key=lambda kv: (state_order.index(kv[0]) if kv[0] in state_order else 99, kv[0]))
+        f'<button class="pill" data-state="{html.escape(s)}"{"" if i else " aria-keyshortcuts=\"s\""}>{html.escape(s)} <span class="n">{n}</span></button>'
+        for i, (s, n) in enumerate(sorted(states.items(), key=lambda kv: (state_order.index(kv[0]) if kv[0] in state_order else 99, kv[0])))
     )
 
     header = (

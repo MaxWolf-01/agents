@@ -150,3 +150,107 @@ def test_open_comments_leave_out_the_deleted_and_the_answered_and_name_an_entry_
     assert "## F2 (no longer in the report)" in text and "C1, 2026-10-13T09:00:00Z, on the run of 2026-10-12: dismiss this" in text
     assert "## F3 Jarvis loses messages" in text and "which repo?\n  really" in text
     assert "C2" not in text and "C3" not in text
+
+
+def test_an_artefact_an_entry_names_is_embedded_where_it_is_an_image_or_a_page_and_linked_otherwise(agent: Path) -> None:
+    (agent / "retro/report.md").write_text(SECOND.replace(
+        "- **Code lens**: architecture\n",
+        "- **Code lens**: architecture\n- **Artefacts**: `show/hub/before-after.svg`, `show/hub/index.html`, `research/01-hub.md`\n"))
+    _, data = rendered(agent)
+    assert data["entries"]["a1"]["art"] == [
+        {"href": "../show/hub/before-after.svg", "name": "show/hub/before-after.svg", "how": "img"},
+        {"href": "../show/hub/index.html", "name": "show/hub/index.html", "how": "frame"},
+        {"href": "../research/01-hub.md", "name": "research/01-hub.md", "how": "link"}]
+
+
+# The page in headless Chromium, served as the container hub serves it: `/.health` says it saves, and a
+# POST to `<page>.state.json` writes that file. It prints what each step saw.
+PROBE = r"""
+import json, shutil, sys, threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+root, page_path = Path(sys.argv[1]), sys.argv[2]
+
+class Hub(SimpleHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.path == "/.health":
+            body = b'{"saves": true}'
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        else:
+            super().do_GET()
+    def do_POST(self):
+        data = self.rfile.read(int(self.headers["Content-Length"]))
+        (root / self.path.lstrip("/")).write_bytes(data)
+        self.send_response(200); self.end_headers()
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Hub, directory=str(root)))
+threading.Thread(target=server.serve_forever, daemon=True).start()
+seen = {}
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(f"http://127.0.0.1:{server.server_port}/{page_path}")
+    page.wait_for_function("!!document.querySelector('#cm .new textarea') || document.readyState === 'complete'")
+    page.keyboard.press("j")
+    seen["pos"] = page.inner_text("#pos")
+    seen["timeline"] = page.inner_text("#sh-body .tl")
+    page.keyboard.press("j")
+    page.keyboard.press("j")
+    seen["third"] = page.inner_text("#pos")
+    seen["images"] = page.eval_on_selector_all("#sh-body .art img", "els => els.map(e => e.getAttribute('src'))")
+    page.wait_for_selector("#cm .new textarea")
+    page.keyboard.press("n")
+    seen["n focuses"] = page.evaluate("document.activeElement.matches('#cm .new textarea')")
+    page.keyboard.type("which repo is this?")
+    page.keyboard.press("Control+Enter")
+    page.wait_for_function("document.querySelector('#cm .cmt') !== null")
+    page.keyboard.press("Escape")
+    page.keyboard.down("Control"); page.keyboard.down("Alt")
+    seen["held"] = page.eval_on_selector_all(".key-over", "els => els.map(e => e.textContent)")
+    page.keyboard.up("Alt"); page.keyboard.up("Control")
+    seen["let go"] = page.eval_on_selector_all(".key-over", "els => els.length")
+    page.keyboard.press("?")
+    seen["list"] = page.evaluate("document.getElementById('help').open && document.getElementById('help-keys').rows.length")
+    page.wait_for_timeout(300)
+    seen["errors"] = errors
+    browser.close()
+server.shutdown()
+print(json.dumps(seen))
+"""
+
+
+@pytest.mark.full_path
+def test_the_page_in_a_browser_opens_entries_shows_their_timeline_and_artefacts_and_reaches_everything_by_key(
+        agent: Path) -> None:
+    """Acceptance criteria 2 and 4: j opens the first entry, its area beside its id, its timeline in its
+    sheet; the candidate's image shows in its; n opens a comment that the hub saves; Ctrl+Alt held shows
+    the keys and letting go hides them; ? lists them."""
+    import os, shutil, subprocess
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to drive the page with")
+    (agent / "show/hub").mkdir(parents=True)
+    (agent / "show/hub/before-after.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
+    (agent / "retro/report.md").write_text(SECOND.replace(
+        "- **Code lens**: architecture\n", "- **Code lens**: architecture\n- **Artefacts**: `show/hub/before-after.svg`\n"))
+    rendered(agent)
+    done = subprocess.run(["uv", "run", "--quiet", "--with", "playwright", "python", "-", str(agent), "retro/report.html"],
+                          input=PROBE, capture_output=True, text=True, timeout=180, env=os.environ)
+    assert done.returncode == 0, done.stderr[-2000:]
+    seen = json.loads(done.stdout)
+    assert seen["pos"].startswith("F1 · dispatch")
+    assert seen["timeline"] == "2026-10-12 live → 2026-10-19 taken up as faster-suite"
+    assert seen["third"].startswith("A1 · hub") and seen["images"] == ["../show/hub/before-after.svg"]
+    assert seen["n focuses"]
+    saved = json.loads((agent / "retro/report.html.state.json").read_text())
+    assert [(c["id"], c["entry"], c["text"]) for c in saved["comments"]] == [("C1", "A1", "which repo is this?")]
+    assert {"j", "k", "/", "g", "c", "y", "w", "?", "1", "a", "s", "n", "t"} <= set(seen["held"]), seen["held"]
+    assert seen["let go"] == 0
+    assert seen["list"] >= 15
+    assert seen["errors"] == []
