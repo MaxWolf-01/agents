@@ -93,6 +93,28 @@ def test_a_session_whose_last_message_is_an_interruption_reads_as_interrupted(tm
     assert s["last_user"] == "rename the ledger's banks", "an interruption is no message of the user's"
 
 
+def test_a_line_that_holds_no_well_formed_entry_leaves_the_session_to_what_the_other_lines_say(tmp_path: Path) -> None:
+    """A transcript is written outside this repo: a blank line, a message that is no object, content
+    that is neither text nor a list of parts, or a part that is no object is passed over, and the
+    entries around it still read."""
+    parts = lambda *good: {"type": "assistant", "message": {"role": "assistant", "content": ["a bare part", 7, *good]}}
+    transcript(
+        tmp_path, "s1", prompt("reconcile the ledger's two banks"),
+        tail="\n   \n" + "".join(json.dumps(e) + "\n" for e in (
+            {"type": "user", "message": "reconcile the ledger's third bank, as a bare string"},
+            ["an array, not an entry"],
+            {"type": "assistant", "message": {"role": "assistant", "content": None}},
+            parts({"type": "text", "text": "Committed the reconciliation as a1b2c3d."}),
+            parts({"type": "tool_use", "name": "Bash", "input": {"command": "cat > agent/handoffs/2026-10-06-ledger.md"}}),
+            said("assistant", "Both banks balance now; nothing more to do."),
+        )),
+    )
+    [s] = scanned(str(tmp_path))
+    assert (s["first_user"], s["last_user"]) == ("reconcile the ledger's two banks",) * 2
+    assert s["last_assistant"] == "Both banks balance now; nothing more to do."
+    assert s["signals"] == {"commit": True, "transcribe": False, "handoff": True}
+
+
 # Each completion signal, seen as a tool call or claimed in the assistant's text.
 SIGNALS = {
     "a commit run": ("commit", ran("git push origin main")),

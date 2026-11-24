@@ -10,6 +10,7 @@ itself, `glossary-lint` on PATH, is run once for what its callers read: code-rev
 findings as violations, and domain-modelling writes an entry once it passes.
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -17,7 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from glossary_lint import check
+import glossary_lint
+from glossary_lint import Args, check, main
 
 HERE = Path(__file__).parent
 COMMAND = HERE.resolve().parents[1] / "bin" / "glossary-lint"
@@ -69,6 +71,18 @@ def test_the_command_fails_on_a_finding_naming_its_file_line_and_term_and_passes
     (tmp_path / "GLOSSARY.md").write_text("## Language\n\n**Clean**:\nA tight one.\n")
     done = subprocess.run([str(COMMAND)], cwd=tmp_path, capture_output=True, text=True, timeout=120)
     assert (done.returncode, done.stdout) == (0, ""), done.stderr
+
+
+def test_json_emits_each_finding_in_the_schema_the_help_documents(tmp_path, capsys):
+    [schema] = json.loads(re.search(r"JSON schema \(--json\):\n\n\s*(\[.*\])", glossary_lint.__doc__).group(1))
+    (tmp_path / "GLOSSARY.md").write_text("## Language\n\n**Chatty**:\nOne. Two. Three.\n\n**Coded**:\nKeyed by `batch_id`.\n")
+    assert main(Args(paths=[tmp_path / "GLOSSARY.md"], json=True)) == 1
+    findings = json.loads(capsys.readouterr().out)
+    assert [(f["term"], f["kind"], f["line"]) for f in findings] == [("Chatty", "sentences", 3), ("Coded", "code", 6)]
+    for f in findings:
+        assert f.keys() == schema.keys()
+        assert all(isinstance(f[k], type(v)) for k, v in schema.items())
+        assert f["kind"] in schema["kind"].split("|")
 
 
 if __name__ == "__main__":

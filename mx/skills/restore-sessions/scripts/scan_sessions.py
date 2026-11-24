@@ -62,15 +62,27 @@ class Args:
     """Session id to leave out; repeatable."""
 
 
-def extract_text(content):
+def entry_of(line: str) -> dict | None:
+    """A transcript line as an entry whose message is a dict and whose content is a string or a
+    list of dicts, or None for a line that holds no entry."""
+    try:
+        entry = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(entry, dict) or not isinstance(msg := entry.setdefault("message", {}), dict):
+        return None
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        msg["content"] = [p for p in content if isinstance(p, dict)]
+    elif not isinstance(content, str):
+        msg["content"] = ""
+    return entry
+
+
+def extract_text(content: str | list[dict]) -> str:
     if isinstance(content, str):
         return content
-    if isinstance(content, list):
-        parts = []
-        for p in content:
-            if isinstance(p, dict) and p.get("type") == "text":
-                parts.append(p.get("text", ""))
-        return " ".join(parts)
+    return " ".join(p.get("text", "") for p in content if p.get("type") == "text")
 
 
 def extract_tool_signals(content):
@@ -103,14 +115,8 @@ def scan_session(filepath: Path) -> dict | None:
     signals = set()
 
     with open(filepath) as f:
-        for line in f:
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            msg = entry.get("message", {})
-
+        for entry in filter(None, map(entry_of, f)):
+            msg = entry["message"]
             etype = entry.get("type", "")
             role = msg.get("role", "")
             content = msg.get("content", "")
