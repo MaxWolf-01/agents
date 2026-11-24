@@ -1,3 +1,8 @@
+## 1.0.129
+
+- A bug is fixed once a run shows it, a review fix corrects or removes, and the retro's architecture lens reads what its tests lens found
+  A correctness finding now names the run that shows the bug, and the branch's owner makes that run before fixing: the failing test stays as the regression test, or the lightest run that can show it stands in. A fix corrects or removes; one that would add a guard, an abstraction or a test for behaviour the spec does not name is filed as a proposed ticket, as is a bug no run shows and a module boundary. The tests reviewer answers a surviving mutation with deleted code or a sharper existing test before a new one. In the retro's lens pass the architecture lens starts once the tests lens has written its findings, and reads them.
+
 ## 1.0.128
 
 - Comments only for outside-forced behaviour; a new test's red; the testing repertoire by name; state-diagram labels
