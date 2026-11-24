@@ -1,3 +1,8 @@
+## 1.0.131
+
+- The session page's tool-call log shows the newest step on top, with its time
+  The log drawer and the tasks' box of the turn under way now list steps newest first, and each log row ends on the clock time the step started. Its columns (failed, sizes, duration, time) line up down the list, what the step acted on is cut with an ellipsis, and the verb moved into the icon's tooltip. On a narrow drawer the sizes give their room to the subject; durations past an hour read in hours.
+
 ## 1.0.130
 
 - The session page's timeline folds to a strip, giving the turns its width
