@@ -1,3 +1,8 @@
+## 1.0.132
+
+- The session page's log opens and closes all its steps from an icon
+  The log drawer's "open all" / "close all" text became one icon (chevrons apart to open every step, together to close them), whose tooltip names it and its key, O. Asked for by max, who ruled merging. make check, make test (1007) and the 42 browser tests pass on the branch, whose tree the merge result is.
+
 ## 1.0.131
 
 - The session page's tool-call log shows the newest step on top, with its time
