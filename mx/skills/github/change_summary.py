@@ -71,16 +71,16 @@ def artifact_rules(catalogue: str) -> str:
     return "\n".join(kept).rstrip("\n")
 
 
-def ask(model: str, effort: str, system: str, prompt: str) -> str:
+def ask(model: str, effort: str, system: str, prompt: str, model_runs: Path = MODEL_RUNS, timeout: float = 630) -> str:
     """One bare `claude -p` call through `model-runs`, from an empty directory so no project file is in reach."""
     with tempfile.TemporaryDirectory() as empty:
         try:
             proc = subprocess.run(
-                [str(MODEL_RUNS), "run", "--site", "change-summary", "--timeout", "600", "--",
+                [str(model_runs), "run", "--site", "change-summary", "--timeout", "600", "--",
                  "claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
-                input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
+                input=prompt, capture_output=True, text=True, timeout=timeout, cwd=empty,
                 # FORCE_PROMPT_CACHING_5M (undocumented in Claude Code 2.1.309) writes the cache at the
                 # 5-minute rate, 1.25x input instead of the 1-hour 2x; one call, so nothing reads it later.
                 env={**os.environ, "CLAUDECODE": "", "FORCE_PROMPT_CACHING_5M": "1"},

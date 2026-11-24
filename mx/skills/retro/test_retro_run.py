@@ -716,6 +716,23 @@ def test_a_commit_another_git_process_holds_the_index_for_leaves_the_agent_repo_
     assert (run / "report.md").is_file(), "the report stays in the run directory"
 
 
+def test_a_commit_git_cannot_make_says_the_command_and_what_git_printed_as_its_last_line_and_the_report_stays(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = repo / "agent"
+    head = git(agent, "rev-parse", "HEAD")
+    monkeypatch.setenv("STUB_BEFORE_SYNTHESIS", f"echo corrupt > {agent}/.git/index")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        retro(tmp_path, repo, FIRST, SINCE)
+
+    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
+    said = last_logged(tmp_path)
+    assert said.startswith(f"failed: the commit: git -C {agent} status"), said
+    assert "index" in said and said.endswith(f"; the report stays in {run}"), "git's own message, and where the report is"
+    assert git(agent, "rev-parse", "HEAD") == head
+    assert (run / "report.md").is_file()
+
+
 # ── the repos a tracker plans ────────────────────────────────────────────────
 
 

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from change_summary import CATALOGUE, Failure, artifact_rules
+from change_summary import CATALOGUE, Failure, artifact_rules, ask
 
 SHIM = Path(__file__).resolve().parents[2] / "bin" / "change-summary"
 MODEL_RUNS = Path(__file__).resolve().parents[1] / "model-runs" / "model-runs"
@@ -235,6 +235,14 @@ def test_a_diff_that_is_not_utf8_still_reaches_the_model(claude: Claude) -> None
                           env={**os.environ, "PATH": claude.path, "FAKE_DIR": str(claude.dir), "MODEL_RUNS_LOG": str(claude.dir / "runs.jsonl")})
     assert (done.returncode, done.stdout) == (0, b"A paragraph.\n")
     assert "w\ufffdrld" in claude.stdin()
+
+
+def test_a_model_call_past_its_timeout_fails_with_its_reason(tmp_path: Path) -> None:
+    never_answers = tmp_path / "model-runs"
+    never_answers.write_text("#!/bin/sh\nexec sleep infinity\n")
+    never_answers.chmod(0o755)
+    with pytest.raises(Failure, match="timed out"):
+        ask("opus", "medium", "A system prompt.", DIFF, model_runs=never_answers, timeout=0.2)
 
 
 def test_an_empty_answer_fails(claude: Claude) -> None:

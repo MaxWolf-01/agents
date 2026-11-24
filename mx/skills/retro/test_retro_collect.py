@@ -12,6 +12,7 @@ import json
 import os
 import random
 import re
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -426,6 +427,22 @@ def test_the_ticket_lists_name_the_agent_repos_commit_and_the_tickets_proposed_a
     assert head in in_flight
     assert re.findall(r"^- (.+)$", in_flight, re.M) == ["board-link: open", "fast-board: review"]
     assert (run / "in-flight/board-link.md").read_text().startswith(ticket("open"))
+
+
+def test_an_agent_repo_whose_commit_git_cannot_read_fails_the_collect_rather_than_listing_no_tickets(tmp_path: Path) -> None:
+    agent = tmp_path / "agents" / "agent"
+    agent.mkdir(parents=True)
+    git(agent, "init", "-q", "-b", "main")
+    commit(agent, {"tickets/slow-suite.md": ticket("proposed")}, "file a ticket", SINCE)
+    tree = git(agent, "rev-parse", "HEAD^{tree}").strip()
+    (agent / ".git/objects" / tree[:2] / tree[2:]).unlink()  # HEAD still names the commit; its tree is gone
+    run = tmp_path / "data" / "runs" / "1"
+
+    with pytest.raises(subprocess.CalledProcessError, match="grep"):
+        retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
+                                       [], sample_seed=0, agent=agent)
+
+    assert not (run / "proposed.md").exists()
 
 
 def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_path: Path) -> None:

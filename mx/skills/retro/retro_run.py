@@ -446,7 +446,7 @@ def dies_with(parent: int) -> Callable[[], None]:
     """For a stage's process: TERM when the run's process dies, SIGKILL included, through Linux's
     parent-death signal. `model-runs` ends the model run on TERM, and `timeout`, which it runs the
     model under, passes the signal to every process the model started."""
-    def arm() -> None:  # pragma: no cover: runs in the forked stage process, which execs before coverage can save
+    def arm() -> None:  # pragma: no cover: runs in the forked stage process before exec, which coverage cannot see; test_a_run_stopped_or_killed_ends_the_stage_it_is_in[killed] holds it
         if LIBC is not None:
             LIBC.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
             if os.getppid() != parent:  # the run died before the signal was armed
