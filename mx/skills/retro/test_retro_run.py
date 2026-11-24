@@ -65,7 +65,7 @@ case $stage in
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && for f in leading-words permissions critique; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
-    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; echo '{"type": "result", "subtype": "success"}'; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; printf '# Workflow retro: %s\n\n%s\n' "$(basename "$PWD")" "${STUB_REPORT:-}" > report.md ;;
+    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; echo '{"type": "result", "subtype": "success"}'; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; printf '# Workflow retro: %s\n\n%s\n' "$(basename "$PWD")" "${STUB_REPORT:-}" > report.md && echo "- F1 sharpened: seen again $(basename "$PWD")" > changes.md ;;
 esac
 # the end of a turn, as claude reports it
 echo '{"type": "result", "subtype": "success"}'
@@ -189,6 +189,9 @@ def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stay
         "the session's staged ticket is neither committed nor unstaged"
     assert (agent / "retro/report.md").read_text() == (run / "report.md").read_text()
     assert last_logged(tmp_path, repo.name).startswith("committed ")
+    body = git(agent, "log", "-1", "--format=%b")
+    assert body.startswith((run / "changes.md").read_text().strip() + "\n\n"), "the why of each change is the commit's body"
+    assert git(agent, "log", "-1", "--format=%(trailers:key=Retro-until,valueonly)").strip() == retro_run.stamp(FIRST)
     if start == "a worktree":
         assert git(agent, "rev-parse", branch) == ticket_branch, "the report went to the main checkout, not the ticket's branch"
 

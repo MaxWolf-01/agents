@@ -33,7 +33,7 @@ copied into it, under `previous/`. A repo retro's stages read sessions as the di
 directory alone: they may not read the session pages in its agent repos, and run no git command
 there.
 
-The commit holds the report, its page, `report.html` beside it, which `report_page.py` builds from it,
+The commit's body is the why of each change synthesis made, its `changes.md`. The commit holds the report, its page, `report.html` beside it, which `report_page.py` builds from it,
 and the comments max saved on the page, `report.html.state.json`, alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when the
 agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when the report or its page has
@@ -133,7 +133,7 @@ READ_FRESH = Stage("read-fresh", ("notes/{batch}.md", "notes/git.md"), fresh=Tru
 LENS_PASS = Stage("lens-pass", tuple(f"lens-pass/{lens}.md" for lens in
                                      ("architecture", "bloat", "tests", "footguns", "escaped-defects")))
 FOLLOW_UP = Stage("follow-up", ("follow-up.md",))
-SYNTHESIZE = Stage("synthesize", ("report.md",))
+SYNTHESIZE = Stage("synthesize", ("report.md", "changes.md"))
 WORKFLOW = Kind("workflow retro", (
     READ_FRESH,
     FOLLOW_UP,
@@ -548,6 +548,7 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
         return False, f"not committed: {changes} has changes of its own in {agent}; the report stays in {run}"
     (agent / qualified.RETRO).mkdir(parents=True, exist_ok=True)
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
+               f"{(run / 'changes.md').read_text().strip()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
         shutil.copy(run / "report.md", agent / REPORT_PATH)

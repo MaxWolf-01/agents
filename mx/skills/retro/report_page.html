@@ -76,7 +76,7 @@ kbd{font-size:.7rem;border:1px solid var(--edge);border-radius:3px;padding:0 .25
 .sec{font-size:1.15rem;font-weight:600;color:var(--strong);margin:0 0 .2rem}
 .gh{font-family:var(--font-mono);font-size:.75rem;font-weight:400;color:var(--muted);margin:1rem 0 .1rem}
 .gh b{font-weight:500;color:var(--body)}
-.row{display:grid;grid-template-columns:2.4rem 2.9rem 8.5rem minmax(0,1fr) 6.6rem;gap:.7rem;align-items:baseline;padding:.32rem .4rem;border-bottom:1px solid color-mix(in srgb,var(--edge) 55%,transparent);border-radius:3px;font-size:.95rem;line-height:1.38}
+.row{display:grid;grid-template-columns:2.4rem 2.9rem 8.5rem minmax(0,1fr) 10.5rem;gap:.7rem;align-items:baseline;padding:.32rem .4rem;border-bottom:1px solid color-mix(in srgb,var(--edge) 55%,transparent);border-radius:3px;font-size:.95rem;line-height:1.38}
 .row:hover{background:var(--wash-ink);color:inherit}
 .row.sel{background:var(--wash)}
 .row .rk{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -86,9 +86,9 @@ kbd{font-size:.7rem;border:1px solid var(--edge);border-radius:3px;padding:0 .25
 .row .ln{font-family:var(--font-mono);font-size:.7rem;color:var(--muted);margin-left:.5em;white-space:nowrap}
 .row .top{font-family:var(--font-mono);font-size:.68rem;color:var(--accent-2);margin-left:.5em;border:1px solid color-mix(in srgb,var(--accent-2) 45%,transparent);border-radius:999px;padding:0 .4em}
 .row .ar{font-family:var(--font-mono);font-size:.75rem;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.st{font-family:var(--font-mono);font-size:.75rem;color:var(--body);white-space:nowrap}
+.st{font-family:var(--font-mono);font-size:.75rem;color:var(--body)}
 .st::before{content:"";display:inline-block;width:.55em;height:.55em;border-radius:50%;margin-right:.4em;background:var(--c,var(--muted));vertical-align:.02em}
-.st .more{color:var(--muted);margin-left:.15em}
+.st .more{color:var(--muted);margin-left:.4em}
 .st-live{--c:var(--series-1)}
 .st-back{--c:var(--accent-2)}
 .st-taken-up{--c:var(--series-2)}
@@ -120,8 +120,6 @@ body.open #sheet{opacity:1;pointer-events:auto}
 .sh-body .chips{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-bottom:.8rem}
 .sh-body .chips span{font-family:var(--font-mono);font-size:.75rem}
 .sh-body .chips .k{color:var(--muted)}
-.sh-body .changed{border-left:2px solid var(--edge);padding-left:.9rem;margin:.6rem 0 1rem;font-size:.92em;color:var(--muted)}
-.sh-body .changed ul{margin:.2rem 0 0;padding-left:1em}
 .sh-body .eb>ul{padding-left:1.1em}
 .sh-body .eb>ul>li+li{margin-top:.6em}
 .sh-body .tofull{margin-top:1.5rem}
@@ -308,7 +306,6 @@ function open(a) {
     h += d.art.map(artefact).join('');
   }
   sheetBody.innerHTML = h + '<div class="cm" id="cm"></div>';
-  if (d.changed.length) sheetBody.insertAdjacentHTML('beforeend', `<div class="changed"><span class="v-meta">In What changed</span><ul>${d.changed.map(c => `<li>${c}</li>`).join('')}</ul></div>`);
   if (d.kind === 'dropped') {
     sheetBody.insertAdjacentHTML('beforeend', d.prev);
   } else {

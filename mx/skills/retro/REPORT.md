@@ -21,7 +21,7 @@ Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
 - **A candidate the report lacks**, from a session's own architecture scan, enters it under the next id, with its verdict where max ruled on it: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
 
-What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
+What changed is the page's to show and the next run's commit to explain. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
 
 ## max's comments
 
@@ -29,7 +29,7 @@ The page saves each comment max types on an entry beside it, in `retro/report.ht
 
 - **A comment weighs as a message of max's in a session**: context for its entry, unless it clearly rules ("dismiss this", "take this up"). Between a comment and his words in a session, the newer counts.
 - **A ruling in a comment is a verdict**, written as max's verdicts above say, quoting the comment with its id and date. A ruling to take an entry up gets the State `to take up, C<n>`, since a run files nothing: the session that works the report files its ticket, and the State becomes `taken up as <ticket>`.
-- **Every comment a run read is answered** in its entry's History: `answered C<n> <date>: <what the run did with it>`, or, for an entry no longer in the report, in a line of What changed. Once a committed version of the report holds that line, the comment is closed, whatever later versions keep of it. An entry carrying a comment not yet answered is not dropped.
+- **Every comment a run read is answered** in its entry's History: `answered C<n> <date>: <what the run did with it>`, or, for an entry no longer in the report, in a line of the run's changes, which its commit's body carries. Once a committed version of the report holds that line, the comment is closed, whatever later versions keep of it. An entry carrying a comment not yet answered is not dropped.
 
 ## The weighing
 
@@ -60,10 +60,6 @@ A repo retro's report has no Versions.
 # <Workflow retro | Repo retro>: <the project>
 
 Run <date of the period's end>, over <start> to <end>. ids: F<highest>, A<highest>
-
-## What changed since <the last run's date>
-
-One line per finding or candidate added, sharpened, amended, dropped or whose state moved (taken up, fix landed, held, back), with its id and why.
 
 ## Top recommendation
 
@@ -112,4 +108,8 @@ A few lines on what changed with the mx releases, Claude Code versions and model
 Each finding or candidate max dismissed: id, title, a candidate's code lens, his verdict quoted with its date. A line here is the whole of it, until newer evidence brings it back.
 ```
 
-A dropped finding leaves the report: the line in What changed that drops it is its last mention, and the `ids:` line keeps its number from being given again.
+A dropped finding leaves the report: the line in its run's changes that drops it is its last mention, and the `ids:` line keeps its number from being given again.
+
+## The run's changes
+
+What changed since the report's previous committed version, entry by entry by id, the page derives from git history; its why is the run's to write, in the body of the commit that lands the report, which agents read with `git log -- retro/report.md` and explain on demand. One line per finding or candidate added, sharpened, amended, dropped or whose state moved, its id first, then what changed and why; and one per comment answered for an entry no longer in the report. It is written for agents, not for max to read.

@@ -183,16 +183,34 @@ def test_open_comments_leave_out_the_deleted_and_the_answered_and_name_an_entry_
     assert "## D-PAGES-THAT-EXPLAIN-THEMSELVES Pages that explain themselves" in text, "a Dismissed line with no id keeps its comments"
 
 
-def test_a_comment_answered_once_stays_answered_when_a_later_version_drops_the_answer(agent: Path) -> None:
-    """A run answers C1 on F2 in its What changed; the next run's What changed no longer says so."""
-    git(agent, "add", "retro/report.md")
-    git(agent, "commit", "-qm", "run", when=datetime(2026, 10, 19, 3, tzinfo=UTC))
-    (agent / "retro/report.md").write_text(SECOND.replace("## Findings", "## What changed\n\n- F2 dropped; answered C1 2026-10-19: gone\n\n## Findings"))
-    git(agent, "commit", "-qam", "run with the answer", when=datetime(2026, 10, 26, 3, tzinfo=UTC))
-    (agent / "retro/report.md").write_text(SECOND)
-    comment = {"id": "C1", "entry": "F2", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "dismiss this"}
+@pytest.mark.parametrize("where", ["a History a later version drops", "the run's commit body"])
+def test_a_comment_answered_once_stays_answered(agent: Path, where: str) -> None:
+    """C1 on F3 is answered in one run; the next version of the report no longer says so."""
+    answered = SECOND.replace("- **Area**: jarvis\n", "- **Area**: jarvis\n- **History**: answered C1 2026-10-19: kept\n")
+    (agent / "retro/report.md").write_text(answered if where.startswith("a History") else SECOND)
+    git(agent, "commit", "-qam", "retro: a run\n\n- F3 new; answered C1: kept" if where.endswith("body") else "retro: a run",
+        when=datetime(2026, 10, 19, 3, tzinfo=UTC))
+    (agent / "retro/report.md").write_text(SECOND.replace("Run 2026-10-19", "Run 2026-10-26"))
+    comment = {"id": "C1", "entry": "F3", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "is this jarvis?"}
     assert "C1" not in report_page.open_comments(agent / "retro/report.md", {"comments": [comment]})
     assert rendered(agent)[1]["answered"] == ["C1"]
+
+
+def test_a_row_names_every_state_its_state_field_names(agent: Path) -> None:
+    """max asked what a "+" after a state meant: the further states it hid show on the row."""
+    (agent / "retro/report.md").write_text(SECOND.replace("- **State**: live\n- **Cause**: `mx/skills/tracker",
+                                                          "- **State**: back since 2026-10-17, after a fix landed 1234abc\n- **Cause**: `mx/skills/tracker"))
+    page, _ = rendered(agent)
+    (state,) = re.findall(r'<a class="row" id="f3".*?(<span class="st [^"]*"[^>]*>.*?</span>(?:<span class="more">[^<]*</span>)?)', page, re.S)
+    assert re.sub(r"<[^>]+>", " ", state).split() == ["back", "fix", "landed"]
+
+
+def test_what_changed_prints_as_text_entry_by_entry(agent: Path) -> None:
+    text = report_page.changes_text(agent / "retro/report.md")
+    assert text.splitlines() == ["Since 2026-10-12:", "- New: F3 Jarvis loses messages",
+                                 "- State moved: F1 The suite is slow (live → taken up as faster-suite)",
+                                 "- Reworked: A1 Fold the hub's two servers into one",
+                                 "- Dropped: F2 Pages lose comments (was live)", "- Unchanged: A2 Name the area beside every id"]
 
 
 def test_an_artefact_an_entry_names_is_embedded_where_it_is_an_image_or_a_page_and_linked_otherwise(agent: Path) -> None:

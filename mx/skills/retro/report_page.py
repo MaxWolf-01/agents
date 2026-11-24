@@ -16,6 +16,7 @@ shows its comments read-only anywhere.
 Example:
 
     report_page.py agent/retro/report.md agent/retro/report.html
+    report_page.py agent/retro/report.md
 """
 
 import html
@@ -136,7 +137,6 @@ class Entry:
     area_counts: list[tuple[str, int]] = field(default_factory=list)
     state_class: str = ""
     state_others: list[str] = field(default_factory=list)
-    changed: list[str] = field(default_factory=list)  # rendered What changed lines naming it
     in_top: bool = False
     group: str = ""  # the `###` heading of a grouped-bullets block, for an entry that is one of its bullets
 
@@ -379,19 +379,6 @@ def parse(text: str):
     return title, run_line, intro, sections, entries
 
 
-def what_changed_lines(body: str, by_id: dict[str, Entry]) -> None:
-    for line in body.splitlines():
-        if not line.startswith("- "):
-            continue
-        named = set(ID_RE.findall(line))
-        for letter, lo, hi in re.findall(r"\*\*([FA])(\d+)\*\* to \*\*[FA](\d+)\*\*", line):
-            named |= {f"{letter}{n}" for n in range(int(lo), int(hi) + 1)}
-        rendered = md.renderInline(line[2:])
-        for i in named:
-            if i in by_id:
-                by_id[i].changed.append(rendered)
-
-
 STATE_TIPS = {
     "live": "Live: the friction is current and nothing taken up covers it.",
     "back": "Back: a fix landed and the friction returned.",
@@ -406,9 +393,7 @@ STATE_TIPS = {
 def chip_state(e: Entry) -> str:
     cls = e.state_class if e.state_class in STATE_TIPS else "other"
     tip = plain(e.state) if e.kind != "dismissed" else STATE_TIPS["dismissed"]
-    if e.state_others:
-        tip += f"  [also names: {', '.join(e.state_others)}]"
-    more = '<span class="more">+</span>' if e.state_others else ""
+    more = f'<span class="more">{html.escape(", ".join(e.state_others))}</span>' if e.state_others else ""
     return f'<span class="st st-{slug(cls)}" title="{html.escape(tip[:600])}">{html.escape(e.state_class)}{more}</span>'
 
 
@@ -519,7 +504,7 @@ def full_report(title, run_line, intro, sections, entries, ids) -> str:
 
 
 def load(text: str):
-    """The report parsed, each entry with its area, state chip and What changed lines."""
+    """The report parsed, each entry with its area and state chip."""
     title, run_line, intro, sections, entries = parse(text)
     by_id = {e.id: e for e in entries if e.id}
     for e in entries:
@@ -528,7 +513,6 @@ def load(text: str):
             e.state_class = "dismissed"
         elif not e.state_class:  # a grouped bullet has its heading's
             e.state_class, e.state_others = classify_state(plain(e.state))
-    what_changed_lines(next((b for h, b in sections if h.startswith("What changed")), ""), by_id)
     return title, run_line, intro, sections, entries
 
 
@@ -625,23 +609,30 @@ def changes_block(changes: dict[str, list[dict]], prev_run: str) -> str:
 @dataclass(frozen=True)
 class Version:
     date: str  # the commit's date
+    message: str  # the commit's, whose body a run fills with the why of each change
     text: str
 
 
 def versions(report: Path) -> list[Version]:
     """Every committed version of `report`, oldest first; none where it is in no git repo."""
     where = report.resolve().parent
-    log = subprocess.run(["git", "-C", str(where), "log", "--format=%H %cs", "--", report.name],
+    log = subprocess.run(["git", "-C", str(where), "log", "-z", "--format=%H %cs%n%B", "--", report.name],
                          capture_output=True, text=True)
     if log.returncode:
         return []
     out = []
-    for line in reversed(log.stdout.splitlines()):
-        sha, date = line.split()
+    for commit in reversed([c for c in log.stdout.split("\0") if c]):
+        head, _, message = commit.partition("\n")
+        sha, date = head.split()
         shown = subprocess.run(["git", "-C", str(where), "show", f"{sha}:./{report.name}"],
                                capture_output=True, text=True, check=True)
-        out.append(Version(date, shown.stdout))
+        out.append(Version(date, message, shown.stdout))
     return out
+
+
+def previous_of(committed: list[Version], text: str) -> Version | None:
+    """What What changed compares against: the newest committed version that differs from `text`."""
+    return next((v for v in reversed(committed) if v.text != text), None)
 
 
 def timelines(history: list[tuple[str, list[Entry]]]) -> dict[str, list[tuple[str, str]]]:
@@ -692,8 +683,8 @@ def state_file(page: Path) -> Path:
 
 
 def answered_in(texts: list[str]) -> set[str]:
-    """The comments any of these versions of the report answered: an answer stays one once a later
-    version drops its line, as a rewritten What changed or a dropped entry's History does."""
+    """The comments any of these texts answered, the report's versions and the run commits' bodies: an
+    answer stays one once a later version drops its line, as a dropped entry's History does."""
     return {i for t in texts for i in ANSWERED.findall(t)}
 
 
@@ -703,7 +694,7 @@ def open_comments(report: Path, state: dict | None) -> str:
     text = report.read_text()
     entries = load(text)[4]
     titles = {e.id or e.anchor.upper(): plain(e.title) for e in entries}
-    answered = answered_in([v.text for v in versions(report)] + [text])
+    answered = answered_in([t for v in versions(report) for t in (v.text, v.message)] + [text])
     pending = [c for c in (state or {}).get("comments", []) if not c.get("deleted") and c["id"] not in answered]
     if not pending:
         return "No comment of max's on the report's page is open.\n"
@@ -740,7 +731,7 @@ def render(report: Path, page: Path) -> None:
     lines = timelines(history)
 
     changes, dropped, prev_run = None, {}, ""
-    if previous := next((v for v in reversed(committed) if v.text != text), None):
+    if previous := previous_of(committed, text):
         _, prev_line, _, _, prev_entries = load(previous.text)
         prev_run = run_date(prev_line) or previous.date
         changes = compare(entries, prev_entries)
@@ -775,7 +766,6 @@ def render(report: Path, page: Path) -> None:
             "title": plain(e.title),
             "kind": e.kind,
             "rank": e.rank,
-            "changed": [linkify(c, ids) for c in e.changed],
             "group": e.group,
             "line": lines.get(e.id, []),
             "art": artefacts(e, root, page.resolve().parent),
@@ -783,12 +773,12 @@ def render(report: Path, page: Path) -> None:
         for e in entries
     }
     for a, e in dropped.items():
-        data[a] = {"id": e.id, "title": plain(e.title), "kind": "dropped", "rank": 0, "changed": [], "group": "",
+        data[a] = {"id": e.id, "title": plain(e.title), "kind": "dropped", "rank": 0, "group": "",
                    "prev": prev_html(e, ids), "prevRun": prev_run, "line": lines.get(e.id, []), "art": []}
     saved_at = state_file(page)
     saved = json.loads(saved_at.read_text()) if saved_at.is_file() else None
     page_data = {"entries": data, "run": run_date(run_line), "title": title, "key": str(page.resolve()),
-                 "saved": saved, "answered": sorted(answered_in([v.text for v in committed] + [text]))}
+                 "saved": saved, "answered": sorted(answered_in([t for v in committed for t in (v.text, v.message)] + [text]))}
     page.write_text(
         TEMPLATE.replace("__TITLE__", html.escape(f"{title}, {run_date(run_line)}"))
         .replace("__HEADER__", header)
@@ -807,17 +797,37 @@ MOON = '<svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none"
 TEMPLATE = Path(__file__).with_name("report_page.html").read_text()
 
 
+def changes_text(report: Path) -> str:
+    """What changed since the report's previous committed version, entry by entry by id, as the page
+    derives it, one line per entry."""
+    text = report.read_text()
+    previous = previous_of(versions(report), text)
+    if previous is None:
+        return "No earlier committed version of the report differs from it.\n"
+    _, prev_line, _, _, prev_entries = load(previous.text)
+    changes = compare(load(text)[4], prev_entries)
+    out = [f"Since {run_date(prev_line) or previous.date}:"]
+    for kind, label in CHANGE_KINDS:
+        for r in changes[kind]:
+            how = f" ({r['from']} → {r['to']})" if kind == "moved" else f" (was {r['state']})" if kind == "dropped" else ""
+            out.append(f"- {label}: {r['id']} {plain(r['title'])}{how}")
+    return "\n".join(out) + "\n"
+
+
 def cli(
     report: Annotated[Path, tyro.conf.Positional],
-    page: Annotated[Path, tyro.conf.Positional],
+    page: Annotated[Path | None, tyro.conf.Positional] = None,
 ) -> None:
-    """Render a retro's living report as its page.
+    """Render a retro's living report as its page, or, given no page, print what changed in it.
 
     Args:
         report: The report.md to render; where it is in a git repo, its committed versions give what changed and each entry's timeline.
-        page: The HTML page to write; comments saved beside it, in <page>.state.json, are baked in.
+        page: The HTML page to write; comments saved beside it, in <page>.state.json, are baked in. Without it, the script prints what changed since the report's previous committed version, entry by entry, as the page shows it.
     """
-    render(report, page)
+    if page is None:
+        print(changes_text(report), end="")
+    else:
+        render(report, page)
 
 
 if __name__ == "__main__":
