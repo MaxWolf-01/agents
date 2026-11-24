@@ -6,7 +6,10 @@ Run: make test, or pytest on this file with tyro and markdown-it-py.
 """
 
 import json
+import os
 import re
+import shutil
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -231,7 +234,6 @@ def test_the_page_in_a_browser_opens_entries_shows_their_timeline_and_artefacts_
     """Acceptance criteria 2 and 4: j opens the first entry, its area beside its id, its timeline in its
     sheet; the candidate's image shows in its; n opens a comment that the hub saves; Ctrl+Alt held shows
     the keys and letting go hides them; ? lists them."""
-    import os, shutil, subprocess
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to drive the page with")

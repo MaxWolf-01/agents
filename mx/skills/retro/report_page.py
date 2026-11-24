@@ -530,12 +530,10 @@ def load(text: str):
     by_id = {e.id: e for e in entries if e.id}
     for e in entries:
         derive_area(e)
-        if e.group and e.state_class:
-            pass
-        elif e.kind != "dismissed":
-            e.state_class, e.state_others = classify_state(plain(e.state))
-        else:
+        if e.kind == "dismissed":
             e.state_class = "dismissed"
+        elif not e.state_class:  # a grouped bullet has its heading's
+            e.state_class, e.state_others = classify_state(plain(e.state))
     what_changed_lines(next((b for h, b in sections if h.startswith("What changed")), ""), by_id)
     return title, run_line, intro, sections, entries
 
