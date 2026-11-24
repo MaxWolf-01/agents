@@ -1,3 +1,8 @@
+## 1.0.134
+
+- The session page's tasks column labels its sections and dates its cards
+  The "Tasks" heading gave way to three section labels: "waiting on you" (questions and to-dos), "to look at" (artefacts) and "the agent's plan" (the session's own steps, the open circles max asked about); the count of what waits sits on the play icon. Each question's and to-do's card now says when its turn's record was written. Asked for by max, who ruled merging; make check, make test (1007) and the 42 browser tests pass on the branch, whose tree the merge result is.
+
 ## 1.0.133
 
 - The session page in a narrow hub pane no longer leaves an empty black column
