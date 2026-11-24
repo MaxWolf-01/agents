@@ -25,6 +25,8 @@
     subagent: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2"/><path d="M15 20a5 5 0 0 1 6-4.5"/>',
     thinking: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
     other: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5z"/>',
+    expand: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
+    collapse: '<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>',
   }
   const NAMES = { command: "commands run", read: "files read or searched", write: "files written", web: "looks on the web",
     subagent: "subagents", thinking: "thoughts", other: "other tools" }
@@ -181,7 +183,7 @@
       <div class="log-head">
         <span class="which" title="${esc(shownFor === LIVE ? window.liveCalls.prompt || "" : shownFor ? gist(shownFor) : "")}">${label(shownFor)}</span>
         <span class="tally">${Object.entries(tally).map(([k, n]) => `<span title="${n} ${NAMES[k]}">${icon(k)}${n}</span>`).join("")}${span ? `<span title="from the first step to the last">${span}</span>` : ""}</span>
-        ${steps.some((s) => s.kind !== "thinking") ? '<button type="button" class="all" data-all aria-keyshortcuts="O">open all</button>' : ""}
+        ${steps.some((s) => s.kind !== "thinking") ? '<button type="button" class="all" data-all aria-keyshortcuts="O"></button>' : ""}
       </div>
       <div class="log-steps">${steps.length ? steps.map(step).reverse().join("") : `<p class="log-empty">${empty}</p>`}</div>`
     const box = panel.querySelector(".log-steps")
@@ -204,7 +206,15 @@
   }
   const stepEls = () => [...panel.querySelectorAll(".log-steps .step")]
   const allOpen = () => stepEls().length > 0 && stepEls().every((el) => el.classList.contains("open"))
-  const nameAll = () => { const all = panel.querySelector("[data-all]"); if (all) all.textContent = `${allOpen() ? "close" : "open"} all` }
+  // open all or close all, as an icon whose words are its tooltip
+  const nameAll = () => {
+    const all = panel.querySelector("[data-all]")
+    if (!all) return
+    const close = allOpen()
+    all.innerHTML = icon(close ? "collapse" : "expand")
+    all.setAttribute("aria-label", `${close ? "close" : "open"} all`)
+    all.dataset.tip = `${close ? "Close" : "Open"} every step\nO does the same.`
+  }
   function flipAll() {
     const open = !allOpen()
     stepEls().forEach((el) => flip(el, open))
