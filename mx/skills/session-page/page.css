@@ -168,8 +168,7 @@ button.id:hover { color: var(--accent); }
 .tasks { position: relative; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 1rem 2rem; border-left: 1px solid var(--edge); background: var(--ground-2); --head: 2.75rem; }
 .tasks:focus { outline: none; }
 .t-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.3rem; min-height: 2.75rem; background: var(--ground-2); }
-.t-title { font: 600 1.05rem/1.2 var(--font-body); color: var(--strong); margin: 0; }
-.t-head .cnt { color: var(--accent); font-size: 0.8rem; margin-left: 0.35rem; }
+.t-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* named for a screen reader; the sections carry their own labels */
 .t-head .grow { flex: 1; }
 .ib { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 1px solid transparent; border-radius: var(--radius); background: none; color: var(--muted); cursor: pointer; text-decoration: none; transition: color 150ms, border-color 150ms; }
 .ib:hover { color: var(--accent); border-color: var(--edge); }
@@ -192,11 +191,10 @@ button.id:hover { color: var(--accent); }
 @media (min-width: 73.8125rem) {
   .tasks.folded { padding: 0 0.3rem; }
   .tasks.folded .t-head { flex-direction: column; gap: 0.35rem; padding-top: 0.5rem; }
-  .tasks.folded :is(.t-title, .cnt, .grow) { display: none; }
+  .tasks.folded :is(.t-title, .grow) { display: none; }
   .tasks.folded .fold { order: -1; }
   .tasks.folded .pn b { right: 0; top: -0.3rem; }
 }
-@media (max-width: 73.75rem) { .tasks .pn .when-folded { display: none; } }
 /* The timeline folds to a strip of its head's controls, beside the tasks or, where the tasks sit over it, under them,
    which then take the column's height; with the tasks folded too, the two strips are the whole side, and the turns
    get its width. A phone shows the timeline as a sheet, which does not fold. */
@@ -224,9 +222,8 @@ button.id:hover { color: var(--accent); }
   main.panes:has(.tasks.folded):has(.column.folded) { grid-template-columns: minmax(0, 1fr) auto; }
   .side:has(.tasks.folded):has(.column.folded) .tasks { flex: none; padding: 0 0.3rem; border-bottom: 0; }
   .side:has(.tasks.folded):has(.column.folded) .t-head { flex-direction: column; gap: 0.35rem; padding-top: 0.5rem; }
-  .side:has(.tasks.folded):has(.column.folded) :is(.t-title, .cnt, .grow, #column-title) { display: none; }
+  .side:has(.tasks.folded):has(.column.folded) :is(.t-title, .grow, #column-title) { display: none; }
   .side:has(.tasks.folded):has(.column.folded) .fold { order: -1; }
-  .side:has(.tasks.folded):has(.column.folded) .pn .when-folded { display: inline; }
   .side:has(.tasks.folded):has(.column.folded) .pn b { right: 0; top: -0.3rem; }
   .side:has(.tasks.folded):has(.column.folded) .column { padding: 0 0.3rem; }
   .side:has(.tasks.folded):has(.column.folded) .column-head { flex-direction: column; padding-top: 0.5rem; }

@@ -1878,14 +1878,17 @@ def tasks_column(v: View) -> str:
                '<span class="live-head"><span class="pulse" aria-hidden="true"></span><span class="live-name">live</span>'
                '<span class="live-count"></span></span><span class="live-steps"></span>'
                '<span class="live-all">open the log</span></button>')
-    body = ("".join(sections["needs"])
-            + (f'<div class="t-gap"></div><div class="t-label v-meta">to look at</div>{"".join(looks)}' if looks else "")
-            + f'<div class="t-gap"></div>{working}{"".join(sections["doing"])}'
-            + (f'<div class="t-gap"></div>{"".join(sections["next"])}' if sections["next"] else ""))
+    label = lambda text: f'<div class="t-label v-meta">{text}</div>'
+    plan = sections["doing"] + sections["next"]
+    body = ((label("waiting on you") + "".join(sections["needs"]) if sections["needs"] else "")
+            + (f'<div class="t-gap"></div>{label("to look at")}{"".join(looks)}' if looks else "")
+            + f'<div class="t-gap"></div>{working}'
+            + (label("the agent's plan") + "".join(sections["doing"])
+               + ('<div class="t-gap"></div>' if sections["doing"] and sections["next"] else "") + "".join(sections["next"]) if plan else ""))
     count = len(v.waiting) + len(v.todos)
     return f"""
     <section class="tasks{'' if count or looks else ' quiet'}" id="{QUESTIONS}" aria-labelledby="tasks-title" tabindex="-1">
-      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2>{f'<span class="v-num cnt"{tip(f"{count} waiting on you")}>{count}</span>' if count else ""}<span class="grow"></span>{button("play", "Enter", "work", "Work through them, one at a time" + chr(10) + "The keys are the same in there.", "pn").replace("</button>", f'<b class="v-num when-folded">{count}</b></button>') if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}>{ICONS["up"].replace('class="ico"', 'class="ico when-open"')}{ICONS["down"].replace('class="ico"', 'class="ico when-folded"')}</button></div>
+      <div class="t-head"><h2 class="t-title" id="tasks-title">Tasks</h2><span class="grow"></span>{button("play", "Enter", "work", f"Work through the {count} waiting on you, one at a time" + chr(10) + "The keys are the same in there.", "pn").replace("</button>", f'<b class="v-num">{count}</b></button>') if count else ""}{button("send", "r", "review", "Review the batch" + chr(10) + "Read it before it goes, then Enter sends it.", "rv")}<button type="button" class="ib fold" id="fold-tasks" data-act="fold" aria-keyshortcuts="q" aria-expanded="true" aria-label="fold the tasks"{tip("Fold the tasks" + chr(10) + "The timeline gets the room.")}>{ICONS["up"].replace('class="ico"', 'class="ico when-open"')}{ICONS["down"].replace('class="ico"', 'class="ico when-folded"')}</button></div>
       <div class="t-list">{body}</div>
     </section>"""
 
@@ -1974,7 +1977,9 @@ def card(*, cls: str, anchor: str, handle: str, kind: str, rail: str, headline: 
 
 
 def asked_in(turn: Turn, verb: str = "asked") -> str:
-    return f'{verb} in <a href="#t{turn.key}">turn {turn.key}</a>'
+    """Which turn put the item to the user, and when: the time the transcript shows its record written, else its day."""
+    when = turn.written.astimezone().strftime("%Y-%m-%d %H:%M") if turn.written else turn.date
+    return f'{verb} in <a href="#t{turn.key}">turn {turn.key}</a> · {esc(when)}'
 
 
 def decide_card(turn: Turn, q: Question | TicketQuestion) -> str:
