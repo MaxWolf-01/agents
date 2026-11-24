@@ -260,7 +260,8 @@ def test_a_turn_that_rewrites_the_session_record_has_it_reviewed_with_its_own(
     said = run(wrote(record, unrecorded))
     (prompt,) = prompts
     session_record = f"<record>\n{(worked_example / 'session.md').read_text().strip()}\n</record>"
-    assert prompt.endswith(f"{session_record}\n<record>\n{PIVOTAL_05.strip()}\n</record>") == rewritten
+    plan = f"\n\n<plan>\n{(worked_example / 'plan').read_text().strip()}\n</plan>"
+    assert prompt.endswith(f"{session_record}\n<record>\n{PIVOTAL_05.strip()}\n</record>{plan}") == rewritten
     (entry,) = logged(attended, "decision")
     assert ("session_record" in entry) == rewritten
     if rewritten:
@@ -276,7 +277,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     """The reviewer's input carries the earlier turn records and the user's messages, the ones this
     record answers included, though the transcript does not hold its Write yet, and no tool call:
     the transcript's Write calls and the task notifications that name a tool use carry ids starting
-    `toolu_`. The record under review comes last, fenced, and the reviewer runs under its own system
+    `toolu_`. The record under review comes after them, fenced, then the session's plan, and the reviewer runs under its own system
     prompt, bound to the schema."""
     claude = fake_claude(tmp_path, monkeypatch, RESULT | {"structured_output": {"findings": [finding(IN_RECORD[0])]}})
     turns = worked_example / "turns"
@@ -286,13 +287,15 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     prompt, system = (claude / "stdin").read_text(), argv[argv.index("--system-prompt") + 1]
     for earlier in ("01.md", "02.md", "03.md"):
         assert (turns / earlier).read_text().strip() in prompt
-    assert prompt.endswith(f"<record>\n{(turns / '04.md').read_text().strip()}\n</record>")
+    plan = (worked_example / "plan").read_text().strip()
+    assert prompt.endswith(f"<record>\n{(turns / '04.md').read_text().strip()}\n</record>\n\n<plan>\n{plan}\n</plan>"), \
+        "the records under review, then the session's plan as the turn ends"
     assert "i feel like we need like a leading word" in prompt  # the first prompt
     assert "hey can you please disregard" in prompt  # one the fourth turn answered
     assert "toolu_" not in prompt
     assert "Claude Code" not in system and "**AI vocabulary.**" in system
     assert turn_review.record_shape(turn_review.RULES.read_text()) in system
-    assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
+    assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 4, "three on the prose, one on the plan"
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
     assert (claude / "cache").read_text() == "1", "the reviewer writes its cache at the 5-minute rate"
 

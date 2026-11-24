@@ -5,7 +5,8 @@ A fresh model, MODEL at EFFORT, reads the records the turn wrote against the rul
 states, seeing what the page's reader has seen: the earlier records, each after the user's messages
 it answered, and the messages this record answers. The records under review are the turn's own and,
 where the transcript shows this turn writing it, session.md, whose title heads the page.
-Tool calls are not on the page, so the reviewer never sees them. The record's shape, as
+Tool calls are not on the page, so the reviewer never sees them. Where the session keeps a plan, the
+reviewer reads it too, as it stands as the turn ends, and may add one finding where the records contradict it. The record's shape, as
 RULES.md gives it to the agent, is exempt as structure. It answers against a JSON schema; a
 finding whose quote is in no record under review is dropped, and at most MOST go back to the agent.
 
@@ -34,7 +35,8 @@ EFFORT = "low"
 # line; both under the write hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
 REVIEWER_TIMEOUT_S = 45
 WRAPPER_TIMEOUT_S = 55
-MOST = 3  # findings handed back per record
+MOST = 3  # prose findings handed back per record, besides at most one on the plan
+PLAN = "plan"  # the rule id of a finding on the plan
 REVIEWED = ("feedback", "clean", "failed")  # the log's decisions a model call was made for
 LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the review's decisions and the hooks', one JSON line each
 
@@ -46,6 +48,10 @@ SYSTEM = """You review the prose of the records a coding agent writes as a turn 
 The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Where the agent rewrote the session's own record this turn (session.md: the session's title as its H1), it comes first, in <record> tags of its own. Review the text inside <record> tags and nothing else; the rest is what the reader already knows.
 
 Report at most three findings, the ones that cost the reader most. Each quotes a short excerpt of one record verbatim, names the rule it breaks by id, and says in a few words what is wrong. When in doubt, leave it out; no findings is a good answer.
+
+# The plan
+
+Where the input ends with the session's plan inside <plan> tags (the agent's steps, one a line: `wait`, `doing`, `next` or `done`, then the step, then fields such as `waits Q3` or `settles A2`), you may add one more finding, rule `plan`, where the records and the user's messages contradict the plan: a step still `doing`, `next` or `wait` that a record says is done, shipped or dropped; a step waiting on a question or to-do that has been answered; a question or to-do a record puts to the user that no open step names, while the plan has open steps; or work a record says is under way that no step names. Quote the plan's line, or the record's where the plan lacks a step, and say what the plan should say. A plan that is terse, or silent on something minor, is no finding.
 
 # The record's shape
 
@@ -62,7 +68,7 @@ SCHEMA = {
     "properties": {
         "findings": {
             "type": "array",
-            "maxItems": MOST,
+            "maxItems": MOST + 1,
             "items": {
                 "type": "object",
                 "properties": {"rule": {"type": "string"}, "quote": {"type": "string"}, "note": {"type": "string"}},
@@ -80,6 +86,7 @@ def feedback_on(session: Session, turn: Turn) -> str:
     way."""
     records = under_review(session, turn)
     texts = [path.read_text() for path in records]
+    plan = plan_of(turn)
     read = as_read(session, turn)
     t0 = time.monotonic()
     try:
@@ -88,11 +95,33 @@ def feedback_on(session: Session, turn: Turn) -> str:
     except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never holds up the page
         log(session.id, decision="failed", why=str(e), ms=ms_since(t0), **read)
         return ""
-    quoting = [f for f in answer if isinstance(f, dict) and (quote := str(f.get("quote") or "").strip()) and any(quote in t for t in texts)]
-    kept = quoting[:MOST]
-    log(session.id, decision="feedback" if kept else "clean", findings=kept, dropped=[f for f in answer if f not in quoting],
+    kept = keep(answer, texts, plan)
+    log(session.id, decision="feedback" if kept else "clean", findings=kept, dropped=[f for f in answer if f not in kept],
         ms=ms_since(t0), **read)
-    return feedback(records, kept, rules_by_id(rules)) if kept else ""
+    return feedback(records, kept, rules_by_id(rules) | {PLAN: plan_rule(turn)}) if kept else ""
+
+
+def keep(answer: list, texts: list[str], plan: str) -> list[dict]:
+    """The findings handed back: at most MOST on the prose, each quoting a record under review, and at most one on the
+    plan, quoting the plan or a record. A finding quoting neither is the reviewer's invention, and dropped."""
+    def quotes(f: object, within: list[str]) -> bool:
+        return isinstance(f, dict) and bool(q := str(f.get("quote") or "").strip()) and any(q in t for t in within)
+    on_plan = lambda f: str(f.get("rule")).strip("` ") == PLAN
+    prose = [f for f in answer if quotes(f, texts) and not on_plan(f)][:MOST]
+    planned = [f for f in answer if plan and quotes(f, [plan, *texts]) and on_plan(f)][:1]
+    return prose + planned
+
+
+def plan_of(turn: Turn) -> str:
+    """The session's plan as the turn ends, empty where it keeps none."""
+    path = turn.path.parent.parent / "plan"
+    return path.read_text() if path.is_file() else ""
+
+
+def plan_rule(turn: Turn) -> str:
+    return (f"- `{PLAN}` **The plan contradicts the session.** Bring {turn.path.parent.parent / 'plan'} in line with what the "
+            "records say: a step done goes `done`, a step whose questions were answered stops waiting, an open question "
+            "and work under way each have a step.")
 
 
 def under_review(session: Session, turn: Turn) -> list[Path]:
@@ -135,7 +164,8 @@ def reviewer_input(session: Session, turn: Turn) -> str:
     earlier = [t for t in session.turns if t.number < turn.number]
     parts = [user_messages(t) + f"\n<turn>\n{t.path.read_text().strip()}\n</turn>" for t in earlier]
     fenced = "".join(f"\n<record>\n{path.read_text().strip()}\n</record>" for path in under_review(session, turn))
-    parts.append(user_messages(turn) + fenced)
+    plan = plan_of(turn).strip()
+    parts.append(user_messages(turn) + fenced + (f"\n\n<plan>\n{plan}\n</plan>" if plan else ""))
     return "\n\n".join(p.strip() for p in parts)
 
 
@@ -229,7 +259,7 @@ def feedback(records: list[Path], found: list[dict], rules: dict[str, str]) -> s
     flagged = [f'- rule {i}: "{f["quote"]}"' + (f' ({f["note"]})' if f.get("note") else "") for i, f in zip(ids, found)]
     cited = [rules[i] for i in dict.fromkeys(ids) if i in rules]
     return "\n".join([
-        f"A review of {' and '.join(map(str, records))} against the chat prose rules flagged these passages:",
+        f"A review of {' and '.join(map(str, records))} against the chat prose rules and the session's plan flagged these passages:",
         *flagged,
         *(["", "The rules they cite:", *cited] if cited else []),
         "",

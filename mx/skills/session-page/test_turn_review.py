@@ -66,5 +66,23 @@ def test_the_turn_record_the_rules_give_the_agent_parses(tmp_path: Path) -> None
     session_page.check_current_forms(record)
 
 
+# ---- which findings go back -------------------------------------------------
+
+PLAN_TEXT = "doing Ship the rail\nnext  The WhatsApp notes\n"
+
+
+def test_a_plan_finding_goes_back_beside_the_prose_ones_and_an_invented_quote_never_does() -> None:
+    """The reviewer's answer is the input; the oracle is what each finding quotes. Three prose findings and one on the
+    plan all go back, a fourth prose finding and a second plan finding do not, and a quote found nowhere is dropped."""
+    record = "# Shipped the rail\n\nThe rail is live."
+    prose = [{"rule": "28", "quote": "The rail is live.", "note": str(n)} for n in range(4)]
+    on_plan = [{"rule": "plan", "quote": "doing Ship the rail", "note": "the record says it shipped"},
+               {"rule": "`plan`", "quote": "Shipped the rail", "note": "a second"}]
+    invented = [{"rule": "plan", "quote": "doing Something else", "note": ""}, {"rule": "13", "quote": "not there", "note": ""}]
+    kept = turn_review.keep(invented + prose + on_plan, [record], PLAN_TEXT)
+    assert kept == prose[:3] + on_plan[:1]
+    assert turn_review.keep(on_plan, [record], "") == [], "no plan, no finding on it"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
