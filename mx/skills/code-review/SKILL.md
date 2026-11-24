@@ -48,8 +48,8 @@ The caller aggregates: the session or worker that owns the branch, once the scri
 
 Read the reports, each pass of read's on its own, and give every finding one of three dispositions:
 
-- **Fixed**: a follow-up commit carrying `Workflow-stage: review`, never an amend, so the commit's diff is the review's measurable effect.
-- **Filed**: worth acting on, too large for that commit, so it becomes a proposed ticket (`/mx:tracker`).
+- **Fixed**: a follow-up commit carrying `Workflow-stage: review`, never an amend, so the commit's diff is the review's measurable effect. A bug is fixed once a run shows it: its failing test, which stays as its regression test, or the lightest run that can (a command and its output, a skill's step done as written). A fix corrects or removes.
+- **Filed**: worth acting on and not this commit's, so it becomes a proposed ticket (`/mx:tracker`): too large for it; a bug no run shows, with the steps that would; a fix that would add a guard, an abstraction or a test for behaviour the spec does not name; a module boundary.
 - **Declined**: the finding's premise is wrong, or the fix costs more than the finding is worth, and the entry says which. It lands anchored in the `Assumptions` block of the closing comment the caller writes (`` - A7 `src/importer.py:118`: the finding, and why it stands ``; ids continue from the highest already in the ticket, which is the id rule a worker carries in its contract, [`worker-prompt.md`](../dispatch/worker-prompt.md)), so the ticket's review page projects it onto the line it concerns, and the landing shows it to the user when it is theirs to rule on (`/mx:dispatch`).
 
 Two callers hold no ticket. A bare "review this branch" anchors its declines and its index on the review page as notes. A review of a branch the caller does not own, an incoming PR, delivers every finding where the review is happening, the PR's comments or the reply: nothing there is the caller's to fix, so every finding is one of the user's calls.

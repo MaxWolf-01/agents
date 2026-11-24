@@ -25,7 +25,7 @@ The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may re
 
 1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; `notes/` too, and in a workflow retro `deep/`. Then list the tickets in flight that `in-flight.md` names, each by its slug and a line on what it changes, read from `in-flight/`.
 2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, the code his TODO files name, and the code and commands the period's friction and max's corrections concern. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
-3. Spawn one subagent per code lens, in parallel, each given the prompt below, its code lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
+3. Spawn one subagent per code lens but architecture, in parallel, and architecture's once `lens-pass/tests.md` is written, with that file added to what it is given: where tests are slow, need heavy fakes or hold nothing is where it looks first. Each is given the prompt below, its code lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
 4. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
 The stage is done when `lens-pass/` holds `architecture.md`, `bloat.md`, `tests.md`, `footguns.md` and `escaped-defects.md`.
