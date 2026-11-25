@@ -23,15 +23,7 @@ Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Coverage
 
-Where the project measures it (`make coverage`), a change reaches its review with every line the fast suite can run, run. A line left unrun gets the first answer that fits:
-
-1. Delete it, where nothing relies on it.
-2. Sharpen a test that exists, by an input or an assertion.
-3. Refactor so a fast test reaches it: the time, network, disk or process it reaches for is passed in, however large that refactor is. A line no clean, fast test reaches is a finding about the code.
-4. A new test, for behaviour somebody relies on.
-5. An exclusion with its reason beside it, only where the measurement cannot see the line, naming the test that holds it.
-
-A line that runs is not a line a test holds: coverage finds what no test reaches, mutation what no test notices.
+Where the project measures it (`make coverage`), a change reaches its review with every line the fast suite can run, run. A line no clean, fast test reaches is a finding about the code: the time, network, disk or process it reaches for is passed in, however large that refactor is. An exclusion is for a line the measurement cannot see, and names the test that holds it.
 
 ## The seam
 
