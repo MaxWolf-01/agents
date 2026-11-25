@@ -21,6 +21,18 @@ Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 **Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and on a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched.
 
+## Coverage
+
+Where the project measures it (`make coverage`), a change reaches its review with every line the fast suite can run, run. A line left unrun gets the first answer that fits:
+
+1. Delete it, where nothing relies on it.
+2. Sharpen a test that exists, by an input or an assertion.
+3. Refactor so a fast test reaches it: the time, network, disk or process it reaches for is passed in, however large that refactor is. A line no clean, fast test reaches is a finding about the code.
+4. A new test, for behaviour somebody relies on.
+5. An exclusion with its reason beside it, only where the measurement cannot see the line, naming the test that holds it.
+
+A line that runs is not a line a test holds: coverage finds what no test reaches, mutation what no test notices.
+
 ## The seam
 
 A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. Where nothing names one for the work in hand, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
