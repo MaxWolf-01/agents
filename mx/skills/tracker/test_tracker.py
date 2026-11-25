@@ -1239,28 +1239,33 @@ def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(tmp_path: Path)
     assert "tracker.py" not in {path.name for path in staged}, "the parser travels to the host again"
 
 
+# Each naming, with what its reader is told of a reference that is no slug: a field holds a slug
+# (`parent: <slug>`), so it is told the reference is none; a citation is `<slug>#P<n>`, read as
+# citing the ticket its words before `#` name, so it is told no file holds that ticket.
 DANGLING = [
-    ("parent", lambda slug: {"parent": slug}, ""),
-    ("blocked-by", lambda slug: {"blocked-by": f"[{slug}]"}, ""),
-    ("a property citation", lambda slug: {}, "## Acceptance criteria\n\n- [ ] `{slug}#P1` holds.\n"),
+    ("parent", lambda slug: {"parent": slug}, "", lambda ref: "no slug"),
+    ("blocked-by", lambda slug: {"blocked-by": f"[{slug}]"}, "", lambda ref: "no slug"),
+    ("a property citation", lambda slug: {}, "## Acceptance criteria\n\n- [ ] `{slug}#P1` holds.\n", lambda ref: f"/{ref}.md"),
 ]
 
 
 @given(ref=st.from_regex(r"\A[a-z][a-z-]{2,20}[a-z]\Z"), naming=st.sampled_from(DANGLING))
 # a reference that is no slug at all: two hyphens join no words
 @example(ref="one--flow", naming=DANGLING[0])
+@example(ref="one--flow", naming=DANGLING[1])
+@example(ref="one--flow", naming=DANGLING[2])
 @settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_reference_that_names_no_ticket_or_property_is_refused_with_its_file_and_line(
     tickets: Path, repo: Path, ref: str, naming: tuple
 ) -> None:
-    what, meta, body = naming
+    what, meta, body, told = naming
     ticket(fresh(tickets), "on-the-tracker")
     path = ticket(tickets, "one-flow", body.replace("{slug}", ref), **meta(ref))
     said = run(repo, "check", str(path))
     assert said.code == 1, (what, said.said)
     assert f"{path}:{line_of(path, ref)}: " in said.out, (what, said.out)
     if "--" in ref:  # the one way the drawn words fail to be a slug: two hyphens join no words
-        assert "no slug" in said.out, (what, said.out)
+        assert told(ref) in said.out, (what, said.out)
 
     held = ticket(tickets, "one-flow", body.replace("{slug}", "on-the-tracker"), **meta("on-the-tracker"))
     resolves = run(repo, "check", str(held))
