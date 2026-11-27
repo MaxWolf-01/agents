@@ -1,3 +1,8 @@
+## 1.0.141
+
+- Merge branch 'ticket/retro-runs-after-ten-merges'
+  A retro now runs when it is due, checked nightly: `retro --after-merges N` starts a run once the trunks of the project's repos took N merges since its last committed run, or 14 days passed with any commit, and never more than once a calendar day or three times in seven days. A merge is a merge commit on a trunk's first-parent line, local or at origin, so branch commits count for none. The workflow retro counts the agents repo's trunk alone. `--if-active` and its activity check are removed with their only callers, and a check that skips logs why as its last line. The dotfiles' timers and list change in the same step (their branch of the same name), since either half alone breaks the nightly runs.
+
 ## 1.0.140
 
 - Agents put pages on the hub with `container-hub open`, and a hubless session page opens with xdg-open
