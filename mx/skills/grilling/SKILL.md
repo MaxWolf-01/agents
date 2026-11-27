@@ -3,7 +3,7 @@ name: grilling
 description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted on fog, an intent too unclear to draft a brief for. Also on any \"grill\" trigger phrase. The goal is a shared mental model and a default the user can just say yes to."
 ---
 
-Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for a whole design.
+Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for a whole design. An external input (a meeting transcript, a client brief, a bug report) is grilled like any intent, through the assumptions it leaves unstated.
 
 Map the design as a **design tree**: each decision branches into the decisions that hang off it. The **frontier** is every decision whose prerequisites are settled, so it can be decided _now_ without guessing at answers you have not heard yet. Work the tree in **rounds**: each round delivers the design as it stands and the frontier's open questions as one message, then waits for the user's answers.
 
@@ -33,7 +33,7 @@ A decision a figure shows better than prose arrives as one (`/mx:show`), drawn i
 
 ## Facts and decisions
 
-Finding _facts_ is your job, never the user's. For a fact that needs real investigation (external docs, APIs, knowledge bases), fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round. A question only answerable, or better answered, by seeing or running something gets a `/mx:prototype`.
+Finding _facts_ is your job, never the user's. For a fact that needs real investigation (external docs, APIs, knowledge bases), fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round. A question only answerable, or better answered, by seeing or running something gets a `/mx:prototype`, a surface the user is blank on above all: they criticise a render sharply where they could not say what they want.
 
 ## Fog and scope
 

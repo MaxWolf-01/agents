@@ -8,7 +8,7 @@ allowed-tools: Bash(${CLAUDE_SKILL_DIR}/dispatch --help), Bash(${CLAUDE_SKILL_DI
 
 You are the **single orchestrator** of one ticket's child tickets: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, and repeat until none is left open. You alone write ticket files here, hold the branches the workers merge into, and write `done`, on the user's accept. Every `tracker` and `dispatch` write commits the ticket file it wrote, a hand edit it finds there included; commit any edit of yours that no write follows. A ticket's branch is cut in each of its repos (The scripts, below): you merge the code repo's and each listed repo's, and the landing merges the agent repo's after them (`tracker land --help`).
 
-Every ticket, at any size, is worked through dispatch by a worker; a ticket with no child tickets is one worker's whole job.
+Every ticket, at any size, is worked through dispatch by a worker; a ticket with no child tickets is one worker's whole job. The session that grilled a tree may build one of its children as that child's worker, in a worktree of its own and under the worker contract ([`worker-prompt.md`](worker-prompt.md)), read as the worker would read it.
 
 With a wave size of one the loop runs **serially**. That is the common case: a two-ticket tree gets the orchestrator role too, and serial is the right mode for surface-heavy waves (the coherence test, below).
 
@@ -62,7 +62,7 @@ File overlap is the mechanical test; **coherence** is the deeper one. Tickets th
 - `--cpu-weight` for a time-critical ticket: more than an equal share among its worker user's workers on a busy machine.
 - `--host` only when you know something the records don't. The machine you are on is `$(id -un)@$(uname -n)`, named like any other; a laptop that suspends kills every worker on it; on a host with no record, assume only the capabilities you have verified.
 
-Report each ticket's host and its limits to the user.
+Report each ticket's host and its limits to the user, and each call the build rests on that the user may want to set, with the choice it makes: an answer that arrives while the build runs is recorded on the ticket and reaches the worker as guidance (Intervening and observing), and one that does not is ruled where the landing shows it.
 
 For each ticket in the wave:
 
@@ -96,12 +96,16 @@ Otherwise the watchers are your wake signal. A watcher back on its deadline hand
 
 ## The ruling
 
-**An answer the user gives you is yours to record**, with `tracker rule` on the ticket. The ruling's four outcomes are `/mx:tracker`'s; below is what each runs on a ticket ruled alone. A child merged into the parent's branch is accepted with the parent (the close-out's step 4); the user's criticism of it from the parent's review page runs here as an amend, a redo or a reject of that child:
+**An answer the user gives you is yours to record**, with `tracker rule` on the ticket. A build that missed is amended where the user can say the miss in comments; otherwise a grilling round in front of the build rewrites the ticket, and it is redone. The ruling's four outcomes are `/mx:tracker`'s; below is what each runs on a ticket ruled alone. A child merged into the parent's branch is accepted with the parent (the close-out's step 4); the user's criticism of it from the parent's review page runs here as an amend, a redo or a reject of that child:
 
 - **Accept** → merge `--no-ff --no-commit` in the code repo and each listed repo of the ticket, run the project's verification on the result, and once it is green commit it under git's own subject, as for a child; a listed repo whose work goes through a pull request in the ticket's `gh:` is merged on GitHub, by whatever method its team uses, before the `dispatch accept` below. Green → `dispatch accept <slug>`, which merges its agent branch and writes `done`: the ticket has **landed**, and its dependents are on the frontier from here. Red, or a conflict → `git merge --abort`, `dispatch push`, and resume the worker with "the branch moved: rebase onto it, resolve, re-verify, report again"; ticket branches are private, so rebasing them is safe.
 - **Amend** → the user's comments on the page go to the worker as guidance on resume; it revises on the same branches and reports again, and you read the revision as any report. A revision that only applies the user's comments runs the Accept on that ruling, with no second round; a new call it makes goes through the sort, and the ruling comes round again where the sort gives one to the user. A child already merged into the parent's branch revises on top of it ("rebase onto the parent's branch") and merges again on your read; re-verify that branch, and resume each sibling that built on the child where it goes red.
 - **Redo** → the build is discarded and the ticket kept: `dispatch ctl cleanup <slug>`, `git branch -D` in every repo of the ticket here (a child already merged is first reverted, `git revert -m 1` on its merge in each repo, its `diff:` emptied with `tracker set <slug> 'diff=[]'`, and the siblings built on it re-verified as for an amend), the ticket reset to `open` with the user's reason under its Comments, the landing's show rebuilt without it (or `git rm`'d where it showed this ticket alone), and a fresh worker takes it.
 - **Reject** → the ticket and its build go together: `tracker drop <slug> --message "<the reason>"`, a child already merged reverted and the landing's show rebuilt as for a redo, `dispatch ctl cleanup <slug>`, `git branch -D` in every repo of the ticket here.
+
+## QA
+
+QA starts at the first drivable landing, not when the frontier empties, and runs while the rest of the frontier does. The user drives what landed and dumps raw findings; you rebuild the whole picture yourself: drive the build, read what a close-out filed, and fire a background `/mx:improve-codebase-architecture` where the structure smells. A defect you fix. A finding of the user's becomes a ticket, filed `open` with the blocking edges the frontier needs to absorb it; a thread too big for the session becomes a grilling handed off to a fresh one (`/mx:handoff`); a decision the user reopens goes back to grilling, and its old answer is superseded (`/mx:tracker`, Supersede). Work you find worth doing that nobody asked for is filed `proposed`.
 
 ## Worker contract
 

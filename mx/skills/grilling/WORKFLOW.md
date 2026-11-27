@@ -6,7 +6,7 @@ In a repo, the design lives in a ticket from the first round that has a design t
 
 A call mark stays in the ticket until the user rules on it, in whichever session holds the ticket, and is stripped then; the ruling on what that ticket built shows them the unruled ones that change what they asked for (`/mx:dispatch`).
 
-When the frontier empties, bring the ticket current. Then cut it into child tickets (`/mx:tracker`, SLICING.md).
+When the frontier empties, bring the ticket current. Then cut it into child tickets (`/mx:tracker`, SLICING.md) in the same session, with no handoff between: the cut wants the design's reasoning verbatim, not a summary of it.
 
 ## Across sessions
 

@@ -7,7 +7,7 @@ description: Build a throwaway prototype to answer a design question. Use when s
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
 
-It earns its detour on **rival shapes**: several designs to compare, or one that has to be seen or driven before anyone can judge it. A design with one clear shape goes straight to the build and is judged as the thing itself; prototyping it first is a slower way of implementing it.
+It earns its detour on **rival shapes**: several designs to compare, or one that has to be seen or driven before anyone can judge it. A design with one clear shape goes straight to the build and is judged as the thing itself; prototyping it first is a slower way of implementing it. Where the rivals differ in how they fit rather than in how they run, a concept figure per rival (`/mx:show`) is the cheaper render, and takes the prototype's place.
 
 ## Pick a branch
 
