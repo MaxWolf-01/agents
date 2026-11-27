@@ -1,3 +1,8 @@
+## 1.0.142
+
+- Every mx skill is reworded down to the rules it carries
+  A second pass over all 46 skills under mx/skills, after the pass that deleted whole sentences: this one rewrites a sentence down to its rule, taking skill text from 70,948 to about 68,580 words (3.3% less). Four whole rules are cut, each in a commit of its own that gives its reason (a second ask for prototype's shared switcher, struktogramm's standard-library note, a duplicate pointer in gh-stack, and the writing-for-agents no-ops bullet this pass contradicts). writing-for-agents' Pruning gains "The test a sentence passes to stay", with three before-and-after pairs from these skills, which is how the two passes cut. Twelve skills had nothing to gain and are unchanged. The branch was rebased twice onto a moving master; in every conflict the sentences master added or changed stand as master wrote them.
+
 ## 1.0.141
 
 - Merge branch 'ticket/retro-runs-after-ten-merges'
