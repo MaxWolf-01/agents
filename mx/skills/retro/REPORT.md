@@ -1,6 +1,6 @@
 # The living report
 
-One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
+One report per tracker, `retro/report.md` in its agent repo, over every repo the tracker plans, rewritten whole by every run. Runs read it as markdown; max reads its page, `retro/report.html`, which `report_page.py` builds from it at each run's commit, and comments on its entries there. Sessions write max's verdicts into it between runs, so a run reads them there.
 
 ## Rules
 
@@ -21,7 +21,15 @@ Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
 - **A candidate the report lacks**, from a session's own architecture scan, enters it under the next id, with its verdict where max ruled on it: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
 
-What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
+What changed is the page's to show and the next run's commit to explain. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
+
+## max's comments
+
+The page saves each comment max types on an entry beside it, in `retro/report.html.state.json`, each under an id `C<n>`; a run commits that file with the report. A run reads the comments it has not answered, deleted ones left out, in `previous/comments.md`.
+
+- **A comment weighs as a message of max's in a session**: context for its entry, unless it clearly rules ("dismiss this", "take this up"). Between a comment and his words in a session, the newer counts.
+- **A ruling in a comment is a verdict**, written as max's verdicts above say, quoting the comment with its id and date. A ruling to take an entry up gets the State `to take up, C<n>`, since a run files nothing: the session that works the report files its ticket, and the State becomes `taken up as <ticket>`.
+- **Every comment a run read is answered** in its entry's History: `answered C<n> <date>: <what the run did with it>`, or, for an entry no longer in the report, in a line of the run's changes, which its commit's body carries. Once a committed version of the report holds that line, the comment is closed, whatever later versions keep of it. An entry carrying a comment not yet answered is not dropped.
 
 ## The weighing
 
@@ -53,10 +61,6 @@ A repo retro's report has no Versions.
 
 Run <date of the period's end>, over <start> to <end>. ids: F<highest>, A<highest>
 
-## What changed since <the last run's date>
-
-One line per finding or candidate added, sharpened, amended, dropped or whose state moved (taken up, fix landed, held, back), with its id and why.
-
 ## Top recommendation
 
 The one proposal to act on first, and why it wins the weighing.
@@ -68,18 +72,21 @@ In order of the weighing.
 ### F<n> <what the friction is, in plain words>
 
 - **Lens**: max | agents | mechanism
-- **State**: live | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
+- **Area**: what it is about, a repo or the part of one, in a word or two (`dispatch`, `jarvis`, `hub`)
+- **State**: live | to take up, C<n> | taken up as <ticket> | fix landed <sha>, <date> | held | back since <date>
 - **Evidence**: two or three quotes, each `"<verbatim>"` (<source>, <date>)
 - **Cause**: what produces it, by path and line where it is a file (`mx/skills/dispatch/SKILL.md:42`), or the habit
 - **Proposal**: the fix at the cause: what it deletes or narrows, and where it lands (a deletion, a check, a line of the reviewer's baseline, a skill line, a tool)
 - **Weighing**: cost of the friction, upkeep of the fix, how often, how robust
-- **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back
+- **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back; answered C<n> <date>: <what the run did with it>
+- **Artefacts**, where one exists: each by its path from the agent repo's root (`show/<slug>/before-after.svg`); the page shows an image or a page in the entry's sheet and links anything else
 
 ## Candidates
 
 What the lens pass proposes for the code, every code lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
 
 - **Code lens**: the section of `stages/lens-pass.md`'s The code lenses it came from
+- **Area**, as a finding's
 - **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them, its **Proposal** standing for the solution (benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
 - **Pointed at by**: the commits, proposed tickets, friction or corrections of max's that pointed the pass at it, each with its date
 - **State** and **History**, as a finding's
@@ -101,4 +108,8 @@ A few lines on what changed with the mx releases, Claude Code versions and model
 Each finding or candidate max dismissed: id, title, a candidate's code lens, his verdict quoted with its date. A line here is the whole of it, until newer evidence brings it back.
 ```
 
-A dropped finding leaves the report: the line in What changed that drops it is its last mention, and the `ids:` line keeps its number from being given again.
+A dropped finding leaves the report: the line in its run's changes that drops it is its last mention, and the `ids:` line keeps its number from being given again.
+
+## The run's changes
+
+What changed since the report's previous committed version, entry by entry by id, the page derives from git history; its why is the run's to write, in the body of the commit that lands the report, which agents read with `git log -- retro/report.md` and explain on demand. One line per finding or candidate added, sharpened, amended, dropped or whose state moved, its id first, then what changed and why; and one per comment answered for an entry no longer in the report. It is written for agents, not for max to read.

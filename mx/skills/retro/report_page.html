@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root{color-scheme:light dark;--ground:light-dark(#f4e4cd,#14110e);--ground-2:light-dark(#eddabe,#1b1713);--edge:light-dark(#cfbca3,#463f37);--muted:light-dark(#5e5650,#b0a89e);--body:light-dark(#37261d,#ede3d2);--strong:light-dark(#22140b,#faf2dc);--accent:light-dark(#426724,#75a252);--accent-2:light-dark(#674806,#cdb78a);--wash:light-dark(rgb(66 103 36 / .16),rgb(117 162 82 / .22));--wash-ink:color-mix(in srgb,var(--muted) 6%,transparent);--mark:light-dark(rgb(168 139 81 / .35),rgb(205 183 138 / .35));--series-1:light-dark(#9c6850,#b88467);--series-2:light-dark(#446083,#6583a0);--series-3:light-dark(#806f4b,#9e8856);--series-4:light-dark(#594e7b,#8a85aa);--series-5:light-dark(#6d7b4e,#8b956a);--font-body:"Newsreader","Literata","Source Serif 4",Georgia,serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace;--size-body:18px;--leading-body:1.55;--measure:43rem;--page:64rem;--radius:6px;--sheet:min(46rem,47vw)}
+[data-theme=day]{color-scheme:light}
+[data-theme=night]{color-scheme:dark}
+[hidden]{display:none!important}
+body{margin:0;background:var(--ground);color:var(--body);font:400 var(--size-body)/var(--leading-body) var(--font-body);-webkit-font-smoothing:antialiased}
+::selection{background:var(--mark)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+a{color:inherit;text-decoration:none;transition:color 150ms}
+a:hover{color:var(--accent)}
+code,kbd,pre{font-family:var(--font-mono)}
+code{font-size:.85em}
+.v-meta{font-family:var(--font-mono);font-size:.8125rem;line-height:1.5;color:var(--muted);font-variant-numeric:tabular-nums}
+.v-title{font-weight:600;font-size:clamp(1.6rem,3vw,2.1rem);line-height:1.15;letter-spacing:-.02em;color:var(--strong)}
+.prose>*{max-width:var(--measure)}
+.prose>table,.prose>pre{max-width:100%}
+.prose a,.prose a.ref{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+.prose strong{font-weight:600;color:var(--strong)}
+.prose code{background:var(--ground-2);padding:.08em .32em;border-radius:3px;overflow-wrap:anywhere}
+.prose ul,.prose ol{padding-left:1.2em}
+.prose li+li{margin-top:.35em}
+.prose li::marker{color:var(--muted)}
+.prose table{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;font-size:.92em}
+.prose th,.prose td{padding:.4rem 1.4rem .4rem 0;text-align:left;vertical-align:baseline}
+.prose th{font:400 .8125rem/1.5 var(--font-mono);color:var(--muted);border-bottom:1px solid var(--muted)}
+.prose td{border-bottom:1px solid var(--edge)}
+.prose h2{font-weight:600;font-size:1.3em;line-height:1.3;color:var(--strong);margin:2.4em 0 .6em}
+.prose h3{font-weight:600;font-size:1.05em;line-height:1.4;color:var(--strong)}
+
+/* Overview */
+.wrap{max-width:var(--page);margin:0 auto;padding:1.6rem 1.5rem 4rem;transition:margin 200ms}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
+.ttl{margin:0;font-weight:600;font-size:1.5rem;line-height:1.2;color:var(--strong)}
+.head p{margin:.2rem 0 0}
+#scheme{background:none;border:0;padding:.35rem;color:var(--muted);cursor:pointer;line-height:0}
+#scheme:hover{color:var(--accent)}
+[data-theme=night] .sun,[data-theme=day] .moon{display:none}
+.top-rec{margin-top:1.1rem;padding-left:1rem;border-left:2px solid var(--accent)}
+.top-rec .lbl{margin:0}
+.top-rec p{margin:.2rem 0}
+details summary{cursor:pointer;color:var(--muted);font-size:.92em}
+details summary:hover{color:var(--accent)}
+details[open]>summary{margin-bottom:.5rem}
+.top-rec details{margin-top:.3rem}
+.fold{margin-top:.6rem}
+.fold>*:not(summary){font-size:.92em}
+.n{font-family:var(--font-mono);font-size:.75rem;color:var(--muted);font-weight:400}
+
+.bar{padding-bottom:.6rem;border-bottom:1px solid var(--edge)}
+.line.stick{margin-top:1rem;position:sticky;top:0;z-index:5;background:var(--ground);padding:.6rem 0 .5rem}
+.line{display:flex;flex-wrap:wrap;gap:.35rem .4rem;align-items:center}
+.bar .line+.line{margin-top:.45rem}
+.bar .lbl{font-family:var(--font-mono);font-size:.75rem;color:var(--muted);margin-right:.2rem;min-width:2.6rem}
+#q{flex:1 1 14rem;min-width:10rem;font:inherit;font-size:.95rem;background:var(--ground-2);color:var(--body);border:1px solid var(--edge);border-radius:var(--radius);padding:.3rem .6rem}
+#q:focus{outline:none;border-color:var(--accent)}
+.pill{font-family:var(--font-mono);font-size:.75rem;line-height:1;background:none;color:var(--body);border:1px solid var(--edge);border-radius:999px;padding:.32rem .6rem;cursor:pointer;transition:color 150ms,border-color 150ms}
+.pill:hover{color:var(--accent);border-color:var(--accent)}
+.pill.on{background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.pill.on .n{color:var(--ground)}
+/* a control's key over it, while Ctrl+Alt is held */
+.key-over{position:fixed;z-index:60;translate:-50% -50%;padding:.05rem .35rem;border:1px solid var(--accent);border-radius:4px;background:var(--ground);color:var(--accent);font:500 .72rem/1.4 var(--font-mono);white-space:nowrap;pointer-events:none}
+#help{border:1px solid var(--edge);border-radius:var(--radius);background:var(--ground);color:var(--body);padding:1rem 1.3rem;max-width:min(34rem,92vw)}
+#help::backdrop{background:color-mix(in srgb,var(--strong) 40%,transparent)}
+#help td{padding:.15rem .6rem .15rem 0;vertical-align:baseline;font-size:.92rem}
+#help td:first-child{font-family:var(--font-mono);font-size:.78rem;color:var(--accent);white-space:nowrap}
+kbd{font-size:.7rem;border:1px solid var(--edge);border-radius:3px;padding:0 .25rem}
+.more-filters{display:contents}
+
+.grp{margin-top:1.6rem}
+.sec{font-size:1.15rem;font-weight:600;color:var(--strong);margin:0 0 .2rem}
+.gh{font-family:var(--font-mono);font-size:.75rem;font-weight:400;color:var(--muted);margin:1rem 0 .1rem}
+.gh b{font-weight:500;color:var(--body)}
+.row{display:grid;grid-template-columns:2.4rem 2.9rem 8.5rem minmax(0,1fr) 10.5rem;gap:.7rem;align-items:baseline;padding:.32rem .4rem;border-bottom:1px solid color-mix(in srgb,var(--edge) 55%,transparent);border-radius:3px;font-size:.95rem;line-height:1.38}
+.row:hover{background:var(--wash-ink);color:inherit}
+.row.sel{background:var(--wash)}
+.row .rk{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.row .id{font-family:var(--font-mono);font-size:.82rem;font-weight:500;color:var(--strong)}
+.row .tt{color:var(--body)}
+.row .tt code{font-size:.82em;background:var(--ground-2);padding:0 .25em;border-radius:3px}
+.row .ln{font-family:var(--font-mono);font-size:.7rem;color:var(--muted);margin-left:.5em;white-space:nowrap}
+.row .top{font-family:var(--font-mono);font-size:.68rem;color:var(--accent-2);margin-left:.5em;border:1px solid color-mix(in srgb,var(--accent-2) 45%,transparent);border-radius:999px;padding:0 .4em}
+.row .ar{font-family:var(--font-mono);font-size:.75rem;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st{font-family:var(--font-mono);font-size:.75rem;color:var(--body)}
+.st::before{content:"";display:inline-block;width:.55em;height:.55em;border-radius:50%;margin-right:.4em;background:var(--c,var(--muted));vertical-align:.02em}
+.st .more{color:var(--muted);margin-left:.4em}
+.st-live{--c:var(--series-1)}
+.st-back{--c:var(--accent-2)}
+.st-taken-up{--c:var(--series-2)}
+.st-fix-landed{--c:var(--series-5)}
+.st-held{--c:var(--series-3)}
+.st-dismissed{--c:transparent}
+.st-dismissed::before{border:1px solid var(--muted);box-sizing:border-box}
+.st-other{--c:var(--series-4)}
+.empty{color:var(--muted);font-style:italic;margin-top:1rem}
+
+/* The whole report */
+.full{margin-top:4rem;border-top:1px solid var(--edge);padding-top:1rem}
+.full .entry,.full h2,.full h1{scroll-margin-top:4.5rem}
+.full h3 .open{font-family:var(--font-mono);font-size:.85em;color:var(--accent)}
+.full h3{margin:2em 0 .4em}
+.full li.entry{margin-top:.6em}
+
+/* Sheet */
+#sheet{position:fixed;top:0;right:0;bottom:0;width:var(--sheet);background:var(--ground);border-left:1px solid var(--edge);z-index:20;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity 200ms}
+body.open #sheet{opacity:1;pointer-events:auto}
+.sh-head{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:1px solid var(--edge)}
+.sh-head .pos{flex:1}
+.ib{background:none;border:1px solid var(--edge);border-radius:var(--radius);color:var(--muted);cursor:pointer;padding:.25rem .45rem;line-height:0}
+.ib:hover{color:var(--accent);border-color:var(--accent)}
+.sh-body{overflow-y:auto;padding:1rem 1.4rem 3rem;font-size:.95rem;overscroll-behavior:contain}
+.sh-body h3{font-size:1.25rem;line-height:1.3;margin:0 0 .5rem}
+.sh-body h3 .open{display:none}
+.sh-body .sid{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);display:block;margin-bottom:.15rem}
+.sh-body .chips{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-bottom:.8rem}
+.sh-body .chips span{font-family:var(--font-mono);font-size:.75rem}
+.sh-body .chips .k{color:var(--muted)}
+.sh-body .eb>ul{padding-left:1.1em}
+.sh-body .eb>ul>li+li{margin-top:.6em}
+.sh-body .tofull{margin-top:1.5rem}
+#backdrop{position:fixed;inset:0;background:color-mix(in srgb,var(--strong) 40%,transparent);z-index:15;opacity:0;pointer-events:none;transition:opacity 200ms}
+
+@media (min-width:1180px){
+  body.open .wrap{margin-left:max(1rem,calc((100vw - var(--sheet) - var(--page)) / 2));margin-right:calc(var(--sheet) + 1rem)}
+}
+@media (max-width:1179px){
+  :root{--sheet:min(44rem,92vw)}
+  body.open #backdrop{opacity:1;pointer-events:auto}
+}
+@media (max-width:700px){
+  :root{--sheet:100vw}
+  .wrap{padding:1rem .9rem 3rem}
+  #sheet{border-left:0}
+  .row{grid-template-columns:2.2rem 2.8rem minmax(0,1fr) auto;grid-template-areas:"rk id ar st" "tt tt tt tt";gap:.15rem .5rem}
+  .row .rk{grid-area:rk}.row .id{grid-area:id}.row .ar{grid-area:ar;text-align:right}.row .st{grid-area:st}.row .tt{grid-area:tt}
+  .row .ln{white-space:normal}
+  #q{flex:1 0 7rem;min-width:7rem}
+  .line.stick{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .line.stick .pill{flex:none}
+  .changes .line{gap:.3rem}
+  .bar .line{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .bar .line .pill,.bar .lbl{flex:none}
+  .sh-body{padding:.9rem 1rem 3rem}
+}
+
+/* Changes since the previous report */
+.changes{margin-top:1rem}
+.changes .lbl{font-family:var(--font-mono);font-size:.75rem;color:var(--muted);margin-right:.2rem}
+.cgb.on{background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.cgb.on .n{color:var(--ground)}
+.clist{margin-top:.5rem;border-left:2px solid var(--edge);padding-left:.8rem;max-height:22rem;overflow-y:auto}
+.crow{display:grid;grid-template-columns:3rem minmax(0,1fr) auto;gap:.6rem;align-items:baseline;padding:.2rem .3rem;font-size:.92rem;line-height:1.35;border-radius:3px}
+.crow:hover{background:var(--wash-ink);color:inherit}
+.crow .id{font-family:var(--font-mono);font-size:.8rem;font-weight:500;color:var(--strong)}
+.crow .tt code{font-size:.82em;background:var(--ground-2);padding:0 .25em;border-radius:3px}
+.crow .mv{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);white-space:nowrap}
+
+/* Comments */
+.row .cc{font-family:var(--font-mono);font-size:.68rem;color:var(--muted);margin-left:.5em;white-space:nowrap}
+.cm{margin:.2rem 0 1rem;padding-bottom:.8rem;border-bottom:1px solid var(--edge)}
+.cm textarea{width:100%;box-sizing:border-box;font:inherit;font-size:.92rem;line-height:1.45;background:var(--ground-2);color:var(--body);border:1px solid var(--edge);border-radius:var(--radius);padding:.4rem .6rem;resize:vertical;min-height:2.6rem}
+.cm textarea:focus{outline:none;border-color:var(--accent)}
+.cm .acts{display:flex;gap:.5rem;align-items:center;margin-top:.35rem}
+.btn{font-family:var(--font-mono);font-size:.75rem;background:none;border:1px solid var(--edge);border-radius:var(--radius);color:var(--body);padding:.25rem .6rem;cursor:pointer}
+.btn:hover{color:var(--accent);border-color:var(--accent)}
+.btn.solid{background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.btn.ghost{border-color:transparent;color:var(--muted);padding:.1rem .3rem}
+.btn.ghost:hover{color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.cmt{margin-top:.7rem}
+.cmt .meta{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap}
+.cmt .meta b{font-weight:500;color:var(--body)}
+.cmt .txt{white-space:pre-wrap;font-size:.95rem;margin-top:.1rem}
+.ro{font-size:.88em;color:var(--muted);border-left:2px solid var(--accent-2);padding-left:.7rem;margin:.3rem 0 .6rem}
+.gone{border-left:2px solid var(--accent-2);padding-left:.8rem;color:var(--muted);font-size:.92em;margin-bottom:1rem}
+#orphans{margin-top:2rem}
+#orphans .o{margin-top:.7rem;padding-left:.8rem;border-left:2px solid var(--edge)}
+.sh-body .tl{margin-top:1.4rem;color:var(--muted)}
+.sh-body .tl .d{color:var(--body)}
+.art{margin:.8rem 0 1rem}
+.art img{max-width:100%;height:auto;border:1px solid var(--edge);border-radius:var(--radius);background:var(--ground-2)}
+.art iframe{width:100%;height:28rem;border:1px solid var(--edge);border-radius:var(--radius);background:var(--ground)}
+.art figcaption{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin-top:.2rem}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);background:var(--ground);border:1px solid var(--accent-2);border-radius:var(--radius);padding:.5rem .9rem;font-size:.9rem;z-index:30;max-width:min(36rem,92vw)}
+</style>
+</head>
+<body>
+<div class="wrap">
+__HEADER__
+<div class="line stick">
+  <input id="q" type="search" placeholder="Filter by id or title" autocomplete="off" aria-keyshortcuts="/">
+    <button class="pill" id="view" title="Group by lens, or list each section in the report's order" aria-keyshortcuts="g">grouped by lens</button>
+    <button class="pill" id="commented" title="Show only entries with a comment" aria-keyshortcuts="c">commented <span class="n" id="ncom">0</span></button>
+    <button class="pill" id="copy" title="Copy every comment as markdown, grouped by entry, to paste to an agent" aria-keyshortcuts="y">copy comments</button>
+    <a class="pill" id="whole" href="#full" title="The report's whole text, in its order, below the overview" aria-keyshortcuts="w">whole report</a>
+    <button class="pill" id="keys" title="Every key on this page" aria-keyshortcuts="?">keys</button>
+  </div>
+<div class="bar">
+  <div class="line" id="areas"><span class="lbl">area</span>__AREAS__</div>
+  <div class="line" id="states"><span class="lbl">state</span>__STATES__</div>
+</div>
+<div id="v-grouped">__GROUPED__</div>
+<div id="v-flat" hidden>__FLAT__</div>
+<p class="empty" id="empty" hidden>No entry matches the filter.</p>
+<section id="orphans" class="prose" hidden><h2 class="sec">Comments on entries that left the report</h2><div id="orphan-list"></div></section>
+<article class="full prose" id="full-report">__FULL__</article>
+</div>
+<div id="backdrop"></div>
+<aside id="sheet" aria-label="Entry">
+  <div class="sh-head">
+    <span class="pos v-meta" id="pos"></span>
+    <button class="ib" id="prev" title="Previous entry" aria-keyshortcuts="k"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>
+    <button class="ib" id="next" title="Next entry" aria-keyshortcuts="j"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="ib" id="close" title="Close" aria-keyshortcuts="Escape"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <div class="sh-body prose" id="sh-body"></div>
+</aside>
+<dialog id="help" aria-label="Keys"><table id="help-keys"></table></dialog>
+<script type="application/json" id="page-keys">__PAGEKEYS__</script>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const ENTRIES = DATA.entries;
+const root = document.documentElement, body = document.body;
+const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+const theme = new URLSearchParams(location.search).get('theme');
+root.dataset.theme = theme === 'day' || theme === 'night' ? theme
+  : (matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'day');
+$('scheme').onclick = () => { root.dataset.theme = root.dataset.theme === 'night' ? 'day' : 'night'; };
+
+/* ---- overview: filters, views, the sheet ---- */
+let view = 'grouped', current = null;
+const filt = {q: '', area: new Set(), state: new Set(), commented: false};
+const views = {grouped: $('v-grouped'), flat: $('v-flat')};
+const sheetBody = $('sh-body');
+
+function rows(v = view) { return [...views[v].querySelectorAll('.row')]; }
+function visible() { return rows().filter(r => !r.hidden); }
+
+function apply() {
+  const counts = commentCounts();
+  for (const v of Object.keys(views)) {
+    for (const r of rows(v)) {
+      r.hidden = !((!filt.q || r.dataset.q.includes(filt.q))
+        && (!filt.area.size || filt.area.has(r.dataset.area))
+        && (!filt.state.size || filt.state.has(r.dataset.state))
+        && (!filt.commented || counts.get(r.dataset.a)));
+    }
+    for (const g of views[v].querySelectorAll('.sub, .grp')) g.hidden = !g.querySelector('.row:not([hidden])');
+  }
+  $('empty').hidden = visible().length > 0;
+}
+
+$('q').addEventListener('input', e => { filt.q = e.target.value.trim().toLowerCase(); apply(); });
+for (const [box, key] of [['areas', 'area'], ['states', 'state']]) {
+  $(box).addEventListener('click', e => {
+    const b = e.target.closest('.pill'); if (!b) return;
+    const v = b.dataset[key];
+    filt[key].has(v) ? filt[key].delete(v) : filt[key].add(v);
+    b.classList.toggle('on', filt[key].has(v));
+    apply();
+  });
+}
+$('commented').onclick = e => { filt.commented = !filt.commented; e.currentTarget.classList.toggle('on', filt.commented); apply(); };
+$('view').onclick = e => {
+  view = view === 'grouped' ? 'flat' : 'grouped';
+  views.grouped.hidden = view !== 'grouped'; views.flat.hidden = view !== 'flat';
+  e.target.textContent = view === 'grouped' ? 'grouped by lens' : "in the report's order";
+  if (current) mark(current);
+};
+for (const b of document.querySelectorAll('.cgb')) {
+  b.onclick = () => {
+    const open = !b.classList.contains('on');
+    for (const o of document.querySelectorAll('.cgb')) o.classList.remove('on');
+    for (const l of document.querySelectorAll('.clist')) l.hidden = !(open && l.dataset.k === b.dataset.k);
+    b.classList.toggle('on', open);
+  };
+}
+
+function mark(a) {
+  for (const r of document.querySelectorAll('.row.sel, .crow.sel')) r.classList.remove('sel');
+  for (const r of document.querySelectorAll(`.row[data-a="${a}"]`)) r.classList.add('sel');
+  const r = views[view].querySelector(`.row[data-a="${a}"]`);
+  if (r && !r.hidden) r.scrollIntoView({block: 'nearest'});
+}
+
+function open(a) {
+  const d = ENTRIES[a];
+  if (!d) return;
+  current = a;
+  const kind = {finding: 'finding', candidate: 'candidate', dismissed: 'dismissed', dropped: 'left the report'}[d.kind];
+  let h = '';
+  if (d.kind === 'dropped') {
+    h += `<p class="gone">No longer in the report. Its text as the run of ${esc(d.prevRun)} had it:</p>`;
+  } else {
+    const row = views.grouped.querySelector(`.row[data-a="${a}"]`);
+    const area = row.querySelector('.ar'), st = row.querySelector('.st');
+    h += `<div class="chips"><span title="${esc(area.title)}"><span class="k">area</span> ${esc(area.textContent)}</span>`
+       + `<span class="${st.className}" title="${esc(st.title)}">${st.innerHTML}</span></div>`;
+    if (d.group) h += `<p class="v-meta">Under the heading: ${esc(d.group)}</p>`;
+    h += d.art.map(artefact).join('');
+  }
+  sheetBody.innerHTML = h + '<div class="cm" id="cm"></div>';
+  if (d.kind === 'dropped') {
+    sheetBody.insertAdjacentHTML('beforeend', d.prev);
+  } else {
+    let src = $('full-' + a);
+    if (src && src.dataset.alias) src = $(src.dataset.alias);
+    for (const n of src.children) sheetBody.appendChild(n.cloneNode(true));
+    sheetBody.insertAdjacentHTML('beforeend', `<p class="tofull v-meta"><a href="#full-${a}">In the whole report ↓</a></p>`);
+  }
+  if (d.line.length) sheetBody.insertAdjacentHTML('beforeend', `<p class="tl v-meta" title="Its State in each committed version of the report">`
+    + d.line.map(([date, state]) => `<span class="d">${esc(date)}</span> ${esc(state)}`).join(' → ') + '</p>');
+  drawComments(true);
+  sheetBody.scrollTop = 0;
+  const area = views.grouped.querySelector(`.row[data-a="${a}"] .ar`);
+  $('pos').textContent = `${d.id}${area ? ' · ' + area.textContent : ''} · ${kind}${d.rank ? ' ' + d.rank : ''}`;
+  body.classList.add('open');
+  mark(a);
+}
+
+/* an artefact the entry names: an image or a page shown in the sheet, anything else linked */
+function artefact(x) {
+  const name = esc(x.name), href = esc(x.href);
+  if (x.how === 'img') return `<figure class="art"><a href="${href}"><img src="${href}" alt="${name}" loading="lazy"></a><figcaption>${name}</figcaption></figure>`;
+  if (x.how === 'frame') return `<figure class="art"><iframe src="${href}" loading="lazy" title="${name}"></iframe><figcaption><a href="${href}" target="_blank">${name} ↗</a></figcaption></figure>`;
+  return `<p class="art v-meta"><a href="${href}">${name}</a></p>`;
+}
+
+function close() {
+  body.classList.remove('open'); current = null;
+  for (const r of document.querySelectorAll('.row.sel')) r.classList.remove('sel');
+  if (ENTRIES[location.hash.slice(1)]) history.replaceState(null, '', location.pathname + location.search);
+}
+
+function go(a) { history.replaceState(null, '', '#' + a); open(a); }
+
+function step(n) {
+  const vs = visible(); if (!vs.length) return;
+  const i = vs.findIndex(r => r.dataset.a === current);
+  const j = i < 0 ? (n > 0 ? 0 : vs.length - 1) : Math.min(vs.length - 1, Math.max(0, i + n));
+  go(vs[j].dataset.a);
+}
+
+function route() {
+  const a = location.hash.slice(1);
+  if (ENTRIES[a]) open(a);
+  else if (a.startsWith('full-') && current) { close(); $(a)?.scrollIntoView(); }
+}
+addEventListener('hashchange', route);
+$('close').onclick = close;
+$('backdrop').onclick = close;
+$('prev').onclick = () => step(-1);
+$('next').onclick = () => step(1);
+/* ---- the keys ----
+   Every control carries its key in aria-keyshortcuts; Ctrl+Alt held shows each over its control, and only
+   then: the container hub's own keys are Ctrl+Alt and another key, so the page takes none of those. */
+// The list is the page-keys block, which the hub reads to list a framed page's keys beside its own.
+$('help-keys').innerHTML = JSON.parse($('page-keys').textContent).keys
+  .map(k => `<tr><td>${esc(k.keys)}</td><td>${esc(k.does)}</td></tr>`).join('');
+const help = $('help');
+const toggleHelp = () => (help.open ? help.close() : help.showModal());
+$('keys').onclick = toggleHelp;
+help.addEventListener('click', e => { if (e.target === help) help.close(); });
+
+let overKeys = [];
+const hideKeys = () => { overKeys.forEach(k => k.remove()); overKeys = []; };
+const showKeys = () => {
+  for (const el of document.querySelectorAll('[aria-keyshortcuts]')) {
+    const r = el.getBoundingClientRect();
+    if (!el.checkVisibility({opacityProperty: true, visibilityProperty: true}) || r.bottom < 0 || r.top > innerHeight) continue;
+    const k = Object.assign(document.createElement('kbd'), {className: 'key-over', textContent: el.getAttribute('aria-keyshortcuts')});
+    Object.assign(k.style, {left: `${r.left + r.width / 2}px`, top: `${r.top + r.height / 2}px`});
+    body.append(k);
+    overKeys.push(k);
+  }
+};
+addEventListener('keydown', e => {
+  if (e.ctrlKey && e.altKey && (e.key === 'Control' || e.key === 'Alt')) { if (!overKeys.length) showKeys(); return; }
+  hideKeys();
+}, true);
+addEventListener('keyup', e => { if (e.key === 'Control' || e.key === 'Alt') hideKeys(); }, true);
+addEventListener('blur', hideKeys);
+addEventListener('scroll', hideKeys, {capture: true, passive: true});
+
+const firstPill = box => () => $(box).querySelector('.pill')?.focus();
+function newComment() {
+  if (!current) return toast('No entry is open: j opens one.');
+  const ta = $('cm')?.querySelector('.new textarea');
+  if (ta) ta.focus(); else toast('Comments are read-only here.');
+}
+const onNewest = which => () => {
+  const b = current && $('cm')?.querySelector(`.cmt:last-child .${which}`);
+  if (b) b.click(); else toast(current ? 'This entry has no comment to change here.' : 'No entry is open: j opens one.');
+};
+const ACTIONS = {
+  j: () => step(1), k: () => step(-1), '/': () => $('q').focus(), a: firstPill('areas'), s: firstPill('states'),
+  g: () => $('view').click(), c: () => $('commented').click(), n: newComment, e: onNewest('edit'), d: onNewest('del'), y: () => $('copy').click(),
+  r: () => document.querySelector('.fold summary')?.click(), w: () => $('whole').click(), t: () => $('scheme').click(), '?': toggleHelp,
+};
+document.addEventListener('keydown', e => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const typing = e.target.matches('input, textarea');
+  if (e.key === 'Escape') { if (typing) e.target.blur(); else if (current) close(); return; }
+  if (typing) return;
+  const pill = e.target.closest && e.target.closest('.line .pill, .line .cgb');
+  if (pill && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    const ps = [...pill.parentElement.querySelectorAll('.pill')], i = ps.indexOf(pill);
+    ps[Math.max(0, Math.min(ps.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)))].focus();
+    e.preventDefault(); return;
+  }
+  const inSheet = e.target.closest && e.target.closest('#sheet');
+  const act = ACTIONS[e.key]
+    || (!inSheet && {ArrowDown: () => step(1), ArrowUp: () => step(-1)}[e.key])
+    || (/^[1-5]$/.test(e.key) && (() => document.querySelectorAll('.cgb')[+e.key - 1]?.click()));
+  if (!act) return;
+  e.preventDefault(); act();
+});
+
+/* ---- comments ----
+   Kept beside the page in <page>.state.json, which the container hub writes, by the protocol diffview
+   pages use: every write is the whole state, names this page (writer), when it was made (savedAt) and the
+   file version it was based on (since). The hub refuses with 409 a write from a page that did not see the
+   file's current version; the page then merges the file in and writes again. A copy of every write waits
+   in this browser until the file holds it, so a hub that stops answering never holds the only copy. */
+const HTTP = location.protocol.startsWith('http');
+const WRITER = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+const LOCAL_KEY = 'retro-scan:' + DATA.key;
+const STATE_URL = location.pathname + '.state.json';
+let SERVED = false, READY = false;
+let C = [];          // the comments: {id: "C3", entry: "F31", at, report, text, edited?, deleted?}
+let LANDED = [];     // the comments the file was last known to hold
+let SINCE = null, LAST_SAVED = 0, NEWEST = 0, INFLIGHT = 0, RETRY = null, SYNC = null;
+const clone = x => JSON.parse(JSON.stringify(x));
+const num = c => parseInt(String(c.id).slice(1)) || 0;
+const live = () => C.filter(c => !c.deleted);
+const ANSWERED = new Set(DATA.answered);
+const entryOf = a => (ENTRIES[a] ? ENTRIES[a].id : a.toUpperCase());
+
+async function saves() {
+  for (let tries = 0; tries < 6; tries++) {
+    try {
+      const res = await fetch('/.health', {cache: 'no-store'});
+      if (res.status < 500) return res.ok && (await res.json().catch(() => null))?.saves === true;
+    } catch (e) {}
+    await new Promise(done => setTimeout(done, 500));
+  }
+  return false;
+}
+async function fetchFile() {
+  try { const res = await fetch(STATE_URL, {cache: 'no-store'}); if (res.ok) return await res.json(); } catch (e) {}
+  return null;
+}
+function localCopy() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY)); } catch (e) { return null; } }
+function dropLocal() { try { localStorage.removeItem(LOCAL_KEY); } catch (e) {} }
+
+async function loadComments() {
+  SERVED = HTTP && await saves();
+  const file = HTTP ? await fetchFile() : null;
+  if (!SERVED) {
+    C = ((file || DATA.saved || {}).comments) || [];
+    LANDED = clone(C);
+  } else {
+    const local = localCopy();
+    if (local && !(file && file.savedAt === local.savedAt)) {   // a write of this browser's that never landed
+      C = local.comments || []; LANDED = local.landed || []; SINCE = local.since ?? null;
+      if (file) merge(file);
+      persist();
+    } else {
+      if (local) dropLocal();
+      C = (file && file.comments) || []; LANDED = clone(C); SINCE = file ? file.savedAt ?? null : null;
+    }
+  }
+  READY = true;
+  paint();
+}
+
+function persist() {
+  if (!SERVED) return;
+  LAST_SAVED = Math.max(Date.now(), LAST_SAVED + 1);
+  const blob = {writer: WRITER, savedAt: LAST_SAVED, since: SINCE, comments: clone(C)};
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify({...blob, landed: LANDED})); } catch (e) {}
+  INFLIGHT++;
+  fetch(STATE_URL, {method: 'POST', body: JSON.stringify(blob), keepalive: true})
+    .then(res => {
+      if (res.status === 409) return takeFile().then(persist);
+      if (!res.ok) throw new Error(res.status);
+      landed(blob);
+      saveWorks();
+    })
+    .catch(() => saveBroke())
+    .finally(() => { INFLIGHT--; });
+}
+function landed(blob) {
+  if (blob.savedAt < NEWEST) return;
+  NEWEST = SINCE = blob.savedAt;
+  LANDED = clone(blob.comments);
+  const held = localCopy();
+  if (held && held.savedAt === blob.savedAt) dropLocal();
+}
+function takeFile() {
+  if (!SYNC) SYNC = fetchFile().then(f => { if (f && f.savedAt !== SINCE) merge(f); }).finally(() => { SYNC = null; });
+  return SYNC;
+}
+/* three ways, by id: the landed comments, this page's, the file's. An edit or a delete made here lands on the
+   file's copy; a comment added here keeps its id unless the file holds another under it, and then takes the next
+   free one; everything else is the file's. A deleted id stays in the file, so it is never given again. */
+function merge(file) {
+  const theirs = file.comments || [];
+  const L = new Map(LANDED.map(c => [c.id, c])), M = new Map(C.map(c => [c.id, c])), T = new Map(theirs.map(c => [c.id, c]));
+  const same = (a, b) => a && b && a.text === b.text && !!a.deleted === !!b.deleted && a.entry === b.entry;
+  const out = [], renamed = [];
+  for (const t of theirs) {
+    const m = M.get(t.id), l = L.get(t.id);
+    out.push(l && m && !same(m, l) ? {...t, text: m.text, edited: m.edited, deleted: m.deleted} : t);
+  }
+  let next = Math.max(0, ...theirs.map(num), ...C.map(num)) + 1;
+  for (const m of C) {
+    if (L.has(m.id)) continue;                       // the file's already, merged above
+    if (T.has(m.id)) {
+      if (same(m, T.get(m.id))) continue;            // added here and landed after all
+      renamed.push(`${m.id} is now C${next}`);
+      out.push({...m, id: 'C' + next++});
+      continue;
+    }
+    out.push(m);
+  }
+  out.sort((a, b) => num(a) - num(b));
+  C = out; LANDED = clone(theirs); SINCE = file.savedAt ?? null;
+  paint();
+  if (renamed.length) toast(renamed.join(', ') + ': another page took the number first');
+}
+function saveWorks() {
+  if (!RETRY) return;
+  clearInterval(RETRY); RETRY = null;
+  $('toast')?.remove();
+}
+function saveBroke() {
+  if (!RETRY) RETRY = setInterval(persist, 3000);
+  toast('Not saving: the container hub stopped answering. What you type stays in this browser and is saved once the hub is back.', true);
+}
+function toast(text, sticky) {
+  $('toast')?.remove();
+  const t = document.createElement('div');
+  t.id = 'toast'; t.textContent = text;
+  body.appendChild(t);
+  if (!sticky) setTimeout(() => t.remove(), 4000);
+}
+function follow() { if (SERVED && READY && !INFLIGHT && !RETRY) takeFile(); }
+addEventListener('focus', follow);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) follow(); });
+
+function addComment(entry, text) {
+  const id = 'C' + (Math.max(0, ...C.map(num)) + 1);
+  C.push({id, entry, at: new Date().toISOString(), report: DATA.run, text});
+  persist(); paint();
+}
+function editComment(id, text) {
+  const c = C.find(c => c.id === id); if (!c) return;
+  c.text = text; c.edited = new Date().toISOString();
+  persist(); paint();
+}
+function deleteComment(id) {
+  const c = C.find(c => c.id === id); if (!c) return;
+  c.deleted = true;
+  persist(); paint();
+}
+
+const when = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+function commentCounts() {
+  const m = new Map();
+  for (const c of live()) { const a = c.entry.toLowerCase(); m.set(a, (m.get(a) || 0) + 1); }
+  return m;
+}
+
+function paint() {
+  const counts = commentCounts();
+  for (const r of document.querySelectorAll('.row')) {
+    let cc = r.querySelector('.cc');
+    const n = counts.get(r.dataset.a) || 0;
+    if (!n) { cc?.remove(); continue; }
+    if (!cc) { cc = document.createElement('span'); cc.className = 'cc'; r.querySelector('.tt').appendChild(cc); }
+    cc.textContent = n === 1 ? '1 comment' : `${n} comments`;
+  }
+  $('ncom').textContent = [...counts.keys()].filter(a => ENTRIES[a] && ENTRIES[a].kind !== 'dropped').length;
+  const orphans = live().filter(c => !ENTRIES[c.entry.toLowerCase()] || ENTRIES[c.entry.toLowerCase()].kind === 'dropped');
+  $('orphans').hidden = !orphans.length;
+  $('orphan-list').innerHTML = orphans.map(c => {
+    const d = ENTRIES[c.entry.toLowerCase()];
+    const name = d ? `<a href="#${c.entry.toLowerCase()}">${esc(c.entry)}</a> ${esc(d.title)}` : esc(c.entry);
+    return `<div class="o"><div class="v-meta">${name} · ${c.id} · ${when(c.at)}, on the run of ${esc(c.report)}</div><div class="txt" style="white-space:pre-wrap">${esc(c.text)}</div></div>`;
+  }).join('');
+  if (filt.commented) apply();
+  drawComments(false);
+}
+
+/* the comment box and the list under it, in the open sheet; a draft being typed survives a redraw */
+function drawComments(fresh) {
+  const box = $('cm');
+  if (!box || !current) return;
+  const entry = entryOf(current);
+  if (fresh || !box.querySelector('.new')) {
+    box.innerHTML = '';
+    if (!READY) { box.innerHTML = '<p class="v-meta">reading comments…</p>'; return; }
+    if (SERVED) {
+      box.insertAdjacentHTML('beforeend', `<div class="new"><textarea placeholder="Comment on ${esc(entry)}" aria-keyshortcuts="n"></textarea>`
+        + `<div class="acts"><button class="btn solid add" aria-keyshortcuts="Control+Enter">add comment</button></div></div>`);
+      const ta = box.querySelector('.new textarea');
+      const add = () => { const t = ta.value.trim(); if (!t) return; ta.value = ''; addComment(entry, t); };
+      box.querySelector('.add').onclick = add;
+      ta.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); add(); } });
+    } else {
+      box.insertAdjacentHTML('beforeend', `<p class="ro">Comments are read-only here: ${HTTP ? 'this server does not save them' : 'the page is opened as a file'}. Open it through the container hub to add one.</p>`);
+    }
+    box.insertAdjacentHTML('beforeend', '<div class="list"></div>');
+  }
+  const list = box.querySelector('.list');
+  if (list.querySelector('textarea')) return;   // an edit in progress; the next redraw after it catches up
+  const mine = live().filter(c => c.entry === entry);
+  list.innerHTML = mine.map(c => `<div class="cmt" data-id="${c.id}"><div class="meta"><b>${c.id}</b><span>${when(c.at)}</span>`
+    + (c.report !== DATA.run ? `<span>on the run of ${esc(c.report)}</span>` : '')
+    + (c.edited ? `<span>edited ${when(c.edited)}</span>` : '')
+    + (ANSWERED.has(c.id) ? '<span title="A run answered it in the entry\'s History">answered</span>' : '')
+    + (SERVED ? '<button class="btn ghost edit">edit</button><button class="btn ghost del">delete</button>' : '')
+    + `</div><div class="txt">${esc(c.text)}</div></div>`).join('');
+  list.querySelector('.cmt:last-child .edit')?.setAttribute('aria-keyshortcuts', 'e');
+  list.querySelector('.cmt:last-child .del')?.setAttribute('aria-keyshortcuts', 'd');
+  for (const el of list.querySelectorAll('.cmt')) {
+    const id = el.dataset.id;
+    el.querySelector('.del')?.addEventListener('click', () => deleteComment(id));
+    el.querySelector('.edit')?.addEventListener('click', () => {
+      const c = C.find(c => c.id === id);
+      const txt = el.querySelector('.txt');
+      txt.outerHTML = `<div class="ed"><textarea>${esc(c.text)}</textarea><div class="acts"><button class="btn solid save">save</button><button class="btn ghost cancel">cancel</button></div></div>`;
+      const ta = el.querySelector('textarea'); ta.focus();
+      const done = () => { el.querySelector('.ed').remove(); drawComments(false); };
+      const save = () => { const t = ta.value.trim(); if (!t) return; el.querySelector('.ed').remove(); editComment(id, t); };
+      el.querySelector('.save').onclick = save;
+      el.querySelector('.cancel').onclick = done;
+      ta.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); save(); } if (e.key === 'Escape') { e.stopPropagation(); done(); } });
+    });
+  }
+}
+
+$('copy').onclick = () => {
+  const by = new Map();
+  for (const c of live()) { if (!by.has(c.entry)) by.set(c.entry, []); by.get(c.entry).push(c); }
+  if (!by.size) { toast('No comments to copy.'); return; }
+  let md = `Comments on ${DATA.title}, run ${DATA.run}\n`;
+  for (const [entry, cs] of by) {
+    const d = ENTRIES[entry.toLowerCase()];
+    md += `\n## ${entry}${d ? ' ' + d.title : ''}${d && d.kind === 'dropped' ? ' (no longer in the report)' : ''}\n\n`;
+    for (const c of cs) md += `- ${c.id}, ${when(c.at)}${c.report !== DATA.run ? `, on the run of ${c.report}` : ''}: ${c.text.replace(/\n/g, '\n  ')}\n`;
+  }
+  const done = () => toast(`Copied ${live().length} comments as markdown.`);
+  if (navigator.clipboard && isSecureContext) navigator.clipboard.writeText(md).then(done, () => fallbackCopy(md, done));
+  else fallbackCopy(md, done);
+};
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done();
+}
+
+route();
+loadComments();
+
+</script>
+</body>
+</html>

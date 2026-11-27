@@ -49,7 +49,7 @@ WEEK = timedelta(weeks=1)
 # held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
 # The stage $STUB_FAILS_AT names exits 1 instead, writing nothing, as a model run that errored does.
-# With $STUB_SYNTHESIS_FAILS set, synthesis writes an empty report and no page. With $STUB_HANG set it starts a child
+# Synthesis writes $STUB_REPORT under the report's title; with $STUB_SYNTHESIS_FAILS set, an empty report. With $STUB_HANG set it starts a child
 # and waits on it instead, recording both pids, and takes a second to end on TERM, as a model run
 # ending its work does; the child ends only by its own TERM. Run as `claude auto-mode config`, as
 # collect runs it, it prints a config.
@@ -67,7 +67,7 @@ case $stage in
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && for f in leading-words permissions critique; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
-    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; echo '{"type": "result", "subtype": "success"}'; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "${STUB_PAGE:-<html>}" > report.html ;;
+    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; echo '{"type": "result", "subtype": "success"}'; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; printf '# Workflow retro: %s\n\n%s\n' "$(basename "$PWD")" "${STUB_REPORT:-}" > report.md && echo "- F1 sharpened: seen again $(basename "$PWD")" > changes.md ;;
 esac
 # the end of a turn, as claude reports it
 echo '{"type": "result", "subtype": "success"}'
@@ -191,6 +191,9 @@ def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stay
         "the session's staged ticket is neither committed nor unstaged"
     assert (agent / "retro/report.md").read_text() == (run / "report.md").read_text()
     assert last_logged(tmp_path, repo.name).startswith("committed ")
+    body = git(agent, "log", "-1", "--format=%b")
+    assert body.startswith((run / "changes.md").read_text().strip() + "\n\n"), "the why of each change is the commit's body"
+    assert git(agent, "log", "-1", "--format=%(trailers:key=Retro-until,valueonly)").strip() == retro_run.stamp(FIRST)
     if start == "a worktree":
         assert git(agent, "rev-parse", branch) == ticket_branch, "the report went to the main checkout, not the ticket's branch"
 
@@ -202,13 +205,53 @@ def test_each_qualified_tag_on_the_committed_page_links_to_what_it_names_or_is_s
     holds is struck through, in the page the commit holds."""
     agent = repo / "agent"
     (agent / "tickets/held.md").write_text("---\nstatus: open\n---\n\n# Held\n\n## Questions\n\n- [D1] **Ship it?** Or wait.\n")
-    monkeypatch.setenv("STUB_PAGE", "<p>Taken up in held D1; retro F9 dropped.</p>")
+    monkeypatch.setenv("STUB_REPORT", "Taken up in held D1; retro F9 dropped.")
     retro(tmp_path, repo, FIRST, SINCE)
     page = git(agent, "show", "HEAD:retro/report.html")
-    (link,) = re.findall(r"<a [^>]*>held D1</a>", page)
-    assert 'href="../tickets/held.md"' in link and 'title="held D1 · Ship it? Or wait."' in link
-    (gone,) = re.findall(r"<s [^>]*>retro F9</s>", page)
-    assert "href" not in gone and "no longer in the retro" in gone
+    links, gone = re.findall(r"<a [^>]*>held D1</a>", page), re.findall(r"<s [^>]*>retro F9</s>", page)
+    assert links and all('href="../tickets/held.md"' in a and 'title="held D1 · Ship it? Or wait."' in a for a in links)
+    assert gone and all("href" not in s and "no longer in the retro" in s for s in gone)
+    assert "retro F9" not in re.sub(r"<s [^>]*>retro F9</s>", "", page), "every mention is struck"
+    assert "held D1" not in re.sub(r"<a [^>]*>held D1</a>", "", page), "every mention is linked"
+
+
+def test_max_s_comments_on_the_page_reach_the_next_run_unless_answered_and_are_committed_with_its_report(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """retro-report-max-can-scan: the hub saves comments beside the page, uncommitted; the next run's
+    stages read the open ones, and its commit holds them with the report."""
+    agent = repo / "agent"
+    monkeypatch.setenv("STUB_REPORT", "## Findings\n\n### F1 The suite is slow\n\n- **State**: live\n"
+                                      "- **History**: first seen 2026-10-05; answered C2 2026-10-12: kept, as he asked\n")
+    retro(tmp_path, repo, FIRST, SINCE)
+    saved = {"writer": "w", "savedAt": 1, "comments": [
+        {"id": "C1", "entry": "F1", "at": "2026-10-14T09:00:00Z", "report": "2026-10-12", "text": "dismiss this"},
+        {"id": "C2", "entry": "F1", "at": "2026-10-13T09:00:00Z", "report": "2026-10-12", "text": "keep it"},
+        {"id": "C3", "entry": "F1", "at": "2026-10-13T10:00:00Z", "report": "2026-10-12", "text": "gone", "deleted": True}]}
+    (agent / "retro/report.html.state.json").write_text(json.dumps(saved))
+    run = retro(tmp_path, repo, FIRST + WEEK)
+    comments = (run / "previous/comments.md").read_text()
+    assert "C1" in comments and "dismiss this" in comments and "F1 The suite is slow" in comments
+    assert "C2" not in comments and "C3" not in comments, "an answered or deleted comment is not open"
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == [
+        "retro/report.html", "retro/report.html.state.json", "retro/report.md"]
+    assert "dismiss this" in git(agent, "show", "HEAD:retro/report.html"), "the page bakes the comments in"
+
+
+def test_a_commit_that_fails_leaves_the_agent_repo_as_it_was_and_max_s_comments_unstaged(
+        tmp_path: Path, stub: Path, repo: Path) -> None:
+    agent = repo / "agent"
+    (agent / "retro/report.html.state.json").write_text('{"comments": []}')
+    hook = agent / ".git/hooks/pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    head = git(agent, "rev-parse", "HEAD")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST, SINCE)
+    assert last_logged(tmp_path).startswith("not committed: git commit failed")
+    assert git(agent, "rev-parse", "HEAD") == head
+    assert not (agent / "retro/report.md").exists() and not (agent / "retro/report.html").exists()
+    assert git(agent, "diff", "--cached", "--name-only").split() == ["tickets/a.md"], "the comments are not left staged"
+    assert (agent / "retro/report.html.state.json").read_text() == '{"comments": []}'
 
 
 @pytest.mark.parametrize("operation", ["rebase", "merge"])
@@ -282,7 +325,7 @@ def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_th
     assert "--add-dir" not in args and "Bash" not in args[args.index("--tools") + 1], \
         "read-fresh can reach nothing outside its run directory, an earlier report included"
     later = {Path(p).name for p in (stub / "follow up.seen").read_text().split() if "/previous/" in p}
-    assert later == {"current.md", *(f"{retro_run.dirname(FIRST + n * WEEK)}.md" for n in (0, 1, 2))}
+    assert later == {"current.md", "comments.md", *(f"{retro_run.dirname(FIRST + n * WEEK)}.md" for n in (0, 1, 2))}
     assert (runs[-1] / "previous/current.md").read_text() == (runs[-2] / "report.md").read_text()
     rows = [json.loads(line) for line in (runs[-1] / "sessions.jsonl").read_text().splitlines()]
     period = [r for r in rows if r["set"] == "sessions"]

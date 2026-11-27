@@ -5,7 +5,7 @@
 **A repo with a living report keeps one list of candidates.** The living report belongs to the tracker that plans the repo, kept in that tracker's agent repo, which is the repo's own or the one whose `agent/repos.toml` lists it. It is two files in that agent repo's `retro/`:
 
 - `report.md` is what retro runs and sessions read and write.
-- `report.html` is the page the user reads. Each retro run builds it from `report.md` and commits the two together. A verdict a session writes between runs leaves the page as it is, and the next run rebuilds it.
+- `report.html` is the page the user reads. Each retro run builds it from `report.md` by script and commits the two together. A verdict a session writes between runs leaves the page as it is, and the next run rebuilds it.
 
 Run by hand on such a repo, the scan works in `report.md`:
 
