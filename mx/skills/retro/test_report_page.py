@@ -228,7 +228,7 @@ def test_an_artefact_an_entry_names_is_embedded_where_it_is_an_image_or_a_page_a
 # The page in headless Chromium, served as the container hub serves it: `/.health` says it saves, and a
 # POST to `<page>.state.json` writes that file. It prints what each step saw.
 PROBE = r"""
-import json, shutil, sys, threading
+import json, os, shutil, sys, threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -253,7 +253,8 @@ server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Hub, directory=str(root))
 threading.Thread(target=server.serve_forever, daemon=True).start()
 seen = {}
 with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     page = browser.new_page(viewport={"width": 1400, "height": 900})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
