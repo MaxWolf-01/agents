@@ -1,3 +1,8 @@
+## 1.0.137
+
+- Merge branch 'ticket/coverage-trial-on-mx'
+  `make coverage` measures the fast suite's line coverage of mx's Python, the scripts its tests start as their own processes included, and stands at 100%. Getting there added about 200 tests, most holding a refusal or a failure path, and made the code that reaches for a browser, a clock, a timeout or a model call take it as an argument (render-lint, the page cache, the struktogramm layout checker, change-summary, the plugin-update hook), so fast tests reach it with a stand-in. Dead guards and two callerless retro subcommands are deleted; transcript lines are parsed once at the boundary in scan_sessions. The testing skill gains a Coverage section and the worker's instructions name it: a change reaches its review with every line the fast suite can run, run; a line no clean, fast test reaches is answered by a refactor; an exclusion is for what the measurement cannot see.
+
 ## 1.0.136
 
 - The turn review keeps the session's plan honest, flagging only a step the records contradict
