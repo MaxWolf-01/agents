@@ -4,9 +4,9 @@ description: "Investigate a question against primary sources and land the findin
 argument-hint: [topic or question]
 ---
 
-Investigate a question, and be exhaustive on findings: skip the storytelling, no methodology recap and no intro or conclusion prose, every sentence a finding or a citation. Short is fine; findings that are inconclusive say so rather than padding to look complete.
+Investigate a question exhaustively and write up only findings and citations, every sentence one or the other, with no methodology recap, intro or conclusion. Short is fine; an inconclusive finding says so rather than padding to look complete.
 
 1. **Frame check**: when the question arrives with a diagnosis or option list attached (a ticket's options, an earlier session's plan), the options share a **frame**, the premise that makes them the menu. State that premise in one sentence, then name the strongest option *outside* it; drop the premise and check whether the problem dissolves. Agent-authored framing is an assumption to test; a frame the user decided (an ADR, a ticket's decision, a grilling verdict) stands, so surface a conflict rather than reopening it.
-2. Investigate against **primary sources** (official docs, source code, standards, first-party APIs), not a secondary write-up of them.
+2. Investigate against **primary sources** (official docs, source code, standards, first-party APIs).
 3. **The findings**: the gist, the answers the question asked for, and each claim's source (URL, file path, commit). An inherited frame is reported with them: the shared premise, the strongest option outside it, and the verdict, whose "holds" needs its why.
 4. What the user has to see or understand to judge the answer is a `/mx:show` artifact instead of prose.

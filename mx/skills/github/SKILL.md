@@ -4,7 +4,7 @@ description: "Writing to GitHub under the user's name: issues to projects they d
 argument-hint: "[what to write, and where]"
 ---
 
-Everything written here goes out on max's account, to people who owe him no attention. Load `/mx:writing-for-humans` first: it is the sentence-level standard, and this skill holds what it doesn't, what a GitHub document carries, in what order, and the gate before it is published.
+Everything written here goes out on max's account, to people who owe him no attention. Load `/mx:writing-for-humans` first for the sentence-level standard; this skill adds what a GitHub document carries, in what order, and the gate before it is published.
 
 What each kind of document holds is in its companion:
 
@@ -17,7 +17,7 @@ The reader is cold: a maintainer or a colleague who was not in the session, deci
 
 - **The first screen carries the point.** An issue opens on its finding, a PR on what it changes, in plain words before any identifier. Done: a reader who skims the first screen and stops there has the point.
 - **`<details>` holds what not every reader needs**: evidence, logs, a long table, a side finding. A block's summary names its contents plainly, the way a table caption does ("Reviewer request size, before and after"), never as a headline.
-- **Describe; let the reader judge.** "The connection closes after one byte" survives scrutiny, where a severity claim invites an argument about the severity. Say what was checked and what was inferred: an untested corner is cheap to flag and expensive to be caught on.
+- **Describe; let the reader judge.** "The connection closes after one byte" survives scrutiny where a severity claim invites an argument. Say what was checked and what was inferred: an untested corner is cheap to flag and expensive to be caught on.
 - **A title states; it never teases**: no headline phrasing, no question, no pun, no emoji.
 - **English**, whatever language the session ran in.
 
@@ -31,7 +31,7 @@ An issue or PR on a repo that is neither under max's account nor under an organi
 
 `gh api user --jq .login` and `gh api user/orgs --jq '.[].login'` name the owners that carry none: his own repos, his employer's, his other organizations.
 
-Three claims, each load-bearing: where the text came from, that its content was checked, and that a person is on the other end. Maintainers are being flooded with unverified AI reports, and this says which kind this is. Keep it to the one line; length reads as legalese and invites dismissal.
+Each of its three claims is load-bearing: where the text came from, that its content was checked, and that a person is on the other end. Keep it to the one line; length reads as legalese and invites dismissal.
 
 ## Publishing
 

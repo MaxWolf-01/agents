@@ -17,9 +17,9 @@ Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Two kinds of run
 
-**The fast suite** is `make test`: it touches nothing outside the checkout and a scratch directory of its own, with no browser, desktop, network or sleeps. A test that runs the project's own script as a subprocess in that scratch directory belongs in it. It runs on every change, and the three jobs live in it.
+**The fast suite** is `make test`: it touches nothing outside the checkout and its own scratch directory: no browser, desktop, network or sleeps. A test that runs the project's own script as a subprocess in that scratch directory belongs in it. It runs on every change, and the three jobs live in it.
 
-**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and on a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched.
+**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately on a host that has what they drive: before a release, and on a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched.
 
 ## Coverage
 
@@ -29,7 +29,7 @@ Where the project measures it (`make coverage`), a change reaches its review wit
 
 A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. Where nothing names one for the work in hand, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
 
-Logic inside a decorated entry point (a route handler, a CLI command, a scheduled task) is testable, by calling it directly or driving the framework's test client, but every test of it pays that setup. Put the logic in a plain function the entry point calls, and test that.
+Logic inside a decorated entry point (a route handler, a CLI command, a scheduled task) is testable directly or through the framework's test client, but every test of it pays that setup. Put the logic in a plain function the entry point calls, and test that.
 
 Mock what the module does not own: the network, the clock, randomness, an external service. A test that mocks the module's own collaborators is testing the mock.
 
@@ -49,8 +49,8 @@ An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is 
 
 Choose inputs that can tell the bug from the fix. An input symmetric in the dimension under test (a palindrome for a reversal, four identical streams for a four-stream feature, an empty collection for an ordering rule) passes whether or not the code works.
 
-Generate structure rather than raw randomness: draw whole valid values of the domain (a note, an order, a request), so the generator explores the space the code actually meets. Unstructured random input lands on the rejection path almost every time, and a run that always rejects proves the validator, not the feature.
+Generate structure rather than raw randomness: draw whole valid values of the domain (a note, an order, a request), so the generator explores the space the code meets. Raw random input almost always lands on the rejection path, and a run that always rejects proves the validator, not the feature.
 
 ## The suite already there
 
-Extend it: its fixtures, its helpers, its naming, its seams. A second parallel suite beside the first splits the signal, and the next agent has to read both to know what is covered.
+Extend it: its fixtures, helpers, naming and seams. A second suite beside it splits the signal, and the next agent has to read both to know what is covered.

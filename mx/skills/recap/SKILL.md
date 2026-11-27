@@ -24,6 +24,6 @@ Focus area, if given: $ARGUMENTS. Otherwise cover the whole session.
 
 ## Guidelines
 
-- Bullet points, not paragraphs
+- Write bullet points
 
-**After the recap:** ask the open questions if any are worth asking. The user scans the recap and answers in the same pass, so err toward asking.
+**After the recap:** ask the open questions worth asking, erring toward asking, since the user answers in the same pass as they scan the recap.

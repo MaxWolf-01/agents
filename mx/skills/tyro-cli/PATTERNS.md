@@ -2,7 +2,7 @@
 
 ## Pattern 2a: decorator subcommands (preferred for extensible CLIs)
 
-`tyro.extras.SubcommandApp`: click-inspired decorator API. Works with 1+ subcommands (unlike Union which needs 2+).
+`tyro.extras.SubcommandApp`, a click-style decorator API, works with one subcommand; a union needs two.
 
 ```python
 import tyro
@@ -25,13 +25,13 @@ if __name__ == "__main__":
 ```
 
 - `description` goes on `.cli()`, not `SubcommandApp()`.
-- `OmitArgPrefixes` avoids `--args.` prefix from the function parameter name.
+- `OmitArgPrefixes` drops the parameter name's `--args.` prefix.
 
 ## Pattern 2b: union subcommands (static multi-command tools)
 
-When subcommands are known at type-definition time and you want pure type-based dispatch.
+For subcommands known when the types are defined, dispatched on type alone.
 
-**Limitation:** Python collapses `Union[X]` to `X`, so this requires 2+ variants. For a single subcommand, use Pattern 2a instead.
+**Limitation:** Python collapses `Union[X]` to `X`, so this needs 2+ variants; a single subcommand uses Pattern 2a.
 
 ```python
 from dataclasses import dataclass
@@ -63,11 +63,11 @@ if __name__ == "__main__":
 
 ### Subcommand argument ordering
 
-Arguments before the subcommand selector go to the parent parser. Arguments after go to the subcommand. Use `tyro.conf.CascadeSubcommandArgs` to relax this constraint if mixing shared args with subcommands.
+Arguments before the subcommand selector go to the parent parser, arguments after it to the subcommand. `tyro.conf.CascadeSubcommandArgs` relaxes this where shared arguments mix with subcommands.
 
 ## Pattern 3: nested dataclasses (hierarchical configs)
 
-When arguments naturally group into subsections. Creates dot-prefixed flags like `--optimizer.lr`.
+For arguments that group into subsections, as dot-prefixed flags like `--optimizer.lr`.
 
 ```python
 @dataclass
@@ -86,7 +86,7 @@ class Config:
 config = tyro.cli(Config)
 ```
 
-**`OmitArgPrefixes` with nested dataclasses** can cause name collisions if nested structs share field names. Only use it for flat, single-dataclass CLIs.
+**`OmitArgPrefixes` with nested dataclasses** collides names wherever nested structs share a field name, so use it only on a flat, single-dataclass CLI.
 
 ## A flag with an optional value
 

@@ -9,8 +9,8 @@ All Python CLI scripts use tyro for argument parsing, never argparse, click, or 
 
 ## Core Principles
 
-1. **`--help` is the documentation.** Every script must be fully self-documenting: module docstring with usage examples, every argument with a help string. A user running `--help` should never need to read source code.
-2. **PEP 723 inline metadata** for standalone scripts. Declare tyro (and other deps) via inline metadata so scripts are runnable with `uv run` without project setup. If the script lives in a project with pyproject.toml and tyro is already a dependency, inline metadata is unnecessary.
+1. **`--help` is the documentation.** Every script carries a module docstring with usage examples and a help string on every argument, so nobody running `--help` needs to read the source.
+2. **PEP 723 inline metadata** for standalone scripts: declare tyro and the other dependencies inline, so `uv run` runs the script without project setup. A script inside a project whose pyproject.toml already depends on tyro needs none.
 
 ## PEP 723 Inline Dependencies
 
@@ -21,7 +21,7 @@ All Python CLI scripts use tyro for argument parsing, never argparse, click, or 
 # ///
 ```
 
-When converting a script that already exists, list in `dependencies` every third-party package its imports need, and leave its code as it is: moving its parsing to tyro is a change of its own.
+When converting an existing script, list every third-party package its imports need in `dependencies` and leave its code as it is: moving its parsing to tyro is a change of its own.
 
 ### Shebang for PEP 723 scripts
 
@@ -31,7 +31,7 @@ When converting a script that already exists, list in `dependencies` every third
 #!/usr/bin/env -S uv run --script --quiet
 ```
 
-Without `--script`, uv doesn't detect the inline metadata block and falls back to project resolution. If there's no project, it recurses infinitely (`uv run` invokes the script, which invokes `uv run` again via the shebang) and hits the 100-call recursion limit.
+Without `--script`, uv ignores the inline metadata and falls back to project resolution; with no project, the shebang re-invokes `uv run` until it hits the 100-call recursion limit.
 
 ## Preferred Patterns
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
 
 ### Scope: the CLI, not the workflow
 
-`--help` describes the tool: what each flag accepts, what it rejects, what the tool does with it. Process lives elsewhere: who runs this, in what order, what to do with the output. A help string that prescribes process is a second copy of a policy some skill or doc already owns, and it is the copy nobody updates when the policy changes.
+`--help` describes the tool: what each flag accepts, what it rejects, what the tool does with it. Process (who runs it, in what order, what to do with the output) belongs to the skill or doc that owns the policy; a copy in a help string is the one nobody updates when the policy changes.
 
 ```python
 # BAD: schema plus a process rule owned by the workflow doc
@@ -87,15 +87,11 @@ notes: str = ""
 """JSON notes file. Schema: {...}. Ids must be unique."""
 ```
 
-The test: would the sentence still hold for a caller using this tool in a different workflow? If not, it belongs in that workflow's document. Self-documenting (Core Principle 1) means nobody must read the *source* to drive the tool, not that `--help` carries the process the tool is used in.
+The test: would the sentence still hold for a caller using this tool in a different workflow? If not, it belongs in that workflow's document. Core Principle 1 means nobody must read the *source* to drive the tool, not that `--help` carries the process around it.
 
 ### Module Docstring → Program Description
 
-The module docstring (or `description=__doc__`) becomes the top-level help text. Structure it as:
-
-1. One-line summary of what the script does
-2. Blank line, then details/context if needed
-3. `Examples:` section with concrete invocations. Don't use `::` (reST convention); tyro renders it literally and it looks ugly in `--help` output.
+The module docstring, passed as `description=__doc__`, becomes the top-level help text: a one-line summary, a blank line, details if needed, then an `Examples:` section of concrete invocations. Write `Examples:` with one colon; tyro prints reST's `::` literally.
 
 ```python
 """Stress test for the TTS synthesis pipeline.
@@ -139,9 +135,7 @@ def main(input_path: str, verbose: bool = False) -> None:
 
 ### Newlines in Docstrings
 
-tyro collapses single newlines to spaces (like HTML). To force a line break:
-- Use a blank line (double newline) for paragraph breaks
-- Start the next line with a non-alpha character (`-`, `*`, a number); this forces a break
+tyro collapses a single newline to a space. A blank line keeps a paragraph break, and a line starting with a non-alphabetic character (`-`, `*`, a digit) keeps its own line.
 
 ```python
 # WRONG: renders as one line in --help
@@ -161,7 +155,7 @@ Second line."""
 
 ### Booleans Need Defaults
 
-A `bool` field without a default requires `--flag True` or `--flag False` (not just `--flag`). Always provide a default to get `--flag`/`--no-flag` toggle behavior:
+A `bool` field without a default takes `--flag True` or `--flag False`, not a bare `--flag`. Give it a default to get the `--flag`/`--no-flag` toggle:
 
 ```python
 # BAD: requires --verbose True / --verbose False
@@ -173,11 +167,11 @@ verbose: bool = False
 
 ### Optional Args Display
 
-`str | None = None` shows as `{None}|STR` in help, which is ugly. No built-in fix: use `metavar=` via `tyro.conf.arg(metavar="VALUE")` to override, or provide a default string value instead of None where possible.
+`str | None = None` shows as `{None}|STR` in help. Override it with `tyro.conf.arg(metavar="VALUE")`, or give a string default instead of None where one makes sense.
 
 ### Comment Help Text Propagation
 
-A comment block above consecutive fields applies to ALL of them (not just the first). Separate field groups with blank lines or use field docstrings instead.
+A comment block above consecutive fields becomes the help of all of them, not just the first. Separate field groups with blank lines, or use field docstrings.
 
 ```python
 # BAD: this comment applies to BOTH fields
@@ -194,10 +188,10 @@ weight_decay: float = 1e-2
 
 ### `__post_init__` with `default=`
 
-When passing `default=Config(...)` to `tyro.cli()`, `__post_init__` is called twice (once for the default, once for the parsed result). Avoid side effects in `__post_init__`; use `@property` for derived fields.
+With `default=Config(...)` passed to `tyro.cli()`, `__post_init__` runs twice, once for the default and once for the parsed result. Keep it free of side effects, and compute derived fields as `@property`.
 
 ## Anti-Patterns
 
-**String choices instead of Literal.** Use `Literal["a", "b"]`, not `str` with choices documented in the docstring. Literal gives type safety, auto-completion, and tyro generates proper `{a,b}` choices in help.
+**String choices instead of Literal.** Type a choice as `Literal["a", "b"]`, not as `str` with the choices in its docstring: Literal gives type safety and completion, and tyro lists `{a,b}` in help.
 
-**Multiple `tyro.cli()` calls with `return_unknown_args`.** Calling `tyro.cli()` twice and passing leftovers to a second call is fragile. Use a single nested dataclass instead.
+**Multiple `tyro.cli()` calls with `return_unknown_args`.** Handing one call's leftovers to a second is fragile; parse once, into one nested dataclass.

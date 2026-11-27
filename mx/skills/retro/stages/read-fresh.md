@@ -1,6 +1,6 @@
 # A {{kind}}: read fresh
 
-You run the read-fresh stage of a {{kind}} of `{{repo}}`, over {{sessions}}, from {{since}} to {{until}}. Its job is to read the period with fresh eyes: what went wrong for max and for the agents, and the cause behind each of max's corrections, quoted and dated, before anyone looks at what earlier retros found. The later stages compare your notes with the standing findings; your notes are worth most when they come from the sessions alone.
+You run the read-fresh stage of a {{kind}} of `{{repo}}`, over {{sessions}}, from {{since}} to {{until}}. Its job is to read the period with fresh eyes, before anyone looks at what earlier retros found: what went wrong for max and for the agents, and the cause behind each of max's corrections, quoted and dated. The later stages compare your notes with the standing findings, so they are worth most drawn from the sessions alone.
 
 The retro's repos, whose git `git/` records:
 
@@ -14,14 +14,14 @@ Everything you read and write is in the run directory, `{{run}}`, your working d
 
 ## Steps
 
-1. Spawn one subagent per batch and one for `git/`, in parallel, each at medium effort and given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Reading the digests is theirs: your own context stays free for the batches.
+1. Spawn one subagent per batch and one for `git/`, in parallel, each at medium effort and given the reader's prompt below: the path of this file, `{{run}}/prompts/read-fresh.md`, the section to follow, its batch's name and digest paths (or `git/`), and the file to write: `notes/<batch name>.md`, or `notes/git.md`. Leave the digests to them, so your own context stays free.
 2. When they return, check that every batch and `git/` has its notes file and that each holds a section per digest. Spawn a fresh one, at the same effort, for any that is missing or cut short.
 
 The stage is done when `notes/` holds a file for every batch in `batches.json` and one for `git/`.
 
 ## The reader's prompt
 
-You read part of a {{kind}}'s period, from {{since}} to {{until}}, to find the friction worth fixing and the cause behind each of max's corrections. A batch named `sample-…` holds older sessions instead, from before the period, read the same way: what they show tells the later stages whether a pattern is older than the period. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
+You read part of a {{kind}}'s period, from {{since}} to {{until}}, to find the friction worth fixing and the cause behind each of max's corrections. A batch named `sample-…` holds older sessions from before the period, read the same way; they tell the later stages whether a pattern is older than the period. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
 
 ### What to look for
 
@@ -36,13 +36,13 @@ Read every correction of max's for its cause. A correction is a message of his t
 - **guidance**: guidance covering it existed, and the agent missed it or could not follow it;
 - **fact**: the agent lacked a fact max had to supply.
 
-In a repo retro, a session read may have worked on other repos too: its notes hold the friction and corrections of the work in the retro's repos, those whose cause is the workflow among them, with the skill named in their Cause.
+In a repo retro, a session may have worked on other repos too: note the friction and corrections of its work in the retro's repos alone, those caused by the workflow included, with the skill named in their Cause.
 
 ### The digest
 
 One file per session. Its header names the session id, title, project, profile, span, how many messages max wrote, and the models and Claude Code versions it ran. Then, under a heading per day, each line carries its time, UTC:
 
-- `MAX:` what max typed, verbatim, pasted text clipped in the middle. `(queued while the agent worked)`: he typed while the agent was busy. `MAX REWOUND and re-sent`: he rewound to before his previous message and sent a new version; what the abandoned turn did is often why. `MAX INTERRUPTED`: he stopped the agent mid-turn.
+- `MAX:` what max typed, verbatim, pasted text clipped in the middle. `(queued while the agent worked)`: he typed while the agent was busy. `MAX REWOUND and re-sent`: he rewound to before his previous message and sent a new version. `MAX INTERRUPTED`: he stopped the agent mid-turn.
 - `A:` the model's text. `→ <tool> <input>`: a tool call and its full input, `[classifier allowed]` after the tool where auto mode's classifier judged it and let it run; tool output is left out.
 - `! ERROR`, `! DENIED`: a failed or refused tool call, in full. `! HOOK → agent`, `! STOP HOOK`: a hook that sent the turn back. `! API ERROR`.
 - `(turn took 4m12s)`, `(context compacted)`, and `(left out: …)` where a long session's days before the period were cut.
@@ -66,6 +66,6 @@ Outcome: done | partial | abandoned | unclear, and what came out, in one clause.
 Friction that recurs, and corrections that share a cause, across two or more of these sessions, naming each session and the date.
 ```
 
-Each finding carries a verbatim quote and its absolute date, copied from the digest; a finding you cannot quote stays out. Cost is your estimate of what it cost: `high` for many minutes or much nerve lost, `med` for a detour, `low` for a papercut. A session with no friction gets its heading and its outcome line alone. The concrete beats the general: "max pasted the board's URL by hand three times because the Stop hook printed no link" carries the fix; "observability could be better" carries nothing. For `git/`, the sections are the repos, and the quotes are commit subjects and report lines with their short sha or ticket and date.
+Each finding carries a verbatim quote and its absolute date, copied from the digest; a finding you cannot quote stays out. Cost is your estimate: `high` for many minutes or much nerve lost, `med` for a detour, `low` for a papercut. A session with no friction gets its heading and its outcome line alone. The concrete beats the general: "max pasted the board's URL by hand three times because the Stop hook printed no link" carries the fix; "observability could be better" carries nothing. For `git/`, the sections are the repos, and the quotes are commit subjects and report lines with their short sha or ticket and date.
 
 Write the notes file at the path you were given, then reply with that path alone.

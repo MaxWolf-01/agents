@@ -20,17 +20,17 @@ outer rectangle belongs to exactly one block.
 
 ## Modelling
 
-**Find the hidden loops.** Prose flattens iteration. "Simmer until reduced", "knead until
-smooth" and "retry until the connection succeeds" are post-tested loops written as single steps.
-Drawn as loops, their exit conditions are on the page instead of buried in a verb, which is most
-of what the notation adds over a numbered list.
+**Find the hidden loops.** "Simmer until reduced", "knead until smooth" and "retry until the
+connection succeeds" are post-tested loops written as single steps. Drawn as loops, their exit
+conditions are on the page instead of buried in a verb, which is most of what the notation adds
+over a numbered list.
 
-**Draw a branch only where the paths differ.** "Season to taste" is a statement. A branch earns
-its place when its two paths do different things afterwards.
+**Draw a branch only where the paths differ.** A branch earns its place when its two paths do
+different things afterwards; "season to taste" is a statement.
 
 **Extract before you nest deeply.** Past three levels the diagram gets too wide to read
-(Rendering says why). Pull the inner part into a diagram of its own and reference it with a
-`call` node, as you would extract a function.
+(Rendering says why): pull the inner part into a diagram of its own and reference it with a
+`call` node.
 
 ## Node schema
 
@@ -69,8 +69,7 @@ so constructs nest to any depth.
 
 ## Extensions
 
-DIN 66261 has no way to show inputs, durations, returns and errors, or shared resources. These
-fields are this skill's own, outside the standard, and each is optional; a reader who knows
+These optional fields are this skill's own, outside DIN 66261, so a reader who knows
 Struktogramme will not have seen them.
 
 - **Inputs.** `{"type": "inputs", "title": "ingredients", "items": ["2 eggs", "100 g flour"]}` is
@@ -91,12 +90,11 @@ python scripts/struktogramm.py diagram.json --fragment      # <style> and the di
 ```
 
 From Python: `page(nodes)` returns the document, `fragment(nodes)` the embeddable part, and
-`min_width(nodes)` the diagram's width in pixels. The renderer needs nothing past Python's
-standard library.
+`min_width(nodes)` the diagram's width in pixels.
 
-Width carries no meaning in the notation, so the columns of a block are drawn equal whatever
-their content. The diagram is therefore at least as wide as its narrowest column needs to be to
-hold that column's longest word; a page narrower than that scrolls sideways, and a host that
+Width carries no meaning in the notation, so a block's columns are drawn equal whatever their
+content, and the diagram is at least as wide as its narrowest column needs to be to hold that
+column's longest word; a page narrower than that scrolls sideways, and a host that
 embeds the fragment in a narrower box gives the box `overflow-x: auto`.
 
 Colours are the CSS variables `--text-primary`, `--text-secondary` and `--border-strong`. Without

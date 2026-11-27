@@ -1,10 +1,10 @@
 # Deepening
 
-How to deepen a cluster of shallow modules safely, given its dependencies. Assumes the vocabulary and principles in [SKILL.md](SKILL.md): **module**, **interface**, **seam**, **adapter**.
+Deepening a cluster of shallow modules safely, given its dependencies, in the vocabulary and principles of [SKILL.md](SKILL.md).
 
 ## Dependency categories
 
-When assessing a candidate for deepening, classify its dependencies. The category determines how the deepened module is tested across its seam.
+Classify a deepening candidate's dependencies; the category decides how the deepened module is tested across its seam.
 
 ### 1. In-process
 
@@ -12,11 +12,11 @@ Pure computation, in-memory state, no I/O. Always deepenable: merge the modules 
 
 ### 2. Local-substitutable
 
-Dependencies that have local test stand-ins (PGLite for Postgres, in-memory filesystem). Deepenable if the stand-in exists. The deepened module is tested with the stand-in running in the test suite. The seam is internal; no port at the module's external interface.
+Dependencies with a local test stand-in (PGLite for Postgres, an in-memory filesystem). Deepenable where the stand-in exists: the test suite runs the deepened module against it. The seam is internal, with no port at the module's external interface.
 
 ### 3. Remote but owned (Ports & Adapters)
 
-Your own services across a network boundary (microservices, internal APIs). Define a **port** (interface) at the seam. The deep module owns the logic; the transport is injected as an **adapter**. Tests use an in-memory adapter. Production uses an HTTP/gRPC/queue adapter.
+Your own services across a network boundary (microservices, internal APIs). Define a **port** (interface) at the seam: the deep module owns the logic, and the transport is injected as an **adapter**, in-memory in tests and HTTP, gRPC or a queue in production.
 
 ### 4. True external (Mock)
 
@@ -25,4 +25,4 @@ Third-party services (Stripe, Twilio, etc.) you don't control. The deepened modu
 ## Testing strategy: replace, don't layer
 
 - Old unit tests on shallow modules become waste once tests at the deepened module's interface exist; delete them.
-- Tests should survive internal refactors, since they describe behaviour, not implementation. If a test has to change when the implementation changes, it's testing past the interface.
+- Tests describe behaviour, not implementation, so they survive internal refactors; a test that has to change when the implementation changes is testing past the interface.

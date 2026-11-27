@@ -1,16 +1,16 @@
 # A PR
 
-A PR body describes a change, so change narration ("now", "no longer", "before this"), which writing-for-humans treats as residue in an artifact, is its point here. Every other rule of writing-for-humans holds.
+A PR body describes a change, so the change narration writing-for-humans treats as residue ("now", "no longer", "before this") is its point here. Every other rule of writing-for-humans holds.
 
 ## Title
 
-A squash merge makes the title the commit subject, so it follows the repo's commit convention and says what the change does, the way a good commit subject does. It stays true for the whole PR: when the PR grows past it, retitle.
+A squash merge makes the title the commit subject, so write it as one, in the repo's commit convention, saying what the change does. When the PR grows past it, retitle.
 
 ## Shape
 
 Most PRs are the first two parts, and a PR that is one paragraph is one paragraph. Everything after them appears only when it exists, in this order:
 
-1. **The change**: what behaviour changes and why it matters to someone. Draft it with `git diff <base>...HEAD | change-summary`: a model that saw only the diff writes it for a cold reader, in plainer prose than you can after a session spent on the change, and nothing from that session (ticket jargon, "as discussed") reaches it. Then adapt the draft: correct what it gets wrong, add what it missed, cut what does not matter to the reader, or write the paragraph yourself where the point is something the diff cannot show.
+1. **The change**: what behaviour changes and why it matters to someone. Draft it with `git diff <base>...HEAD | change-summary`, whose model saw only the diff, so it writes for a cold reader and nothing from the session (ticket jargon, "as discussed") reaches it. Then correct the draft, add what it missed and cut what does not matter to the reader, or write the paragraph yourself where the point is something the diff cannot show.
 2. **The issue link**, one line (`Closes #123`), when there is an issue. The body links it and leaves its content there.
 3. **What the diff, the issue and CI cannot say**, a short paragraph each: a step someone must take around the merge, a merge order across PRs or repos, what went unverified where that is worth a reader's time. Shorter wins when in doubt. The commands that were run are CI's to report. Alternatives not taken appear only when the issue discussed them or max asks for them.
 4. **A figure** sits beside the text it explains.
@@ -24,7 +24,7 @@ After max's yes, the title and file he saw become the PR's: `gh pr create --titl
 
 ## Closing out a review
 
-A review is closed out when every thread it opened is resolved and its body is hidden as resolved, so the timeline shows only what is still open. A reply to a thread is published text and goes through the gate; resolving and hiding publish nothing and need no yes. The body is the review's top-level comment, Copilot's "review overview" above all; reviews with an empty body, which is what a thread reply creates, have nothing to hide. The node ids (`PRR_…`) come from `gh pr view <n> --json reviews --jq '.reviews[] | {id, author: .author.login, body: (.body | length)}'`, and one call hides one:
+A review is closed out when every thread it opened is resolved and its body is hidden as resolved, so the timeline shows only what is still open. A reply to a thread is published text and goes through the gate; resolving and hiding publish nothing and need no yes. The body is the review's top-level comment, Copilot's "review overview" above all; a review with an empty body, which a thread reply creates, has nothing to hide. The node ids (`PRR_…`) come from `gh pr view <n> --json reviews --jq '.reviews[] | {id, author: .author.login, body: (.body | length)}'`, and one call hides one:
 
 ```console
 gh api graphql -f id=<PRR_…> -f query='mutation($id: ID!) {

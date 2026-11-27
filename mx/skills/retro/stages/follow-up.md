@@ -7,7 +7,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `previous/`: the earlier reports. `current.md` is the report as it stands in the agent repo now, max's verdicts since the last run included, and `comments.md` the comments max left on its page that no run has answered yet; `<date>.md` are the last runs' reports, named for the end of their period; `seed/`, where it exists, holds the reports a first run takes as its previous ones, max's verdicts on them among them. With none of these, there is nothing to follow up: write `follow-up.md` saying so, and stop.
 - `git/<repo>.md`: the period's commits, reverts, tickets and worker reports in each repo; `touched.md`, the files the period's commits touched in the repos whose code the lens pass reads.
 - `notes/`, stage 2's notes, written with no earlier report in view, on the period and, in `notes/sample-*.md`, on the older sample from before it; `sessions/` and `sample/`, the digests the notes come from, `sample/` holding {{sample}}. In a workflow retro, also `versions.md`.
-- `todo/<repo>/`: max's TODO files at each repo's root, a record of his thinking (quick thoughts, ideas, priorities), read as context, copied as they stood at {{until}}; they carry no dates of their own, so a quote from one gives its path and that date.
+- `todo/<repo>/`: max's TODO files at each repo's root (quick thoughts, ideas, priorities), copied as they stood at {{until}} and read as context; they carry no dates, so a quote from one gives its path and that date.
 
 The report's shape and rules are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
@@ -15,8 +15,8 @@ The report's shape and rules are `{{skills}}/retro/REPORT.md`. You may read the 
 
 ## Steps
 
-1. Read `previous/` and list each finding and candidate in it that is not dismissed, with its id, its state and its evidence, and each line of `current.md`'s Watched section. Where `current.md` differs from the last run's report, the difference is max's verdict and holds: what he dismissed there is dismissed, what he amended reads as amended, what he took up is taken up. A seed report without ids gives its findings none yet: list each under its own name, with max's verdict on it where the seed carries one.
-2. Check each against the period. A finding: search the digests and the git records for its pattern rather than relying on the notes alone. A candidate: read its files as they stand, the commits that touched them, and the agent repo's tickets for one that took it up. What you find names its state in the report, REPORT.md's **State** field:
+1. Read `previous/` and list each finding and candidate in it that is not dismissed, with its id, its state and its evidence, and each line of `current.md`'s Watched section. Where `current.md` differs from the last run's report, the difference is max's verdict, and it holds. A seed report without ids gives its findings none yet: list each under its own name, with max's verdict on it where the seed carries one.
+2. Check each against the period. A finding: search the digests and the git records for its pattern, not the notes alone. A candidate: read its files as they stand, the commits that touched them, and the agent repo's tickets for one that took it up. What you find names its state in the report, REPORT.md's **State** field:
    - it happened again in the period, or the candidate still holds in the code: **live**;
    - a ticket cites it and no fix has landed: **taken up as <ticket>**;
    - a fix landed in the period (name the commit and its date): **fix landed <sha>, <date>**;
@@ -28,7 +28,7 @@ The report's shape and rules are `{{skills}}/retro/REPORT.md`. You may read the 
 4. For each Watched line, search the period's notes and digests for the same miss: each sighting, with its quote, source and absolute date, makes it a repeat.
 5. Read what max said about the retro or its findings in the period's sessions, and his comments in `comments.md`, which weigh as REPORT.md's max's comments says: a remark about a finding counts as a verdict even when nobody wrote it down. What his TODO files say of a finding is context for its section, never a verdict.
 
-Each state rests on evidence with its source and absolute date, as REPORT.md's rules have it; the state of one you could not check is "unchecked", with the reason. Hand a subagent a group of findings or candidates and what to search, in parallel, where that keeps your own context free.
+Each state rests on evidence with its source and absolute date, as REPORT.md's rules have it; one you could not check is "unchecked", with the reason. Where it keeps your own context free, hand subagents groups of findings or candidates and what to search, in parallel.
 
 ## Output
 

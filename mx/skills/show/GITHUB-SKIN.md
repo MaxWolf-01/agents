@@ -16,7 +16,7 @@ A node is `fill` on a `strong` stroke; the focal node is `wash` on `accent`; a f
 
 ## A label sits beside its connector
 
-A transparent page has no colour to mask with, so the opaque backing rect of the mechanics does not exist here. Every label goes beside its line or in clear space, and a connector is routed around a node, never under one.
+A transparent page has no colour to mask with, so the mechanics' opaque backing rect does not apply: every label goes beside its line or in clear space, and a connector is routed around a node, never under one.
 
 ## Two renders, one source
 

@@ -17,11 +17,11 @@ If no baseline version is provided, use the most recent git tag.
 git log --first-parent --format='%h %s%n%b' <baseline-version>..HEAD
 ```
 
-The first-parent line holds one commit per merged branch, plus any commit made straight on the trunk. A merge's body opens with a paragraph on what the whole branch changed: write that branch's entries from it, and read the branch's own commits (`git log <merge>^1..<merge>^2`) only where the paragraph leaves a notable change unclear.
+The first-parent log holds one commit per merged branch and each commit made straight on the trunk. Write a merged branch's entries from the paragraph that opens its merge body, which says what the whole branch changed; read the branch's own commits (`git log <merge>^1..<merge>^2`) only where that paragraph leaves a notable change unclear.
 
 ### 3. Update the changelog
 
-Read the existing changelog file and check if there are changes not yet incorporated, then add them. Always add them to the "Unreleased" section only. If there is none yet, add it at the top in the same style as the existing changelog (for example, `## Unreleased` vs `## [Unreleased]`).
+Add the changes the existing changelog does not yet hold, to the "Unreleased" section only. If there is none yet, add it at the top in the same style as the existing changelog (for example, `## Unreleased` vs `## [Unreleased]`).
 
 ## Ground Rules When Writing Changelogs
 

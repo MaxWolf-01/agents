@@ -1,6 +1,6 @@
 # CLI fork
 
-Fallback when the fork subagent type is unavailable: forks the session via the documented CLI. Mint the identifiers first; they make concurrent forks safe and every fork resumable:
+The fallback when the fork subagent type is unavailable. Mint the identifiers first; they make concurrent forks safe and every fork resumable:
 
 1. Read the parent id from `$CLAUDE_CODE_SESSION_ID`, and the origin id, the session the user is talking to, from `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}`.
 2. `uuidgen` → the fork's session id. Always pass it via `--session-id`: it is the handle to resume or interrogate the fork later (`claude --resume <fork-id>`, or `claude -p --setting-sources user,project,local --resume <fork-id> '<follow-up>'`).

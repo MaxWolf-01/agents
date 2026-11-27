@@ -6,15 +6,15 @@ One report per tracker, `retro/report.md` in its agent repo, over every repo the
 
 - **Every finding quotes its evidence**: the session (its id's first 8 characters), the commit (its short sha) or the report it comes from, with an absolute date, `2026-10-07`. Never "last week", never a session's offset.
 - **Every proposal names what it deletes or narrows.** One that adds a mechanism also names the recurrence behind it and what keeping it costs.
-- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any code lens. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
+- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any code lens. A finding keeps the id it was raised with; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
 - **A dismissal holds**: a finding or candidate max dismissed stays under Dismissed, with his verdict and its date, and returns only on evidence dated after his verdict, which it names.
 - **The report proposes; it files nothing and changes no ticket.** What max rules on a finding, in a session, becomes tickets there.
 
 ## max's verdicts
 
-A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`: the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
+A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`, which commits that file alone and leaves whatever else is staged there. Leave the page; the next run rebuilds it.
 
-Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts and wait for it to end, then write them into the report as it stands.
+Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts until it ends, then write them into the report as it then stands.
 
 - **Dismissed**: the finding leaves Findings, or the candidate Candidates, for a line under Dismissed.
 - **Amended**: the finding is rewritten as he said, and its History gains `amended by max <date>: "<his words>"`.
@@ -33,7 +33,7 @@ The page saves each comment max types on an entry beside it, in `retro/report.ht
 
 ## The weighing
 
-What orders the findings and decides what a run reports, loosely, on four things together:
+It orders the findings and decides what a run reports, loosely, on four things together:
 
 1. **What the friction costs**: time and energy, max's first.
 2. **What preventing it costs to keep**: code, prose and workflow machinery carry upkeep for as long as they live; a one-time cost amortizes.
@@ -46,10 +46,10 @@ A candidate is weighed the same way; its **Weighing**, or an architecture candid
 
 ### What is already written
 
-Before a finding or candidate enters the report, look for the guidance that already covers its case: a skill, an `AGENTS.md` or `CLAUDE.md`, a doc or a rule the agent reads, in the repos and skills the run can read. What is there decides:
+Before a finding or candidate enters the report, look in the repos and skills the run can read for guidance that already covers its case: a skill, an `AGENTS.md` or `CLAUDE.md`, a doc or a rule the agent reads. What is there decides:
 
 - **Guidance that covers the case clearly, where the agent reads it as it acts**, makes it an execution problem. Seen once, it proposes nothing, and goes under Watched as one line. Once it recurs (a Watched line seen again, or the same miss in two sessions), or once it costs max significant time, attention or tokens, it is a finding, and its proposal moves the guidance up a rung of the agents repo's `PRINCIPLES.md` #1, as high as will hold: the code shaped so the mistake cannot be written; then a lint, type, test or script that goes red on it; then a line of a reviewer's checklist. The written line is retired once the mechanism covers it.
-- **Guidance that covers it where the agent does not read it as it acts** (buried in a long file, under a heading about something else, behind a pointer that does not fire) gets a placement fix: the proposal moves the guidance to where the agent acts, and writes no second copy of it.
+- **Guidance that covers it where the agent does not read it as it acts** (buried in a long file, under a heading about something else, behind a pointer that does not fire) gets a placement fix: the proposal moves the guidance to where the agent acts, leaving one copy.
 - **A skill the model invokes itself that held the guidance and did not fire** in the sessions gets a proposal to tune its description, the trigger that decides when it fires.
 
 ## Shape, in this order
