@@ -33,7 +33,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -748,20 +748,30 @@ DAY = timedelta(days=1)
 BRANCHES = itertools.count()
 
 
-@pytest.fixture(autouse=True)
-def utc(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A gated run's days are the host's calendar days; these tests' host keeps UTC's."""
-    monkeypatch.setenv("TZ", "UTC")
+@pytest.fixture
+def east(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """A host ten hours east of UTC, whose day starts at 14:00 UTC: a gated run's days are the
+    host's calendar days. A POSIX zone string, which needs no zone database."""
+    monkeypatch.setenv("TZ", "EAST-10")
+    time.tzset()
+    yield
+    monkeypatch.undo()
     time.tzset()
 
 
-def merge(repo: Path, when: datetime, n: int = 1, trunk: str = "main", commits: int = 1) -> None:
-    """`n` branches of `commits` commits each, every one merged into `trunk` with a merge commit, at `when`."""
+def merge(repo: Path, when: datetime, n: int = 1, trunk: str = "main", commits: int = 1, catch_up: bool = False) -> None:
+    """`n` branches of `commits` commits each, every one merged into `trunk` with a merge commit, at
+    `when`; with `catch_up`, each first merges in a commit landed on the trunk after it branched."""
     for _ in range(n):
         branch = f"work-{next(BRANCHES)}"
         git(repo, "checkout", "-qb", branch, trunk)
         for i in range(commits):
             commit(repo, {f"{branch}-{i}": "1"}, f"{branch}: step {i}", when)
+        if catch_up:
+            git(repo, "checkout", "-q", trunk)
+            commit(repo, {f"{branch}-trunk": "1"}, f"{trunk} moves on", when)
+            git(repo, "checkout", "-q", branch)
+            git(repo, "merge", "-q", "--no-ff", "-m", f"Merge {trunk} into {branch}", trunk, when=when)
         git(repo, "checkout", "-q", trunk)
         git(repo, "merge", "-q", "--no-ff", "-m", f"Merge branch '{branch}'", branch, when=when)
 
@@ -782,7 +792,7 @@ def gated(tmp_path: Path, project: Path, until: datetime, needed: int = 10) -> i
 def test_a_gated_run_waits_for_its_number_of_merges_into_the_trunk_and_a_branchs_commits_count_for_none(
         tmp_path: Path, stub: Path, code: Path) -> None:
     retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
-    merge(code, FIRST + timedelta(hours=1), n=9, commits=3)
+    merge(code, FIRST + timedelta(hours=1), n=9, commits=3, catch_up=True)
     commit(code, {"direct.sh": "1"}, "a commit on the trunk itself", FIRST + timedelta(hours=2))
     git(code, "checkout", "-qb", "unmerged")
     for i in range(12):
@@ -800,17 +810,30 @@ def test_a_gated_run_waits_for_its_number_of_merges_into_the_trunk_and_a_branchs
     assert started.endswith(f"; due: 10 merges into its trunks since {retro_run.stamp(FIRST)}")
 
 
-def test_a_day_with_40_merges_starts_one_run(tmp_path: Path, stub: Path, code: Path) -> None:
+def test_a_day_with_40_merges_starts_one_run(tmp_path: Path, stub: Path, code: Path, east: None) -> None:
     retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
     merge(code, FIRST + timedelta(hours=1), n=20)
     assert gated(tmp_path, code, FIRST + DAY) == 0
     merge(code, FIRST + DAY + timedelta(hours=1), n=20)
 
-    assert gated(tmp_path, code, FIRST + DAY + timedelta(hours=20)) == retro_run.SKIPPED
+    assert gated(tmp_path, code, FIRST + DAY + timedelta(hours=11)) == retro_run.SKIPPED, \
+        "13:00 UTC is the same host day as 02:00 UTC, 12:00 and 23:00 there"
     assert last_logged(tmp_path, "dotfiles") == (
         f"skipped: due (20 merges into its trunks since {retro_run.stamp(FIRST + DAY)}), "
         f"but 1 run started today, the most it takes")
-    assert gated(tmp_path, code, FIRST + 2 * DAY) == 0
+    assert gated(tmp_path, code, FIRST + DAY + timedelta(hours=13)) == 0, \
+        "15:00 UTC is the next host day, though the same UTC day"
+
+
+def test_a_run_log_line_that_runs_over_several_lines_holds_no_later_check_up(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    merge(code, SINCE + DAY)
+    log = tmp_path / "data/dotfiles/runs.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("2026-10-01T00:00:00Z 2026-10-01T000000Z failed: collect: git log exited 128: fatal: x\n"
+                   "hint:\n\nhint: see git help\n")
+
+    assert gated(tmp_path, code, FIRST, needed=1) == 0
 
 
 def test_no_more_than_three_gated_runs_start_in_any_seven_days(tmp_path: Path, stub: Path, code: Path) -> None:
@@ -858,16 +881,43 @@ def test_a_gated_repo_retro_counts_the_merges_into_the_trunk_of_every_repo_its_t
     assert gated(tmp_path, code, FIRST + 2 * DAY) == 0
 
 
-def test_a_gated_workflow_retro_counts_the_merges_into_the_agents_repos_trunk(
-        tmp_path: Path, stub: Path, repo: Path) -> None:
+def test_a_gated_workflow_retro_counts_the_merges_into_the_agents_repos_trunk_alone(
+        tmp_path: Path, stub: Path, repo: Path, code: Path) -> None:
+    """The repos `retro/repos` lists are read for their git, and their merges count for none."""
+    (repo / "agent/retro/repos").write_text(f"{repo}\n{code}\n")
+    merge(code, SINCE + DAY, n=5)
     trunk = git(repo, "branch", "--show-current").strip()
-    merge(repo, SINCE + DAY, n=3, trunk=trunk)
-    git(repo, "checkout", "-q", trunk)
+    merge(repo, SINCE + DAY, n=2, trunk=trunk)
+    with pytest.raises(SystemExit):
+        retro_run.run_retro(repo, tmp_path / "data", [], SINCE, until=FIRST - DAY, after_merges=3)
+    assert last_logged(tmp_path).startswith("skipped: 2 of 3 merges")
 
+    merge(repo, SINCE + DAY, trunk=trunk)
     retro_run.run_retro(repo, tmp_path / "data", [], SINCE, until=FIRST, after_merges=3)
 
     assert last_started(tmp_path, "agents").endswith(f"; due: 3 merges into its trunks since {retro_run.stamp(SINCE)}")
     assert last_logged(tmp_path).startswith("committed ")
+
+
+def test_a_merge_that_landed_at_origin_alone_counts_and_origin_head_names_the_trunk(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    """A pull request's merge is at origin until max pulls; a trunk that is neither main nor master
+    is the one origin/HEAD names."""
+    git(code, "branch", "-qm", "main", "trunk")
+    origin, other = tmp_path / "origin.git", tmp_path / "other"
+    git(tmp_path, "clone", "-q", "--bare", str(code), str(origin))
+    git(code, "remote", "add", "origin", str(origin))
+    git(code, "fetch", "-q", "origin")
+    git(code, "remote", "set-head", "origin", "trunk")
+    git(tmp_path, "clone", "-q", str(origin), str(other))
+    merge(code, SINCE + DAY, trunk="trunk")
+    merge(other, SINCE + DAY, trunk="trunk")
+    git(other, "push", "-q", "origin", "trunk")
+    git(code, "fetch", "-q", "origin")
+
+    assert gated(tmp_path, code, FIRST, needed=2) == 0
+    assert last_started(tmp_path, "dotfiles").endswith(
+        f"; due: 2 merges into its trunks since {retro_run.stamp(FIRST - timedelta(weeks=8))}"), "its first run's period"
 
 
 def test_a_gated_run_on_a_repo_with_no_trunk_fails_naming_it(tmp_path: Path, stub: Path, code: Path) -> None:

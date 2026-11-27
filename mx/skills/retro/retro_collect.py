@@ -366,7 +366,6 @@ class Digest:
     interactive: bool
     messages: int
     text: str
-    said_last: str = ""  # when max's last message in it was sent, "" when none was
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
@@ -433,7 +432,7 @@ class _Inline:
         return map(f, *items)
 
 
-CACHE_FORMAT = 9  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 10  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -482,7 +481,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     versions: dict[str, dict[str, list[str]]] = {}
     models: dict[str, dict[str, list[str]]] = {}
     messages = 0
-    said_last: datetime | None = None
     paths: dict[str, set[str]] = {}
 
     def put(at: datetime | None, text: str) -> None:
@@ -531,7 +529,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                 put(at, f"! HOOK → agent: {flatten(a.get('content'))}")
             elif a.get("type") == "queued_command" and a.get("commandMode", "prompt") == "prompt" and (t := said(a.get("prompt"))):
                 messages += 1
-                said_last = at or said_last
                 put(at, f"MAX (queued while the agent worked): {t}")
         elif kind == "user" and session_page.prompted(e):
             content = e.get("message", {}).get("content")
@@ -556,7 +553,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
             if not (t := said(content)):
                 continue
             messages += 1
-            said_last = at or said_last
             tag = "MAX"
             if parent := e.get("parentUuid"):
                 parents[parent] += 1
@@ -577,7 +573,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     text = "\n".join(head + lines + page) + "\n" if interactive else ""  # only interactive sessions are read
     starts = list(itertools.accumulate((len(line) + 1 for line in lines), initial=len("\n".join(head)) + 1))
     return Digest(sid=transcript.stem, profile=profile, cwd=cwd, start=start, end=end, interactive=interactive,
-                  messages=messages, text=text, said_last=stamp(said_last) if said_last else "",
+                  messages=messages, text=text,
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
                   page_at=starts[-1] - 1 if interactive else 0,
                   paths={day: sorted(named) for day, named in paths.items()} if interactive else {})

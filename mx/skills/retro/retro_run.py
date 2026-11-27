@@ -42,10 +42,11 @@ it owes, exits 1, and its last line in the log says why. A run stopped by TERM, 
 stage it is in, and whatever that stage started, before it exits; one stopped during the commit lets the
 commit finish. On Linux, a run killed outright takes its stage down with it.
 
-A new run given --after-merges N first checks whether it is due: when the trunks of its repos took
-N merges since the period's start, or BACKSTOP has passed since it and one of its repos has a
-commit on any branch since. A run that is due is still held to CAPS, counted from the runs its
-log says started. One not due, or held, logs why it skipped and exits 3, having run no stage.
+A new run given --after-merges N first checks whether it is due: when the trunks of the repos whose
+code its lens pass reads took N merges since the period's start, or {backstop} days have passed
+since it and one of its repos has a commit on any branch since. A run that is due is still held
+once {caps} started, counted from the runs its log names, today included, in the host's calendar
+days. One not due, or held, logs why it skipped and exits 3, having run no stage.
 
 A run that ended without its commit, once collect had finished, is resumed with --resume and its
 directory: it keeps the run's repo, period, focus and seed, picks up at the first stage that left
@@ -91,6 +92,8 @@ EFFORT = "high"
 SKIPPED = 3  # the exit status of an --after-merges run that was not due, or was held
 BACKSTOP = timedelta(days=14)  # a gated run with any commit since the period's start is due this long after it
 CAPS = ((1, 1), (3, 7))  # (runs, days): a gated run is held once this many started in the last this many days, today included
+RUN_NAME = "%Y-%m-%dT%H%M%SZ"  # a run's directory and its name in the log: the end of its period, in UTC
+STARTED = re.compile(r"\S+ (\S+) started: ")  # a log line saying a run started, its run's name captured
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_WEEKS = 8  # how far back a repo retro's first run reads, given no --since; --first-weeks overrides it
@@ -202,9 +205,8 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         retro_collect.refuse_unless_git(repos)
         due = ""
         if after_merges and not resume:
-            merged = retro_collect.merges(repos, since, trunks)
-            due, held = gate(after_merges, merged, since, until, started(log.path),
-                             retro_collect.latest_commit(repos, since) if merged < after_merges else "")
+            due, held = gate(after_merges, retro_collect.merges(code, since, trunks), since, until,
+                             started(log.path), retro_collect.latest_commit(repos, since))
             if held:
                 log(f"skipped: {held}")
                 sys.exit(SKIPPED)
@@ -289,11 +291,12 @@ def gate(needed: int, merged: int, since: datetime, now: datetime, starts: list[
 
 def started(log: Path) -> list[datetime]:
     """When each run the log names started, by its run's name: the end of its period, which is
-    the moment a new run began."""
+    the moment a new run began. A message can run over several lines, a git command's error
+    among them, and only a line that starts as one of the log's own is read."""
     if not log.is_file():
         return []
-    lines = (line.split(" ", 2) for line in log.read_text().splitlines())
-    return [datetime.strptime(run, RUN_NAME).replace(tzinfo=UTC) for _, run, said in lines if said.startswith("started:")]
+    return [datetime.strptime(m[1], RUN_NAME).replace(tzinfo=UTC) for line in log.read_text().splitlines()
+            if (m := STARTED.match(line))]
 
 
 def failure(e: Exception) -> str:
@@ -345,9 +348,6 @@ def main_checkout(agent: Path) -> Path:
         sys.exit(f"{agent} is no agent repo with a main checkout, a git repo of its own, which a retro's report is "
                  f"committed in; /mx:project-setup makes one")
     return common.parent
-
-
-RUN_NAME = "%Y-%m-%dT%H%M%SZ"
 
 
 def dirname(until: datetime) -> str:
@@ -645,7 +645,7 @@ class Args:
     projects: list[Path] = field(default_factory=retro_collect.profiles)
     """Each Claude Code profile's directory of transcripts, whose sessions the workflow retro reads every one of and a repo retro those worked in its repos; by default every `~/.claude*/projects`."""
     after_merges: int = 0
-    """Skip the run, exiting 3, unless it is due and not held: due once the trunks of its repos took this many merges since the period's start, or BACKSTOP after it with a commit in its repos since; held once CAPS's runs started (both in this file). 0 runs it regardless."""
+    """Skip the run, exiting 3, unless it is due and not held, as above; due once its trunks took this many merges since the period's start. 0 runs it regardless."""
     resume: Path | None = None
     """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
     model: str = ""
@@ -655,6 +655,7 @@ class Args:
 
 
 if __name__ == "__main__":
-    args = tyro.cli(Args, description=__doc__)
+    caps = " or ".join(f"{n} run{'s' * (n > 1)} in {'a day' if days == 1 else f'{days} days'}" for n, days in CAPS)
+    args = tyro.cli(Args, description=__doc__.format(backstop=BACKSTOP.days, caps=caps))
     run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed,
               resume=args.resume, after_merges=args.after_merges, model=args.model, effort=args.effort, first_weeks=args.first_weeks)
