@@ -52,14 +52,14 @@ Projects with an `agent/` directory use the mx workflow plugin. Its artefacts li
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
 
-The next answer to an intent is the cheapest artefact max can judge, picked again whenever a build misses or a new question appears.
-While the intent is too unclear to write down what to build, grill it (`/mx:grilling`); while several sensible shapes are left, prototype them or draw them side by side (`/mx:prototype`); once one is left, build it.
-Where you cannot tell one sensible shape from fog, build, and open the brief with the call you doubt.
+If an intent is too unclear to write down what to build, grill it (`/mx:grilling`); if several sensible shapes are left, prototype them or draw them side by side (`/mx:prototype`); if one is left, build it.
+When unsure which of the three it is, build, and open the brief with the call you doubt: max judges best in front of the concrete thing, and tokens are cheap.
+A build that misses, or a new question, routes the intent again.
 
 Work that needs writing down for a worker to build it without this conversation is filed as a ticket and dispatched at once (`/mx:tracker`, `/mx:dispatch`).
 Work small enough to make with max in the session (a keybinding, a version bump, a rename) is session work, reviewed (`/mx:code-review`) before he sees it where it needed judgment.
 
-A build never waits for max to ratify a call: he judges a call best in front of the concrete thing, and tokens are cheap.
+A build never waits for max to ratify a call.
 A call he has not made stays marked in its ticket, and the landing shows him the calls that are his: what was built, why, and what the sensible alternatives were.
 Max rules only at a grilling round's open questions, the calls a landing shows, QA, and the board's needs-me group.
 
