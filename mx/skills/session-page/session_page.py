@@ -805,8 +805,6 @@ def read_record(path: Path, allowed: set[str], sections: set[str]) -> tuple[dict
 
 def read_frontmatter(path: Path, required: set[str], allowed: set[str]) -> tuple[dict, str, int]:
     """A record's frontmatter as data, the text after it, and the line that text starts on."""
-    if not path.is_file():
-        raise RecordError(path, None, "no such file")
     text = path.read_text()
     m = re.match(r"---\n(.*?\n)?---\n", text, re.S)
     if not m:
@@ -846,8 +844,6 @@ def split_sections(path: Path, body: str, offset: int, allowed: set[str]) -> tup
         if heading and heading.group(1) == "#":
             if h1 is not None:
                 raise RecordError(path, n, "a second H1; a record has one H1, its headline")
-            if current is not None:
-                raise RecordError(path, n, "the H1 comes before the first section")
             h1 = heading.group(2)
         elif heading:
             name = heading.group(2)
@@ -2046,11 +2042,8 @@ def ticket_question_anchor(c: TicketQuestion) -> str:
 
 
 def ticket_link(c: TicketQuestion, opens: bool = False) -> str:
-    """The question's handle, a link to its ticket with the question as its hover preview; the
-    handle alone where the ticket holds the question no longer. On a card, `opens` makes it the
-    link o opens."""
-    if c.named is None:
-        return esc(c.handle)
+    """The question's handle, a link to its ticket with the question as its hover preview. On a
+    card, `opens` makes it the link o opens."""
     link = qualified_link(esc(c.handle), ticket_path(c.ticket), c.named.preview)
     return link.replace('class="', 'class="open ', 1) if opens else link
 
@@ -2549,11 +2542,8 @@ def path_target(text: str) -> str | None:
     path = re.sub(r":\d+(?::\d+)?$", "", text.strip())
     if root is None or re.search(r"\s", path) or not ("/" in path or Path(path).suffix):
         return None
-    try:
-        found = local_file(path, root).exists()
-    except OSError:  # a name too long for the filesystem
-        return None
-    return href(path) if found else None
+    # os.path.exists: Path.exists raises on a name too long for the filesystem up to Python 3.13
+    return href(path) if os.path.exists(local_file(path, root)) else None
 
 
 def esc(s: str) -> str:

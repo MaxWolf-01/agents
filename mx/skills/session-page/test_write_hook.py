@@ -360,7 +360,7 @@ def test_a_turn_record_pointing_at_another_part_of_the_page_in_words_goes_back_u
     assert not LISTS_A_QUESTION.search(said.splitlines()[-1]), "the hook's message names the questions"
 
     monkeypatch.setattr(turn_review, "review", reviewer())
-    record.write_text(text + "\n\nThe four ways out are in [turn 03](#t03); `see below` is code.\n")
+    record.write_text(text + "\n\nThe four ways out are in [turn 03](#t03); `see below` is code.\n\n```\nsee below\n```\n")
     assert run(wrote(record, writing, "Edit")) == ""
 
 
@@ -498,11 +498,12 @@ def test_a_ticket_question_written_like_the_sessions_own_goes_back_saying_it_liv
 
 def test_a_write_that_is_no_record_of_this_session_is_let_through(
     worked_example: Path, writing: Path, tmp_path: Path, run: Callable[[dict], str],
-    monkeypatch: pytest.MonkeyPatch, attended: Path,
+    monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
     """The hook runs on every file edit of every session: a file elsewhere in the project, a record
     of another session, or a file in this session's directory that is no record of it, is no
-    business of this one, broken records or not."""
+    business of this one, broken records or not; nor is a file whose path carries the id of a session
+    that has no directory and works in no project, such as one in its scratchpad."""
     (worked_example / "turns" / "04.md").write_text("no frontmatter\n")
     monkeypatch.setattr(turn_review, "review", unreachable)
     code = project_of(worked_example) / "src" / "ledger.py"
@@ -517,6 +518,12 @@ def test_a_write_that_is_no_record_of_this_session_is_let_through(
     for path in (code, other, inside):
         assert run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(path)}}) == ""
     assert [entry["why"] for entry in logged(attended, "verb")] == ["no record of this session"], "only the path in its directory is read past the path"
+    loose = "0f0e0d0c-0000-0000-0000-000000000000"  # a session with no directory
+    scratch = tmp_path_factory.mktemp("loose") / loose / "scratchpad" / "notes.md"
+    scratch.parent.mkdir(parents=True)
+    scratch.write_text("")
+    outside = wrote(worked_example / "turns" / "04.md", writing) | {"session_id": loose, "cwd": str(scratch.parent)}
+    assert run(outside | {"tool_input": {"file_path": str(scratch)}}) == ""
 
 
 # What a session writes first in each place: a turn record, and the session record.
@@ -620,6 +627,17 @@ def test_a_reviewer_run_that_fails_is_still_one_line_in_the_run_log_and_the_reco
     assert (line["site"], line["exit"], line["end"]) == ("turn-review", 1, "no result")
     (entry,) = logged(attended, "decision")
     assert (entry["decision"], entry["why"]) == ("failed", "claude exited 1: API Error: overloaded")
+
+
+def test_a_reviewer_run_that_answers_with_no_findings_lets_the_record_through_and_logs_what_it_said(
+    worked_example: Path, writing: Path, monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path: Path,
+) -> None:
+    """A claude that exits 0 with a result holding no structured findings is a review that failed:
+    the record goes through, and the log quotes what the reviewer printed."""
+    fake_claude(tmp_path, monkeypatch, RESULT | {"result": "I cannot review this."})
+    assert decide(wrote(worked_example / "turns" / "04.md", writing), worked_example).verb == "allow"
+    (entry,) = logged(attended, "decision")
+    assert entry["decision"] == "failed" and "I cannot review this." in entry["why"]
 
 
 def test_a_reviewer_past_its_limit_is_ended_with_its_line_written_and_the_record_goes_through(

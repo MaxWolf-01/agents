@@ -2391,8 +2391,6 @@ class Tracker:
         if not removed:
             return None
         before = tried(Path(top), "show", f"{removed}^:{name}")
-        if before.returncode != 0:
-            return None
         ticket = read(self.root / f"{slug}.md", before.stdout)
         return ticket if ticket.status == "done" else None
 

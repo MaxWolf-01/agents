@@ -122,13 +122,20 @@ def test_the_last_assistant_message_is_found_behind_a_line_longer_than_the_read_
     assert "stands at 550k" in context(hook(tmp_path, "checkpoint", event(transcript)))
 
 
-def test_an_assistant_line_cut_by_a_read_block_boundary_is_read_whole(tmp_path: Path) -> None:
+# Where in the assistant line the block boundary falls, as how much of the line the last block
+# holds: its second half, or all but its first characters, which holds its "assistant" too.
+CUTS = {"mid-line": lambda line: len(line) // 2, "just past its start": lambda line: len(line) - 5}
+
+
+@pytest.mark.parametrize("cut", CUTS.values(), ids=CUTS)
+def test_an_assistant_line_cut_by_a_read_block_boundary_is_read_whole(tmp_path: Path, cut) -> None:
     """The file is read from its end in 64 KiB blocks; the line a block boundary falls inside is
     completed by the next block, not dropped."""
     block = 64 * 1024
     assistant = turn("assistant", cache_read_input_tokens=550_000)
-    trailer = json.dumps({"type": "system", "content": "z" * (block - len(assistant) // 2 - 40)}) + "\n"
-    trailer = trailer + "\n" * (block - len(assistant) // 2 - len(trailer))  # the boundary lands mid-line
+    held = cut(assistant)
+    trailer = json.dumps({"type": "system", "content": "z" * (block - held - 40)}) + "\n"
+    trailer = trailer + "\n" * (block - held - len(trailer))  # the boundary lands inside the line
     transcript = tmp_path / "s1.jsonl"
     transcript.write_text(turn("user") + assistant + trailer)
     size = transcript.stat().st_size
@@ -262,6 +269,8 @@ def test_a_clear_with_no_handoff_or_no_record_hands_the_fresh_session_nothing(tm
     repo = project(tmp_path)
     handoff(repo, "2026-09-26-other.md", "someone-else")
     handoff(repo, "2026-09-27-flaky-e2e.md", "old-1", purpose="fork")
+    # no frontmatter, so the session it names in its text is no claim to have written it
+    (repo / "agent" / "handoffs" / "notes.md").write_text("Notes on old-1.\nsession: old-1\npurpose: continuation\n")
     assert context(hook(tmp_path, "started", {"session_id": "new-1", "source": "clear", "cwd": str(repo)}, "4242")) == "", "no record"
     hook(tmp_path, "ended", {"session_id": "old-1", "reason": "clear"}, "4242")
     assert context(hook(tmp_path, "started", {"session_id": "new-1", "source": "clear", "cwd": str(repo)}, "4242")) == "", "only a fork of that session"

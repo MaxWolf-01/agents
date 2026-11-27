@@ -36,8 +36,9 @@ PAIRS = {
 
 
 def render(tmp_path: Path, data: object) -> subprocess.CompletedProcess:
+    """`data` written as JSON, or as it is where it is a string."""
     pairs = tmp_path / "blind-q4.json"
-    pairs.write_text(json.dumps(data))
+    pairs.write_text(data if isinstance(data, str) else json.dumps(data))
     return subprocess.run([str(SCRIPT), str(pairs), "--session", "0123456789abcdef"],
                           capture_output=True, text=True, timeout=120)
 
@@ -51,12 +52,27 @@ def test_a_pairs_file_renders_beside_itself_under_its_own_name(tmp_path: Path) -
     assert (tmp_path / "index.html").read_text() == "the ticket's own page"
 
 
-def test_a_malformed_pairs_file_is_refused_with_every_problem(tmp_path: Path) -> None:
-    bad = PAIRS | {"options": {"a": "x", "c": "y"}, "pick": "c", "pairs": [{"a": "only one side"}]}
+# Each defect the docstring names, and the words the refusal names it by: the broken field's own
+# name where there is one, and the file's where it is no JSON to read fields from.
+MALFORMED = {
+    "sides other than a and b, a pick that is no side, a pair lacking a side": (
+        PAIRS | {"options": {"a": "x", "c": "y"}, "pick": "c", "pairs": [{"a": "only one side"}]},
+        ["options holds exactly a and b", "pick is a or b, or left out", "pair 1 lacks a or b"]),
+    "a pick without its why": ({k: v for k, v in PAIRS.items() if k != "why"}, ["why"]),
+    "no pairs at all": (PAIRS | {"pairs": []}, ["pairs"]),
+    "a missing field": ({k: v for k, v in PAIRS.items() if k != "title"}, ["title"]),
+    "no JSON object": ([PAIRS], ["object"]),
+    "no JSON at all": ('{"question": "Q4",', ["blind-q4.json"]),
+}
+
+
+@pytest.mark.parametrize("bad, problems", MALFORMED.values(), ids=MALFORMED)
+def test_a_malformed_pairs_file_is_refused_with_every_problem(tmp_path: Path, bad: object, problems: list[str]) -> None:
     done = render(tmp_path, bad)
-    assert done.returncode == 1
-    for problem in ("options holds exactly a and b", "pick is a or b, or left out", "pair 1 lacks a or b"):
-        assert problem in done.stderr
+    assert done.returncode == 1 and "Traceback" not in done.stderr, "a refusal, not a crash"
+    said = done.stderr.replace(str(tmp_path), "")  # the scratch directory's name holds the test's words
+    for problem in problems:
+        assert problem in said
     assert not (tmp_path / "blind-q4.html").exists()
 
 

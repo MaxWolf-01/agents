@@ -32,6 +32,7 @@ import base64
 import json
 import os
 import sys
+from collections.abc import Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # preview.py, beside this file
 
@@ -185,7 +186,7 @@ def band_lines(band: dict) -> list[list[float]]:
     return [[l, t, x, b] for x in band["bounds"]]
 
 
-def measure(html_path: str, *, width: int = 680, scheme: str = "light") -> dict:
+def measure(html_path: str, *, width: int = 680, scheme: str = "light") -> dict:  # pragma: no cover: drives Chromium, which test_struktogramm.py's full-path checks run
     from playwright.sync_api import sync_playwright
 
     from preview import find_browser
@@ -295,7 +296,8 @@ def _largest_hole(area: list[float], covers: list[list[float]]):
     return best
 
 
-def main() -> int:
+def main(measure: Callable[..., dict] = measure) -> int:
+    """The command line, measuring the page with `measure`."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("html", help="rendered HTML file to measure")
     ap.add_argument("--width", type=int, default=680, help="viewport width in CSS pixels")
@@ -305,7 +307,7 @@ def main() -> int:
 
     try:
         geo = measure(a.html, width=a.width, scheme=a.scheme)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover: test_checker_without_playwright_says_the_layout_is_unverified holds it, under python -I -S, which no coverage hook enters
         print(f"could not measure: {type(exc).__name__}: {exc}", file=sys.stderr)
         print("layout is UNVERIFIED: do not claim it is correct", file=sys.stderr)
         return 2
@@ -321,5 +323,5 @@ def main() -> int:
     return 1 if found else 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover: test_struktogramm.py runs it as a script only under python -I -S, which no coverage hook enters, and in its full-path checks
     sys.exit(main())

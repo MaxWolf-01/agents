@@ -5,7 +5,7 @@ HOOKS := mx/hooks/hooks.json
 # skipped (mx/hooks/plugin_updates.py).
 CHANGELOG := mx/CHANGELOG.md
 
-.PHONY: check test test-all test-full-path version release-patch release-minor release-major
+.PHONY: check test test-all test-full-path coverage version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
@@ -29,7 +29,8 @@ JOBS ?= $(shell taskset -c "$$(cat /sys/devices/cpu_core/cpus 2>/dev/null)" npro
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
 # nice: a run fills every thread it is given, and whatever else the machine is doing should go first.
-UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 nice -n 10 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with 'markdown-it-py[linkify]' pytest -p no:cacheprovider
+UV_RUN = PYTHONDONTWRITEBYTECODE=1 nice -n 10 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with 'markdown-it-py[linkify]'
+UV_PYTEST = $(UV_RUN) pytest -p no:cacheprovider
 PYTEST = $(UV_PYTEST) -n $(JOBS)
 # The full-path checks test-full-path runs: every one, or those in the test files TESTS names on
 # the command line. Never read from the environment, so an exported TESTS cannot narrow a release.
@@ -59,6 +60,15 @@ test-all: $(EXTENSION)/node_modules
 	$(PYTEST) -m 'not full_path' mx/
 	cd $(EXTENSION) && npm run -s typecheck
 	node --test "$(EXTENSION)/tests/**/*.test.ts"
+
+# The fast suite's line coverage of mx's Python, against .coveragerc. The scripts the tests start run in environments
+# `uv run --script` builds, which hold no coverage, so PYTHONPATH carries tools/coverage/sitecustomize.py and a directory
+# holding coverage alone into them.
+coverage:
+	@rm -f .coverage .coverage.*; only=$$(mktemp -d) && trap 'rm -r "$$only"' EXIT && \
+	ln -s "$$($(UV_RUN) --with pytest-cov python -c 'import coverage, os; print(os.path.dirname(coverage.__file__))')" "$$only/coverage" && \
+	COVERAGE_FILE=$(CURDIR)/.coverage PYTHONPATH=$(CURDIR)/tools/coverage:$$only $(UV_RUN) --with pytest-cov pytest -p no:cacheprovider -n $(JOBS) \
+	  -q -m 'not full_path' --cov --cov-report=term mx/
 
 # A .ts file in TESTS is one of the extension's full-path checks, which node runs; the rest go to pytest.
 test-full-path: $(EXTENSION)/node_modules

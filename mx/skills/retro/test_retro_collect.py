@@ -12,6 +12,7 @@ import json
 import os
 import random
 import re
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -69,7 +70,9 @@ def test_a_digest_keeps_maxs_messages_verbatim_and_no_tool_output(tmp_path: Path
          .calls("Bash", {"command": "pytest -x"}, long_error, error=True)
          .calls("Bash", {"command": "rm x"}, "rm: cannot remove 'x': Permission denied", error=True)
          .calls("Bash", {"command": "rm -rf build"}, "Permission to use Bash has been denied.", error=True, denial="user-rejected")
-         .says(f"look at this <pasted_content id=\"1\">{pasted}</pasted_content> please"))
+         .calls("mcp__browser__screenshot", {}, [{"type": "text", "text": "the page did not load"}, {"type": "image"}], error=True)
+         .says(f"look at this <pasted_content id=\"1\">{pasted}</pasted_content> please")
+         .says('and this <pasted_content id="2">a short traceback</pasted_content> too'))
 
     digest = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
 
@@ -81,6 +84,8 @@ def test_a_digest_keeps_maxs_messages_verbatim_and_no_tool_output(tmp_path: Path
     assert "! DENIED Bash" in digest and "Permission to use Bash has been denied." in digest
     assert "! ERROR Bash: rm: cannot remove 'x': Permission denied" in digest
     assert "look at this line of a log" in digest and "chars clipped" in digest and pasted.strip() not in digest
+    assert "MAX: and this a short traceback too" in digest
+    assert "! ERROR mcp__browser__screenshot: the page did not load" in digest
     assert "TOOL-OUTPUT-MARKER" not in digest
 
 
@@ -118,6 +123,10 @@ def test_a_digest_marks_what_max_did_to_a_turn_and_what_the_harness_did_to_it(tm
     t.add({"type": "system", "subtype": "api_error", "error": "overloaded"})
     t.add({"type": "system", "subtype": "compact_boundary"})
     t.add({"type": "system", "subtype": "turn_duration", "durationMs": 252_000})
+    # Another session's message, in the shape Claude Code 2.1.331 writes it: a meta line with an origin.
+    t.add({"type": "user", "isMeta": True, "origin": {"kind": "peer", "name": "hypervisor"},
+           "message": {"role": "user", "content": "Another Claude session sent a message:\n"
+                                                  "<cross-session-message from-name=\"hypervisor\">PEER-MARKER</cross-session-message>"}})
 
     digest = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
 
@@ -126,16 +135,21 @@ def test_a_digest_marks_what_max_did_to_a_turn_and_what_the_harness_did_to_it(tm
     for marker in ("MAX INTERRUPTED", "MAX (queued while the agent worked): and the docs", "! HOOK → agent: run make check first",
                    "! STOP HOOK blocked: tests fail", '! API ERROR "overloaded"', "(context compacted)", "(turn took 4m12s)"):
         assert marker in digest, marker
+    assert "PEER-MARKER" not in digest, "another session's message is no message of max's"
+    assert "4 messages of max's" in digest, "hello, build the parser, parse dates too, and the docs"
 
 
 def test_the_period_holds_its_interactive_sessions_alone(tmp_path: Path, projects: Path) -> None:
     mine = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=2)).says("ship it")
     worker = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=2), entrypoint="sdk-cli").says("WORKER")
     before = Transcript(projects, "/home/u/repos/agents", SINCE - timedelta(days=1)).says("last week")
+    untimed = projects / "-home-u-repos-agents" / "0badc0de-untimed.jsonl"  # a session that never got a timed entry
+    untimed.write_text('{"type":"ai-title","aiTitle":"UNTIMED"}\n')
 
     run = collect(tmp_path)
 
     assert {p.stem for p in (run / "sessions").glob("*.md")} == {mine.sid}
+    assert "UNTIMED" not in everything(run)
     assert not any(s in everything(run) for s in ("WORKER", worker.sid, before.sid))
 
 
@@ -223,16 +237,20 @@ def test_a_digested_session_is_read_from_the_cache_until_its_transcript_changes(
     assert "MAX: second" in again and "CACHED-MARKER" not in again
 
 
-def test_a_digest_carries_the_session_pages_turn_records(tmp_path: Path, projects: Path) -> None:
+@pytest.mark.parametrize("found", ["in the agent repo of a repo given", "in the agent repo of the project it worked in"])
+def test_a_digest_carries_the_session_pages_turn_records(tmp_path: Path, projects: Path, found: str) -> None:
     repo = tmp_path / "agents"
     repo.mkdir()
     git(repo, "init", "-q")
-    t = Transcript(projects, str(tmp_path / "gone-worktree"), SINCE + timedelta(days=1)).says("grill me")
+    given = found == "in the agent repo of a repo given"
+    if not given:
+        (repo / "agent" / "tickets").mkdir(parents=True)
+    t = Transcript(projects, str(tmp_path / "gone-worktree" if given else repo), SINCE + timedelta(days=1)).says("grill me")
     turns = repo / "agent" / "sessions" / t.sid / "turns"
     turns.mkdir(parents=True)
     (turns / "01.md").write_text("---\ndate: 2026-10-06\n---\n\n# Round 1: TURN-RECORD-MARKER\n")
 
-    digest = (collect(tmp_path, [repo]) / "sessions" / f"{t.sid}.md").read_text()
+    digest = (collect(tmp_path, [repo] if given else []) / "sessions" / f"{t.sid}.md").read_text()
 
     assert "# Round 1: TURN-RECORD-MARKER" in digest
 
@@ -358,23 +376,32 @@ def test_permissions_hold_each_profiles_rules_and_its_auto_mode_config(tmp_path:
     settings = {"permissions": {"allow": ["Bash(make check)"], "deny": ["AskUserQuestion"]},
                 "autoMode": {"allow": ["Pushing to my own branches"]}, "theme": "dark"}
     (profile / "settings.json").write_text(json.dumps(settings))
+    broken = '{"permissions": {"allow": ["Bash(ls)"]'  # a settings file a hand edit left cut off
+    (profile / "settings.local.json").write_text(broken)
 
     permissions = collect(tmp_path) / "permissions" / "claude"
 
-    assert json.loads((permissions / "rules.json").read_text()) == {
-        "settings.json": {"permissions": settings["permissions"], "autoMode": settings["autoMode"]}}
+    rules = json.loads((permissions / "rules.json").read_text())
+    assert rules["settings.json"] == {"permissions": settings["permissions"], "autoMode": settings["autoMode"]}
+    assert "line 1" in json.dumps(rules["settings.local.json"]), "the file that could not be read is named, with where it broke"
+    assert set(rules) == {"settings.json", "settings.local.json"}
     assert json.loads((permissions / "auto-mode.json").read_text()) == {"profile": str(profile), "args": "auto-mode config"}
 
 
+@pytest.mark.parametrize("why", ["claude fails", "claude cannot be started"])
 def test_an_auto_mode_config_that_could_not_be_read_says_why(
-        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch, why: str) -> None:
     projects.mkdir(parents=True)
-    monkeypatch.setenv("CLAUDE_FAILS", "1")
+    if why == "claude fails":
+        monkeypatch.setenv("CLAUDE_FAILS", "1")
+    else:
+        (tmp_path / "no-claude").mkdir()
+        monkeypatch.setenv("PATH", str(tmp_path / "no-claude"))
 
     permissions = collect(tmp_path) / "permissions" / "claude"
 
     assert not (permissions / "auto-mode.json").exists()
-    assert "not logged in" in (permissions / "auto-mode.failed").read_text()
+    assert ("not logged in" if why == "claude fails" else "No such file") in (permissions / "auto-mode.failed").read_text()
 
 
 def test_the_ticket_lists_name_the_agent_repos_commit_and_the_tickets_proposed_and_in_flight_at_it(tmp_path: Path) -> None:
@@ -400,6 +427,22 @@ def test_the_ticket_lists_name_the_agent_repos_commit_and_the_tickets_proposed_a
     assert head in in_flight
     assert re.findall(r"^- (.+)$", in_flight, re.M) == ["board-link: open", "fast-board: review"]
     assert (run / "in-flight/board-link.md").read_text().startswith(ticket("open"))
+
+
+def test_an_agent_repo_whose_commit_git_cannot_read_fails_the_collect_rather_than_listing_no_tickets(tmp_path: Path) -> None:
+    agent = tmp_path / "agents" / "agent"
+    agent.mkdir(parents=True)
+    git(agent, "init", "-q", "-b", "main")
+    commit(agent, {"tickets/slow-suite.md": ticket("proposed")}, "file a ticket", SINCE)
+    tree = git(agent, "rev-parse", "HEAD^{tree}").strip()
+    (agent / ".git/objects" / tree[:2] / tree[2:]).unlink()  # HEAD still names the commit; its tree is gone
+    run = tmp_path / "data" / "runs" / "1"
+
+    with pytest.raises(subprocess.CalledProcessError, match="grep"):
+        retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
+                                       [], sample_seed=0, agent=agent)
+
+    assert not (run / "proposed.md").exists()
 
 
 def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_path: Path) -> None:

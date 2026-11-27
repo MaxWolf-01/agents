@@ -192,13 +192,28 @@ def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(
     assert (said.written, said.pings) == (now, 4), "a rewritten briefing is one written now"
 
 
+@pytest.mark.parametrize("answer, words", [
+    ("echo '{\"type\": \"result\", \"is_error\": true}'", None),  # an error that gives no words of its own
+    ("echo 'Invalid API key · Please run /login' >&2; exit 1", "Invalid API key"),  # a login that lapsed prints no JSON at all
+])
 def test_a_ping_the_session_does_not_answer_leaves_the_cache_where_it_is(
-    tmp_path: Path, path_with: Callable[..., Path]
+    tmp_path: Path, path_with: Callable[..., Path], answer: str, words: str | None
 ) -> None:
-    path_with("claude", "echo '{\"type\": \"result\", \"is_error\": true}'")
+    path_with("claude", answer)
     cached = Briefing("where things stand", START, "abc-123", START, START, 3)
     assert ping(cached, "new: agent/tickets/a-chore.md", tmp_path, START + timedelta(minutes=20)) is None
     assert briefing.SILENT, "a run that answered nothing said nothing of itself"
+    assert words is None or words in briefing.SILENT, "the page does not say it in the words the run used"
+
+
+def test_a_run_that_cannot_start_writes_no_briefing_and_says_why_in_its_own_words(
+    tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ask`: the board renders without the model, and why it did not answer is the page's to say."""
+    path_with("claude", answered("Two builds wait on your ruling."))
+    monkeypatch.setattr(briefing, "MODEL_RUNS", tmp_path / "no-model-runs")
+    assert briefing.first("where things stand", tmp_path, START) is None
+    assert "No such file or directory" in briefing.SILENT, "the page does not say it in the words the failure used"
 
 
 @pytest.mark.parametrize("run", ["first", "ping"])

@@ -176,13 +176,13 @@ def states(data: dict, refs: Sequence[str]) -> dict[str, str]:
         for key, node in repo.items():
             if key == "nameWithOwner" or not isinstance(node, dict) or not node.get("number"):
                 continue
-            if state := classify(node):
-                found.update(dict.fromkeys(wrote.get(f"{name}#{node['number']}".lower(), []), state))
+            found.update(dict.fromkeys(wrote.get(f"{name}#{node['number']}".lower(), []), classify(node)))
     return found
 
 
-def classify(node: dict) -> str | None:
-    """The state of one issue or pull request, as a key of SAYS.
+def classify(node: dict) -> str:
+    """The state of one issue or pull request, as a key of SAYS. `issueOrPullRequest` answers one
+    of the two, so a node that is no pull request is an issue.
 
     A merged or closed pull request is that whatever else it says; among open ones a draft is a
     draft first, since a review cannot have asked anything of one that is not offered for review.
@@ -194,6 +194,4 @@ def classify(node: dict) -> str | None:
         if node.get("isDraft"):
             return "pr-draft"
         return "pr-changes" if node.get("reviewDecision") == "CHANGES_REQUESTED" else "pr-open"
-    if node.get("__typename") == "Issue":
-        return "issue-closed" if str(node.get("issueState", "")).lower() == "closed" else "issue-open"
-    return None
+    return "issue-closed" if str(node.get("issueState", "")).lower() == "closed" else "issue-open"

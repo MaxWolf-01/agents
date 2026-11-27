@@ -214,8 +214,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         if not (run / "run.json").is_file():
             collect(kind, since, until, run, home, list(projects), repos, code, agent, left_out)
             # What a resumed run keeps; written last, so its presence says collect finished.
-            (run / "run.json").write_text(json.dumps(dict(repo=str(repo), report=str(agent / REPORT_PATH),
-                                                          since=stamp(since), until=stamp(until),
+            (run / "run.json").write_text(json.dumps(dict(repo=str(repo), since=stamp(since), until=stamp(until),
                                                           focus=focus, seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       critique=f"{AUTO_MODE_CRITIQUE} {run}",
@@ -285,8 +284,8 @@ def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path,
 def resumed(run: Path, repo: Path, agent: Path, since: datetime | None, focus: str,
             seed: list[Path]) -> tuple[datetime, datetime, str, list[Path], str | None]:
     """The period, focus, seed and base of the run in `run`, from its `run.json`. Exits when the
-    run was of another repo or for another report, or when the report was committed to since the
-    run began: its stages read the report as it was, and its commit would undo the change."""
+    run was of another repo, or when the report was committed to since the run began: its stages
+    read the report as it was, and its commit would undo the change."""
     if not (run / "run.json").is_file():
         sys.exit(f"{run} holds no run.json: no retro run finished collecting into it; start a new run")
     if since or focus or seed:
@@ -295,8 +294,6 @@ def resumed(run: Path, repo: Path, agent: Path, since: datetime | None, focus: s
     if state.get("repo") != str(repo):
         sys.exit(f"{run} is a run of {state.get('repo', 'a repo its run.json does not name')}, not of {repo}; start a new run")
     report = agent / REPORT_PATH
-    if (was := state.get("report", str(report))) != str(report):
-        sys.exit(f"{run} is a run for {was}, not for {report}; start a new run")
     if blob(agent, REPORT_PATH) != state["base"]:
         sys.exit(f"{report} was committed to since {run.name} began; start a new run, which reads it as it is")
     return (parse_time(state["since"]), parse_time(state["until"]), state["focus"],
@@ -449,7 +446,7 @@ def dies_with(parent: int) -> Callable[[], None]:
     """For a stage's process: TERM when the run's process dies, SIGKILL included, through Linux's
     parent-death signal. `model-runs` ends the model run on TERM, and `timeout`, which it runs the
     model under, passes the signal to every process the model started."""
-    def arm() -> None:
+    def arm() -> None:  # pragma: no cover: runs in the forked stage process before exec, which coverage cannot see; test_a_run_stopped_or_killed_ends_the_stage_it_is_in[killed] holds it
         if LIBC is not None:
             LIBC.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
             if os.getppid() != parent:  # the run died before the signal was armed

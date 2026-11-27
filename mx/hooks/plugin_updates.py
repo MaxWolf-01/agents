@@ -26,7 +26,6 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CHANGELOG = ROOT / "CHANGELOG.md"
 SHOWN = 20  # changelog lines the agent reads at most; the rest stay in CHANGELOG.md
 KEPT = 60 * 86400  # a record of a session that has not run this long is deleted when another session starts
 
@@ -35,11 +34,11 @@ def version_of(text: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", text))
 
 
-def entries(old: str, new: str) -> list[str]:
+def entries(changelog: Path, old: str, new: str) -> list[str]:
     """The CHANGELOG.md sections of the versions after `old`, up to and including `new`, newest first, each under
     its heading. Every installed mx carries the file (`make release-*` writes it), so a missing one is an error."""
     lines, taking = [], False
-    for line in CHANGELOG.read_text().splitlines():
+    for line in changelog.read_text().splitlines():
         if heading := re.match(r"##\s+(\S+)", line):
             taking = version_of(old) < version_of(heading[1]) <= version_of(new)
         if taking and line.strip():
@@ -47,21 +46,21 @@ def entries(old: str, new: str) -> list[str]:
     return lines
 
 
-def told(old: str | None, new: str) -> tuple[str, str]:
+def told(changelog: Path, old: str | None, new: str) -> tuple[str, str]:
     """What the agent and the user read of a move from `old` to `new`."""
     if old is None:
         return (f"mx, the plugin your skills and hooks come from, was updated in this session to {new}. Skills and "
                 "rules you read before this point may be out of date: read a skill again before you rely on it.",
                 f"mx updated to {new}")
-    lines = entries(old, new)
-    more = f"\n... and {len(lines) - SHOWN} more lines in {CHANGELOG}" if len(lines) > SHOWN else ""
+    lines = entries(changelog, old, new)
+    more = f"\n... and {len(lines) - SHOWN} more lines in {changelog}" if len(lines) > SHOWN else ""
     changes = " What changed:\n" + "\n".join(lines[:SHOWN]) + more if lines else ""
     return (f"mx, the plugin your skills and hooks come from, moved from {old} to {new} in this session. Skills and "
             f"rules you read before this point are {old}'s: read a skill again before you rely on it.{changes}",
             f"mx updated from {old} to {new}")
 
 
-def main() -> None:
+def main(root: Path = ROOT) -> None:
     hook = json.load(sys.stdin)
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
     if not data:
@@ -69,7 +68,7 @@ def main() -> None:
     sessions = Path(data) / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     record = sessions / hook["session_id"]
-    now = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+    now = json.loads((root / ".claude-plugin" / "plugin.json").read_text())["version"]
     try:
         before = record.read_text().strip()
     except FileNotFoundError:
@@ -87,7 +86,7 @@ def main() -> None:
         record.touch()  # a record's age is how long its session has not run, which pruning goes by
     if before == now or (before is None and started):
         return
-    agent, user = told(before, now)
+    agent, user = told(root / "CHANGELOG.md", before, now)
     print(json.dumps({"systemMessage": user,
                       "hookSpecificOutput": {"hookEventName": hook["hook_event_name"], "additionalContext": agent}}))
 

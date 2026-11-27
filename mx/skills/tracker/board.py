@@ -1226,8 +1226,6 @@ def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
     titles: dict[str, str] = {}
     cwds: dict[str, None] = {}
     for line in path.read_text(errors="replace").splitlines():
-        if not any(key in line for key in (*TITLES, "cwd")):
-            continue
         try:
             record = json.loads(line)
         except json.JSONDecodeError:  # a line the session was still writing when the board read it
@@ -1579,10 +1577,6 @@ def mark(r: Row, kind: MarkKind) -> Mark:
     found = [m for m in r.marks if m.kind == kind]
     assert found, f"{r.ticket.slug} wears no {kind} mark"
     return found[0]
-
-
-def wears(r: Row, kind: MarkKind) -> bool:
-    return any(m.kind == kind for m in r.marks)
 
 
 def ticket_words(t: Ticket) -> list[str]:

@@ -4,6 +4,7 @@ read as the page reads it. Run: pytest test_live_hook.py"""
 
 import io
 import json
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -108,6 +109,15 @@ def test_calls_nobody_reads_live_are_left_alone(why: str, registry: Path, run: C
     run("UserPromptSubmit", prompt="go", **({"agent_id": "agent-1"} if why == "subagent" else {}))
     assert live(directory) is None
     assert why != "no directory" or not directory.exists()
+
+
+def test_the_hook_as_claude_code_runs_it_starts_the_file_on_a_prompt(directory: Path) -> None:
+    """The script itself, in a process of its own with the event's JSON on stdin, as the plugin's
+    hooks.json has Claude Code run it on each of the four events."""
+    hook = {"session_id": SESSION, "hook_event_name": "UserPromptSubmit", "prompt": "fix the log"}
+    done = subprocess.run([sys.executable, Path(live_hook.__file__)], input=json.dumps(hook), capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert live(directory) == {"prompt": "fix the log", "steps": []}
 
 
 if __name__ == "__main__":

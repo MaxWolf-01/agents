@@ -62,16 +62,27 @@ class Args:
     """Session id to leave out; repeatable."""
 
 
-def extract_text(content):
+def entry_of(line: str) -> dict | None:
+    """A transcript line as an entry whose message is a dict and whose content is a string or a
+    list of dicts, or None for a line that holds no entry."""
+    try:
+        entry = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(entry, dict) or not isinstance(msg := entry.setdefault("message", {}), dict):
+        return None
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        msg["content"] = [p for p in content if isinstance(p, dict)]
+    elif not isinstance(content, str):
+        msg["content"] = ""
+    return entry
+
+
+def extract_text(content: str | list[dict]) -> str:
     if isinstance(content, str):
         return content
-    if isinstance(content, list):
-        parts = []
-        for p in content:
-            if isinstance(p, dict) and p.get("type") == "text":
-                parts.append(p.get("text", ""))
-        return " ".join(parts)
-    return ""
+    return " ".join(p.get("text", "") for p in content if p.get("type") == "text")
 
 
 def extract_tool_signals(content):
@@ -79,8 +90,6 @@ def extract_tool_signals(content):
     if not isinstance(content, list):
         return signals
     for part in content:
-        if not isinstance(part, dict):
-            continue
         if part.get("type") == "tool_use":
             inp = str(part.get("input", ""))
             if "git commit" in inp or "git push" in inp:
@@ -106,19 +115,8 @@ def scan_session(filepath: Path) -> dict | None:
     signals = set()
 
     with open(filepath) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            msg = entry.get("message", {})
-            if not isinstance(msg, dict):
-                continue
-
+        for entry in filter(None, map(entry_of, f)):
+            msg = entry["message"]
             etype = entry.get("type", "")
             role = msg.get("role", "")
             content = msg.get("content", "")
@@ -231,7 +229,7 @@ def main(args: Args) -> None:
     # Top-level files only: subagent transcripts sit in <session-id>/subagents/.
     candidates = [
         f for f in sessions_dir.glob("*.jsonl")
-        if not f.name.endswith(".wakatime") and f.stem not in exclude_ids
+        if f.stem not in exclude_ids
     ]
     candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
 

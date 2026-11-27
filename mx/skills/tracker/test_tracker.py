@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 from hypothesis import HealthCheck, example, given, settings, strategies as st
 
+import in_step
 import tracker as tr
 
 CORPUS = Path(__file__).parent / "corpus"
@@ -194,6 +195,8 @@ def without_tracker(repo: Path) -> Path:
 def test_a_ticket_the_rules_accept_is_refused_nothing(tickets: Path, repo: Path) -> None:
     ticket(tickets, "one-flow")
     assert run(repo, "check", "agent/tickets/one-flow.md") == Run(0, "", "")
+    mistyped = run(repo, "check", "agent/tickets/one-flw.md")
+    assert mistyped.code == 1 and "one-flw.md" in mistyped.err, "a path that is no ticket file is not one refused nothing"
 
 
 @pytest.mark.parametrize("dropped, written, replacement", [
@@ -225,6 +228,16 @@ def test_a_spec_is_refused_as_the_top_level_ticket_it_becomes(tickets: Path, rep
     said = run(repo, "check", "agent/tickets/csv-import/spec.md")
     assert said.code == 1
     assert "becomes a top-level ticket" in said.out
+
+
+def test_a_ticket_staged_in_a_feature_directory_is_refused_at_the_commit(tickets: Path, repo: Path) -> None:
+    """The commit hook reads every ticket file the index holds under the tracker, a directory deep
+    too, and the tracker is flat (SKILL.md): a feature directory is the layout it replaced."""
+    (tickets / "csv-import").mkdir()
+    ticket(tickets / "csv-import", "map-columns")
+    git(repo, "add", "-A")
+    said = run(repo, "check")
+    assert said.code == 1 and "csv-import/map-columns.md:1: " in said.out and "flat" in said.out, said.said
 
 
 def test_a_ruling_with_no_date_is_refused_rather_than_leaving_the_question_open(tickets: Path, repo: Path) -> None:
@@ -311,6 +324,7 @@ def test_a_tag_runs_as_one_sequence_across_the_questions_and_the_closing_comment
     ({"parent": "one-flow"}, "a ticket is not its own parent ticket"),
     ({"gh": "[acme/backend]"}, "a reference is `owner/repo#number`"),
     ({"diff": "[main..feature]"}, "a round lands as `code@<sha>..<sha>`"),
+    ({"reports": "[the-report]"}, "`reports: the-report`"),
 ])
 def test_a_frontmatter_field_no_reader_can_read_is_refused(tickets: Path, repo: Path, written: dict, refused: str) -> None:
     path = ticket(tickets, "one-flow", **written)
@@ -323,6 +337,18 @@ def test_a_file_name_that_is_no_slug_is_refused(tickets: Path, repo: Path) -> No
     named = path.rename(tickets / "One_Flow.md")
     said = run(repo, "check", str(named))
     assert said.code == 1 and "is no slug" in said.out
+    filed = run(repo, "new", "Saved_Views", "--priority", "2", "--size", "S")
+    assert filed.code == 1 and "`Saved_Views` is no slug" in filed.err, filed.said
+    assert not (tickets / "Saved_Views.md").exists()
+
+
+def test_frontmatter_that_is_no_mapping_of_fields_is_refused_at_its_first_line(tickets: Path, repo: Path) -> None:
+    """A ticket's frontmatter declares fields (SKILL.md, The ticket file); a YAML list there is read
+    as no field at all, and refused where it opens."""
+    path = tickets / "one-flow.md"
+    path.write_text("---\n- status open\n- priority 1\n---\n\n# One flow\n\n## Brief\n\nWhat one-flow is, cold.\n")
+    said = run(repo, "check", str(path))
+    assert said.code == 1 and f"{path}:1: " in said.out and "frontmatter" in said.out, said.said
 
 
 def test_a_parent_that_closes_a_cycle_is_refused(tickets: Path, repo: Path) -> None:
@@ -436,6 +462,13 @@ def test_two_properties_sharing_an_id_are_refused_the_way_two_tags_are(tickets: 
     assert f"{path}:{line_of(path, 'A second one')}: property P1 is already taken, on line {line_of(path, 'A preset reads cold')}" in said.out, said.out
 
 
+def test_a_property_with_no_id_is_refused_at_its_line_since_nothing_could_cite_it(tickets: Path, repo: Path) -> None:
+    """A property is `- P<n> <the property>`, cited `<slug>#P<n>` from every descendant (SKILL.md)."""
+    path = ticket(tickets, "one-flow", "## Properties\n\n- P1 A preset reads cold.\n- A preset never flickers.\n")
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert said.code == 1 and f"{path}:{line_of(path, 'never flickers')}: " in said.out and "P<n>" in said.out, said.out
+
+
 def test_the_check_reads_the_staged_text_and_not_the_worktrees(tickets: Path, repo: Path) -> None:
     """What the commit hook has to hold: the commit is made of the index, so that is what is read."""
     path = ticket(tickets, "one-flow", priority=7)
@@ -529,6 +562,7 @@ def test_the_tracker_as_data_carries_every_construct_a_reader_asks_for(tickets: 
 
 - [x] `one-flow#P1` holds.
 - [ ] The rest.
+- A note on the criteria, which is none of them.
 
 ## Questions
 
@@ -661,7 +695,16 @@ def test_a_write_the_rules_refuse_leaves_the_file_as_it_was(tickets: Path, repo:
     assert run(repo, "set", "one-flow", "blocked-by=[nowhere]").code == 1
     assert run(repo, "set", "one-flow", "priority=9").code == 1
     assert run(repo, "set", "one-flow", "kind=build").code == 1
+    appended = run(repo, "set", "one-flow", "priority+=2")
+    assert appended.code == 1 and "`priority`" in appended.err, "priority holds one value, so there is no list to append to"
+    unknown = run(repo, "set", "one-flow", "status=parked")
+    assert unknown.code == 1 and "`status: parked`" in unknown.err, unknown.said
     assert path.read_text() == before
+    bare = tickets / "map-columns.md"
+    bare.write_text("# Map columns\n\n## Brief\n\nNo frontmatter, written by hand.\n")
+    unwritable = run(repo, "set", "map-columns", "priority=2")
+    assert unwritable.code == 1 and "frontmatter" in unwritable.err, unwritable.said
+    assert bare.read_text() == "# Map columns\n\n## Brief\n\nNo frontmatter, written by hand.\n"
 
 
 def test_a_range_is_appended_and_lands_away_from_the_status_line(tickets: Path, repo: Path) -> None:
@@ -1196,24 +1239,33 @@ def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(tmp_path: Path)
     assert "tracker.py" not in {path.name for path in staged}, "the parser travels to the host again"
 
 
+# Each naming, with what its reader is told of a reference that is no slug: a field holds a slug
+# (`parent: <slug>`), so it is told the reference is none; a citation is `<slug>#P<n>`, read as
+# citing the ticket its words before `#` name, so it is told no file holds that ticket.
 DANGLING = [
-    ("parent", lambda slug: {"parent": slug}, ""),
-    ("blocked-by", lambda slug: {"blocked-by": f"[{slug}]"}, ""),
-    ("a property citation", lambda slug: {}, "## Acceptance criteria\n\n- [ ] `{slug}#P1` holds.\n"),
+    ("parent", lambda slug: {"parent": slug}, "", lambda ref: "no slug"),
+    ("blocked-by", lambda slug: {"blocked-by": f"[{slug}]"}, "", lambda ref: "no slug"),
+    ("a property citation", lambda slug: {}, "## Acceptance criteria\n\n- [ ] `{slug}#P1` holds.\n", lambda ref: f"/{ref}.md"),
 ]
 
 
 @given(ref=st.from_regex(r"\A[a-z][a-z-]{2,20}[a-z]\Z"), naming=st.sampled_from(DANGLING))
+# a reference that is no slug at all: two hyphens join no words
+@example(ref="one--flow", naming=DANGLING[0])
+@example(ref="one--flow", naming=DANGLING[1])
+@example(ref="one--flow", naming=DANGLING[2])
 @settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_reference_that_names_no_ticket_or_property_is_refused_with_its_file_and_line(
     tickets: Path, repo: Path, ref: str, naming: tuple
 ) -> None:
-    what, meta, body = naming
+    what, meta, body, told = naming
     ticket(fresh(tickets), "on-the-tracker")
     path = ticket(tickets, "one-flow", body.replace("{slug}", ref), **meta(ref))
     said = run(repo, "check", str(path))
     assert said.code == 1, (what, said.said)
     assert f"{path}:{line_of(path, ref)}: " in said.out, (what, said.out)
+    if "--" in ref:  # the one way the drawn words fail to be a slug: two hyphens join no words
+        assert told(ref) in said.out, (what, said.out)
 
     held = ticket(tickets, "one-flow", body.replace("{slug}", "on-the-tracker"), **meta("on-the-tracker"))
     resolves = run(repo, "check", str(held))
@@ -1519,6 +1571,8 @@ def test_p2_a_landing_on_the_parents_branch_leaves_every_child_in_review(
 
 
 @given(tree=leaves(("open", "claimed", "review", "done")))
+# a done sibling frees the leaf it blocks
+@example(tree=[Leaf("one-flow-0", "done", True), Leaf("one-flow-1", "open", False, ("one-flow-0",))])
 @settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_leaf_builds_on_an_unruled_sibling_only_once_it_is_merged(
     tickets: Path, repo: Path, tree: list[Leaf]
@@ -1624,6 +1678,9 @@ def test_a_new_ticket_cannot_take_a_retired_ones_slug(tickets: Path, repo: Path)
     tickets.mkdir(parents=True, exist_ok=True)  # git takes the emptied directories with the last file
     said = run(repo, "new", "map-columns", "--priority", "2", "--size", "S")
     assert said.code == 1 and "retired ticket's slug" in said.out + said.err, said.said
+    assert run(repo, "get", "map-columns", "status") == Run(0, "done\n", ""), "a retired ticket is read from the commit before its removal"
+    nowhere = run(repo, "get", "parse-rows", "status")
+    assert nowhere.code == 1 and "parse-rows" in nowhere.err and nowhere.out == "", nowhere.said
 
 
 @pytest.mark.parametrize(("count", "subject"), [(3, "retire csv-import, map-columns, one-flow: finished"),
@@ -1722,6 +1779,25 @@ def test_a_ticket_read_by_path_is_read_in_the_tracker_its_directory_holds(corpus
     """A path names a file, and the file names a tracker: the ancestry is read from beside it."""
     read = json.loads(run(corpus, "data", str(tickets / "board-orients-workflow.md")).out)["tickets"][0]
     assert read["ancestors"] == ["board-orients"] and read["parent"] == "board-orients"
+    missing = run(corpus, "data", str(tickets / "board-orients-nowhere.md"))
+    assert missing.code == 1 and "board-orients-nowhere.md" in missing.err and missing.out == "", missing.said
+
+
+def test_a_write_in_a_project_that_is_no_git_checkout_is_refused_by_name(tmp_path: Path) -> None:
+    """Every write is committed, so a project before its `git init` has nowhere to commit one; typed
+    from a directory under the project, as an agent types it."""
+    tickets = tmp_path / "lamp" / "agent" / "tickets"
+    tickets.mkdir(parents=True)
+    (deeper := tmp_path / "lamp" / "agent" / "show").mkdir()
+    said = run(deeper, "new", "one-flow", "--priority", "2", "--size", "S")
+    assert said.code == 1 and str(tickets) in said.err and "git" in said.err, said.said
+
+
+def test_installing_the_hooks_outside_a_git_checkout_is_refused_and_writes_nothing(tmp_path: Path) -> None:
+    """There is no repository for the hooks to go into, and the directory typed in is not one."""
+    said = run(tmp_path, "hook")
+    assert said.code == 1 and "git" in said.err and said.out == "", said.said
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_a_section_keeps_the_code_the_ticket_fenced_in_it(tickets: Path, repo: Path) -> None:
@@ -2197,12 +2273,14 @@ def test_a_ticket_names_its_listed_repos_and_every_read_carries_them(listed: Pat
 
 def test_a_repo_a_ticket_names_that_the_list_does_not_hold_is_refused_at_its_line(listed: Path) -> None:
     tickets = listed / "agent" / "tickets"
-    path = ticket(tickets, "one-flow", repos="[Backend, Helix]")
+    path = ticket(tickets, "one-flow", status="review", repos="[Backend, Helix]")
     said = run(listed, "check", str(path))
     assert said.code == 1 and f"{path}:{line_of(path, 'repos:')}: `repos: Helix` names no repo" in said.out, said.said
     assert "it lists Backend, quartz" in said.out
     before = path.read_text()
     assert run(listed, "set", "one-flow", "repos+=Unity").code == 1
+    done = run(listed, "set", "one-flow", "status=done")
+    assert done.code == 1 and "`Helix`" in done.err, "done reads every repo the ticket names, and Helix is none the list holds"
     assert path.read_text() == before
 
 
@@ -2360,6 +2438,24 @@ def test_p6_a_parent_waits_for_its_branch_in_a_repo_only_its_children_name(liste
     git(backend, "checkout", "-q", "development")
     git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
     assert run(listed, "set", "nps", "status=done").code == 0
+
+
+def test_p6_a_parent_under_a_parent_waits_for_its_branch_to_reach_the_branch_above_it_in_a_listed_repo(listed: Path) -> None:
+    """A parent ticket's accept merges its branch into its own parent's branch (`accepted_into`), so
+    in Backend, where the ticket above it has a branch too, that branch and not the trunk is what
+    `nps` is measured against."""
+    backend, tickets = listed / "Backend", listed / "agent" / "tickets"
+    git(backend, "branch", "survey", "development")
+    git(backend, "checkout", "-q", "-b", "nps", "survey")
+    committed(backend, "nps")
+    git(backend, "checkout", "-q", "survey")
+    ticket(tickets, "survey", status="claimed")
+    in_review(listed, "nps", parent="survey")
+    ticket(tickets, "nps-shape", status="done", parent="nps", repos="[Backend]")
+    said = run(listed, "set", "nps", "status=done")
+    assert said.code == 1 and "nps is not merged into survey in Backend" in said.err, said.said
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps into survey", "nps")
+    assert run(listed, "set", "nps", "status=done").code == 0, "survey reaching the trunk is survey's own accept"
 
 
 def test_a_ticket_branch_in_a_repo_the_ticket_does_not_name_is_not_read(listed: Path) -> None:
@@ -2579,6 +2675,8 @@ def test_a_parents_accept_writes_done_on_it_and_its_children_in_review_in_one_co
     in_review(split, "one-flow")
     in_review(split, "map-columns", parent="one-flow")
     in_review(split, "saved-views", parent="one-flow")
+    said = run(split, "accept", "one-flow")
+    assert said.code == 1 and "no branch one-flow" in said.err, "the children merge into the parent's branch, and there is none yet"
     git(split, "checkout", "-q", "-b", "one-flow")
     committed(split, "the flow")
     for slug in ("map-columns", "saved-views"):
@@ -2777,6 +2875,7 @@ def test_a_ticket_changed_on_both_machines_stops_the_merge_naming_it_and_pushes_
     assert "<<<<<<<" in (pc.tickets / "shared.md").read_text(), "the merge is left stopped at the conflict"
     again = run(pc.code, "sync")
     assert again.code == 1 and "a merge is underway" in again.err, again.said
+    assert run(pc.agent, "sync", "--here") == Run(0, "", ""), "the hook, fired inside it, leaves the saying to git's own output"
     ticket(pc.tickets, "while-merging")
     waits = run(pc.code, "set", "while-merging", "priority=2")
     assert waits.code == 0, "the tracker refuses no write meanwhile"
@@ -2882,6 +2981,82 @@ def test_a_remote_that_refuses_the_push_is_said_and_exits_1(machines: tuple[Mach
     assert said.code == 1 and "refused" in said.err, said.said
 
 
+def test_a_sync_that_cannot_read_where_its_branch_stands_says_so_and_exits_1(machines: tuple[Machine, Machine, Path]) -> None:
+    """Its upstream's tracking branch is gone, so git cannot count what the push would take: the sync
+    says it could not move, naming the checkout, as it says every outcome."""
+    laptop, _, origin = machines
+    before = upstream(origin, "agent")
+    git(laptop.agent, "update-ref", "-d", "refs/remotes/origin/main")
+    said = run(laptop.code, "sync")
+    assert said.code == 1 and str(laptop.agent) in said.err, said.said
+    assert upstream(origin, "agent") == before
+
+
+def test_a_remote_that_stops_answering_after_refusing_the_push_leaves_the_commits_waiting(machines: tuple[Machine, Machine, Path]) -> None:
+    """The push reaches origin and is refused for pc's push, and the fetch that would merge it gets no
+    answer: as for a checkout with no network, the commit waits, and the next sync pushes it."""
+    laptop, pc, origin = machines
+    ticket(pc.tickets, "from-pc")
+    assert commit_with_hooks(pc.agent, "file from-pc").returncode == 0
+    ticket(laptop.tickets, "from-the-laptop")
+    git(laptop.agent, "add", "-A")
+    git(laptop.agent, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "file from-the-laptop")  # no sync of its own yet
+    url = git(laptop.agent, "remote", "get-url", "origin").strip()
+    git(laptop.agent, "remote", "set-url", "origin", str(origin / "unplugged.git"))
+    git(laptop.agent, "remote", "set-url", "--push", "origin", url)
+    said = run(laptop.code, "sync")
+    assert said.code == 0 and said.err, said.said
+    assert upstream(origin, "agent") == tip(pc.agent, "main")
+
+    git(laptop.agent, "remote", "set-url", "origin", url)
+    assert run(laptop.code, "sync").code == 0
+    assert upstream(origin, "agent") == tip(laptop.agent, "main")
+
+
+def test_a_push_that_loses_the_race_every_round_gives_up_for_now_and_exits_1(machines: tuple[Machine, Machine, Path]) -> None:
+    """Three pushes refused because the other checkout pushed first, before the sync gives up for
+    now. The laptop fetches from a copy of origin taken before pc pushed, so every fetch says it is
+    up to date and every push is refused again."""
+    laptop, pc, origin = machines
+    tries = laptop.code / "pushes"
+    hooks = Path(git(laptop.agent, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip())
+    (hooks / "pre-push").write_text(f'#!/bin/sh\necho push >> "{tries}"\n')
+    (hooks / "pre-push").chmod(0o755)
+    stale = origin / "stale.git"
+    git(origin, "clone", "-q", "--bare", str(origin / "agent.git"), str(stale))
+    ticket(pc.tickets, "from-pc")
+    assert commit_with_hooks(pc.agent, "file from-pc").returncode == 0
+    ticket(laptop.tickets, "from-the-laptop")
+    git(laptop.agent, "add", "-A")
+    git(laptop.agent, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "file from-the-laptop")  # no sync of its own yet
+    url = git(laptop.agent, "remote", "get-url", "origin").strip()
+    git(laptop.agent, "remote", "set-url", "origin", str(stale))
+    git(laptop.agent, "remote", "set-url", "--push", "origin", url)
+    said = run(laptop.code, "sync")
+    assert said.code == 1 and "moved on before each of" in said.err, said.said
+    assert tries.read_text().splitlines() == ["push"] * 3, "a push per round, three rounds"
+    assert upstream(origin, "agent") == tip(pc.agent, "main")
+
+
+def test_a_remote_that_answers_nothing_is_given_up_on_and_the_commit_waits(
+        machines: tuple[Machine, Machine, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A captive portal answers nothing rather than refusing (`in_step.NETWORK_SECONDS`): the push is
+    given up on once that long has passed, and the commit waits. The ssh that never answers sleeps
+    well past the second this check allows it; git is killed at the second and the sleep left behind
+    holds nothing the sync waits on."""
+    laptop, _, origin = machines
+    before = upstream(origin, "agent")
+    monkeypatch.setattr(in_step, "NETWORK_SECONDS", 1)
+    git(laptop.agent, "remote", "set-url", "--push", "origin", "ssh://portal.invalid/agent.git")
+    git(laptop.agent, "config", "core.sshCommand", "sleep 5; :")
+    ticket(laptop.tickets, "on-the-train")
+    git(laptop.agent, "add", "-A")
+    git(laptop.agent, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "file on-the-train")
+    said = run(laptop.code, "sync")
+    assert said.code == 0 and "did not answer (no answer in 1s)" in said.err, said.said
+    assert upstream(origin, "agent") == before
+
+
 @pytest.mark.parametrize("branch, linked", [("scratch", True), ("ticket/lamp", False)])
 def test_the_hook_pushes_only_the_main_checkout_on_a_branch_other_than_a_ticket_branch(
         machines: tuple[Machine, Machine, Path], tmp_path: Path, branch: str, linked: bool) -> None:
@@ -2926,6 +3101,10 @@ def test_the_sync_hook_in_a_code_repo_pushes_nothing(repo: Path, tmp_path: Path)
     before = git(origin, "rev-parse", "main").strip()
     (repo / "README.md").write_text("the repo, changed\n")
     assert commit_with_hooks(repo, "a commit on the code repo's main").returncode == 0
+    assert git(origin, "rev-parse", "main").strip() == before
+    (repo / "README.md").write_text("the repo, changed again\n")
+    git(repo, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "another, with no hook to push it")
+    assert run(repo, "sync") == Run(0, "", ""), "only an agent repo is synced, from wherever the command runs"
     assert git(origin, "rev-parse", "main").strip() == before
 
 
@@ -3047,11 +3226,12 @@ def test_a_round_whose_branches_were_deleted_after_their_merge_lands_from_the_me
 
 def test_a_parents_accept_merges_the_agent_branch_of_a_round_it_ran_before_it_had_children(split: Path) -> None:
     """A ticket built alone, then cut into a child for a second pass: its own report is on its
-    `ticket/<slug>` agent branch, which no child's landing merges."""
+    `ticket/<slug>` agent branch, which no child's landing merges, and the accept takes that report
+    in as `land` takes a round's."""
     agent = split / "agent"
-    in_review(split, "one-flow")
+    path = in_review(split, "one-flow")
     in_review(split, "map-columns", parent="one-flow")
-    built(agent, "ticket/one-flow", "main", "the first round's report")
+    reported(agent, "one-flow", "## Comments\n\nThe first round's report, from before the cut.\n")
     git(split, "checkout", "-q", "-b", "one-flow")
     built(split, "ticket/map-columns", "one-flow", "the second pass")
     merged(split, "ticket/map-columns")
@@ -3061,6 +3241,7 @@ def test_a_parents_accept_merges_the_agent_branch_of_a_round_it_ran_before_it_ha
     assert said.code == 0, said.said
     assert subjects(agent)[:2] == ["one-flow landed, ruled whole", "Merge branch 'ticket/one-flow'"]
     assert run(split, "get", "map-columns", "status").out == "done\n"
+    assert "The first round's report, from before the cut." in path.read_text()
 
 
 def test_a_parents_accept_refuses_an_open_question_before_it_merges_its_own_agent_branch(split: Path) -> None:
@@ -3076,6 +3257,68 @@ def test_a_parents_accept_refuses_an_open_question_before_it_merges_its_own_agen
     said = run(split, "accept", "one-flow")
     assert said.code == 1 and "D1 is open" in said.err, said.said
     assert not reached_in(agent, "ticket/one-flow", "main"), "the agent branch waits for an accept that holds"
+
+
+def test_a_refusal_after_the_agent_branch_merged_says_that_merge_stands(split: Path) -> None:
+    """The one write a refusal does not leave as it was: the agent branch merges before the ticket's
+    `done` is checked against the tree, so the refusal says the merge happened, for `land` and for a
+    parent's `accept` alike, and the branch is merged as it says."""
+    agent = split / "agent"
+    in_review(split, "one-flow", status="claimed")  # its report never imported, so done is refused
+    built(split, "ticket/one-flow", "main", "the flow")
+    built(agent, "ticket/one-flow", "main", "notes, and no report")
+    merged(split, "ticket/one-flow")
+    said = run(split, "land", "one-flow")
+    assert said.code == 1 and "claimed → done" in said.err and "ticket/one-flow merged into main" in said.err, said.said
+    assert reached_in(agent, "ticket/one-flow", "main")
+
+    in_review(split, "lamp-ui")
+    in_review(split, "warm-preset", parent="lamp-ui")  # in review, and never merged into lamp-ui
+    built(agent, "ticket/lamp-ui", "main", "the first round's report")
+    git(split, "checkout", "-q", "-b", "lamp-ui")
+    committed(split, "the ui")
+    built(split, "ticket/warm-preset", "lamp-ui", "warm, never merged")
+    git(split, "checkout", "-q", "main")
+    merged(split, "lamp-ui")
+    said = run(split, "accept", "lamp-ui")
+    assert said.code == 1 and "warm-preset" in said.err and "ticket/lamp-ui merged into main" in said.err, said.said
+    assert reached_in(agent, "ticket/lamp-ui", "main")
+
+
+def test_an_agent_branch_that_does_not_merge_is_aborted_and_refused_and_nothing_is_written(split: Path) -> None:
+    """`merge_agent`: a merge that stops is aborted, and refused, so the main checkout is left as it
+    was for the merge by hand the refusal asks for."""
+    agent = split / "agent"
+    path = in_review(split, "one-flow")
+    built(split, "ticket/one-flow", "main", "the flow")
+    merged(split, "ticket/one-flow")
+    git(agent, "checkout", "-q", "-b", "ticket/one-flow")
+    (agent / "README.md").write_text("the worker's words\n")
+    git(agent, "commit", "-q", "-am", "the worker's README")
+    git(agent, "checkout", "-q", "main")
+    (agent / "README.md").write_text("the main checkout's words\n")
+    git(agent, "commit", "-q", "-am", "the main checkout's README")
+    before, agent_tip = path.read_text(), tip(agent)
+
+    said = run(split, "land", "one-flow")
+    assert said.code == 1 and "ticket/one-flow" in said.err and said.out == "", said.said
+    assert not git(agent, "status", "--porcelain") and tip(agent) == agent_tip, "the stopped merge is aborted"
+    assert path.read_text() == before
+
+
+def test_a_ticket_branch_sharing_no_history_with_the_branch_it_merges_into_is_refused(split: Path) -> None:
+    """A branch fetched from another repository, or cut with --orphan, has no fork point, so no range
+    can say what it built: nothing is written rather than a range that starts nowhere."""
+    agent = split / "agent"
+    path = in_review(split, "one-flow", status="claimed")
+    git(split, "checkout", "-q", "--orphan", "ticket/one-flow")
+    git(split, "commit", "-q", "-m", "a history of its own")
+    orphan = tip(split)
+    git(split, "checkout", "-q", "main")
+    before, agent_tip = path.read_text(), tip(agent)
+    said = run(split, "land", "one-flow")
+    assert said.code == 1 and orphan in said.err and "main" in said.err, said.said
+    assert path.read_text() == before and tip(agent) == agent_tip
 
 
 def reached_in(top: Path, branch: str, onto: str) -> bool:

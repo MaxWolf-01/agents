@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -154,6 +155,8 @@ def test_a_message_another_session_sent_is_on_its_turn_under_that_sessions_name(
     said = messages_of(page)
     assert {key: [m[: len(s)] for m, s in zip(said[key], start)] for key, start in SAMPLE.items()} == SAMPLE
     assert {key: len(m) for key, m in said.items()} == {key: len(start) for key, start in SAMPLE.items()}
+    on_page = sections_of(render_session(worked_example, t, now=NOW))
+    assert "agents-d2" in text_of(on_page["04"]) and "ruled good to ship, dispatch both" in text_of(on_page["04"])
 
 
 def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_example: Path) -> None:
@@ -304,14 +307,15 @@ def test_a_link_to_an_artifact_in_another_repo_is_its_absolute_path(
 
 
 def test_a_record_shows_what_it_says_and_marks_up_nothing_of_its_own(worked_example: Path, transcript: Path) -> None:
-    """An answer of `no` is the word, a list straight under a sentence is a list, and HTML in the
-    prose is text: the page's structure is the renderer's alone."""
+    """An answer of `no` is the word, a list straight under a sentence is a list, HTML in the
+    prose is text, and a heading inside fenced code is code: the page's structure is the renderer's alone."""
     (worked_example / "turns" / "05.md").write_text(
         "---\ndate: 2026-09-24\nanswered:\n  Q7: no\n---\n\n# Round 4\n\n## Details\n\n"
-        "The page now:\n- opens <details> in prose\n- lists\n")
+        "The page now:\n- opens <details> in prose\n- lists\n\n```sh\n# Round 5\n## Links\nmake test\n```\n")
     section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
     assert "your answers Q7 no" in text_of(section)
     assert "<li>opens &lt;details&gt; in prose</li>" in section
+    assert "# Round 5 ## Links make test" in text_of(re.search(r"<pre.*?</pre>", section, re.S)[0])
 
 
 @pytest.mark.parametrize("frontmatter, line, reason", [
@@ -450,6 +454,7 @@ def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newes
     assert [row.key for row in rows] == [chat_path(directory / "turns", at).stem for at in reversed(times)]
     assert [row.silence for row in rows] == ["unanswered", "", ""]
     assert [row.when for row in rows] == [f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
+    assert text_of(render_session(directory, said, now=NOW)).count("no message of yours") == 1
 
 
 def test_each_run_of_turns_with_no_message_before_them_says_so_once(tmp_path: Path) -> None:
@@ -516,16 +521,16 @@ NEXT = {
 
 @pytest.mark.parametrize("made, said", NEXT.values(), ids=NEXT)
 def test_session_page_prints_where_the_next_record_goes(
-    made: Callable[[Path], object], said: str, worked_example: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+    made: Callable[[Path], object], said: str, worked_example: Path,
 ) -> None:
-    """session-page-says-where-the-next-record-goes#P1 and #P3; `main` returning is the exit status 0."""
+    """session-page-says-where-the-next-record-goes#P1 and #P3, through the script in a process of
+    its own, as `mx/bin/session-page` runs it, exiting 0."""
     project = project_of(worked_example)
     made(worked_example)
-    monkeypatch.chdir(project)
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
-    monkeypatch.setattr(sys, "argv", ["session-page"])
-    session_page.main()
-    assert capsys.readouterr().out == f"{worked_example}\nnext record: {worked_example / 'turns'}/{said}\n"
+    done = subprocess.run([sys.executable, session_page.__file__], cwd=project, capture_output=True, text=True, timeout=60,
+                          env=os.environ | {"CLAUDE_CODE_SESSION_ID": SESSION})
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == f"{worked_example}\nnext record: {worked_example / 'turns'}/{said}\n"
 
 
 def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:
@@ -562,7 +567,8 @@ def test_a_turns_tool_calls_run_from_its_first_message_to_the_next_turns(worked_
     page pairs them, up to the next turn's first message. A call after record 01 was written and
     before turn 02's first prompt (21:25:49) is still turn 01's work; one before every prompt is the
     first turn's too. Each comes with its result and how it ended. The worked example's own calls
-    are the Write of each record."""
+    are the Write of each record. The transcript's last line, cut short as Claude Code is still
+    writing it, is no call yet."""
     worked = with_work(
         transcript, tmp_path / "t.jsonl",
         did("2026-09-22T20:30:00Z", call("Read", "r0", file_path="/repo/AGENTS.md")),
@@ -571,6 +577,7 @@ def test_a_turns_tool_calls_run_from_its_first_message_to_the_next_turns(worked_
         did("2026-09-22T21:30:00Z", call("Agent", "a2", description="Build the grid figure", prompt="...")),
         came_back("2026-09-22T21:35:00Z", "a2", [{"type": "text", "text": "the figure is at show/grid.html"}]),
         did("2026-09-23T01:25:00Z", call("Edit", "e4", file_path="/repo/page.css", old_string="a", new_string="b")),
+        did("2026-09-23T01:26:00Z", call("Bash", "b5", command="make check"))[:60],
     )
     log = session_page.read_session(worked_example, worked).log
     assert {key: [s.tool for s in steps] for key, steps in log.items()} == {

@@ -170,9 +170,10 @@ def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
     assert waiting(view_of(worked_example, transcript)) == ["Q7"]
 
 
-def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: Path) -> None:
+def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick_and_answered_draws_no_options(tmp_path: Path) -> None:
     """A blind question is one the user answers on its test page, which holds the options and the
-    agent's pick: the top shows it with a link to that page, and no option or pick of its own."""
+    agent's pick: the top shows it with a link to that page, and no option or pick of its own. Once
+    answered, its turn shows the answer under it and still no options."""
     directory = tmp_path / "agent" / "sessions" / DRAWN
     (directory / "turns").mkdir(parents=True)
     (directory / "turns" / "01.md").write_text(
@@ -186,6 +187,11 @@ def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: P
     top = waiting_and_cards(render_session(directory, transcript, now=NOW))
     assert f'href="{(tmp_path / "agent/show/refusals/blind-q1.html").as_uri()}"' in top
     assert "my pick" not in text_of(top)
+
+    (directory / "turns" / "02.md").write_text("---\ndate: 2026-10-14\nanswered:\n  Q1: the second way reads kinder\n---\n\n# Answered\n")
+    answered = elements(render_session(directory, transcript, now=NOW), "q1")["q1"]
+    assert "the second way reads kinder" in text_of(answered)
+    assert 'class="opts"' not in answered
 
 
 # A ticket as the tracker holds one, with a question open, a question ruled, a property, a worker's
@@ -274,6 +280,8 @@ ASKED_FOR_THE_TICKET = f"""- [Q2] **Sync on every commit?** The checkouts drift 
   - Recap: what drifted last week
     - the board
     - two tickets
+
+    Both hosts fell a day behind.
   - [The drift, drawn](agent/show/drift.html): which files"""
 
 
@@ -289,6 +297,7 @@ def test_a_question_put_for_a_ticket_is_a_session_question_until_its_ticket_reco
     links = [attrs for attrs, text in anchors(card) if text == f"{TWO_MAIN} D5"]
     assert len(links) == 1 and links[0]["title"].startswith(f"{TWO_MAIN} D5 · Sync on every commit, or on a timer?")
     assert "<li>the board</li>" in card and "what drifted last week" in text_of(card)
+    assert "<p>Both hosts fell a day behind.</p>" in card, "a recap's paragraph after a blank line is a paragraph of its own"
     assert any(text == "The drift, drawn" for _, text in anchors(card))
     rows = [[text_of(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row)] for row in re.findall(r"<tr.*?</tr>", card)]
     assert rows == [["", "option", "leads to", "gives", "costs"],
@@ -304,6 +313,24 @@ def test_a_question_put_for_a_ticket_is_a_session_question_until_its_ticket_reco
     ticket.write_text(TICKET)
     write_transcript(transcript, ["Sync the checkouts", "Q2: b"])
     assert waiting(view_of(directory, transcript)) == []
+
+
+@pytest.mark.parametrize("since", ["retired", "dropped the question"])
+def test_a_question_put_for_a_ticket_that_no_longer_holds_it_shows_its_handle_alone(tmp_path: Path, since: str) -> None:
+    """A ticket's question is ruled, and its ticket retired, long after the record that asked it
+    (`check_ticket_questions`). A Qn put for a ticket that retired it, or holds the question no
+    longer, waits no more (`Question.ruled`), and the page still renders it, its handle plain text
+    with no link to a question the ticket holds no longer."""
+    directory, transcript = ticket_session(tmp_path, ASKED_FOR_THE_TICKET)
+    ticket = tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md"
+    if since == "retired":
+        ticket.unlink()
+    else:
+        ticket.write_text(TICKET.replace("- [D5] **Sync on every commit, or on a timer?** A timer batches; a commit hook is immediate.\n", ""))
+    assert waiting(view_of(directory, transcript)) == []
+    card = elements(render_session(directory, transcript, now=NOW), "q2")["q2"]
+    assert f"{TWO_MAIN} D5" in text_of(card)
+    assert [text for _, text in anchors(card) if TWO_MAIN in text] == [], "a handle the ticket holds no longer links nowhere"
 
 
 def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) -> None:
@@ -326,9 +353,15 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
         (twin / "turns").mkdir(parents=True)
         (twin / PAGE).write_text("")
         (twin / "turns" / "01.md").write_text(record(1, {"asks": ["Q1"], "answered": {}, "superseded": {}}))
+    unreadable = pages_directory(account(), "7c0d0e0f-0000-0000-0000-000000000000")
+    (unreadable / "turns").mkdir(parents=True)
+    (unreadable / PAGE).write_text("")
+    (unreadable / "turns" / "01.md").write_text("no frontmatter\n")
     directory, transcript = ticket_session(tmp_path, f"- [{TWO_MAIN} D7]", details=(
         f"{TWO_MAIN} D5 holds; `{TWO_MAIN}` D6 slowed it; it keeps {TWO_MAIN}#P1 and {TWO_MAIN} A3, as retro F2 asked; "
-        f"8e0f1c22 Q3 asked the same, and 5a1b2c3d Q1 could be either session's. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are."))
+        f"`{TWO_MAIN} D7` waits; "
+        f"8e0f1c22 Q3 asked the same, and 5a1b2c3d Q1 could be either session's. Step 2 P3, {TWO_MAIN} D9 and [{TWO_MAIN} D5](#t01) stay as they are; "
+        "so do 8e0f1c22 Q9, which that session never asked, and 7c0d0e0f Q1, whose session's records do not read."))
     (tmp_path / "agent" / "retro").mkdir()
     (tmp_path / "agent" / "retro" / "report.md").write_text("# Workflow retro: agents\n\n## Findings\n\n### F2 Builds add machinery\n")
     (tmp_path / "agent" / "retro" / "report.html").write_text('<h3 id="f2">F2</h3>')
@@ -337,7 +370,7 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
     ticket = (tmp_path / "agent" / "tickets" / f"{TWO_MAIN}.md").as_uri()
     assert {text: href for text, (href, _) in linked.items()} == {
         f"{TWO_MAIN} D5": ticket, f"{TWO_MAIN} D6": ticket, f"{TWO_MAIN}#P1": ticket, f"{TWO_MAIN} A3": ticket,
-        "retro F2": f"{(tmp_path / 'agent' / 'retro' / 'report.html').as_uri()}#f2",
+        f"{TWO_MAIN} D7": ticket, "retro F2": f"{(tmp_path / 'agent' / 'retro' / 'report.html').as_uri()}#f2",
         "8e0f1c22 Q3": f"{(other / PAGE).as_uri()}#q3",
     }
     assert {text: title.split(" · ", 1)[1] for text, (_, title) in linked.items()} == {
@@ -345,6 +378,7 @@ def test_a_qualified_tag_in_a_records_prose_links_what_it_names(tmp_path: Path) 
         f"{TWO_MAIN} D6": "Friction the suite took four minutes.",
         f"{TWO_MAIN}#P1": "A ticket file is written in one checkout only.",
         f"{TWO_MAIN} A3": "one remote per checkout.",
+        f"{TWO_MAIN} D7": "Keep the old remote? Nothing reads it any more.",
         "retro F2": "Builds add machinery",
         "8e0f1c22 Q3": "What about Q3? · answered a",
     }
@@ -467,7 +501,8 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
 ) -> None:
     """A path a record writes as code is a link the user clicks rather than text they copy: from
     the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a
-    `~name` that names no user, a bare word, a command, and code already inside a link stay code.
+    `~name` that names no user, a bare word, a command, a name too long for the filesystem, and code
+    already inside a link stay code.
     Pins the format: the links are in the record's prose, which reaches the page as markup."""
     root, home = tmp_path / "repo", tmp_path / "home"
     (root / "mx").mkdir(parents=True)
@@ -480,7 +515,8 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
     directory, transcript = write_session(root / "agent" / "sessions" / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
     (directory / "turns" / "01.md").write_text(
         "---\ndate: 2026-09-21\n---\n\n# Paths\n\n## Links\n\n- [The `mx/tool.py` listing](mx/tool.py): the code\n\n"
-        f"## Details\n\nSee `mx/tool.py:12`, `{elsewhere}`, `~/notes.md`, `mx`, `mx/gone.py`, `~ubuntu.26.04~resolute`, `claude -p mx/tool.py` "
+        f"## Details\n\nSee `mx/tool.py:12`, `{elsewhere}`, `~/notes.md`, `mx`, `mx/gone.py`, `~ubuntu.26.04~resolute`, `claude -p mx/tool.py`, "
+        f"`mx/{'x' * 300}.py` "
         "and [`mx/tool.py`](mx/tool.py).\n"
     )
     section = sections_of(render_session(directory, transcript, now=NOW))["01"]
@@ -811,9 +847,10 @@ TODO_TURNS = (
     "## To do\n\n- [A1] **Review devops #3** at `4d7a3b8`\n- [A2] **Post the first #coding message** once\n  FeedbackFlow#62 is merged\n\n"
     "## Links\n\n- [The six PR texts](agent/show/lint/texts.html): Q1 leans on them\n",
     "---\ndate: 2026-10-29\nanswered:\n  A1: done\nsuperseded:\n  A2: A3\n---\n\n# devops #3 reviewed; the #coding message changed\n\n"
-    "## To do\n\n- [A3] **Post one #coding message** for both changes\n\n"
+    "## To do\n\n- [A3] **Post one #coding message** for both changes\n  - Recap: what it says\n    - the rule\n"
+    "    - its one exception\n\n    Both PRs linked.\n\n"
     "## Links\n\n- [devops#2](https://github.com/HELFERLINE/devops/issues/2): the collection issue\n"
-    "- [The six PR texts, reworded](agent/show/lint/texts.html): linked again\n",
+    "- [The six PR texts, reworded](agent/show/lint/texts.html): linked again,\n  now for both changes\n",
 )
 
 
@@ -837,6 +874,9 @@ def test_a_to_do_waits_at_the_top_until_a_later_record_clears_it(tmp_path: Path)
     page = render_session(directory, transcript, now=NOW)
     top = text_of(elements(page, QUESTIONS)[QUESTIONS])
     assert "Q1 Force-push devops #4 and #5 now?" in top and "A3 Post one #coding message" in top
+    card = elements(page, "a3")["a3"]
+    assert "<li>the rule</li>" in card and "<p>Both PRs linked.</p>" in card, "a to-do's recap is markdown, its paragraphs kept"
+    assert "linked again, now for both changes" in text_of(sections_of(page)["02"]), "an indented line continues a link's note"
     assert "Review devops #3" not in top and "Post the first #coding message" not in top
     listed = text_of(sections_of(page)["01"])
     assert "Review devops #3 to do · done · cleared in turn 02" in listed and "replaced by A3 in turn 02" in listed

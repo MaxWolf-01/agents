@@ -173,6 +173,10 @@ def test_a_retro_entry_cites_its_place_on_the_retros_page_and_a_dropped_one_is_g
     assert cited(agent, "retro A23")[:2] == ("retro/report.html", "#a23")
     assert cited(agent, "retro A23")[2].startswith("retro A23 · dismissed: the worker prompt's shared style.")
     assert cited(agent, "retro F1") == (None, "", "retro F1 · no longer in the retro's report")
+    (agent / "retro" / "report.html").unlink()
+    assert cited(agent, "retro F2") == ("retro/report.md", "", "retro F2 · The agent's how adds machinery"), "no page built: the report itself"
+    (agent / "retro" / "report.md").unlink()
+    assert cited(agent, "retro F2") == (None, "", "retro F2 · no longer in the retro's report"), "no retro at all"
 
 
 def test_a_review_finding_cites_its_report_where_this_machine_has_it(agent) -> None:

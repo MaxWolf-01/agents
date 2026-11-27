@@ -30,7 +30,7 @@ class Transcript:
                              "entrypoint": self.entrypoint, "cwd": self.cwd, "sessionId": self.sid,
                              "version": "2.1.300", **entry})
         self.last = me
-        self.path.write_text("".join(json.dumps(e) + "\n" for e in self.entries))
+        self.path.write_text("".join(json.dumps(e, separators=(",", ":")) + "\n" for e in self.entries))  # compact, as Claude Code writes it
         return self
 
     def says(self, text: str, parent: str | None = "last") -> "Transcript":
