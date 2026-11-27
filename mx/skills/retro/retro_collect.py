@@ -161,23 +161,21 @@ def repo_names(repos: list[Path]) -> list[str]:
     return out
 
 
-def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
-    """A sign of max since `since`, or "" when there is none: his latest message in an
-    interactive session, else a commit of his on a branch of one of the repos, his being the author
-    identity the repo itself commits with. The digests it reads are cached as a run's are."""
-    said = [d for d in interactive_digests(projects, cache, repos, since) if d.said_last and parse_time(d.said_last) >= since]
-    if said:
-        d = max(said, key=lambda d: d.said_last)
-        return f"a message of max's at {d.said_last} in session {d.sid} ({d.cwd})"
+def merges(repos: list[Path], since: datetime, trunks: dict[Path, str]) -> int:
+    """How many merges the repos' trunks took since `since`: the merge commits on each trunk's
+    first-parent line committed after it, its local branch's and origin's, so a commit of a branch
+    the merge brought in counts for none. A repo's trunk is the branch `trunks` names for it, else
+    the one its origin/HEAD names, else main or master; exits naming a repo that has none."""
+    count = 0
     for repo in repos:
-        who = subprocess.run(["git", "-C", str(repo), "var", "GIT_AUTHOR_IDENT"], capture_output=True, text=True)
-        if who.returncode != 0 or not (email := re.search(r"<([^>]*)>", who.stdout)):
-            sys.exit(f"{repo} has no author identity, which is what tells max's commits from the rest")
-        if line := git(repo, "log", "--branches", "-1", f"--since-as-filter={since.isoformat()}", "--fixed-strings",
-                       f"--author=<{email.group(1)}>", "--format=%h %cI").strip():
-            sha, date = line.split()
-            return f"a commit of max's at {stamp(parse_time(date))} in {repo.resolve()} ({sha})"
-    return ""
+        branch = (trunks.get(repo.resolve()) or tracker.origin_head(repo)
+                  or next((b for b in ("main", "master") if tracker.integration_refs(repo, b)), None))
+        if not branch or not (refs := tracker.integration_refs(repo, branch)):
+            sys.exit(f"{repo} has no trunk to count merges on: name its `integration` in the repo list, "
+                     f"or let origin/HEAD name it (`git remote set-head origin --auto`)")
+        count += int(git(repo, "rev-list", "--count", "--first-parent", "--merges",
+                         f"--since-as-filter={since.isoformat()}", *refs, "--"))
+    return count
 
 
 def refuse_inside_git(*directories: Path) -> None:
@@ -271,6 +269,8 @@ class Plan(NamedTuple):
     read: list[Path]
     left_out: list[Path]
     """One whose table says `retro = false`, and one with an agent repo of its own, which its own tracker's retro reads."""
+    trunks: dict[Path, str]
+    """The trunk each table names, by its repo's path."""
 
 
 def planned(agent: Path) -> Plan:
@@ -282,7 +282,8 @@ def planned(agent: Path) -> Plan:
         sys.exit(str(refused))
     listed = [(tracker.listed_path(root, table), table.get("retro", True)) for table in tables]
     reads = [retro and not (path / "agent" / ".git").exists() for path, retro in listed]
-    return Plan([p for (p, _), r in zip(listed, reads) if r], [p for (p, _), r in zip(listed, reads) if not r])
+    return Plan([p for (p, _), r in zip(listed, reads) if r], [p for (p, _), r in zip(listed, reads) if not r],
+                {tracker.listed_path(root, table): table["integration"] for table in tables if table.get("integration")})
 
 
 # ── which sessions ───────────────────────────────────────────────────────────

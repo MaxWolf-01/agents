@@ -42,10 +42,10 @@ it owes, exits 1, and its last line in the log says why. A run stopped by TERM, 
 stage it is in, and whatever that stage started, before it exits; one stopped during the commit lets the
 commit finish. On Linux, a run killed outright takes its stage down with it.
 
-A new run given --if-active first looks for something new since the period's start: for the
-workflow retro, a message of max's in an interactive session or a commit of his in the agents
-repo or a repo `retro/repos` lists; for a repo retro, a commit on any branch of one of its repos.
-Finding none, it logs that it skipped and exits 3, having run no stage.
+A new run given --after-merges N first checks whether it is due: when the trunks of its repos took
+N merges since the period's start, or BACKSTOP has passed since it and one of its repos has a
+commit on any branch since. A run that is due is still held to CAPS, counted from the runs its
+log says started. One not due, or held, logs why it skipped and exits 3, having run no stage.
 
 A run that ended without its commit, once collect had finished, is resumed with --resume and its
 directory: it keeps the run's repo, period, focus and seed, picks up at the first stage that left
@@ -54,12 +54,12 @@ out a file it owes, and commits as any run does.
 Examples:
 
     retro_run.py ~/repos/github/MaxWolf-01/agents
-    retro_run.py ~/repos/github/MaxWolf-01/agents --if-active
+    retro_run.py ~/repos/github/MaxWolf-01/agents --after-merges 10
     retro_run.py ~/repos/github/MaxWolf-01/agents --focus "the tests are overbuilt"
     retro_run.py ~/repos/github/MaxWolf-01/agents --since 2026-10-03 --seed ~/retro-2026-10/REPORT.md
-    retro_run.py ~/.dotfiles --if-active
+    retro_run.py ~/.dotfiles --after-merges 10
     retro_run.py ~/.dotfiles --focus "the backup scripts"
-    CLAUDE_CONFIG_DIR=~/.claude-helferline retro_run.py ~/work/helferline --if-active
+    CLAUDE_CONFIG_DIR=~/.claude-helferline retro_run.py ~/work/helferline --after-merges 10
     retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/<end of period>
 """
 
@@ -88,7 +88,9 @@ from retro_collect import git, parse_time, stamp  # noqa: E402
 
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
-SKIPPED = 3  # the exit status of an --if-active run that found nothing new
+SKIPPED = 3  # the exit status of an --after-merges run that was not due, or was held
+BACKSTOP = timedelta(days=14)  # a gated run with any commit since the period's start is due this long after it
+CAPS = ((1, 1), (3, 7))  # (runs, days): a gated run is held once this many started in the last this many days, today included
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_WEEKS = 8  # how far back a repo retro's first run reads, given no --since; --first-weeks overrides it
@@ -150,21 +152,21 @@ def kind_of(repo: Path) -> Kind:
 
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
               seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None,
-              if_active: bool = False, model: str = "", effort: str = "", first_weeks: int = FIRST_WEEKS) -> Path:
+              after_merges: int = 0, model: str = "", effort: str = "", first_weeks: int = FIRST_WEEKS) -> Path:
     """A whole retro on `repo`, or the rest of the one `resume` names; returns its run directory.
     The handlers of STOP are the caller's again afterwards, for a caller that goes on in the same
     process: a signal left ignored is inherited by every process it starts later, which no TERM then
     stops. `model` and `effort`, where given, replace every stage's own."""
     found = {s: signal.getsignal(s) for s in STOP}
     try:
-        return retro(repo, data, projects, since, focus, seed, until, resume, if_active, model, effort, first_weeks)
+        return retro(repo, data, projects, since, focus, seed, until, resume, after_merges, model, effort, first_weeks)
     finally:
         for s, handler in found.items():
             signal.signal(s, handler)
 
 
 def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None, focus: str,
-          seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool,
+          seed: Sequence[Path], until: datetime | None, resume: Path | None, after_merges: int,
           model: str = "", effort: str = "", first_weeks: int = FIRST_WEEKS) -> Path:
     repo = repo.expanduser().resolve()
     if not repo.is_dir():
@@ -190,24 +192,24 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     retro_collect.refuse_inside_git(home)
     log = Log(home / "runs.log", run.name)
     if kind is WORKFLOW:
-        listed, left_out = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")], []
+        listed, left_out, trunks = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")], [], {}
     else:
-        listed, left_out = retro_collect.planned(agent)
+        listed, left_out, trunks = retro_collect.planned(agent)
     repos = list(dict.fromkeys([repo, *listed]))
     code = [repo] if kind is WORKFLOW else repos  # the repos whose code the lens pass reads
-    where = "the check for something new"
+    where = "the check whether it is due"
     try:
         retro_collect.refuse_unless_git(repos)
-        active = ""
-        if if_active and not resume:
-            if kind is WORKFLOW and not (active := retro_collect.activity(since, list(projects), home / "digest-cache", repos)):
-                log(f"skipped: no session or commit of max's since {stamp(since)}")
-                sys.exit(SKIPPED)
-            if kind is REPO and not (active := retro_collect.latest_commit(repos, since)):
-                log(f"skipped: no commit in {', '.join(map(str, repos))} since {stamp(since)}")
+        due = ""
+        if after_merges and not resume:
+            merged = retro_collect.merges(repos, since, trunks)
+            due, held = gate(after_merges, merged, since, until, started(log.path),
+                             retro_collect.latest_commit(repos, since) if merged < after_merges else "")
+            if held:
+                log(f"skipped: {held}")
                 sys.exit(SKIPPED)
         log(f"{'resumed' if resume else 'started'}: {kind.name} of {repo}, {stamp(since)} to {stamp(until)}"
-            + (f", focus: {focus}" if focus else "") + (f"; new since: {active}" if active else ""))
+            + (f", focus: {focus}" if focus else "") + (f"; due: {due}" if due else ""))
         for s in STOP:
             signal.signal(s, on_stop)
         where = "collect"
@@ -262,6 +264,38 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     return run
 
 
+def gate(needed: int, merged: int, since: datetime, now: datetime, starts: list[datetime],
+         commit: str) -> tuple[str, str]:
+    """Whether a run given --after-merges runs: why it is due and "", or "" and why it skips.
+    `merged` is the merges its trunks took since `since`, `starts` when its earlier runs started,
+    and `commit` the newest commit since `since` on a branch of its repos, "" for none. Days are the
+    host's calendar days."""
+    if merged >= needed:
+        due = f"{merged} merges into its trunks since {stamp(since)}"
+    elif commit and now - since >= BACKSTOP:
+        due = f"the {BACKSTOP.days}-day backstop, with {commit}"
+    else:
+        backstop = (f"its {BACKSTOP.days}-day backstop falls due at {stamp(since + BACKSTOP)}" if commit
+                    else "with no commit since then, no backstop either")
+        return "", f"{merged} of {needed} merges into its trunks since {stamp(since)}, and {backstop}"
+    today = now.astimezone().date()
+    for most, days in CAPS:
+        recent = [s for s in starts if (today - s.astimezone().date()).days < days]
+        if len(recent) >= most:
+            window = "today" if days == 1 else f"in the {days} days to today"
+            return "", f"due ({due}), but {len(recent)} run{'s' * (len(recent) > 1)} started {window}, the most it takes"
+    return due, ""
+
+
+def started(log: Path) -> list[datetime]:
+    """When each run the log names started, by its run's name: the end of its period, which is
+    the moment a new run began."""
+    if not log.is_file():
+        return []
+    lines = (line.split(" ", 2) for line in log.read_text().splitlines())
+    return [datetime.strptime(run, RUN_NAME).replace(tzinfo=UTC) for _, run, said in lines if said.startswith("started:")]
+
+
 def failure(e: Exception) -> str:
     """An exception as a run log's line says it: a git command with what it printed, anything else by its type."""
     if isinstance(e, subprocess.CalledProcessError):
@@ -313,8 +347,11 @@ def main_checkout(agent: Path) -> Path:
     return common.parent
 
 
+RUN_NAME = "%Y-%m-%dT%H%M%SZ"
+
+
 def dirname(until: datetime) -> str:
-    return until.astimezone(UTC).strftime("%Y-%m-%dT%H%M%SZ")
+    return until.astimezone(UTC).strftime(RUN_NAME)
 
 
 class Log:
@@ -607,8 +644,8 @@ class Args:
     """The retro's data directory, outside every git repo."""
     projects: list[Path] = field(default_factory=retro_collect.profiles)
     """Each Claude Code profile's directory of transcripts, whose sessions the workflow retro reads every one of and a repo retro those worked in its repos; by default every `~/.claude*/projects`."""
-    if_active: bool = False
-    """Skip the run, exiting 3, when there is nothing new since the period's start: for the workflow retro, no message of max's in an interactive session and no commit of his in the listed repos; for a repo retro, no commit in any of its repos."""
+    after_merges: int = 0
+    """Skip the run, exiting 3, unless it is due and not held: due once the trunks of its repos took this many merges since the period's start, or BACKSTOP after it with a commit in its repos since; held once CAPS's runs started (both in this file). 0 runs it regardless."""
     resume: Path | None = None
     """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
     model: str = ""
@@ -620,4 +657,4 @@ class Args:
 if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
     run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed,
-              resume=args.resume, if_active=args.if_active, model=args.model, effort=args.effort, first_weeks=args.first_weeks)
+              resume=args.resume, after_merges=args.after_merges, model=args.model, effort=args.effort, first_weeks=args.first_weeks)

@@ -214,7 +214,7 @@ The workflow's own machinery.
 | [`/mx:code-review`](skills/code-review/SKILL.md) | a review of a branch by reviewers in fresh context |
 | [`/mx:review-pr`](skills/review-pr/SKILL.md) | code-review driven against a GitHub PR |
 | [`/mx:triage`](skills/triage/SKILL.md) | the proposed tickets grouped by cause, and only the design calls put to you |
-| [`/mx:retro`](skills/retro/SKILL.md) | the repo's living report, kept by a weekly retro |
+| [`/mx:retro`](skills/retro/SKILL.md) | the repo's living report, kept by a retro that runs once its repos have taken enough merges |
 | [`/mx:fork`](skills/fork/SKILL.md) | delegate to an agent that inherits the whole conversation |
 | [`/mx:handoff`](skills/handoff/SKILL.md) | compact the session into a file a fresh one starts from |
 | [`/mx:pickup`](skills/pickup/SKILL.md) | start a session from a handoff |
