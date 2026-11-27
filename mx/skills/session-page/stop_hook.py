@@ -16,10 +16,10 @@ It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a disp
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
 A render opens no artefact: the page lists what the turn linked among its tasks, and the user opens
-each from there. The page itself opens, with `claude-browser` told the session through
-MX_ORIGIN_SESSION, only where no container hub answers, and only on the render that writes it
-first, since a repeat would be another tab: the hub finds a session's page on disk and reloads it
-once it is written anew. The open is a line of the log saying what came of it.
+each from there. The page itself opens in the browser, through `xdg-open`, only where no container
+hub answers, and only on the render that writes it first, since a repeat would be another tab: the
+hub finds a session's page on disk and reloads it once it is written anew. The open is a line of the
+log saying what came of it.
 
 A turn whose answer is on the page ends without a chat message of its own, so a render whose turn
 wrote a record shows the user, as a `systemMessage`, what the terminal reads in its place: the
@@ -221,15 +221,14 @@ def written_outside_write(session: Session) -> Turn | None:
     return outside[-1] if outside else None
 
 
-def open_in_browser(target: str, session_id: str) -> str:
-    """Open a page, file or URL in the browser as the session's, without waiting on it, and say
-    what came of that. A host with no `claude-browser`, or one that fails to start, leaves the turn
-    as it was."""
-    if not (opener := shutil.which("claude-browser")):
-        return "no claude-browser on PATH"
+def open_in_browser(target: str) -> str:
+    """Open a page, file or URL in the browser, without waiting on it, and say what came of that. A
+    host with no `xdg-open`, or one that fails to start, leaves the turn as it was."""
+    if not (opener := shutil.which("xdg-open")):
+        return "no xdg-open on PATH"
     try:
         subprocess.Popen([opener, target], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True, env=os.environ | {"MX_ORIGIN_SESSION": session_id})
+                         start_new_session=True)
     except OSError as e:
         return f"{opener} did not start: {e}"
     return f"started {opener}"
@@ -253,7 +252,7 @@ def main() -> None:
         write_page(read_session(directory, Path(hook["transcript_path"])), datetime.now())
         unit = hub_unit(session_id)
         opened = ("not opened: the hub shows it" if unit
-                  else open_in_browser(str(directory / PAGE), session_id) if first else "not reopened: no hub answers")
+                  else open_in_browser(str(directory / PAGE)) if first else "not reopened: no hub answers")
         turn_review.log(session_id, opened=opened, page=str(directory / PAGE))
         if decision.shown:
             line = f"{decision.shown} · {unit or (directory / PAGE).as_uri()}"

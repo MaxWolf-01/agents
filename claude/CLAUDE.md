@@ -117,7 +117,7 @@ To avoid auto-mode false positives, and for general best practice (safety and ef
 
 <tools>
 
-Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`, `gh-asset`, `job` (`/mx:tmux`), `browsers` (kills only the stuck browsers this checkout launched).
+Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `container-hub open`, `gh-asset`, `job` (`/mx:tmux`), `browsers` (kills only the stuck browsers this checkout launched).
 
 `with-secrets` holds max's API keys and tokens: when you need one, look there before asking him; it is rarely a blocker.
 
@@ -125,7 +125,7 @@ Installed here, each with a `--help` to read before guessing at flags: `tre` (gi
 
 `diffview` renders a diff as a review page on the hub: the code's view of a change, and the deliverable whenever the user asks to see the code; prose recaps and bare links only accompany it. A change is shown, not only diffed (`/mx:show`): a change to something max looks at or drives (a page, the hub, a command's output) reaches him running, to drive, or as a screenshot where it cannot run for him, with the diff beside it. Reach for diffview unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, so one self-reloading tab is the review surface across every round; never `--no-auto-summary`. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes, and the one place the meta commentary belongs that must never reach the code: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Write them short, plain and few: a page of notes does not get read. Read `--help` for the source specs and the page's semantics.
 
-`claude-browser <path|url>` puts what an agent renders for max (review pages, boards, prototypes, figures) on the container hub, beside the other pages of its work, where max looks when he wants to; nothing opens in front of him. A page meant for agents (a worker's report) is not put there at all; the line it prints says which. Where no hub answers, it opens a plain tab in the Brave profile `--chrome` needs for this session's account (`--help`). `xdg-open` handles the rest: files a browser does not render, and pages max acts on as himself (approve, order, post, sign in).
+`container-hub open <path|url>...` puts what an agent renders for max (review pages, boards, prototypes, figures) on the container hub, beside the other pages of its work, where max looks when he wants to; nothing opens in front of him. A page meant for agents (a worker's report) is not put there at all; the line it prints says which. Where no hub answers, it hands the page to `xdg-open`. `xdg-open` handles the rest: files a browser does not render, and pages max acts on as himself (approve, order, post, sign in).
 
 `gh-asset push <image>` turns a screenshot into a URL for a GitHub comment, PR body or issue, private repos included. Reach for it rather than asking max to drag an image in; a push cannot be withdrawn.
 
