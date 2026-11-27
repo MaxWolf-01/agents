@@ -21,9 +21,9 @@ A retro is one per tracker. It reads the code of every repo the tracker plans, t
 
 `retro <project>`, with `--focus "<focus>"` when max names one: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass. A run takes an hour or more: start it in the background with `job` (`/mx:tmux`). In a session that also works the report, start it once the verdicts are committed, so it reads them. `retro --help` says which repos a run takes, what it reads, where it writes and when it leaves the report uncommitted; `runs.log` in the retro's data directory says how each run ended.
 
-## The weekly run
+## The nightly check
 
-Two weekly timers in max's dotfiles run the retros on his laptop: `workflow-retro` runs `retro <agents repo> --if-active`, and `repo-retros` runs `retro <project> --if-active` for each project on its list of repo retros, Helferline's on the work profile (`CLAUDE_CONFIG_DIR=~/.claude-helferline`), which its stages log in as. `workflow-retro --help` there names the list and the job run logs each run's outcome goes to.
+Two nightly timers in max's dotfiles run the retros on his laptop: `workflow-retro` runs `retro <agents repo> --after-merges <n>`, and `repo-retros` runs it for each project on its list of repo retros, Helferline's on the work profile (`CLAUDE_CONFIG_DIR=~/.claude-helferline`), which its stages log in as. `retro --help` says when a gated run is due; `workflow-retro --help` there names the list, where a project's line gives its own number, and the job run logs each check's outcome goes to.
 
 ## The parts
 

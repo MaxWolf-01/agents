@@ -21,10 +21,11 @@ in a git repository (retro-semi-automated#P2), the oracle being that repo's stat
 A repo retro runs through the same command, on a repo other than the agents repo: which stages
 run, in which order, what its run directory holds and what its stages may reach, the oracle being
 the stub's record and the stages' command lines; and which repos are
-refused and which weeks skipped, the oracle being git's record of the agent repo and the run log.
+refused, the oracle being git's record of the agent repo and the run log. The nightly check has a section of its own.
 """
 
 import fnmatch
+import itertools
 import json
 import os
 import re
@@ -32,7 +33,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -476,65 +477,6 @@ def test_a_resume_of_a_run_it_cannot_continue_is_refused_naming_the_run_and_runs
     assert not (repo / "agent/retro/report.md").exists() and not (code / "agent/retro/report.md").exists()
 
 
-def commit_by(repo: Path, author: str, when: datetime) -> None:
-    """A commit in `repo` whose author is `author` and whose committer is max, as a worker's is once merged."""
-    (repo / f"{when:%H%M%S}-{author.split()[0]}").write_text(author)
-    git(repo, "add", ".")
-    git(repo, "commit", "-qm", f"by {author}", f"--author={author}", when=when)
-
-
-def test_a_week_with_no_session_or_commit_of_maxs_is_skipped_and_the_run_log_says_so(
-        tmp_path: Path, stub: Path, repo: Path) -> None:
-    projects = tmp_path / ".claude/projects"
-    Transcript(projects, str(repo), SINCE + timedelta(days=1), entrypoint="sdk-cli").says("a worker's prompt")
-    late = Transcript(projects, str(repo), SINCE - timedelta(minutes=3)).says("before the period")
-    late.answers("still").answers("working").answers("past the period's start")
-    commit_by(repo, f"max <{IDENTITY['GIT_AUTHOR_EMAIL']}>", SINCE - timedelta(days=1))
-    commit_by(repo, "worker <worker@example.org>", SINCE + timedelta(days=1))
-
-    with pytest.raises(SystemExit) as stopped:
-        retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
-
-    assert stopped.value.code == 3, "the exit status the timer's wrapper logs as a skip (dotfiles bin/workflow-retro)"
-    assert last_logged(tmp_path) == f"skipped: no session or commit of max's since {retro_run.stamp(SINCE)}"
-    assert not list(stub.glob("*.argv")), "no stage ran"
-    assert not (repo / "agent/retro/report.md").exists()
-
-
-def test_an_if_active_run_where_git_knows_no_author_fails_saying_so_and_is_not_skipped(
-        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Max's commits are told apart by the author identity the repo commits with; with none, no
-    commit can be his, and a skip would hide that every week."""
-    for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
-        monkeypatch.delenv(key, raising=False)
-    for key, value in {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly", "GIT_CONFIG_VALUE_0": "true"}.items():
-        monkeypatch.setenv(key, value)  # git guesses no identity from the host's name
-    (tmp_path / ".claude/projects").mkdir(parents=True)
-
-    with pytest.raises(SystemExit) as failed:
-        retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], SINCE, until=FIRST, if_active=True)
-
-    assert failed.value.code == 1
-    assert str(repo) in last_logged(tmp_path) and "author identity" in last_logged(tmp_path)
-    assert not list(stub.glob("*.argv"))
-
-
-@pytest.mark.parametrize("sign", ["a message", "a commit"])
-def test_a_week_with_a_message_or_a_commit_of_maxs_runs(tmp_path: Path, stub: Path, repo: Path, sign: str) -> None:
-    projects = tmp_path / ".claude/projects"
-    projects.mkdir(parents=True)
-    if sign == "a message":
-        Transcript(projects, str(repo), SINCE + timedelta(days=3)).says("why is the suite so slow")
-    else:
-        commit_by(repo, f"max <{IDENTITY['GIT_AUTHOR_EMAIL']}>", SINCE + timedelta(days=3))
-
-    retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
-
-    started = (tmp_path / "data/agents/runs.log").read_text().splitlines()[0]
-    assert f"new since: {sign} of max's at {retro_run.stamp(SINCE + timedelta(days=3, minutes=1 if sign == 'a message' else 0))}" in started
-    assert last_logged(tmp_path).startswith("committed ")
-
-
 # ── a repo retro ─────────────────────────────────────────────────────────────
 
 
@@ -615,28 +557,6 @@ def test_a_repo_retros_first_run_takes_the_eight_weeks_before_it(tmp_path: Path,
     assert f"Retro-since: {retro_run.stamp(FIRST - timedelta(weeks=8))}" in message
 
 
-def test_a_repo_retro_with_no_commit_since_its_last_run_is_skipped_and_one_with_a_commit_runs(
-        tmp_path: Path, stub: Path, code: Path) -> None:
-    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
-    for argv in stub.glob("*.argv"):
-        argv.unlink()
-
-    with pytest.raises(SystemExit) as stopped:
-        retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
-    assert stopped.value.code == 3, "the exit status the timer's wrapper logs as a skip (dotfiles bin/workflow-retro)"
-    assert last_logged(tmp_path, "dotfiles") == f"skipped: no commit in {code} since {retro_run.stamp(FIRST)}"
-    assert not list(stub.glob("*.argv"))
-
-    git(code, "checkout", "-qb", "worker")
-    commit_by(code, "worker <worker@example.org>", FIRST + timedelta(days=1))
-    sha = git(code, "rev-parse", "--short=7", "HEAD").strip()
-    git(code, "checkout", "-q", "main")
-    retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
-    started = next(line for line in reversed((tmp_path / "data/dotfiles/runs.log").read_text().splitlines()) if " started: " in line)
-    assert f"new since: a commit at {retro_run.stamp(FIRST + timedelta(days=1))} in {code} ({sha})" in started
-    assert last_logged(tmp_path, "dotfiles").startswith("committed ")
-
-
 @pytest.mark.parametrize("kind", ["workflow retro", "repo retro"])
 def test_nothing_a_run_writes_lands_in_a_git_repository(
         tmp_path: Path, stub: Path, repo: Path, code: Path, kind: str) -> None:
@@ -657,7 +577,7 @@ def test_a_run_that_fails_before_its_stages_says_why_as_its_last_line(tmp_path: 
         retro(tmp_path, repo, FIRST, SINCE)
 
     assert failed.value.code == 1
-    assert last_logged(tmp_path) == f"failed: the check for something new: {tmp_path / 'moved-away'} is no git repo"
+    assert last_logged(tmp_path) == f"failed: the check whether it is due: {tmp_path / 'moved-away'} is no git repo"
     assert not list(stub.glob("*.argv"))
 
 
@@ -851,23 +771,6 @@ def test_a_repo_retro_leaves_out_a_listed_repo_its_own_tracker_reads_or_its_tabl
     assert not any("OTHER-REPO" in p.read_text() for p in run.rglob("*.md"))
 
 
-def test_a_repo_retro_runs_on_a_commit_in_any_repo_its_tracker_plans(
-        tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
-    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
-    commit(quartz, {"notes.md": "1"}, "quartz: a note", FIRST + timedelta(days=1))
-
-    retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
-    started = next(line for line in reversed((tmp_path / "data/dotfiles/runs.log").read_text().splitlines())
-                   if " started: " in line)
-    assert f"new since: a commit at {retro_run.stamp(FIRST + timedelta(days=1))} in {quartz}" in started
-
-    with pytest.raises(SystemExit) as stopped:
-        retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + 2 * WEEK, if_active=True)
-    assert stopped.value.code == 3
-    assert last_logged(tmp_path, "dotfiles") == \
-        f"skipped: no commit in {code}, {quartz}, {code / 'secrets'} since {retro_run.stamp(FIRST + WEEK)}"
-
-
 def test_a_repo_retro_whose_tracker_lists_a_repo_that_is_not_there_says_why(tmp_path: Path, stub: Path, code: Path) -> None:
     commit(code / "agent", {"repos.toml": '[gone]\npath = "../moved-away"\n'}, "list a repo", SINCE)
 
@@ -875,5 +778,195 @@ def test_a_repo_retro_whose_tracker_lists_a_repo_that_is_not_there_says_why(tmp_
         retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
 
     assert failed.value.code == 1
-    assert last_logged(tmp_path, "dotfiles") == f"failed: the check for something new: {tmp_path / 'moved-away'} is no git repo"
+    assert last_logged(tmp_path, "dotfiles") == f"failed: the check whether it is due: {tmp_path / 'moved-away'} is no git repo"
+    assert not list(stub.glob("*.argv"))
+
+
+# ── the nightly check ────────────────────────────────────────────────────────
+# A gated run (--after-merges) against a scratch repo whose merges, branches and runs.log the test
+# builds; the oracle is the ticket's rule (retro-runs-after-ten-merges), read from the run log
+# and from which stages ran.
+
+DAY = timedelta(days=1)
+BRANCHES = itertools.count()
+
+
+@pytest.fixture
+def east(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """A host ten hours east of UTC, whose day starts at 14:00 UTC: a gated run's days are the
+    host's calendar days. A POSIX zone string, which needs no zone database."""
+    monkeypatch.setenv("TZ", "EAST-10")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def merge(repo: Path, when: datetime, n: int = 1, trunk: str = "main", commits: int = 1, catch_up: bool = False) -> None:
+    """`n` branches of `commits` commits each, every one merged into `trunk` with a merge commit, at
+    `when`; with `catch_up`, each first merges in a commit landed on the trunk after it branched."""
+    for _ in range(n):
+        branch = f"work-{next(BRANCHES)}"
+        git(repo, "checkout", "-qb", branch, trunk)
+        for i in range(commits):
+            commit(repo, {f"{branch}-{i}": "1"}, f"{branch}: step {i}", when)
+        if catch_up:
+            git(repo, "checkout", "-q", trunk)
+            commit(repo, {f"{branch}-trunk": "1"}, f"{trunk} moves on", when)
+            git(repo, "checkout", "-q", branch)
+            git(repo, "merge", "-q", "--no-ff", "-m", f"Merge {trunk} into {branch}", trunk, when=when)
+        git(repo, "checkout", "-q", trunk)
+        git(repo, "merge", "-q", "--no-ff", "-m", f"Merge branch '{branch}'", branch, when=when)
+
+
+def last_started(tmp_path: Path, repo: str) -> str:
+    return next(line for line in reversed((tmp_path / f"data/{repo}/runs.log").read_text().splitlines()) if " started: " in line)
+
+
+def gated(tmp_path: Path, project: Path, until: datetime, needed: int = 10) -> int:
+    """The exit status of a gated run of `project`'s retro at `until`: 0 where it ran and committed."""
+    try:
+        retro_run.run_retro(project, tmp_path / "data", [], until=until, after_merges=needed)
+    except SystemExit as e:
+        return e.code
+    return 0
+
+
+def test_a_gated_run_waits_for_its_number_of_merges_into_the_trunk_and_a_branchs_commits_count_for_none(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
+    merge(code, FIRST + timedelta(hours=1), n=9, commits=3, catch_up=True)
+    commit(code, {"direct.sh": "1"}, "a commit on the trunk itself", FIRST + timedelta(hours=2))
+    git(code, "checkout", "-qb", "unmerged")
+    for i in range(12):
+        commit(code, {f"unmerged-{i}": "1"}, "work not merged yet", FIRST + timedelta(hours=3))
+    git(code, "checkout", "-q", "main")
+
+    assert gated(tmp_path, code, FIRST + DAY) == retro_run.SKIPPED
+    assert last_logged(tmp_path, "dotfiles") == (
+        f"skipped: 9 of 10 merges into its trunks since {retro_run.stamp(FIRST)}, "
+        f"and its 14-day backstop falls due at {retro_run.stamp(FIRST + 14 * DAY)}")
+
+    merge(code, FIRST + DAY + timedelta(hours=1))
+    assert gated(tmp_path, code, FIRST + 2 * DAY) == 0
+    started = last_started(tmp_path, "dotfiles")
+    assert started.endswith(f"; due: 10 merges into its trunks since {retro_run.stamp(FIRST)}")
+
+
+def test_a_day_with_40_merges_starts_one_run(tmp_path: Path, stub: Path, code: Path, east: None) -> None:
+    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
+    merge(code, FIRST + timedelta(hours=1), n=20)
+    assert gated(tmp_path, code, FIRST + DAY) == 0
+    merge(code, FIRST + DAY + timedelta(hours=1), n=20)
+
+    assert gated(tmp_path, code, FIRST + DAY + timedelta(hours=11)) == retro_run.SKIPPED, \
+        "13:00 UTC is the same host day as 02:00 UTC, 12:00 and 23:00 there"
+    assert last_logged(tmp_path, "dotfiles") == (
+        f"skipped: due (20 merges into its trunks since {retro_run.stamp(FIRST + DAY)}), "
+        f"but 1 run started today, the most it takes")
+    assert gated(tmp_path, code, FIRST + DAY + timedelta(hours=13)) == 0, \
+        "15:00 UTC is the next host day, though the same UTC day"
+
+
+def test_a_run_log_line_that_runs_over_several_lines_holds_no_later_check_up(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    merge(code, SINCE + DAY)
+    log = tmp_path / "data/dotfiles/runs.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("2026-10-01T00:00:00Z 2026-10-01T000000Z failed: collect: git log exited 128: fatal: x\n"
+                   "hint:\n\nhint: see git help\n")
+
+    assert gated(tmp_path, code, FIRST, needed=1) == 0
+
+
+def test_no_more_than_three_gated_runs_start_in_any_seven_days(tmp_path: Path, stub: Path, code: Path) -> None:
+    ran = []
+    for day in range(1, 9):
+        merge(code, FIRST + (day - 1) * DAY + timedelta(hours=1))
+        if gated(tmp_path, code, FIRST + day * DAY, needed=1) == 0:
+            ran.append(day)
+        else:
+            held = last_logged(tmp_path, "dotfiles")
+
+    assert ran == [1, 2, 3, 8], "day 8's seven days hold days 2 and 3 alone"
+    assert held.endswith("but 3 runs started in the 7 days to today, the most it takes")
+
+
+def test_a_gated_run_with_a_commit_and_too_few_merges_is_due_fourteen_days_after_its_last_and_with_no_commit_never(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
+    git(code, "checkout", "-qb", "worker")
+    commit(code, {"wip.sh": "1"}, "on a branch", FIRST + DAY)
+    git(code, "checkout", "-q", "main")
+
+    assert gated(tmp_path, code, FIRST + 13 * DAY) == retro_run.SKIPPED
+    assert gated(tmp_path, code, FIRST + 14 * DAY) == 0
+    started = last_started(tmp_path, "dotfiles")
+    assert f"; due: the 14-day backstop, with a commit at {retro_run.stamp(FIRST + DAY)} in {code}" in started
+
+    assert gated(tmp_path, code, FIRST + 60 * DAY) == retro_run.SKIPPED
+    assert last_logged(tmp_path, "dotfiles") == (
+        f"skipped: 0 of 10 merges into its trunks since {retro_run.stamp(FIRST + 14 * DAY)}, "
+        f"and with no commit since then, no backstop either")
+
+
+def test_a_gated_repo_retro_counts_the_merges_into_the_trunk_of_every_repo_its_tracker_plans(
+        tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
+    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
+    merge(code, FIRST + timedelta(hours=1), n=5)
+    merge(quartz, FIRST + timedelta(hours=1), n=4, trunk="v4")
+    git(quartz, "checkout", "-qb", "draft")
+    merge(quartz, FIRST + timedelta(hours=1), n=3, trunk="draft")
+
+    assert gated(tmp_path, code, FIRST + DAY) == retro_run.SKIPPED, "a merge into another branch than its trunk counts for none"
+    assert last_logged(tmp_path, "dotfiles").startswith("skipped: 9 of 10 merges")
+    merge(quartz, FIRST + DAY + timedelta(hours=1), trunk="v4")
+    assert gated(tmp_path, code, FIRST + 2 * DAY) == 0
+
+
+def test_a_gated_workflow_retro_counts_the_merges_into_the_agents_repos_trunk_alone(
+        tmp_path: Path, stub: Path, repo: Path, code: Path) -> None:
+    """The repos `retro/repos` lists are read for their git, and their merges count for none."""
+    (repo / "agent/retro/repos").write_text(f"{repo}\n{code}\n")
+    merge(code, SINCE + DAY, n=5)
+    trunk = git(repo, "branch", "--show-current").strip()
+    merge(repo, SINCE + DAY, n=2, trunk=trunk)
+    with pytest.raises(SystemExit):
+        retro_run.run_retro(repo, tmp_path / "data", [], SINCE, until=FIRST - DAY, after_merges=3)
+    assert last_logged(tmp_path).startswith("skipped: 2 of 3 merges")
+
+    merge(repo, SINCE + DAY, trunk=trunk)
+    retro_run.run_retro(repo, tmp_path / "data", [], SINCE, until=FIRST, after_merges=3)
+
+    assert last_started(tmp_path, "agents").endswith(f"; due: 3 merges into its trunks since {retro_run.stamp(SINCE)}")
+    assert last_logged(tmp_path).startswith("committed ")
+
+
+def test_a_merge_that_landed_at_origin_alone_counts_and_origin_head_names_the_trunk(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    """A pull request's merge is at origin until max pulls; a trunk that is neither main nor master
+    is the one origin/HEAD names."""
+    git(code, "branch", "-qm", "main", "trunk")
+    origin, other = tmp_path / "origin.git", tmp_path / "other"
+    git(tmp_path, "clone", "-q", "--bare", str(code), str(origin))
+    git(code, "remote", "add", "origin", str(origin))
+    git(code, "fetch", "-q", "origin")
+    git(code, "remote", "set-head", "origin", "trunk")
+    git(tmp_path, "clone", "-q", str(origin), str(other))
+    merge(code, SINCE + DAY, trunk="trunk")
+    merge(other, SINCE + DAY, trunk="trunk")
+    git(other, "push", "-q", "origin", "trunk")
+    git(code, "fetch", "-q", "origin")
+
+    assert gated(tmp_path, code, FIRST, needed=2) == 0
+    assert last_started(tmp_path, "dotfiles").endswith(
+        f"; due: 2 merges into its trunks since {retro_run.stamp(FIRST - timedelta(weeks=8))}"), "its first run's period"
+
+
+def test_a_gated_run_on_a_repo_with_no_trunk_fails_naming_it(tmp_path: Path, stub: Path, code: Path) -> None:
+    git(code, "branch", "-qm", "main", "work")
+
+    assert gated(tmp_path, code, FIRST) == 1
+    assert last_logged(tmp_path, "dotfiles").startswith(
+        f"failed: the check whether it is due: {code} has no trunk to count merges on")
     assert not list(stub.glob("*.argv"))

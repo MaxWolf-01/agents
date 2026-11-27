@@ -161,23 +161,21 @@ def repo_names(repos: list[Path]) -> list[str]:
     return out
 
 
-def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
-    """A sign of max since `since`, or "" when there is none: his latest message in an
-    interactive session, else a commit of his on a branch of one of the repos, his being the author
-    identity the repo itself commits with. The digests it reads are cached as a run's are."""
-    said = [d for d in interactive_digests(projects, cache, repos, since) if d.said_last and parse_time(d.said_last) >= since]
-    if said:
-        d = max(said, key=lambda d: d.said_last)
-        return f"a message of max's at {d.said_last} in session {d.sid} ({d.cwd})"
+def merges(repos: list[Path], since: datetime, trunks: dict[Path, str]) -> int:
+    """How many merges the repos' trunks took since `since`: the merge commits on each trunk's
+    first-parent line committed after it, its local branch's and origin's, so a commit of a branch
+    the merge brought in counts for none. A repo's trunk is the branch `trunks` names for it, else
+    the one its origin/HEAD names, else main or master; exits naming a repo that has none."""
+    count = 0
     for repo in repos:
-        who = subprocess.run(["git", "-C", str(repo), "var", "GIT_AUTHOR_IDENT"], capture_output=True, text=True)
-        if who.returncode != 0 or not (email := re.search(r"<([^>]*)>", who.stdout)):
-            sys.exit(f"{repo} has no author identity, which is what tells max's commits from the rest")
-        if line := git(repo, "log", "--branches", "-1", f"--since-as-filter={since.isoformat()}", "--fixed-strings",
-                       f"--author=<{email.group(1)}>", "--format=%h %cI").strip():
-            sha, date = line.split()
-            return f"a commit of max's at {stamp(parse_time(date))} in {repo.resolve()} ({sha})"
-    return ""
+        branch = (trunks.get(repo.resolve()) or tracker.origin_head(repo)
+                  or next((b for b in ("main", "master") if tracker.integration_refs(repo, b)), None))
+        if not branch or not (refs := tracker.integration_refs(repo, branch)):
+            sys.exit(f"{repo} has no trunk to count merges on: name its `integration` in the repo list, "
+                     f"or let origin/HEAD name it (`git remote set-head origin --auto`)")
+        count += int(git(repo, "rev-list", "--count", "--first-parent", "--merges",
+                         f"--since-as-filter={since.isoformat()}", *refs, "--"))
+    return count
 
 
 def refuse_inside_git(*directories: Path) -> None:
@@ -271,6 +269,8 @@ class Plan(NamedTuple):
     read: list[Path]
     left_out: list[Path]
     """One whose table says `retro = false`, and one with an agent repo of its own, which its own tracker's retro reads."""
+    trunks: dict[Path, str]
+    """The trunk each table names, by its repo's path."""
 
 
 def planned(agent: Path) -> Plan:
@@ -282,7 +282,8 @@ def planned(agent: Path) -> Plan:
         sys.exit(str(refused))
     listed = [(tracker.listed_path(root, table), table.get("retro", True)) for table in tables]
     reads = [retro and not (path / "agent" / ".git").exists() for path, retro in listed]
-    return Plan([p for (p, _), r in zip(listed, reads) if r], [p for (p, _), r in zip(listed, reads) if not r])
+    return Plan([p for (p, _), r in zip(listed, reads) if r], [p for (p, _), r in zip(listed, reads) if not r],
+                {tracker.listed_path(root, table): table["integration"] for table in tables if table.get("integration")})
 
 
 # ── which sessions ───────────────────────────────────────────────────────────
@@ -365,7 +366,6 @@ class Digest:
     interactive: bool
     messages: int
     text: str
-    said_last: str = ""  # when max's last message in it was sent, "" when none was
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
@@ -432,7 +432,7 @@ class _Inline:
         return map(f, *items)
 
 
-CACHE_FORMAT = 9  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 10  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -481,7 +481,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     versions: dict[str, dict[str, list[str]]] = {}
     models: dict[str, dict[str, list[str]]] = {}
     messages = 0
-    said_last: datetime | None = None
     paths: dict[str, set[str]] = {}
 
     def put(at: datetime | None, text: str) -> None:
@@ -530,7 +529,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                 put(at, f"! HOOK → agent: {flatten(a.get('content'))}")
             elif a.get("type") == "queued_command" and a.get("commandMode", "prompt") == "prompt" and (t := said(a.get("prompt"))):
                 messages += 1
-                said_last = at or said_last
                 put(at, f"MAX (queued while the agent worked): {t}")
         elif kind == "user" and session_page.prompted(e):
             content = e.get("message", {}).get("content")
@@ -555,7 +553,6 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
             if not (t := said(content)):
                 continue
             messages += 1
-            said_last = at or said_last
             tag = "MAX"
             if parent := e.get("parentUuid"):
                 parents[parent] += 1
@@ -576,7 +573,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     text = "\n".join(head + lines + page) + "\n" if interactive else ""  # only interactive sessions are read
     starts = list(itertools.accumulate((len(line) + 1 for line in lines), initial=len("\n".join(head)) + 1))
     return Digest(sid=transcript.stem, profile=profile, cwd=cwd, start=start, end=end, interactive=interactive,
-                  messages=messages, text=text, said_last=stamp(said_last) if said_last else "",
+                  messages=messages, text=text,
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
                   page_at=starts[-1] - 1 if interactive else 0,
                   paths={day: sorted(named) for day, named in paths.items()} if interactive else {})
