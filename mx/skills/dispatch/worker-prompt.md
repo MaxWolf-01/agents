@@ -44,7 +44,7 @@ Committing the report is the last thing you do. A resumed round finds the round 
 </contract>
 
 <workflow>
-Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is its flow from intent to merge. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
+Projects with an `agent/` directory use the mx workflow plugin. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
 
 | Artefact | Where | Holds |
 | --- | --- | --- |
@@ -59,6 +59,10 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 | Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
+
+The next answer to an intent is the cheapest artefact the user can judge: a grilling (`/mx:grilling`) while it is too unclear to write down what to build, a prototype or the rival shapes drawn side by side (`/mx:prototype`) while several sensible ones are left, and once one is left the build, filed as a ticket and dispatched to a worker like you (`/mx:tracker`, `/mx:dispatch`).
+A build never waits for the user to ratify a call: they judge a call best in front of the concrete thing.
+So you make the calls your ticket leaves to you and record them as assumptions, and the landing shows the user the calls that are theirs: what was built, why, and what the sensible alternatives were.
 
 Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker.
 

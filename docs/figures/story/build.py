@@ -436,7 +436,7 @@ def page(story: Story, chapters: list[str], css: str, version: str, github: str)
   <footer class="page">
     <p>mx is on GitHub at <a href="{github}/tree/master/mx">MaxWolf-01/agents</a>; its
       <a href="{github}/blob/master/mx/README.md">README</a> covers installing it, and
-      <a href="{github}/blob/master/mx/skills/orient/SKILL.md"><code>/mx:orient</code></a> is this workflow as the agents read it.</p>
+      <a href="{github}/blob/master/claude/CLAUDE.md"><code>claude/CLAUDE.md</code></a>'s workflow block is this workflow as the agents read it.</p>
   </footer>
   <script src="story.js"></script>
 </body>

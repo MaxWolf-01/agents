@@ -36,7 +36,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 </max>
 
 <workflow>
-Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is its flow from intent to merge. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
+Projects with an `agent/` directory use the mx workflow plugin. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
 
 | Artefact | Where | Holds |
 | --- | --- | --- |
@@ -51,6 +51,17 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 | Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
+
+The next answer to an intent is the cheapest artefact max can judge, picked again whenever a build misses or a new question appears.
+While the intent is too unclear to write down what to build, grill it (`/mx:grilling`); while several sensible shapes are left, prototype them or draw them side by side (`/mx:prototype`); once one is left, build it.
+Where you cannot tell one sensible shape from fog, build, and open the brief with the call you doubt.
+
+Work that needs writing down for a worker to build it without this conversation is filed as a ticket and dispatched at once (`/mx:tracker`, `/mx:dispatch`).
+Work small enough to make with max in the session (a keybinding, a version bump, a rename) is session work, reviewed (`/mx:code-review`) before he sees it where it needed judgment.
+
+A build never waits for max to ratify a call: he judges a call best in front of the concrete thing, and tokens are cheap.
+A call he has not made stays marked in its ticket, and the landing shows him the calls that are his: what was built, why, and what the sensible alternatives were.
+Max rules only at a grilling round's open questions, the calls a landing shows, QA, and the board's needs-me group.
 
 Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `git -C agent` is how you commit in the agent repo.
 
@@ -86,7 +97,7 @@ Commit, merge, and push -- when and how:
 - Commit as you go without asking. Once my yes for a merge into the trunk is in, merge `--no-ff --no-commit` from the invocation checkout, which is already sitting on the trunk, run the project's checks on the result, then `git commit -F -` with the body below (`git merge` reads no message from stdin), or `git merge --abort` where they went red (the first-parent log is the per-ticket view; the detail history carries the trailers). The trunk is the branch the work branches from and merges into: usually the default branch, `dev` where that layer exists. A batch that went up as a GitHub PR **stack** (PRs based on each other, one merge box) merges on GitHub, never locally; `/mx:gh-stack` before touching a stack.
 - Push/merge freely, any branch, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects).
 - Ship-shaped actions need the human first: critical or sensitive releases, deploys, irreversible or hard to correct, issues/PRs on OSS; anything hard to reverse, or with significant cost when it goes wrong (time -- excluding time it takes you / agents, money, a broken setup, attention).
-    - Merging worktrees into the trunk counts as a ship-shaped action. Committing and pushing work to a ticket branch is not; "speculative builds" need no yes at all: I judge a call best in front of the concrete thing, and tokens are cheap. (todo clean this line up when refactoring/deleting/folding the orient skill into this sysprompt -- encouraging speculative builds)
+    - Merging worktrees into the trunk counts as a ship-shaped action; committing and pushing work to a ticket branch does not.
 - My yes for a merge into the trunk is my word on that work (ship, merge, accept, or the like), given after you showed it to me, or up front for a change I named myself; a review I am in holds every merge until I end it. A standing yes carries work up a ticket tree only as far as `/mx:tracker`, State, says.
 - Releases: Almost always automated via a Makefile/just; look for it and use it rather than taking manual steps.
 

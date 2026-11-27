@@ -32,10 +32,10 @@ Dissolved:
 - to-spec → grilling writes the design into the ticket round by round; upstream changes to to-spec's design sections map onto `mx/skills/grilling/DESIGN.md`, to its frontmatter or section order onto `mx/skills/tracker/SKILL.md`'s The ticket file, and to its process onto grilling's rounds.
 - to-tickets → cutting a ticket into child tickets, `mx/skills/tracker/SLICING.md`; upstream changes to its slicing rules map there.
 - wayfinder → grilling spans sessions through child tickets the user is in the loop for; upstream changes to wayfinder's map body map onto `mx/skills/tracker/SKILL.md`'s The ticket file for the shape and `mx/skills/grilling/DESIGN.md` for the design sections, to its charting or work-through process onto grilling's Across sessions. Its ticket types map onto nothing: mx has one kind of ticket.
+- ask-matt → the routing paragraphs of `claude/CLAUDE.md`'s workflow block, copied for workers into `mx/skills/dispatch/worker-prompt.md`; upstream changes to its routing map there, to a step's detail onto the skill that owns the step.
 
 Renamed:
 - testing ← tdd (red-green is no longer the frame: upstream changes to tdd's loop map onto diagnosing-bugs' regression test, its test-quality material onto `code-review/TEST-SMELLS.md`)
-- orient ← ask-matt
 - domain-modelling ← domain-modeling
 - tracker ← the one-file-per-ticket local tracker conventions (upstream folded these into setup-matt-pocock-skills)
 
@@ -45,7 +45,7 @@ Everything else upstream is unadopted; flag interesting new skills, don't auto-a
 
 `https://github.com/cursor/plugins`, the path `pstack/` alone (MIT, Lauren Tan). **Baseline**: `e1cc031` (2026-11-16).
 
-Vocabulary: a playbook of `/poteto-mode` → an mx skill or flow (`/mx:orient` routes); a `principle-*` skill → an mx skill or a line of `PRINCIPLES.md`; Cursor's subagents and model roles → `/mx:dispatch` and the Agent tool.
+Vocabulary: a playbook of `/poteto-mode` → an mx skill or flow (`claude/CLAUDE.md`'s workflow block routes); a `principle-*` skill → an mx skill or a line of `PRINCIPLES.md`; Cursor's subagents and model roles → `/mx:dispatch` and the Agent tool.
 
 ### Mapping (mx ← upstream)
 
