@@ -1,3 +1,9 @@
+## 1.0.138
+
+- fix(retro): the page test's browser carries its run
+- feat(retro): the report's page is built by script, takes max's comments, and the run's why moves to its commit
+  Each retro run now builds `retro/report.html` with `mx/skills/retro/report_page.py` in place of a model-drawn page, and commits it with the report and max's comments file, `report.html.state.json`. The page opens on every entry grouped, with its area and every state it names. It derives What changed entry by entry from the report's previous committed version, and shows each entry's State across every committed version in its sheet, beside any artefact an entry's **Artefacts** field names. Comments typed in a sheet save through the container hub, and the next run reads the open ones. REPORT.md says a comment weighs as a message of max's in a session: a verdict only where it clearly rules, the newer of the two counting. The run answers each comment in its entry's History, and drops no entry carrying an unanswered one. The report loses its What changed prose: synthesize writes the why of each change to `changes.md`, which becomes the run's commit body. Every key the page answers to is declared in a `page-keys` block, which its `?` list and the hub's ctrl+alt+? list read, and its copy holds no em dash. Entries carry an **Area** written by the run.
+
 ## 1.0.137
 
 - Merge branch 'ticket/coverage-trial-on-mx'
