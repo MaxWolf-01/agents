@@ -1,3 +1,8 @@
+## 1.0.140
+
+- Agents put pages on the hub with `container-hub open`, and a hubless session page opens with xdg-open
+  The agent instructions name `container-hub open` in place of claude-browser, which dotfiles reduced to a stub (max's Q10 a). The Stop hook, which opens a session's page only where no hub answers, now hands it to xdg-open. RULES.md no longer claims the Stop hook hands links to the hub; the page lists them under "to look at". make check and make test (1150) pass on the branch, whose tree the merge result is.
+
 ## 1.0.139
 
 - Grilling maps the solution space; the smell list names parse-don't-validate and the hidden dependency; a technique is named, never taught
