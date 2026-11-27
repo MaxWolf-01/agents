@@ -1,3 +1,8 @@
+## 1.0.139
+
+- Grilling maps the solution space; the smell list names parse-don't-validate and the hidden dependency; a technique is named, never taught
+  Four sentences. The grilling skill treats the options the user named as points in the solution space, never its edges, and maps the space before choosing options. The smell list's fix for needless guards opens on "parse, don't validate", and it gains Hidden Dependency: logic that reaches for the clock, the network, the disk or a child process itself, fixed by passing it in, however large the refactor. PRINCIPLES.md says a technique is named, never taught, and that a list of names is not the boundary.
+
 ## 1.0.138
 
 - fix(retro): the page test's browser carries its run
