@@ -10,8 +10,7 @@ agent/tickets/session-page.md, its Properties and its Decisions on what the hook
 and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-across-handoffs'
 Properties, over the worked example in `fixtures/`, whose records a check corrupts one at a time.
 The prose reviewer, which the hook never calls, is stubbed by conftest.py.
-The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
-for which session; the hub is absent unless a check starts a stand-in of it on a socket of its own.
+The browser is a stand-in `xdg-open` first on PATH that records what it was asked to open; the hub is absent unless a check starts a stand-in of it on a socket of its own.
 """
 
 import io
@@ -60,23 +59,23 @@ def sockets() -> Iterator[Path]:
 
 @pytest.fixture(autouse=True)
 def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sockets: Path) -> Iterator[Path]:
-    """A `claude-browser` first on PATH that appends each open it is asked for to the file handed
-    back, as the session it was told and the path, so no check starts a browser, then says so down
+    """An `xdg-open` first on PATH that appends each open it is asked for to the file handed back,
+    so no check starts a browser, then says so down
     the pipe beside it. No hub answers on the socket the hook asks, so no check reaches one running
     on the host."""
     where = tmp_path / "browser"
     where.mkdir()
     os.mkfifo(where / "landed")
-    (where / "claude-browser").write_text(
+    (where / "xdg-open").write_text(
         f"#!{sys.executable}\n"
         "import os, sys\n"
         f"with open({str(where / 'opened')!r}, 'a') as record:\n"
-        "    record.write(os.environ['MX_ORIGIN_SESSION'] + '\\t' + ' '.join(sys.argv[1:]) + '\\n')\n"
+        "    record.write(' '.join(sys.argv[1:]) + '\\n')\n"
         "try:\n"
         f"    os.write(os.open({str(where / 'landed')!r}, os.O_WRONLY | os.O_NONBLOCK), b'.')\n"
         "except OSError:\n"
         "    pass  # the check that would read it is over\n")
-    (where / "claude-browser").chmod(0o755)
+    (where / "xdg-open").chmod(0o755)
     monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("CONTAINER_HUB_SOCKET", str(sockets / "hub.sock"))
     # Held for the check's length: a read end, so the stand-in's write lands, and a write end, so
@@ -87,14 +86,13 @@ def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sockets: Path) -> I
         os.close(end)
 
 
-def opened(record: Path, count: int) -> list[tuple[str, str]]:
-    """What the stand-in browser was asked to open, as (session, path) in the order the opens
-    landed, once `count` have landed: the hook starts each open and waits on none. An open beyond
+def opened(record: Path, count: int) -> list[str]:
+    """What the stand-in browser was asked to open, in the order the opens landed, once `count` have landed: the hook starts each open and waits on none. An open beyond
     the count may land later, so what proves none was asked for is the log, which `main` writes
     before it returns."""
 
-    def landed() -> list[tuple[str, str]]:
-        return [tuple(line.split("\t", 1)) for line in record.read_text().splitlines()] if record.exists() else []
+    def landed() -> list[str]:
+        return record.read_text().splitlines() if record.exists() else []
 
     pipe = os.open(record.parent / "landed", os.O_RDONLY | os.O_NONBLOCK)
     try:
@@ -223,7 +221,7 @@ def test_a_sessions_first_turn_that_ends_on_a_reply_starts_its_page_with_that_re
     page = (directory / PAGE).read_text()
     assert rows(page) == [chat.stem]
     assert "<title>Helferline handoff continued · session page</title>" in page
-    assert opened(browser, 1) == [(FRESH, str(directory / PAGE))]
+    assert opened(browser, 1) == [str(directory / PAGE)]
 
 
 SAID_NOTHING = {"no text": "", "only blank lines": "\n  \n"}
@@ -348,8 +346,7 @@ def test_the_page_opens_on_the_first_render_where_no_hub_answers_and_never_where
     answers: bool, opens: int, why: str, worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None],
     attended: Path, hub: Callable[..., None],
 ) -> None:
-    """A render hands the page to `claude-browser`, told the session it belongs to, only the first
-    time and only where no hub answers, since a repeat would be another tab. A hub finds the page on
+    """A render hands the page to `xdg-open` only the first time and only where no hub answers, since a repeat would be another tab. A hub finds the page on
     disk and reloads it once it is written anew, so nothing hands it over. The turns wrote no record,
     so the links record 04 carries, from a turn before, open nothing."""
     if answers:
@@ -357,7 +354,7 @@ def test_the_page_opens_on_the_first_render_where_no_hub_answers_and_never_where
     for _ in range(3):
         run(payload(worked_example, unrecorded))
     page = str(worked_example / PAGE)
-    assert opened(browser, opens) == [(worked_example.name, page)] * opens
+    assert opened(browser, opens) == [page] * opens
     said = [(entry["page"], entry["opened"]) for entry in logged(attended, "opened")]
     assert [(where, what.startswith("started ")) for where, what in said[:opens]] == [(page, True)] * opens
     assert said[opens:] == [(page, why)] * (3 - opens)
@@ -368,13 +365,13 @@ def test_a_render_opens_no_artefact_the_turns_record_links(
     attended: Path,
 ) -> None:
     """what-waits-on-you-rethought: an artefact opens only when the user opens it from the page's
-    tasks, so the render hands `claude-browser` the page alone, on its first render with no hub."""
+    tasks, so the render hands `xdg-open` the page alone, on its first render with no hub."""
     record = worked_example / "turns" / "05.md"
     record.write_text(RECORD_05 + "\n## Links\n\n- [The figure](/srv/figures/fig.svg)\n- [The spec](agent/show/x/spec.html)\n")
     with_write(unrecorded, "Write", record)
     run(payload(worked_example, unrecorded))
     assert shown(capsys)
-    assert opened(browser, 1) == [(worked_example.name, str(worked_example / PAGE))]
+    assert opened(browser, 1) == [str(worked_example / PAGE)]
     assert logged(attended, "artefact") == []
 
 
@@ -524,7 +521,7 @@ def test_a_session_whose_records_sit_in_the_agent_repo_keeps_its_turns_on_its_ne
     assert (worked_example / AGENT_REPO).read_text() == f"{earlier.parents[1]}\n"
     assert {"t01", "t02", "t03", "t04"} <= set(rows((worked_example / PAGE).read_text()))
     assert sorted(p.name for p in (earlier / "turns").iterdir()) == ["01.md", "02.md", "03.md", "04.md"]
-    assert (worked_example.name, str(worked_example / PAGE)) in opened(browser, 3), "its first render under the account opens it"
+    assert str(worked_example / PAGE) in opened(browser, 3), "its first render under the account opens it"
 
 
 def test_the_page_names_the_account_the_session_runs_on_as_its_turn_ends(
@@ -590,9 +587,9 @@ def test_a_running_sessions_records_and_page_stay_out_of_every_checkout(
 
 # Each is the stand-in's script, None for none, and what the log says came of the open.
 NO_BROWSER = {
-    "a host with no claude-browser": (None, "no claude-browser on PATH"),
-    "a claude-browser that hangs and then fails": ("#!/usr/bin/env bash\nsleep 30\nexit 1\n", "started "),
-    "a claude-browser that cannot start": ("#!/nowhere/interpreter\n", " did not start: "),
+    "a host with no xdg-open": (None, "no xdg-open on PATH"),
+    "an xdg-open that hangs and then fails": ("#!/usr/bin/env bash\nsleep 30\nexit 1\n", "started "),
+    "an xdg-open that cannot start": ("#!/nowhere/interpreter\n", " did not start: "),
 }
 
 
@@ -606,9 +603,9 @@ def test_a_host_that_cannot_open_the_page_still_renders_it_and_ends_the_turn(
     where = tmp_path / "host"
     where.mkdir()
     if script:
-        (where / "claude-browser").write_text(script)
-        (where / "claude-browser").chmod(0o755)
-    rest = [d for d in os.environ["PATH"].split(os.pathsep) if not (Path(d) / "claude-browser").exists()]
+        (where / "xdg-open").write_text(script)
+        (where / "xdg-open").chmod(0o755)
+    rest = [d for d in os.environ["PATH"].split(os.pathsep) if not (Path(d) / "xdg-open").exists()]
     monkeypatch.setenv("PATH", os.pathsep.join([str(where), *rest]))
     started = time.monotonic()
     run(payload(worked_example, transcript))
