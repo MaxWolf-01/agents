@@ -268,7 +268,7 @@ def test_a_link_is_a_path_from_the_repo_root(worked_example: Path, transcript: P
 
 
 def test_a_path_under_show_is_the_sessions_own_artefact(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
-    """Session work's artefacts sit in `show/` of the session's directory (claude/CLAUDE.md's artefact table), which is in
+    """The artefacts of work a session did without a ticket sit in `show/` of the session's directory (claude/CLAUDE.md's artefact table), which is in
     no repo, so a record's `show/…` is from there, as a link, a link in prose and a path in code;
     the repo root's own `show/` is reached by no such path."""
     (worked_example / "show").mkdir()
