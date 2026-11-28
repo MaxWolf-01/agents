@@ -257,10 +257,16 @@ button.id:hover { color: var(--accent); }
 .note-in.t-note { margin: 0.2rem 0 0.4rem; width: 100%; }
 .tasks.quiet .t-gap:first-child { display: none; }
 /* a question's or a to-do's card, over the page: one at a time, with the review of the batch in its place */
-.card-dialog { position: fixed; inset: 0; z-index: 8; display: grid; place-items: start center; padding: 6vh 1rem 1rem; background: color-mix(in srgb, var(--strong) 35%, transparent); overflow-y: auto; }
+.card-dialog { position: fixed; inset: 0; z-index: 8; display: grid; grid-template-columns: minmax(0, 1fr); place-items: start center; padding: 6vh 1rem 1rem; background: color-mix(in srgb, var(--strong) 35%, transparent); overflow-y: auto; }
 .card-dialog[hidden] { display: none; }
-.d-card { width: min(56rem, 100%); box-sizing: border-box; padding: 1.25rem 1.5rem 1.1rem; background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); container-type: inline-size; }
+.d-card { width: min(56rem, 100%); box-sizing: border-box; padding: 1.25rem 1.5rem 1.1rem; background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); }
 .recap { margin-top: 0.8rem; max-width: var(--measure); }
+/* A recap's table, under a list item as often as not, takes the width it needs: the card grows to it, up to the
+   window's, and past that the cells wrap, a path in code too, every column in view beside the one it is compared against. */
+.d-card:has(.recap table) { width: max-content; min-width: min(56rem, 100%); max-width: 100%; }
+.recap:has(table), .recap :has(> table), .recap :has(> li > table) { max-width: none; }
+.recap table { max-width: 100%; }
+.recap :is(th, td) code { overflow-wrap: anywhere; }
 .card .links { margin-top: 0.8rem; }
 /* the timeline: an artefact's type before it, and one the user looked at marked */
 .column li .t-type { padding: 0; margin-right: 0.3rem; vertical-align: -2px; }
@@ -292,8 +298,10 @@ button.id:hover { color: var(--accent); }
 .opttab tr.chosen td.k { color: var(--accent); }
 .opttab td.l, .opttab td.g, .opttab td.c { color: var(--muted); width: 22%; font-size: 0.93em; }
 /* A card narrower than about three readable columns, as on a phone, stacks each option's leads to,
-   gives and costs under its words, each named, rather than squeeze them beside it. */
-@container (max-width: 36rem) {
+   gives and costs under its words, each named, rather than squeeze them beside it. A card that narrow
+   spans a window under 38rem, so the window decides: a size container would fix the card's width
+   against what it holds, which a recap's table widens. */
+@media (max-width: 38rem) {
   .opttab thead { display: none; }
   .opttab tr { display: grid; grid-template-columns: 2rem minmax(0, 1fr); border-bottom: 1px solid var(--edge); }
   .opttab tr:last-child { border-bottom: 0; }
