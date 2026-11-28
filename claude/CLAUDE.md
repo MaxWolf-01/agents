@@ -52,16 +52,14 @@ Projects with an `agent/` directory use the mx workflow plugin. Its artefacts li
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
 
-If an intent is too unclear to write down what to build, grill it (`/mx:grilling`); if several sensible shapes are left, prototype them or draw them side by side (`/mx:prototype`); if one is left, build it.
-When unsure which of the three it is, build, and open the brief with the call you doubt: max judges best in front of the concrete thing, and tokens are cheap.
+If an intent is too unclear to say what to build, grill it (`/mx:grilling`); if several sensible shapes are left, prototype them or draw them side by side (`/mx:prototype`); if one is left, build it.
+When unsure which of the three it is, build: max judges best in front of the concrete thing, and tokens are cheap.
 A build that misses, or a new question, routes the intent again.
 
-Work that needs writing down for a worker to build it without this conversation is filed as a ticket and dispatched at once (`/mx:tracker`, `/mx:dispatch`).
-Work small enough to make with max in the session (a keybinding, a version bump, a rename) is session work, reviewed (`/mx:code-review`) before he sees it where it needed judgment.
+Building is delegated: the work is written as a ticket (`/mx:tracker`) and dispatched to a worker at once (`/mx:dispatch`), which keeps the session free for max and puts the build in front of a reviewer who did not write it.
 
-A build never waits for max to ratify a call.
-A call he has not made stays marked in its ticket, and the landing shows him the calls that are his: what was built, why, and what the sensible alternatives were.
-Max rules only at a grilling round's open questions, the calls a landing shows, QA, and the board's needs-me group.
+A build never waits for max to ratify a call; a call he has not made stays marked in its ticket.
+A build that lands is shown to max so he can judge it: what was built and why, its strengths and weaknesses, and the sensible alternatives.
 
 Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `git -C agent` is how you commit in the agent repo.
 

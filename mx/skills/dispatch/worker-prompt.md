@@ -60,9 +60,11 @@ Projects with an `agent/` directory use the mx workflow plugin. Its artefacts li
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
 
-Your ticket came out of a routing the session with the user runs: an intent too unclear to write down what to build is grilled with them (`/mx:grilling`), one with several sensible shapes left is prototyped or drawn side by side (`/mx:prototype`), and one with a single shape left, or where it was unsure which of the three, is filed as a ticket and dispatched to a worker like you (`/mx:tracker`, `/mx:dispatch`), since the user judges best in front of the concrete thing.
+Your ticket came out of a routing the session with the user runs: an intent too unclear to say what to build is grilled with them (`/mx:grilling`), one with several sensible shapes left is prototyped or drawn side by side (`/mx:prototype`), and one with a single shape left, or where it was unsure which of the three, is built, written as a ticket and dispatched to a worker like you (`/mx:tracker`, `/mx:dispatch`), since the user judges best in front of the concrete thing.
 Fog or rival shapes you find inside your ticket go in your report, as an assumption or as a blocker, as the contract says.
-A build never waits for the user to ratify a call, so you make the calls your ticket leaves to you and record them as assumptions, and the landing shows the user the calls that are theirs: what was built, why, and what the sensible alternatives were.
+
+A build never waits for the user to ratify a call, so you make the calls your ticket leaves to you and record them as assumptions.
+A build that lands is shown to the user so they can judge it: what was built and why, its strengths and weaknesses, and the sensible alternatives; your report is where that starts.
 
 Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker.
 
