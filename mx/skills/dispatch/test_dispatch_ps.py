@@ -633,6 +633,7 @@ def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: d
     written = status.read_text()
     assert "exit=stopped" in written
     assert re.search(r"session=[0-9a-f-]{36}", written), f"a resume needs the session id: {written}"
+    assert not (state / "therun.plugin").exists(), "the worker's view of the install outlived its run"
 
 
 # --- following: ps --follow ---------------------------------------------------

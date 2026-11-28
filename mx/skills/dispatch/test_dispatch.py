@@ -1205,7 +1205,8 @@ def test_a_worker_lists_only_the_skills_worker_skills_names_and_reaches_every_fi
     plugin = mx(tmp_path)
     (plugin / ".claude-plugin").mkdir()
     (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "mx"}')
-    for name in ("testing", "grilling", "added-since"):
+    # `test` and `kept` match a line of worker-skills only in part.
+    for name in ("testing", "grilling", "added-since", "test", "kept"):
         (plugin / "skills" / name).mkdir()
         (plugin / "skills" / name / "SKILL.md").write_text(f"the {name} skill")
     (plugin / "skills" / "grilling" / "DESIGN.md").write_text("design")
@@ -1251,7 +1252,7 @@ def test_the_worker_prompt_names_only_skills_on_the_workers_listing() -> None:
     section of RULES.md the runner appends to the prompt counts as the prompt."""
     rules = (SKILL.parent / "session-page" / "RULES.md").read_text()
     prompt = (SKILL / "worker-prompt.md").read_text() + rules[rules.index("## What the user decides"):]
-    named = set(re.findall(r"/mx:([a-z-]+)", prompt))
+    named = set(re.findall(r"(?<![\w-])mx:([a-z-]+)", prompt))
     assert named and named <= worker_skills(), named - worker_skills()
 
 
