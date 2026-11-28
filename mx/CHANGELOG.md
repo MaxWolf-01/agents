@@ -1,3 +1,8 @@
+## 1.0.143
+
+- The orient skill is deleted; its routing is in the always-loaded prompt
+  mx/skills/orient is gone. The workflow block of claude/CLAUDE.md now routes every intent itself: grill what is too unclear to say what to build, prototype rival shapes, build a single one, and build when unsure; delegate the build to a worker through a ticket, with the two reasons for delegating; build without waiting for max to ratify a call, and show each landing as what was built, why, its strengths and weaknesses and the alternatives. The worker prompt carries a worker's part of it: where fog and rival shapes go, that the open calls are its own, that its report argues for the build. Orient's step rules moved to the skill that owns each step or were cut where it already said them; dispatch gained a QA section, and tracker, grilling and prototype a sentence each. A session carries 120 more words than before, a worker 44.
+
 ## 1.0.142
 
 - Every mx skill is reworded down to the rules it carries
