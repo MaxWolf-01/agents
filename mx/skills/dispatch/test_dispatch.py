@@ -1246,6 +1246,15 @@ def test_worker_skills_names_only_skills_a_worker_can_load() -> None:
     assert not unloadable, unloadable
 
 
+def test_the_worker_prompt_names_only_skills_on_the_workers_listing() -> None:
+    """A skill the prompt names that the worker cannot load sends it looking for one, and the
+    section of RULES.md the runner appends to the prompt counts as the prompt."""
+    rules = (SKILL.parent / "session-page" / "RULES.md").read_text()
+    prompt = (SKILL / "worker-prompt.md").read_text() + rules[rules.index("## What the user decides"):]
+    named = set(re.findall(r"/mx:([a-z-]+)", prompt))
+    assert named and named <= worker_skills(), named - worker_skills()
+
+
 def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path, runner: Path) -> None:
     """A worker without the plugin has none of the skills its contract names, so a runner started
     without DISPATCH_PLUGIN_DIR says so on the status line rather than start one."""
