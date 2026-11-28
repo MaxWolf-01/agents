@@ -6,7 +6,8 @@
 #   slug          the ticket this worker holds: its report is agent/show/<slug>/report.md, and
 #                 a handoff it writes instead agent/show/<slug>/handoff.md, committed in the
 #                 agent repo this pane's worktree holds at `agent`
-#   run           id of this run, unique; names <run>.{status,log} beside this script
+#   run           id of this run, unique; names <run>.{status,log} beside this script, and
+#                 <run>.plugin, the worker's view of the mx install, there while the run lasts
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) and INT (a Ctrl-C in the pane) end the run: the status line then
 # reads `exit=stopped`.
@@ -16,8 +17,9 @@
 #   DISPATCH_EFFORT           claude --effort for every attempt; `medium` unless set
 #   DISPATCH_CPU_WEIGHT       the CPUWeight of each attempt's scope; 100, every worker's
 #                             equal share, unless set
-#   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
-#                             `dispatch-ctl` resolves it on the host
+#   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir, as the skills its
+#                             skills/dispatch/worker-skills names; required, and `dispatch-ctl`
+#                             resolves it on the host
 #   DISPATCH_CONTEXT          the file the worker reads its ticket's context and this round's
 #                             message from, which `dispatch-ctl` names; the worker inherits it
 #   MODEL_RUNS_LOG            where each attempt's line goes (model-runs, staged beside
@@ -71,8 +73,31 @@ if [ -z "$asking_rule" ]; then
         "no '## What the user decides' section in $rules; is this host's mx older than the dispatcher's?" | tee "$here/$run_id.status" >&2
     exit 1
 fi
+worker_skills=$plugin/skills/dispatch/worker-skills
+if [ ! -f "$worker_skills" ]; then
+    printf 'attempts=0 exit=1 report=no handoff=no session=- error=%s\n' \
+        "no $worker_skills; is this host's mx older than the dispatcher's?" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
 # Kept from the worker, so a `dispatch-ctl` it runs lists the host's mx for itself.
 unset DISPATCH_PLUGIN_DIR
+# The install as the worker loads it: every file of it, linked, less the SKILL.md of each skill
+# worker-skills does not name, so the worker's listing holds those skills alone while a path into
+# any skill's directory still resolves. Claude Code can narrow a plugin's skills no other way:
+# `skillOverrides` skips plugin skills, a manifest's `skills` adds to the `skills/` scan, and a
+# `Skill(...)` deny rule blocks a call but leaves the skill listed.
+view=$here/$run_id.plugin
+mkdir -p "$view/skills"
+find "$plugin" -mindepth 1 -maxdepth 1 ! -name skills -exec ln -s {} "$view/" \;
+for skill in "$plugin"/skills/*/; do
+    skill=${skill%/} name=${skill##*/}
+    if grep -qx "$name" "$worker_skills"; then
+        ln -s "$skill" "$view/skills/$name"
+    else
+        mkdir "$view/skills/$name"
+        find "$skill" -mindepth 1 -maxdepth 1 ! -name SKILL.md -exec ln -s {} "$view/skills/$name/" \;
+    fi
+done
 
 # By id, never --continue: --continue means the newest conversation in this
 # directory, which stops being this worker's the moment anything else runs
@@ -143,7 +168,7 @@ common=(
     --effort "$effort"
     --setting-sources project
     --strict-mcp-config
-    --plugin-dir "$plugin"
+    --plugin-dir "$view"
     --settings '{"autoMemoryEnabled": false}'
     --append-system-prompt "$(cat "$prompt_file")
 
@@ -227,6 +252,7 @@ for attempt in $(seq 1 $max_attempts); do
 done
 
 [ -n "$stopped" ] && rc=stopped
+rm -rf "$view"
 # Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
 # a report to import.
 printf 'attempts=%s exit=%s report=%s handoff=%s session=%s models=%s\n' \

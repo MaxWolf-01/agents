@@ -48,7 +48,7 @@ Projects with an `agent/` directory use the mx workflow plugin. Its artefacts li
 | Prototype | `agent/prototypes/<slug>/` | throwaway code that answered a design question, and its `ANSWER.md` |
 | Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for work a session did without a ticket; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
 | Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
-| Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
+| Retro | `agent/retro/` | the living report and the page built from it |
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
 

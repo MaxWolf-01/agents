@@ -1,0 +1,25 @@
+# The mx skills a dispatched worker's listing holds; run-worker.sh leaves every other one off it.
+attack-the-premise
+benchmark-checklist
+bloat-audit
+code-review
+codebase-design
+codex
+diagnosing-bugs
+domain-modelling
+fork
+handoff
+house-style
+improve-codebase-architecture
+ml
+pickup
+project-setup
+prototype
+research
+show
+testing
+tmux
+tracker
+tyro-cli
+writing-for-agents
+writing-for-humans
