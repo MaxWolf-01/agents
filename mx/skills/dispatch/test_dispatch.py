@@ -1873,6 +1873,86 @@ def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_a
     assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
 
 
+def reviewed_unmerged(toy: Path, makefile: str = "") -> tuple[str, str]:
+    """warm-preset claimed, built in both repos and in `review`, its code branch unmerged; `makefile`,
+    where given, committed on main first. Answers main's tip and the code branch's."""
+    if makefile:
+        (toy / "Makefile").write_text(makefile)
+        git(toy, "add", "Makefile")
+        git(toy, "commit", "-q", "-m", "a check")
+    assert run(toy, "claim", "warm-preset").returncode == 0
+    _, tip = built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    built_on(toy / "agent", "ticket/warm-preset", "main", "warm.md")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    return git(toy, "rev-parse", "main").strip(), tip
+
+
+def test_an_accept_merges_the_ticket_branch_after_its_check_goes_green(toy: Path) -> None:
+    """`/mx:dispatch`, The ruling, Accept: the merge, its check and its commit are the accept's own,
+    so none of them is a step the orchestrator can skip or misread."""
+    main, tip = reviewed_unmerged(toy, "check:\n\ttouch checked\n")
+
+    accepted = run(toy, "accept", "warm-preset")
+
+    assert accepted.returncode == 0, accepted.stderr
+    assert (toy / "checked").exists(), "the Makefile's check ran on the merge"
+    assert git(toy, "log", "-1", "--format=%P", "main").split() == [main, tip], "one --no-ff merge onto main"
+    assert git(toy, "log", "-1", "--format=%s", "main").strip() == "Merge branch 'ticket/warm-preset'"
+    assert status_of(toy, "warm-preset") == "done"
+
+
+def test_an_accept_checks_with_the_command_it_is_given_in_place_of_the_makefile(toy: Path) -> None:
+    reviewed_unmerged(toy, "check:\n\tfalse\n")
+
+    accepted = run(toy, "accept", "warm-preset", "--verify", "touch verified")
+
+    assert accepted.returncode == 0, accepted.stderr
+    assert (toy / "verified").exists()
+    assert status_of(toy, "warm-preset") == "done"
+
+
+def test_an_accept_of_a_ticket_not_in_review_merges_nothing(toy: Path) -> None:
+    assert run(toy, "claim", "warm-preset").returncode == 0
+    built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    main = git(toy, "rev-parse", "main").strip()
+
+    accepted = run(toy, "accept", "warm-preset")
+
+    assert accepted.returncode == 1
+    assert "warm-preset is claimed, not in review, so nothing is merged" in accepted.stderr
+    assert git(toy, "rev-parse", "main").strip() == main
+
+
+def test_an_accept_whose_check_goes_red_merges_nothing_and_says_so(toy: Path) -> None:
+    main, _ = reviewed_unmerged(toy, "check:\n\tfalse\n")
+
+    accepted = run(toy, "accept", "warm-preset")
+
+    assert accepted.returncode == 1
+    assert "`make check` went red on ticket/warm-preset merged into code, so nothing is merged" in accepted.stderr
+    assert git(toy, "rev-parse", "main").strip() == main
+    assert not git(toy, "status", "--porcelain", "--untracked-files=no"), "no merge left in progress"
+    assert status_of(toy, "warm-preset") == "review"
+
+
+def test_an_accept_onto_a_moved_branch_that_conflicts_merges_nothing_and_names_the_resume(toy: Path) -> None:
+    reviewed_unmerged(toy)
+    (toy / "warm.txt").write_text("main got here first\n")
+    git(toy, "add", "warm.txt")
+    git(toy, "commit", "-q", "-m", "main moved")
+    moved = git(toy, "rev-parse", "main").strip()
+
+    accepted = run(toy, "accept", "warm-preset")
+
+    assert accepted.returncode == 1
+    assert "does not merge cleanly into main in code" in accepted.stderr
+    assert "resume the worker" in accepted.stderr
+    assert git(toy, "rev-parse", "main").strip() == moved
+    assert not git(toy, "status", "--porcelain", "--untracked-files=no")
+    assert status_of(toy, "warm-preset") == "review"
+
+
 def test_a_claim_in_a_project_kept_on_two_machines_is_pushed_and_its_integration_branch_is_not(toy: Path) -> None:
     """`two-main-checkouts-synced-by-git` in the dotfiles tracker: every commit in the agent repo
     goes to its upstream at once, and an integration branch is pushed by whoever merges into it,

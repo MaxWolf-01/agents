@@ -6,9 +6,13 @@
 # judgment around it: which fixed point, where the spec is, what effort, and
 # what to do with the findings.
 #
-# Usage: review <fixed-point> [--reviewers read,tests] [--spec <slug|path>]
+# Usage: review [<fixed-point>] [--reviewers read,tests] [--spec <slug|path>]
 #               [--effort <level>] [--model <model>] [--minutes <n>]
-#   <fixed-point>  the commit, branch or tag the diff is measured from. What
+#   <fixed-point>  the commit, branch or tag the diff is measured from.
+#                  Omitted: since the last review, the nearest to HEAD of the
+#                  last commit with a `Workflow-stage: review` trailer, the
+#                  upstream, and the merge-base with the default branch, among
+#                  those that leave a diff; the one taken is printed. What
 #                  the reviewers get is the three-dot diff with both ends
 #                  pinned to SHAs, so it holds still while they read and
 #                  stays what the range says: <merge-base>..<HEAD>, short.
@@ -20,7 +24,8 @@
 #            file (an issue body fetched to one, a prompt), and whatever
 #            discussion the reviewers should not reopen. With it, read judges
 #            the diff against it too, and tests reads its Testing seams.
-#   --effort every reviewer's effort, `medium` by default.
+#   --effort every reviewer's effort: low, medium (the default), high, xhigh
+#            or max.
 #   --model  every reviewer's model, `opus` by default.
 #   --minutes every reviewer's time budget, which its prompt states and it
 #            paces its work to, 10 by default; a budget, not a timeout.
@@ -88,17 +93,17 @@ help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
 
 case ${1:-} in
     -h|--help) help; exit 0 ;;
-    "")        help >&2; exit 1 ;;
-    -*)        die "$1 came before the fixed point, which comes first: review <fixed-point> [flags]" ;;
+    ""|-*)     fixed= ;;
+    *)         fixed=$1; shift ;;
 esac
-fixed=$1; shift
 
 reviewers= spec= model=opus effort=medium minutes=10
 while [ $# -gt 0 ]; do
     case $1 in
         --reviewers) reviewers=${2:-}; [ -n "$reviewers" ] || die "--reviewers takes a comma-separated list: read, tests"; shift 2 ;;
         --spec)   spec=${2:-};   [ -n "$spec" ]   || die "--spec takes a ticket's slug or a path"; shift 2 ;;
-        --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
+        --effort) effort=${2:-}; [[ $effort =~ ^(low|medium|high|xhigh|max)$ ]] ||
+                      die "--effort takes low, medium, high, xhigh or max, not ${effort:-nothing}"; shift 2 ;;
         --model)  model=${2:-};  [ -n "$model" ]  || die "--model takes a model alias or id"; shift 2 ;;
         --minutes) minutes=${2:-}; [[ $minutes =~ ^[1-9][0-9]*$ ]] || die "--minutes takes a whole number of minutes"; shift 2 ;;
         *) die "unknown argument: $1" ;;
@@ -118,6 +123,27 @@ cd "$root" || die "cannot enter $root"
 if [ -n "$slug" ]; then
     context=$("$tracker" context "$slug") ||
         die "--spec takes a file or a ticket's slug; $slug is neither a file nor a ticket of this tracker"
+fi
+# The candidate nearest HEAD whose merge-base with it leaves a diff, or nothing.
+since_last_review() {
+    local default c b n best= fewest=
+    default=$(git symbolic-ref -q --short refs/remotes/origin/HEAD) ||
+        default=$(git rev-parse -q --verify main >/dev/null && echo main || echo master)
+    for c in "$(git log --grep='^Workflow-stage: review$' -1 --format=%H HEAD)" \
+             "$(git rev-parse -q --verify '@{upstream}' 2>/dev/null)" \
+             "$(git merge-base HEAD "$default" 2>/dev/null)"; do
+        [ -n "$c" ] || continue
+        b=$(git merge-base "$c" HEAD) || continue
+        git diff --quiet "$b" HEAD && continue
+        n=$(git rev-list --count "$b..HEAD")
+        if [ -z "$fewest" ] || [ "$n" -lt "$fewest" ]; then best=$c fewest=$n; fi
+    done
+    echo "$best"
+}
+if [ -z "$fixed" ]; then
+    fixed=$(since_last_review)
+    [ -n "$fixed" ] || die "no fixed point given, and neither the last review, the upstream nor the default branch leaves a diff: name one"
+    echo "review: since $(git rev-parse --short=7 "$fixed"), the nearest of the last review, the upstream and the default branch" >&2
 fi
 git rev-parse --verify -q "$fixed" >/dev/null || die "$fixed does not resolve in $root"
 base=$(git merge-base "$fixed" HEAD) || die "$fixed and HEAD have no merge-base"

@@ -14,7 +14,7 @@ caller's setup and runs Opus at the effort the caller gives, `medium` by default
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
 every ancestor's, assembled by the one command that assembles a worker's prompt; and
 `agent/tickets/review-says-when-an-axis-died.md`, that a reviewer that died reads
-differently from one that reported, and that a flag before the fixed point is refused naming the order;
+differently from one that reported, and that a fixed point read as a flag's value is refused naming what the flag takes;
 and `agent/tickets/tickets-cut-by-independent-context.md`, that a review is one shape, two reviewers:
 one reads the diff against the spec and the standards, one runs the suite.
 """
@@ -504,12 +504,58 @@ def test_a_reviewer_of_no_such_name_is_refused_naming_the_two_before_anything_st
     assert not (review_dir(repo) / "prompts").exists()
 
 
-def test_a_flag_before_the_fixed_point_is_refused_with_the_order(repo):
+def bare(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    """A review given no fixed point."""
     cmd = command(repo, 0, ())
-    done = subprocess.run(**{**cmd, "args": [str(REVIEW), "--effort", "main~1"]}, capture_output=True, timeout=60)
+    return subprocess.run(**{**cmd, "args": [str(REVIEW), *args]}, capture_output=True, timeout=60)
+
+
+def reviewed_range(done: subprocess.CompletedProcess) -> str:
+    return re.search(r"reviews/[^/]+/([0-9a-f]+\.\.[0-9a-f]+)/", done.stdout).group(1)
+
+
+def short(repo: Path, ref: str) -> str:
+    return git(repo, "rev-parse", "--short=7", ref).strip()
+
+
+def test_a_fixed_point_swallowed_as_the_effort_is_refused_naming_the_levels(repo):
+    done = bare(repo, "--effort", "main~1")
 
     assert done.returncode == 1
-    assert done.stderr.strip() == "review: --effort came before the fixed point, which comes first: review <fixed-point> [flags]"
+    assert done.stderr.strip() == "review: --effort takes low, medium, high, xhigh or max, not main~1"
+
+
+def test_with_no_fixed_point_the_review_runs_since_the_last_review(repo):
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit(repo, "tests/test_two.py", "def test_two(): assert 2 * 2 == 4\n")
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty",
+        "-m", "fix: a finding\n\nWorkflow-stage: review")
+    reviewed = short(repo, "HEAD")
+    commit(repo, "tests/test_three.py", "def test_three(): assert 3 - 3 == 0\n")
+
+    done = bare(repo, "--effort", "low")
+
+    assert done.returncode == 0, done.stderr
+    assert reviewed_range(done) == f"{reviewed}..{short(repo, 'HEAD')}"
+
+
+def test_with_no_fixed_point_and_no_review_a_branch_is_reviewed_since_the_default_branch(repo):
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit(repo, "tests/test_two.py", "def test_two(): assert 2 * 2 == 4\n")
+    commit(repo, "tests/test_three.py", "def test_three(): assert 3 - 3 == 0\n")
+
+    done = bare(repo)
+
+    assert done.returncode == 0, done.stderr
+    assert reviewed_range(done) == f"{short(repo, 'main')}..{short(repo, 'HEAD')}"
+
+
+def test_with_no_fixed_point_and_nothing_that_leaves_a_diff_the_review_asks_for_one(repo):
+    done = bare(repo)
+
+    assert done.returncode == 1
+    assert done.stderr.strip() == ("review: no fixed point given, and neither the last review, the upstream "
+                                   "nor the default branch leaves a diff: name one")
 
 
 if __name__ == "__main__":

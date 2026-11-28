@@ -12,7 +12,7 @@ Review of the diff between `HEAD` and a fixed point, by two reviewers:
 
 ### 1. Pin the fixed point
 
-The fixed point is whatever the user named. If they named none, default to "since the last review": the most recent commit bearing a `Workflow-stage: review` trailer (`git log --grep='^Workflow-stage: review$' -1 --format=%H`, anchored, or a commit merely *discussing* the trailer matches); when none exists, `@{upstream}` if it resolves and differs from `HEAD`, else the merge-base with the default branch. Whichever candidate is nearest `HEAD` wins. Ask only when none produces a non-empty diff, which the script's refusal tells you.
+The fixed point is whatever the user named, passed to `review`; where they named none, `review` takes "since the last review" itself (`review --help`).
 
 ### 2. Identify the spec source
 

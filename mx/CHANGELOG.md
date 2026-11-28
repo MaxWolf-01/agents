@@ -1,3 +1,10 @@
+## 1.0.145
+
+- A dispatched worker lists only the mx skills a worker can use
+  run-worker.sh now gives each worker a per-run view of the mx install: every file linked, less the SKILL.md of each skill that mx/skills/dispatch/worker-skills does not name. A worker's skill list holds the 24 skills on that file instead of all of mx, and a skill added to mx stays off it until named there. Only SKILL.md is left out, so the hook scripts and reference files inside a hidden skill's folder (session-page's hooks, handoff's checkpoint, grilling/DESIGN.md that tracker links to) still resolve. The runner refuses to start on a host whose mx has no worker-skills file. The worker prompt names no skill a worker cannot load; the artefact table in both prompts drops its /mx:retro pointer for that reason.
+- feat(session-page): a to-do is only what max alone can do, and holds up only what depends on it
+  The session page's To do line now holds what only the user can do: a review whose call is theirs (a design, a change to architecture or infrastructure), a message only they can send, a secret only they can type. Such a to-do holds up only the work that depends on it, so a turn ends on one only once nothing else is left, and a step the agent's tools reach (a CLI, a browser, data it can make, a login in with-secrets, a sudo through job run --tty) is the agent's. Rule 34 of the prose catalogue loses "a step the rule leaves to the writer is done and reported", whose catches deleted asks or posted under max's name.
+
 ## 1.0.144
 
 - Skills state outcomes and what those outcomes keep, not the moves that reach them
