@@ -1,3 +1,8 @@
+## 1.0.144
+
+- Skills state outcomes and what those outcomes keep, not the moves that reach them
+  The guidance for agents now says a goal names what has to survive the work, not only the target: PRINCIPLES 2 gains that clause, from Ben Vinegar's agent that sped up preview builds by deleting the source-map uploads (State of Agent Coding 12, 59:21). dispatch's Redo and Reject now describe the end state a discarded build leaves, including the landing's show that still presents the other tickets, instead of a command list. diagnosing-bugs names its loop techniques in one sentence, drops "Tighten the loop" (its completion criterion already demands fast and deterministic), and turns the five-step regression-test recipe into its red-then-green criterion.
+
 ## 1.0.143
 
 - The orient skill is deleted; its routing is in the always-loaded prompt
