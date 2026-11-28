@@ -263,8 +263,8 @@ button.id:hover { color: var(--accent); }
 .recap { margin-top: 0.8rem; max-width: var(--measure); }
 /* A recap's table, under a list item as often as not, takes the width it needs: the card grows to it, up to the
    window's, and past that the cells wrap, a path in code too, every column in view beside the one it is compared against. */
-.d-card:has(.recap table) { width: max-content; min-width: min(56rem, 100%); max-width: 100%; }
-.recap:has(table), .recap :has(> table), .recap :has(> li > table) { max-width: none; }
+.d-card:has(.card:not([hidden]) .recap table) { width: max-content; min-width: min(56rem, 100%); max-width: 100%; }
+.recap:has(table), .recap > :has(table) { max-width: none; }
 .recap table { max-width: 100%; }
 .recap :is(th, td) code { overflow-wrap: anywhere; }
 .card .links { margin-top: 0.8rem; }
