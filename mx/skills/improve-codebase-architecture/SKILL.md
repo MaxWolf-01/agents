@@ -7,21 +7,21 @@ description: Scan a codebase for deepening opportunities and record them as cand
 
 Surface architectural friction and propose **deepening opportunities**: refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.
 
-This command is _informed_ by the project's domain model and built on a shared design vocabulary:
+It works from the project's domain model and a shared design vocabulary:
 
 - Run `/mx:codebase-design`; use its terms exactly in every suggestion.
-- The domain language in the glossary gives names to good seams; the ADRs record decisions this command should not re-litigate.
+- The glossary's domain language names good seams; the ADRs record decisions this command leaves settled.
 
 ## Process
 
 ### 1. Scan
 
-**Scope before you scan: YAGNI.** Deepening a module pays off by making future changes to it easier, so put extra weight on the parts of the codebase that have recently changed. Decide *where* to look before you look:
+**Scope before you scan: YAGNI.** A deepening pays off in easier future changes, so weight the parts of the codebase that changed recently. Decide *where* to look before you look:
 
 - If the user named a direction (a module, a subsystem, a pain point), take it, and skip the inference below.
-- Otherwise, walk back a good stretch of the commit history (`git log --oneline`, 30+ commits) to find the codebase's hot spots (the files and areas that keep coming up) and let those paths pull your attention first. If the changes are scattered with no clear hot spot, widen the net.
+- Otherwise, walk back 30+ commits (`git log --oneline`) to find the hot spots, the files and areas that keep coming up, and look there first; where the changes scatter with no clear hot spot, widen the net.
 
-Then walk the codebase. Don't follow rigid heuristics; explore organically and note where you experience friction:
+Then walk the codebase, exploring freely rather than by checklist, and note where you meet friction:
 
 - Which feature, mode, option or module serves nobody, so that removing it whole would cost nothing? The removal is the candidate.
 - Where does understanding one concept require bouncing between many small modules?
@@ -34,19 +34,19 @@ Then walk the codebase. Don't follow rigid heuristics; explore organically and n
 - Which seams have a stated contract and no property checking it?
 - Where does a seam's invariant resist being stated cleanly, or its test need heavy fakes? That is a finding about the seam.
 - Where does a comment explain a surprise in the code beside it? The surprise is the finding: code shaped so it needs no such comment is the candidate.
-- Where would a change that looks right from the one file an agent opened be wrong for the repo? The next contributor is an agent that sees only the files it opened, copies the nearest example and takes the shortest path that compiles. So both of two ways to do one task keep gaining callers, internals a caller can import become part of the interface, and lists kept in sync by hand drift apart. The candidate leaves one way, the easiest path.
+- Where would a change that looks right from the one file an agent opened be wrong for the repo? The next contributor is an agent that sees only the files it opened, copies the nearest example and takes the shortest path that compiles, so both of two ways to do one task keep gaining callers, internals a caller can import become part of the interface, and lists kept in sync by hand drift apart. The candidate leaves one way, the easiest path.
 - ...
 
 The scan is done when every candidate carries:
 
-- **Files**: which files/modules are involved
-- **Problem**: why the current architecture is causing friction
-- **Solution**: plain English description of what would change; the interface itself is designed in step 4, with the user
+- **Files**: the files and modules involved
+- **Problem**: why the current architecture causes friction
+- **Solution**: what would change, in plain English; the interface itself is designed with the user in step 4
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
 - **Dependency category**: which of the four in `/mx:codebase-design` the deepening falls into
 - **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
 - **Impact**: what the deepening buys against what it costs, in one line; candidates are ordered by it, in the report and in the grilling. Strength is how sure you are the deepening holds, impact what it pays
-- **ADR conflict**, when a candidate contradicts an existing ADR and the friction is real enough to warrant revisiting it: _"contradicts ADR-0007, but worth reopening because…"_. Don't list every theoretical refactor an ADR forbids.
+- **ADR conflict**, when a candidate contradicts an existing ADR and the friction is real enough to warrant revisiting it: _"contradicts ADR-0007, but worth reopening because…"_. A theoretical refactor an ADR forbids stays off the list.
 - **Related candidates**, when it hangs together with others: it builds on one, or two are the same deepening seen from two sides and belong in one piece of work.
 
 ### 2. Write the candidates down
@@ -63,5 +63,5 @@ Run `/mx:grilling` through the candidates in order of impact, one grilling per c
 
 The grilling keeps the domain model current as it goes (`/mx:domain-modelling`). Two side effects are this skill's own:
 
-- **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing; skip ephemeral reasons ("not worth it right now") and self-evident ones.
+- **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Offer it only when a future explorer would need the reason to avoid re-suggesting the same thing, not for an ephemeral reason ("not worth it right now") or a self-evident one.
 - **Want to explore alternative interfaces for the deepened module?** Run `/mx:codebase-design` and use its design-it-twice parallel sub-agent pattern.

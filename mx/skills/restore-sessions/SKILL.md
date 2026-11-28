@@ -25,7 +25,7 @@ If the user asks for "the last 100 sessions or the last 10 days, whichever is gr
 
 ### 2. Classify each session
 
-For each session, assign one of these statuses:
+Give each session one status:
 
 **DONE**: Clear completion signal AND last messages confirm it:
 - Committed + last assistant confirms ("Committed.", "Pushed.", etc.)
@@ -38,32 +38,29 @@ For each session, assign one of these statuses:
 - 0-1 substantive user messages with no real content
 - Tiny size (<5KB) with no meaningful exchange
 - Sessions that are just `/test`, `/context`, `/clear`, `/model`, `/rename` commands
-- Duplicate starts (user opened session, typed nothing useful, started a new one)
+- Duplicate starts (the user opened a session, typed nothing useful, and started a new one)
 
-**UNFINISHED**: Everything else. This is the default; be inclusive. When in doubt, mark as unfinished. Specifically:
+**UNFINISHED**: Everything else, and every session in doubt. It includes:
 - No completion signals AND substantial content
 - `interrupted: true` (crash/abort mid-work)
-- Has commit signal but last messages show continued work after the commit
+- `signals.commit: true`, but `last_assistant` shows work continuing after the commit rather than naming the commit as final
 - Last assistant message indicates ongoing work ("Let me check...", "Now let me...", mid-sentence)
 - Last user message asked for something that wasn't addressed
 
-**Key judgment calls:**
-- A session can have `signals.commit: true` but still be UNFINISHED if work continued after the commit. Check `last_assistant`: does it reference the commit as final, or is there subsequent work?
-
 ### 3. Present results
 
-Output a single table containing ALL non-junk sessions (both DONE and UNFINISHED), sorted newest-first.
+Output a single table of every non-junk session (DONE and UNFINISHED), newest first.
 
 ```markdown
 | # | Session ID | Topic | Date | Status | Notes |
 |---|-----------|-------|------|--------|-------|
 ```
 
-Column guidelines:
+Columns:
 - **Session ID**: Full UUID (user needs this for `claude --resume <id>`)
 - **Topic**: 5-10 word summary derived from `first_user`. Strip command prefixes (`mx:task`, `/mx:task`, etc.)
 - **Date**: From `modified`, just date + time (e.g., "Feb 6 01:55")
-- **Status**: One of: **DONE**, **UNFINISHED**, **MID-FIX**, **MID-DISCUSSION**, **MID-INVESTIGATION**, **MID-IMPLEMENTATION**, **MID-DESIGN**, **COMMIT PENDING**. Use specific mid-* labels for UNFINISHED sessions where the sub-state is clear from context.
-- **Notes**: Brief context on what was happening / what's left. 10-20 words max.
+- **Status**: One of: **DONE**, **UNFINISHED**, **MID-FIX**, **MID-DISCUSSION**, **MID-INVESTIGATION**, **MID-IMPLEMENTATION**, **MID-DESIGN**, **COMMIT PENDING**. Give an UNFINISHED session the specific mid-* label wherever its sub-state is clear.
+- **Notes**: What was happening and what is left, in 10-20 words, never more.
 
-Present the FULL table first, then optionally add a brief summary section highlighting the most urgent items (sessions from the last 1-3 days that are clearly unfinished).
+Present the full table first, then optionally a brief summary of the most urgent items (sessions from the last 1-3 days that are clearly unfinished).

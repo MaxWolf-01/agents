@@ -25,12 +25,12 @@ _Avoid_: Client, buyer, account
 
 ## Rules
 
-- **Be opinionated.** When multiple words exist for the same concept, pick the best one and list the others under `_Avoid_`.
+- **Be opinionated.** When several words exist for one concept, pick the best and list the others under `_Avoid_`.
 - **Keep definitions tight.** `glossary-lint` holds the caps. Define what it IS, not what it does.
-- **The name carries its qualifier.** A term is read in tickets, commits and code, away from its subheading, so when its bare word means something else elsewhere in the system, the qualifier goes into the name: "NPS window", not "Window" under an NPS heading.
+- **The name carries its qualifier.** A term is read away from its subheading (in tickets, commits, code), so when its bare word means something else elsewhere in the system, put the qualifier in the name: "NPS window", not "Window" under an NPS heading.
 - **Code names go on the `_In code_` line.** The identifier the code uses for the term (a table, a type, a status value) goes there and nowhere in the definition, so the definition survives a rename. Omit the line when the code has no name of its own for the term.
 - **Definitions survive redesign.** The mechanism behind a term (formula, composition, parameters) lives in the design doc or ADR that decided it. Test each clause: would a change to the mechanism force an edit here? If yes, cut it and let the entry name the concept's role instead.
-- **Only ambiguous terms earn an entry.** A term belongs when it's newly coined or nonstandard, carries a non-obvious meaning in this context, or has competing words (pick one, list the rest under `_Avoid_`). A term whose common meaning already says everything stays out, even a domain-specific one, and especially general programming concepts. Coin as few terms as possible; the glossary is where the unavoidable ones are defined once and used everywhere.
+- **Only ambiguous terms earn an entry.** A term belongs when it's newly coined or nonstandard, carries a non-obvious meaning in this context, or has competing words. A term whose common meaning already says everything stays out, even a domain-specific one, and especially a general programming concept. Coin as few terms as possible; the glossary defines each unavoidable one once, for use everywhere.
 
 `glossary-lint [GLOSSARY.md ...]` checks the word and sentence caps and code names in definitions; the other rules are judgment.
 
@@ -38,7 +38,7 @@ _Avoid_: Client, buyer, account
 
 **Single context (most repos):** One `GLOSSARY.md` and one `decisions/` at the repo root.
 
-**Multiple contexts:** A `GLOSSARY-MAP.md` at the repo root lists the contexts, where they live, and how they relate to each other:
+**Multiple contexts:** A `GLOSSARY-MAP.md` at the repo root lists the contexts, where they live, and how they relate:
 
 ```md
 # Glossary Map

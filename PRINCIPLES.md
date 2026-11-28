@@ -43,7 +43,7 @@ An unconfirmed decision stays marked; silence leaves it unconfirmed. A recommend
 
 ## 7. Judge in front of a render
 
-Humans judge far better in front of a render than in the abstract; the artefact is the decision instrument and the conversation is its brief. A blank answer means the question was posed backwards: build the thing and let them criticise it. The person blank on "what goes in the sidebar" produced publishable criticism in front of a render, and a prototype overturned a grilled ticket and an ADR within a day. The leap from spec to production code is large and from working prototype to production is small. Taste enters at QA, by hand, per landed slice; the model cannot see what it is building. Orient routes user-visible surfaces to prototype-first; `/mx:show` and diffview are the same move for explanations and diffs.
+Humans judge far better in front of a render than in the abstract; the artefact is the decision instrument and the conversation is its brief. A blank answer means the question was posed backwards: build the thing and let them criticise it. The person blank on "what goes in the sidebar" produced publishable criticism in front of a render, and a prototype overturned a grilled ticket and an ADR within a day. The leap from spec to production code is large and from working prototype to production is small. Taste enters at QA, by hand, per landed slice; the model cannot see what it is building. The workflow block of `claude/CLAUDE.md` routes rival shapes to a prototype, and grilling sends a surface the user is blank on there; `/mx:show` and diffview are the same move for explanations and diffs.
 
 
 ## 8. Fresh context where the context is independent

@@ -8,7 +8,7 @@ The seam is the hook at its input: the SessionEnd JSON in, run the way Claude Co
 the worked example's session directory, which names a throwaway agent repo that ignores
 `sessions/` as the real one does. The oracle is agent/tickets/session-records-tracked.md, its P1
 and P2 and its Decisions, agent/tickets/session-records-outside-the-checkout.md, and
-agent/tickets/loose-work-retired.md, whose session work's artefacts sit in the session's directory
+agent/tickets/loose-work-retired.md, whose artefacts of work done without a ticket sit in the session's directory
 and are committed as it ends, read off git's own record of the commit and of `git status`.
 """
 

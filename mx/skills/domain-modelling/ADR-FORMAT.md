@@ -10,7 +10,7 @@ ADRs live in `decisions/` (in a repo of several contexts, one beside each contex
 {1-3 sentences: what's the context, what did we decide, and why.}
 ```
 
-That's it. An ADR can be a single paragraph. The value is in recording *that* a decision was made and *why*, not in filling out sections.
+An ADR can be a single paragraph: its value is in recording *that* a decision was made and *why*, not in filling out sections.
 
 ## Optional sections
 
@@ -22,4 +22,4 @@ Most ADRs won't need them.
 
 ## Numbering
 
-Scan `decisions/` for the highest existing number and increment by one.
+The next number is the highest in `decisions/` plus one.

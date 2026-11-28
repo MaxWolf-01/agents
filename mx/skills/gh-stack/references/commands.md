@@ -1,7 +1,7 @@
 # Command behavior
 
-`gh stack <command> --help` is authoritative for flags and arguments. This file only covers behavior `--help` does not
-explain: preconditions, side effects, atomicity, and failure modes.
+`gh stack <command> --help` is authoritative for flags and arguments; this file covers what it
+leaves out: preconditions, side effects, atomicity, and failure modes.
 
 ## Contents
 
@@ -58,7 +58,7 @@ All branch updates succeed or fail together. `push`, `submit`, `sync`, and `link
 opts out by default; `--no-atomic=false` overrides the environment. Failed atomic pushes never
 automatically retry non-atomically.
 
-`push` never creates or updates pull requests. Use `submit` for that.
+`push` never creates or updates pull requests; `submit` does.
 
 ## submit
 

@@ -36,7 +36,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 </max>
 
 <workflow>
-Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is its flow from intent to merge. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
+Projects with an `agent/` directory use the mx workflow plugin. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
 
 | Artefact | Where | Holds |
 | --- | --- | --- |
@@ -46,11 +46,21 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 | Board | `agent/board.html`, gitignored | the whole tracker as one page |
 | Research | `agent/research/NN-slug.md`, `NN` the next number, a `ticket:` frontmatter line naming the ticket that asked | detail too long for that ticket |
 | Prototype | `agent/prototypes/<slug>/` | throwaway code that answered a design question, and its `ANSWER.md` |
-| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for session work's; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
+| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for work a session did without a ticket; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
 | Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
 | Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
+
+If an intent is too unclear to say what to build, grill it (`/mx:grilling`); if several sensible shapes are left, prototype them or draw them side by side (`/mx:prototype`); if one is left, build it.
+When unsure which of the three it is, build: max judges best in front of the concrete thing, and tokens are cheap.
+A build that misses, or a new question, routes the intent again.
+
+Delegate the build: write the work as a ticket (`/mx:tracker`) and dispatch it to a worker at once (`/mx:dispatch`).
+That keeps you free to carry on while it builds, and puts the build in front of a reviewer who did not write it.
+
+Build without waiting for max to ratify a call; mark each call he has not made in its ticket.
+Show him each build that lands so he can judge it: what was built and why, its strengths and weaknesses, and the sensible alternatives.
 
 Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `git -C agent` is how you commit in the agent repo.
 
@@ -86,7 +96,7 @@ Commit, merge, and push -- when and how:
 - Commit as you go without asking. Once my yes for a merge into the trunk is in, merge `--no-ff --no-commit` from the invocation checkout, which is already sitting on the trunk, run the project's checks on the result, then `git commit -F -` with the body below (`git merge` reads no message from stdin), or `git merge --abort` where they went red (the first-parent log is the per-ticket view; the detail history carries the trailers). The trunk is the branch the work branches from and merges into: usually the default branch, `dev` where that layer exists. A batch that went up as a GitHub PR **stack** (PRs based on each other, one merge box) merges on GitHub, never locally; `/mx:gh-stack` before touching a stack.
 - Push/merge freely, any branch, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects).
 - Ship-shaped actions need the human first: critical or sensitive releases, deploys, irreversible or hard to correct, issues/PRs on OSS; anything hard to reverse, or with significant cost when it goes wrong (time -- excluding time it takes you / agents, money, a broken setup, attention).
-    - Merging worktrees into the trunk counts as a ship-shaped action. Committing and pushing work to a ticket branch is not; "speculative builds" need no yes at all: I judge a call best in front of the concrete thing, and tokens are cheap. (todo clean this line up when refactoring/deleting/folding the orient skill into this sysprompt -- encouraging speculative builds)
+    - Merging worktrees into the trunk counts as a ship-shaped action; committing and pushing work to a ticket branch does not.
 - My yes for a merge into the trunk is my word on that work (ship, merge, accept, or the like), given after you showed it to me, or up front for a change I named myself; a review I am in holds every merge until I end it. A standing yes carries work up a ticket tree only as far as `/mx:tracker`, State, says.
 - Releases: Almost always automated via a Makefile/just; look for it and use it rather than taking manual steps.
 
@@ -119,11 +129,13 @@ To avoid auto-mode false positives, and for general best practice (safety and ef
 
 Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `container-hub open`, `gh-asset`, `job` (`/mx:tmux`), `browsers` (kills only the stuck browsers this checkout launched).
 
+Run a command that takes more than a few seconds in the background (a `job`, or the harness's own background run) and do the next thing while it runs: even a minute or two almost always has other work in it.
+
 `with-secrets` holds max's API keys and tokens: when you need one, look there before asking him; it is rarely a blocker.
 
 `memex` is how to orient in a markdown vault (the Obsidian vault above all), where grep is for exact content terms: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there.
 
-`diffview` renders a diff as a review page on the hub: the code's view of a change, and the deliverable whenever the user asks to see the code; prose recaps and bare links only accompany it. A change is shown, not only diffed (`/mx:show`): a change to something max looks at or drives (a page, the hub, a command's output) reaches him running, to drive, or as a screenshot where it cannot run for him, with the diff beside it. Reach for diffview unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, so one self-reloading tab is the review surface across every round; never `--no-auto-summary`. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes, and the one place the meta commentary belongs that must never reach the code: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Write them short, plain and few: a page of notes does not get read. Read `--help` for the source specs and the page's semantics.
+`diffview` renders a diff as a review page on the hub: the code's view of a change, and the deliverable whenever the user asks to see the code; prose recaps and bare links only accompany it. A change is shown, not only diffed (`/mx:show`): a change to something max looks at or drives (a page, the hub, a command's output) reaches him running, to drive, or as a screenshot where it cannot run for him, with the diff beside it. Reach for diffview unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, `agent/diffviews/<branch>.html` in the main checkout where dispatch renders a ticket's, so one self-reloading tab is the review surface across every round; never `--no-auto-summary`. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes, and the one place the meta commentary belongs that must never reach the code: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Write them short, plain and few: a page of notes does not get read. Read `--help` for the source specs and the page's semantics.
 
 `container-hub open <path|url>...` puts what an agent renders for max (review pages, boards, prototypes, figures) on the container hub, beside the other pages of its work, where max looks when he wants to; nothing opens in front of him. A page meant for agents (a worker's report) is not put there at all; the line it prints says which. Where no hub answers, it hands the page to `xdg-open`. `xdg-open` handles the rest: files a browser does not render, and pages max acts on as himself (approve, order, post, sign in).
 

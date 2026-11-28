@@ -1,3 +1,13 @@
+## 1.0.143
+
+- The orient skill is deleted; its routing is in the always-loaded prompt
+  mx/skills/orient is gone. The workflow block of claude/CLAUDE.md now routes every intent itself: grill what is too unclear to say what to build, prototype rival shapes, build a single one, and build when unsure; delegate the build to a worker through a ticket, with the two reasons for delegating; build without waiting for max to ratify a call, and show each landing as what was built, why, its strengths and weaknesses and the alternatives. The worker prompt carries a worker's part of it: where fog and rival shapes go, that the open calls are its own, that its report argues for the build. Orient's step rules moved to the skill that owns each step or were cut where it already said them; dispatch gained a QA section, and tracker, grilling and prototype a sentence each. A session carries 120 more words than before, a worker 44.
+
+## 1.0.142
+
+- Every mx skill is reworded down to the rules it carries
+  A second pass over all 46 skills under mx/skills, after the pass that deleted whole sentences: this one rewrites a sentence down to its rule, taking skill text from 70,948 to about 68,580 words (3.3% less). Four whole rules are cut, each in a commit of its own that gives its reason (a second ask for prototype's shared switcher, struktogramm's standard-library note, a duplicate pointer in gh-stack, and the writing-for-agents no-ops bullet this pass contradicts). writing-for-agents' Pruning gains "The test a sentence passes to stay", with three before-and-after pairs from these skills, which is how the two passes cut. Twelve skills had nothing to gain and are unchanged. The branch was rebased twice onto a moving master; in every conflict the sentences master added or changed stand as master wrote them.
+
 ## 1.0.141
 
 - Merge branch 'ticket/retro-runs-after-ten-merges'

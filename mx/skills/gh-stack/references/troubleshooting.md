@@ -27,23 +27,19 @@ gh stack rebase --continue     # repeat if the next branch also conflicts
 
 ## After a squash merge
 
-`gh stack sync` detects this and rebases with `--onto` against the correct target, skipping the
-merged branch:
+No manual action is needed: `gh stack sync` detects it and rebases with `--onto` against the
+correct target, skipping the merged branch.
 
 ```bash
 gh stack sync
 gh stack view --json    # merged branch reports "isMerged": true, "state": "MERGED"
 ```
 
-No manual action is needed.
-
 ## Local and remote stacks have diverged
 
 When non-interactive, `sync` prints both chains, changes nothing, and exits **0** with
-`Sync aborted`. Success here does not mean the sync happened; check for that message, or re-run
+`Sync aborted`, so exit 0 does not mean the sync happened: check for that message, or re-run
 `gh stack view --json` and compare.
-
-Two resolution paths:
 
 - **Keep the remote version.** Drop local tracking and pull the stack back down.
 
@@ -76,9 +72,8 @@ gh stack init --base main branch-1 branch-2 branch-3
 gh stack submit --auto                 # re-link on GitHub
 ```
 
-`init` adopts branches that already exist, so the rebuild reuses them rather than creating new ones.
-Existing PRs survive. Once Git ancestry is correct, `submit` updates their base branches and
-re-links the stack on GitHub.
+`init` adopts the branches that already exist, and their PRs survive; once Git ancestry is correct,
+`submit` updates their base branches and re-links the stack on GitHub.
 
 Changing metadata does **not** change Git ancestry. Reorder commits first, then rebuild the stack.
 For example, to change `main <- models <- migration <- ui` into
@@ -107,15 +102,14 @@ trunk of more than one stack. There is no flag to disambiguate.
 gh stack checkout <a-branch-unique-to-the-intended-stack>
 ```
 
-Then rerun. Commands that take an explicit stack number (`merge 7`, `unstack 7`) sidestep the
-problem entirely, since they do not infer the stack from the current branch.
+Then rerun. Commands given an explicit stack number (`merge 7`, `unstack 7`) do not infer the stack
+from the current branch, so they never hit this.
 
 ## Driving stacks from another tool or worktree
 
-`gh stack link` creates and updates stacks purely through the API, with no local tracking state.
-Use it when branches are managed by jj, Sapling, git-town, or another external workflow that does
-not use gh-stack's local catalog. Linked worktrees themselves are supported: they share
-`<common-dir>/gh-stack` and do not require `link`.
+`gh stack link` creates and updates stacks through the API alone, with no local tracking state: use
+it when jj, Sapling, git-town or another tool outside gh-stack's local catalog manages the branches.
+Linked worktrees share `<common-dir>/gh-stack` and do not require `link`.
 
 ```bash
 gh stack link branch-a branch-b branch-c        # bottom to top
@@ -124,8 +118,8 @@ gh stack link 10 20 30                          # by PR number
 gh stack link 7 feature-d                       # append to existing stack #7
 ```
 
-Because `link` writes no local state, the local navigation commands (`up`, `down`, `top`, `bottom`)
-will not work on the result. Use `gh stack checkout <stack-number>` if you later want local tracking.
+With no local state, `up`, `down`, `top` and `bottom` do not work on a linked stack;
+`gh stack checkout <stack-number>` adds local tracking later.
 
 Legacy worktree catalogs are consolidated automatically only when their
 definitions agree or are disjoint; originals are preserved. On migration conflicts, reconcile the
@@ -135,14 +129,14 @@ their original worktree first, and do not mix old and new gh-stack writers in on
 ## Stack file is locked (exit 8)
 
 Another `gh stack` process holds either the short catalog lock (`<common-dir>/gh-stack.lock`) or
-the clone-wide mutation lock (`<common-dir>/gh-stack-operation.lock`). Wait and retry; read-only
-views remain available. Do not delete lock files to bypass coordination. Paused operations are
-also guarded by shared recovery journals after their process lock has been released.
+the clone-wide mutation lock (`<common-dir>/gh-stack-operation.lock`). Wait and retry, leaving
+the lock files in place; read-only views remain available. Paused operations are also guarded by
+shared recovery journals after their process lock has been released.
 
 ## An interrupted modify session (exit 10)
 
-`gh stack modify` is TUI-only and should never be invoked by an agent. If a repository is left in
-this state by someone else, restore it:
+`gh stack modify` is TUI-only, so an agent never starts one. A repository someone else left in
+this state is restored with:
 
 ```bash
 gh stack modify --abort

@@ -5,17 +5,17 @@ description: Shared vocabulary for designing deep modules. Use when the user wan
 
 # Codebase Design
 
-Design **deep modules**: a lot of behaviour behind a small interface, placed at a clean seam, testable through that interface. Use this language and these principles wherever code is being designed or restructured.
+Design **deep modules**: a lot of behaviour behind a small interface, placed at a clean seam, testable through that interface. Use this language and these principles wherever code is designed or restructured.
 
 ## Glossary
 
-Use these terms exactly; each entry's _Avoid_ list names the substitutes to steer clear of.
+Use these terms exactly, in place of the substitutes each entry's _Avoid_ names.
 
-**Module**: anything with exactly one interface and an implementation. Deliberately scale-agnostic: a function, class, package, or tier-spanning slice. _Avoid_: unit, component, service.
+**Module**: anything with exactly one interface and an implementation, at any scale: a function, class, package, or tier-spanning slice. _Avoid_: unit, component, service.
 
 **Interface**: everything a caller must know to use the module correctly: the type signature, but also invariants, ordering constraints, error modes, required configuration, and performance characteristics. _Avoid_: API, signature (too narrow; they refer only to the type-level surface).
 
-**Implementation**: what's inside a module, its body of code. Distinct from **Adapter**: a thing can be a small adapter with a large implementation (a Postgres repo) or a large adapter with a small implementation (an in-memory fake). Reach for "adapter" when the seam is the topic; "implementation" otherwise.
+**Implementation**: the code inside a module. Distinct from **Adapter**: a thing can be a small adapter with a large implementation (a Postgres repo) or a large adapter with a small implementation (an in-memory fake). Reach for "adapter" when the seam is the topic; "implementation" otherwise.
 
 **Depth**: leverage at the interface: the amount of behaviour a caller (or test) can exercise per unit of interface they have to learn. A module is **deep** when a large amount of behaviour sits behind a small interface, **shallow** when the interface is nearly as complex as the implementation. _Avoid_: Ousterhout's ratio of implementation lines to interface lines, which rewards padding the implementation.
 
@@ -33,12 +33,12 @@ Use these terms exactly; each entry's _Avoid_ list names the substitutes to stee
 
 ## Principles
 
-- **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, mockable, swappable parts; they just aren't part of the interface. A module can have **internal seams** (private to its implementation, used by its own tests) as well as the **external seam** at its interface; an internal seam stays out of the interface even when tests use it.
+- **Depth is a property of the interface, not the implementation.** A deep module may be built from small, mockable, swappable parts kept out of its interface. Besides the **external seam** at its interface, a module may have **internal seams**, private to its implementation and used by its own tests; an internal seam stays out of the interface even when tests use it.
 - **Cut where interaction is weak.** A seam belongs where the traffic across it is sparse, slow and fits in a few values, and the traffic inside is dense and fast: what changes for the same reason sits on one side, what varies separately on two. The commit history measures it better than the import graph: files that change in the same commits interact. A seam that most changes cross is in the wrong place, however deep the modules on either side of it look.
 - **The deletion test.** Imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.
-- **The interface is the test surface.** Callers and tests cross the same seam. If you want to test *past* the interface, the module is probably the wrong shape. Two shapes keep that true: dependencies are passed in, not constructed inside; results are returned, not produced as side effects. Either one broken means a test needs setup past the interface.
+- **The interface is the test surface.** Callers and tests cross the same seam. A test that wants to reach *past* the interface means the module is probably the wrong shape. Two shapes keep that true: dependencies are passed in, not constructed inside, and results are returned, not produced as side effects; with either broken, a test needs setup past the interface.
 - **Three questions before an interface is final**: can I reduce the number of methods? Can I simplify the parameters? Can I hide more complexity inside? Each "yes" is depth left on the table.
-- **One adapter means a hypothetical seam. Two adapters means a real one.** Don't introduce a seam unless something actually varies across it (typically production and test); a single-adapter seam is just indirection.
+- **One adapter means a hypothetical seam. Two adapters means a real one.** Introduce a seam only where something actually varies across it (typically production and test); a single-adapter seam is just indirection.
 
 ## Going deeper
 

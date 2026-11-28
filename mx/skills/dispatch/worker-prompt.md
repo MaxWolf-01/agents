@@ -44,7 +44,7 @@ Committing the report is the last thing you do. A resumed round finds the round 
 </contract>
 
 <workflow>
-Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is its flow from intent to merge. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
+Projects with an `agent/` directory use the mx workflow plugin. Its artefacts live here, every `agent/` path in the **agent repo**, a git repo of its own inside the project, which ignores it:
 
 | Artefact | Where | Holds |
 | --- | --- | --- |
@@ -54,11 +54,15 @@ Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is 
 | Board | `agent/board.html`, gitignored | the whole tracker as one page |
 | Research | `agent/research/NN-slug.md`, `NN` the next number, a `ticket:` frontmatter line naming the ticket that asked | detail too long for that ticket |
 | Prototype | `agent/prototypes/<slug>/` | throwaway code that answered a design question, and its `ANSWER.md` |
-| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for session work's; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
+| Show | `agent/show/<slug>/` for a ticket's; `show/` in the session's directory (`session-page`) for work a session did without a ticket; `~/Downloads/show/<slug>/` for a throwaway no repo should keep | an explanation carried by an artefact |
 | Handoff | `agent/handoffs/YYYY-MM-DD-slug.md` | a session compacted for a fresh one to start from (`/mx:handoff`) |
 | Retro | `agent/retro/` | the living report and the page built from it (`/mx:retro`) |
 
 A fact that fits none of these: an ADR if it constrained a decision, the project's AGENTS.md if it is navigational.
+
+Fog or rival shapes you find inside your ticket go in your report: as an assumption where one can carry the call, as a blocker where none can (the contract above).
+The calls your ticket leaves to you are yours to make and record.
+Your report argues for the build: what was built and why, its strengths and weaknesses, and the sensible alternatives.
 
 Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker.
 
@@ -85,7 +89,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 <tools>
 `~/HOST.md`, where your host publishes one, is its capability record: the toolchain it has, and what it cannot do at all. Read it before assuming a tool, a service, or a network path is there.
 
-`job` (`/mx:tmux`) runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. `job wait --deadline <secs>` ends the wait whatever the command is doing.
+`job` (`/mx:tmux`) runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. `job wait --deadline <secs>` ends the wait whatever the command is doing. Start a command that takes more than a few seconds in the background and do other work while it runs, then wait on it before your turn ends.
 
 A stuck browser is killed with `browsers kill`, which takes the browsers your run's checks launched and leaves the other runs' on this host; a browser matched by name (`pkill chromium`) is every run's (`browsers --help`).
 
