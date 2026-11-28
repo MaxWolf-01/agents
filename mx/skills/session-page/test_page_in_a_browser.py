@@ -471,9 +471,15 @@ with sync_playwright() as pw:
         page.click("#open-questions .t-row[data-kind=do] .qt")
         out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right} }
           const card = document.querySelector(".d-card")
-          return {card: box(card), width: innerWidth, shown: !document.getElementById("card-dialog").hidden,
+          const said = [...card.querySelectorAll(".recap li")].find((li) => !li.querySelector("table"))
+          return {card: box(card), width: innerWidth, said: box(said), measure: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--measure")) * 16, shown: !document.getElementById("card-dialog").hidden,
                   tables: [...card.querySelectorAll(".recap table")].map((t) => ({...box(t), scrolls: t.scrollWidth > t.clientWidth + 1})),
                   cells: [...card.querySelectorAll(".recap :is(th, td)")].map((c) => ({...box(c), clipped: c.scrollWidth > c.clientWidth + 1}))} })()'''))
+        # then a card without a table, the question's, in the same dialog
+        page.keyboard.press("Escape")
+        page.click("#open-questions .t-row[data-handle=Q1] .qt")
+        out["plain"] = page.evaluate('''(() => { const r = document.querySelector(".d-card").getBoundingClientRect()
+          return {left: r.left, right: r.right, shown: document.querySelector(".card:not([hidden])").id} })()''')
     elif scenario == "framed":
         # the page in a frame of a hub tab: what it staged comes from the hub, every change goes back to it, and the
         # send is the hub's, after which the lines it sent leave the tasks
@@ -698,15 +704,19 @@ WAITING = (
 
 
 # A to-do whose recap holds, as indented lines under a list item, a table of rows each two or three
-# long quoted sentences, wider than the card at any width, as session 5a7d9f07's A8 was.
+# long quoted sentences, wider than the card at any width, as session 5a7d9f07's A8 was; and a question
+# whose recap holds a code block as wide, without a table.
 SENTENCE = "the quoted skill text, which runs on as long as a sentence in a skill does"
-WIDE_ROW = "| C2 | `dispatch/SKILL.md:101`: \"{s}\" | `claude/CLAUDE.md:105`: \"{s}, with no `Merge:` marker\" | \"{s}\" | keep CLAUDE.md's; {s} |"
+WIDE_ROW = "| C2 | `mx/skills/session-page/test_page_in_a_browser.py:1316`: \"{s}\" | `claude/CLAUDE.md:105`: \"{s}, with no `Merge:` marker\" | \"{s}\" | keep CLAUDE.md's; {s} |"
 WIDE_CARD = WAITING.replace("- [A1] **Review devops #3** at `4d7a3b8`\n", (
     "- [A1] **Say which rows you rule differently** the rest is fixed as the last column says\n"
     "  - Recap: every row quotes the skill text as it stands on master today\n"
+    f"    - Two sentences that rule differently: {SENTENCE}, {SENTENCE}, {SENTENCE}\n"
     "    - | # | One side | The other side | Where else | I would |\n"
     "      | --- | --- | --- | --- | --- |\n"
-    + "".join(f"      {WIDE_ROW.format(s=SENTENCE)}\n" for _ in range(3))))
+    + "".join(f"      {WIDE_ROW.format(s=SENTENCE)}\n" for _ in range(3)))).replace(
+    "  - (b) Wait for the first review\n", "  - (b) Wait for the first review\n  - Recap: the push, as one line that scrolls in its block\n"
+    f"    ```\n    git push --force-with-lease {' '.join(f'origin/devops-{n}' for n in range(40))}\n    ```\n")
 
 
 @pytest.fixture
@@ -1317,7 +1327,9 @@ def test_on_a_phone_an_artefact_and_a_turns_tool_calls_open_by_touch_and_the_tas
 def test_a_cards_wide_table_stays_inside_the_card(wide_card_page: Path, width: int) -> None:
     """A to-do whose recap holds a table wider than the card widens the card to the window's width,
     less the backdrop's margin, and wraps the table's cells inside it at every width, so no cell runs
-    out of it over the tasks or the timeline, and none hides past a scroll."""
+    out of it over the tasks or the timeline, and none hides past a scroll; the recap's text beside it
+    keeps the measure. A card without a table, in
+    the same dialog, keeps its width."""
     seen = probe(wide_card_page, "card_table", width=width)
     card, tables = seen["card"], seen["tables"]
     assert seen["shown"] and len(tables) == 1, seen
@@ -1326,6 +1338,9 @@ def test_a_cards_wide_table_stays_inside_the_card(wide_card_page: Path, width: i
     for box in (*tables, *seen["cells"]):
         assert card["left"] - 1 <= box["left"] and box["right"] <= card["right"] + 1, f"out of the card: {box}, {card}"
     assert not any(t["scrolls"] for t in tables) and not any(c["clipped"] for c in seen["cells"]), seen
+    assert seen["said"]["right"] - seen["said"]["left"] <= seen["measure"] + 1, f"the recap's text beside the table outran the measure: {seen}"
+    plain = seen["plain"]
+    assert plain["shown"] == "q1" and abs(plain["right"] - plain["left"] - (seen["width"] if seen["width"] <= 704 else min(56 * 16, seen["width"] - 2 * 16))) < 2, f"a card without a table grew: {seen}"
 
 
 @pytest.mark.parametrize("width", WIDTHS)

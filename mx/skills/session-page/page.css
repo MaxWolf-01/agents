@@ -265,6 +265,7 @@ button.id:hover { color: var(--accent); }
    window's, and past that the cells wrap, a path in code too, every column in view beside the one it is compared against. */
 .d-card:has(.card:not([hidden]) .recap table) { width: max-content; min-width: min(56rem, 100%); max-width: 100%; }
 .recap:has(table), .recap > :has(table) { max-width: none; }
+.recap li:not(:has(table)) { max-width: var(--measure); }
 .recap table { max-width: 100%; }
 .recap :is(th, td) code { overflow-wrap: anywhere; }
 .card .links { margin-top: 0.8rem; }
