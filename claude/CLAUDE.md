@@ -56,10 +56,11 @@ If an intent is too unclear to say what to build, grill it (`/mx:grilling`); if 
 When unsure which of the three it is, build: max judges best in front of the concrete thing, and tokens are cheap.
 A build that misses, or a new question, routes the intent again.
 
-Building is delegated: the work is written as a ticket (`/mx:tracker`) and dispatched to a worker at once (`/mx:dispatch`), which keeps the session free for max and puts the build in front of a reviewer who did not write it.
+Delegate the build: write the work as a ticket (`/mx:tracker`) and dispatch it to a worker at once (`/mx:dispatch`).
+That keeps you free to carry on while it builds, and puts the build in front of a reviewer who did not write it.
 
-A build never waits for max to ratify a call; a call he has not made stays marked in its ticket.
-A build that lands is shown to max so he can judge it: what was built and why, its strengths and weaknesses, and the sensible alternatives.
+Build without waiting for max to ratify a call; mark each call he has not made in its ticket.
+Show him each build that lands so he can judge it: what was built and why, its strengths and weaknesses, and the sensible alternatives.
 
 Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `git -C agent` is how you commit in the agent repo.
 
@@ -127,6 +128,8 @@ To avoid auto-mode false positives, and for general best practice (safety and ef
 <tools>
 
 Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `container-hub open`, `gh-asset`, `job` (`/mx:tmux`), `browsers` (kills only the stuck browsers this checkout launched).
+
+Run a command that takes more than a few seconds in the background (a `job`, or the harness's own background run) and do the next thing while it runs: even a minute or two almost always has other work in it.
 
 `with-secrets` holds max's API keys and tokens: when you need one, look there before asking him; it is rarely a blocker.
 
