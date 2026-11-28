@@ -1181,11 +1181,69 @@ def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_el
     run_worker(runner)
 
     attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
-    inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
+    inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {runner / 'run-1.plugin'}",
                 '--settings {"autoMemoryEnabled": false}')
     assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
     assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
     assert f" and mx {plugin.name} (run-1)" in (runner / "run-1.log").read_text().splitlines()[0]
+
+
+# Records, for each attempt, the files the install it is given by --plugin-dir holds, as paths
+# relative to it, and the text of each SKILL.md among them.
+VIEWING_CLAUDE = """#!/bin/sh
+while [ $# -gt 0 ]; do [ "$1" = --plugin-dir ] && { view=$2; break; }; shift; done
+[ -n "${view:-}" ] || exit 0
+cd "$view" && find -L . -type f | sort > "OUT"
+for f in $(grep '/SKILL.md$' "OUT"); do printf '%s: %s\\n' "$f" "$(cat "$f")"; done >> "OUT"
+"""
+
+
+def test_a_worker_lists_only_the_skills_worker_skills_names_and_reaches_every_file(tmp_path: Path, runner: Path) -> None:
+    """`workers-load-only-the-skills-a-worker-uses`: the worker loads the install less the SKILL.md
+    of every skill its worker-skills does not name, a skill added to mx included, while every other
+    file of the install, a dropped skill's own included, stays where its path says."""
+    plugin = mx(tmp_path)
+    (plugin / ".claude-plugin").mkdir()
+    (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "mx"}')
+    for name in ("testing", "grilling", "added-since"):
+        (plugin / "skills" / name).mkdir()
+        (plugin / "skills" / name / "SKILL.md").write_text(f"the {name} skill")
+    (plugin / "skills" / "grilling" / "DESIGN.md").write_text("design")
+    (plugin / "skills" / "dispatch" / "worker-skills").write_text("# kept\ntesting\n")
+    viewed = tmp_path / "viewed"
+
+    run_worker(runner, claude=VIEWING_CLAUDE.replace("OUT", str(viewed)), DISPATCH_PLUGIN_DIR=str(plugin))
+
+    assert viewed.read_text().splitlines() == [
+        "./.claude-plugin/plugin.json", "./skills/dispatch/worker-skills", "./skills/grilling/DESIGN.md",
+        "./skills/session-page/RULES.md", "./skills/testing/SKILL.md", "./skills/testing/SKILL.md: the testing skill"]
+    assert not (runner / "run-1.plugin").exists(), "the worker's view of the install outlived its run"
+
+
+def test_a_runner_whose_install_names_no_worker_skills_starts_no_worker(tmp_path: Path, runner: Path) -> None:
+    """Without the list the worker would load every skill or none, so the status line says the
+    install is older than the dispatcher's instead."""
+    plugin = mx(tmp_path)
+    (plugin / "skills" / "dispatch" / "worker-skills").unlink()
+
+    done = run_worker(runner, DISPATCH_PLUGIN_DIR=str(plugin))
+
+    assert done.returncode == 1
+    assert (runner / "run-1.status").read_text().startswith(
+        f"attempts=0 exit=1 report=no handoff=no session=- error=no {plugin}/skills/dispatch/worker-skills;")
+    assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
+
+
+def worker_skills() -> set[str]:
+    return {line for line in (SKILL / "worker-skills").read_text().splitlines() if not line.startswith("#")}
+
+
+def test_worker_skills_names_only_skills_a_worker_can_load() -> None:
+    """A name with no SKILL.md behind it, or one that only the user can type, leaves nothing on the
+    worker's listing."""
+    unloadable = {name for name in worker_skills() if not (SKILL.parent / name / "SKILL.md").is_file()
+                  or "disable-model-invocation: true" in (SKILL.parent / name / "SKILL.md").read_text()}
+    assert not unloadable, unloadable
 
 
 def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path, runner: Path) -> None:

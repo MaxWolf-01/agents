@@ -20,4 +20,6 @@ def mx(tmp_path: Path) -> Path:
     rules = tmp_path / "mx" / "installed" / "skills" / "session-page"
     rules.mkdir(parents=True, exist_ok=True)
     shutil.copy(SKILL.parent / "session-page" / "RULES.md", rules)
+    (tmp_path / "mx" / "installed" / "skills" / "dispatch").mkdir(exist_ok=True)
+    shutil.copy(SKILL / "worker-skills", tmp_path / "mx" / "installed" / "skills" / "dispatch")
     return tmp_path / "mx" / "installed"
