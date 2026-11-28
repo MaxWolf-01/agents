@@ -46,11 +46,13 @@
 #                 Exit 1: a page it didn't render is in the way (named); a PR
 #                 it could not read, or a branch holding commits its PR did
 #                 not carry; the tracker refused, or the run did not retire.
-# accept <slug>   a ticket with no children lands as `review --merge`, refused
-#                 short of `done`; a parent gets `done` on it and every child
-#                 in `review`, one commit, a squashed or rebased PR of its
-#                 branch read as `review` reads one, their runs retired.
-#                 Exit 1: not merged, or the tracker refused; nothing written.
+# accept <slug> [--verify <cmd>]
+#                 a childless ticket's branches merge, checked by <cmd> or make
+#                 check|test, and land as `review --merge`, refused short of
+#                 `done`; a parent and its children in `review` get `done`, one
+#                 commit, squashed or rebased PRs read as `review` does.
+#                 Exit 1, nothing written: a conflict, red check, unmerged
+#                 parent, or tracker refusal.
 # ps [--color] [--follow]
 #                 every worker on every host, as a table; --follow redraws it
 #                 as the hosts change, until Ctrl-C. Exit 1: a host or a
@@ -940,12 +942,70 @@ retirable() { # <slug> <host> <its parent ticket, or nothing> <the probe of its 
     done
 }
 
+# The check a merge in <top> runs: <cmd> where given, else the Makefile's check or test target;
+# nothing where it has neither.
+check_of() { # <top> [<cmd>]
+    if [ -n "${2:-}" ]; then echo "$2"
+    elif grep -qE '^check:' "$1/Makefile" 2> /dev/null; then echo "make check"
+    elif grep -qE '^test:' "$1/Makefile" 2> /dev/null; then echo "make test"
+    fi
+}
+
+# Merges <slug>'s unmerged ticket branches --no-ff --no-commit into the branch out in the code repo
+# and each listed repo whose work is no `gh:` PR (merged on GitHub, which `landed_round` reads),
+# runs each repo's check on the result, and commits each under git's own subject. A conflict, a
+# branch out that is not the base, or a red check aborts every merge made here and exits 1.
+merge_ticket() { # <slug> [<check cmd for the code repo>]
+    local id=$1 name top tip out url at check
+    local -a repos=(code) merged=()
+    for name in $(field "$id" repos); do
+        [ ${#listed_top[@]} -gt 0 ] || listed "$(field "$id" parent)"
+        url=$(git -C "${listed_top[$name]-/}" config --get remote.origin.url 2> /dev/null) &&
+            at=$(github_of "$url") && printf '%s\n' $(field "$id" gh) | grep -qiF "$at#" && continue
+        repos+=("$name")
+    done
+    unmerge() { for name in "${merged[@]}"; do git -C "$(repo_at "$name")" merge --abort; done; }
+    for name in "${repos[@]}"; do
+        top=$(repo_at "$name")
+        tip=$(git -C "$top" rev-parse -q --verify "refs/heads/ticket/$id") || continue
+        landed "$name" "$tip" && continue
+        out=$(git -C "$top" branch --show-current)
+        [[ " $(base_at "$name") " == *" $out "* ]] ||
+            { unmerge; die "$name has $out out, not $(base_at "$name"), which ticket/$id merges into; nothing is merged"; }
+        if ! run git -C "$top" merge -q --no-ff --no-commit "ticket/$id"; then
+            git -C "$top" merge --abort 2> /dev/null
+            unmerge
+            die "ticket/$id does not merge cleanly into $out in $name, so nothing is merged: \`dispatch push\`, then resume the worker with \"the branch moved: rebase onto it, resolve, re-verify, report again\""
+        fi
+        merged+=("$name")
+    done
+    for name in "${merged[@]}"; do
+        top=$(repo_at "$name")
+        check=$(check_of "$top" "$([ "$name" = code ] && echo "${2:-}")")
+        if [ -z "$check" ]; then
+            echo "dispatch: $name has no check (no --verify, no Makefile check or test target), so its merge goes in unchecked" >&2
+        elif ! (cd "$top" && run bash -c "$check"); then
+            unmerge
+            die "\`$check\` went red on ticket/$id merged into $name, so nothing is merged: fix it on the ticket's branch, by a resume of its worker"
+        fi
+    done
+    for name in "${merged[@]}"; do run git -C "$(repo_at "$name")" commit -q --no-edit || die "the merge in $name did not commit"; done
+}
+
 # `tracker accept` on <slug>, then retires its trees and each child's run. A childless ticket goes
-# through `landed_round`; a parent's squashed or rebased PRs are recorded first (`land_on_github`).
-accept() { # <slug>
+# through `merge_ticket` and `landed_round`; a parent's squashed or rebased PRs are recorded first
+# (`land_on_github`).
+accept() { # <slug> [--verify <cmd>]
+    local verify=
+    case ${2:-} in
+        "") ;;
+        --verify) verify=${3:-}; [ -n "$verify" ] || die "--verify takes the command that checks a merge" ;;
+        *) die "accept takes --verify <cmd> after the slug, or nothing" ;;
+    esac
     locate --read
     id=$1
     if [ -z "$(jq -r --arg p "$id" '.tickets[] | select(.parent == $p) | .slug' <<< "$tracked")" ]; then
+        merge_ticket "$id" "$verify"
         landed_round "$id" accept "$id"
         return
     fi
