@@ -17,24 +17,9 @@ If the redacted output is not enough to diagnose the bug, say so and ask the use
 
 **This is the skill**; the rest is mechanical. Bisection, hypothesis-testing and instrumentation all consume a **tight** pass/fail signal that goes red on _this_ bug, and the cause follows from it.
 
-### Ways to construct one
+### Building one
 
-- **Replay a captured trace.** Save a real request, payload or event log to disk and replay it through the code path in isolation.
-- **Throwaway harness.** A minimal subset of the system (one service, mocked deps) that reaches the bug's code path with a single function call.
-- **Property / fuzz loop.** For "sometimes wrong output": run 1000 random inputs and look for the failure mode.
-- **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check" so `git bisect run` can drive it.
-- **Differential loop.** Run the same input through the old and new version (or two configs) and diff the outputs.
-- **HITL bash script.** Last resort, when a human must click: drive _them_ with `scripts/hitl-loop.template.sh`, so the loop stays structured and their captured output comes back to you.
-
-### Tighten the loop
-
-Treat the loop as a product. Once you have _a_ loop, **tighten** it:
-
-- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
-- Can I make the signal sharper?
-- Can I make it more deterministic?
-
-A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight.
+Reach for the lightest loop that can go red on this bug: a replayed capture, a throwaway harness around the one code path, a property or fuzz loop, a `git bisect run` harness between two known states, a differential run of two versions or configs, or whatever else can. A loop that needs a human's hands drives them with `scripts/hitl-loop.template.sh`, and comes last.
 
 ### Non-deterministic bugs
 
@@ -99,13 +84,7 @@ Write the regression test **before the fix**, if there is a **correct seam** for
 
 **If no correct seam exists, that itself is the finding**: the architecture is preventing the bug from being locked down. Note it and flag it for the post-mortem.
 
-If a correct seam exists:
-
-1. Turn the minimised repro into a failing test at that seam.
-2. Watch it fail.
-3. Apply the fix.
-4. Watch it pass.
-5. Re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
+If a correct seam exists, the minimised repro becomes a test at it, seen red before the fix and green after, and the Phase 1 loop goes green on the original, un-minimised scenario.
 
 ## Phase 6: Cleanup + post-mortem
 
