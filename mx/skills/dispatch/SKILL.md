@@ -62,7 +62,7 @@ File overlap is the mechanical test; **coherence** is the deeper one. Tickets th
 - `--cpu-weight` for a time-critical ticket: more than an equal share among its worker user's workers on a busy machine.
 - `--host` only when you know something the records don't. The machine you are on is `$(id -un)@$(uname -n)`, named like any other; a laptop that suspends kills every worker on it; on a host with no record, assume only the capabilities you have verified.
 
-Report each ticket's host and its limits to the user, and each call the build rests on that the user may want to set, with the choice it makes: an answer that arrives while the build runs is recorded on the ticket and reaches the worker as guidance (Intervening and observing), and one that does not is ruled where the landing shows it.
+Tell the user each call the build rests on that they may want to set, with the choice it makes: an answer that arrives while the build runs is recorded on the ticket and reaches the worker as guidance (Intervening and observing), and one that does not is ruled where the landing shows it.
 
 For each ticket in the wave:
 
