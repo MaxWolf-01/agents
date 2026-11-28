@@ -39,14 +39,12 @@ def test_the_session_and_the_worker_are_told_alike_to_read_a_skills_workflow_fil
 
 
 def artefact_table(path: Path) -> str:
-    """The workflow block's artefact table, with the line after it and the paragraph that introduces it
-    from "Its artefacts" on: the sentence before that names `/mx:orient`, which only a session loads."""
+    """The workflow block's artefact table, with the paragraph that introduces it and the line after it."""
     block = re.search(r"<workflow>\n(.*?)</workflow>", path.read_text(), re.S).group(1)
     paragraphs = block.split("\n\n")
     tables = [i for i, paragraph in enumerate(paragraphs) if paragraph.startswith("| ")]
     assert len(tables) == 1, f"{path.name}'s workflow block holds {len(tables)} tables, not the one artefact table"
-    intro = paragraphs[tables[0] - 1]
-    return "\n\n".join([intro[intro.index("Its artefacts"):], *paragraphs[tables[0] : tables[0] + 2]])
+    return "\n\n".join(paragraphs[tables[0] - 1 : tables[0] + 2])
 
 
 def test_the_session_and_the_worker_read_one_artefact_table():
