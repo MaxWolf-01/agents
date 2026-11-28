@@ -526,10 +526,12 @@ def test_a_fixed_point_swallowed_as_the_effort_is_refused_naming_the_levels(repo
 
 
 def test_with_no_fixed_point_the_review_runs_since_the_last_review(repo):
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit(repo, "tests/test_two.py", "def test_two(): assert 2 * 2 == 4\n")
     git(repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty",
         "-m", "fix: a finding\n\nWorkflow-stage: review")
     reviewed = short(repo, "HEAD")
-    commit(repo, "tests/test_two.py", "def test_two(): assert 2 * 2 == 4\n")
+    commit(repo, "tests/test_three.py", "def test_three(): assert 3 - 3 == 0\n")
 
     done = bare(repo, "--effort", "low")
 
@@ -552,7 +554,8 @@ def test_with_no_fixed_point_and_nothing_that_leaves_a_diff_the_review_asks_for_
     done = bare(repo)
 
     assert done.returncode == 1
-    assert "name one" in done.stderr
+    assert done.stderr.strip() == ("review: no fixed point given, and neither the last review, the upstream "
+                                   "nor the default branch leaves a diff: name one")
 
 
 if __name__ == "__main__":

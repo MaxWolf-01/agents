@@ -956,10 +956,15 @@ check_of() { # <top> [<cmd>]
 # runs each repo's check on the result, and commits each under git's own subject. A conflict, a
 # branch out that is not the base, or a red check aborts every merge made here and exits 1.
 merge_ticket() { # <slug> [<check cmd for the code repo>]
-    local id=$1 name top tip out url at check
-    local -a repos=(code) merged=()
-    for name in $(field "$id" repos); do
-        [ ${#listed_top[@]} -gt 0 ] || listed "$(field "$id" parent)"
+    local id=$1 name top tip out url at check named status
+    local -a repos=(code) merged=() committed=()
+    # The refusals `landed_round` would meet after the commit, met before the first merge.
+    status=$(field "$id" status)
+    [ "$status" = review ] || die "$id is $status, not in review, so nothing is merged"
+    named=$(field "$id" repos)
+    [ -z "$named" ] || listed "$(field "$id" parent)"
+    for name in $named; do
+        [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list; nothing is merged"
         url=$(git -C "${listed_top[$name]-/}" config --get remote.origin.url 2> /dev/null) &&
             at=$(github_of "$url") && printf '%s\n' $(field "$id" gh) | grep -qiF "$at#" && continue
         repos+=("$name")
@@ -989,7 +994,14 @@ merge_ticket() { # <slug> [<check cmd for the code repo>]
             die "\`$check\` went red on ticket/$id merged into $name, so nothing is merged: fix it on the ticket's branch, by a resume of its worker"
         fi
     done
-    for name in "${merged[@]}"; do run git -C "$(repo_at "$name")" commit -q --no-edit || die "the merge in $name did not commit"; done
+    for name in "${merged[@]}"; do
+        if ! run git -C "$(repo_at "$name")" commit -q --no-edit; then
+            merged=("${merged[@]:${#committed[@]}}")
+            unmerge
+            die "the merge in $name did not commit, so it and those after it are aborted${committed[*]:+; committed already, in ${committed[*]}: undo with \`git revert -m 1 HEAD\` there}"
+        fi
+        committed+=("$name")
+    done
 }
 
 # `tracker accept` on <slug>, then retires its trees and each child's run. A childless ticket goes

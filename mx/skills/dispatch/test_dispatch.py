@@ -1834,6 +1834,28 @@ def test_an_accept_merges_the_ticket_branch_after_its_check_goes_green(toy: Path
     assert status_of(toy, "warm-preset") == "done"
 
 
+def test_an_accept_checks_with_the_command_it_is_given_in_place_of_the_makefile(toy: Path) -> None:
+    reviewed_unmerged(toy, "check:\n\tfalse\n")
+
+    accepted = run(toy, "accept", "warm-preset", "--verify", "touch verified")
+
+    assert accepted.returncode == 0, accepted.stderr
+    assert (toy / "verified").exists()
+    assert status_of(toy, "warm-preset") == "done"
+
+
+def test_an_accept_of_a_ticket_not_in_review_merges_nothing(toy: Path) -> None:
+    assert run(toy, "claim", "warm-preset").returncode == 0
+    built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    main = git(toy, "rev-parse", "main").strip()
+
+    accepted = run(toy, "accept", "warm-preset")
+
+    assert accepted.returncode == 1
+    assert "warm-preset is claimed, not in review, so nothing is merged" in accepted.stderr
+    assert git(toy, "rev-parse", "main").strip() == main
+
+
 def test_an_accept_whose_check_goes_red_merges_nothing_and_says_so(toy: Path) -> None:
     main, _ = reviewed_unmerged(toy, "check:\n\tfalse\n")
 
