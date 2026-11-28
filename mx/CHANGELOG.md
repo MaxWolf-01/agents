@@ -1,3 +1,8 @@
+## 1.0.146
+
+- A session-page card keeps a wide table inside itself
+  A to-do's or question's card whose Recap holds a wide table drew the table past the card, over the tasks column and the timeline. The opened card now grows to the width its table needs, up to the window, and past that the cells wrap, so every column stays in view at 2000 px and at phone width. Only the shown card grows, and a Recap's text beside the table keeps its reading width. Cause: the house style's `.prose > table { max-width: 100% }` misses a table nested under a list item, and the card was an inline-size container, so it could not follow its content; the option table's stacking moved from that container query to a media query at the same threshold.
+
 ## 1.0.145
 
 - `review` picks the commit it reviews from, and `dispatch accept` merges, checks and commits a ticket itself
