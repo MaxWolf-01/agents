@@ -34,7 +34,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 
 Every section but the three marked always appears only when it has content. Read [`/mx:grilling`'s DESIGN.md](../grilling/DESIGN.md) in the round that writes the design sections, User stories through Fog: it is how each one is written.
 
-**A ticket states the work**: what it is for, what it must hold, what was decided. How its build is shown, reviewed and landed is derived from the ticket and the skills when the build runs, so the ticket carries none of it and a change to the skills reaches every ticket at once.
+**A ticket states the work**: what it is for, what it must hold, what was decided. How its build is shown, reviewed and landed is derived from the ticket and the skills when the build runs, so the ticket carries none of it and a change to the skills reaches every ticket at once. A ticket that makes sense only with the conversation that produced it still holds a decision nobody made: grill it (`/mx:grilling`) rather than lengthen the brief.
 
 ### Questions
 
@@ -82,7 +82,7 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 A **finished tree** leaves the live tracker through `tracker retire`, whose `--help` says what a finished tree is and what goes with it. Dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`'s `WORKFLOW.md`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
-Session work (`/mx:orient`) has no ticket to retire: its artefacts stay with the session's records. A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
+Work a session did without a ticket has none to retire: its artefacts stay with the session's records. A prototype answers a design question, which makes its work a ticket's, and leaves with that ticket.
 
 ## Board
 

@@ -22,7 +22,7 @@ Look for what the work was ordered by, in this order:
 2. The ticket the branch builds, whose slug a branch named `ticket/<slug>` names: `tracker context <slug>` is the whole order for this work.
 3. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
 4. A specification the repo keeps outside the tracker: `docs/`, `specs/` matching the branch name.
-5. Failing those, ask the user, unless the work is session work, which never had one.
+5. Failing those, ask the user, unless a session did the work without a ticket, so it never had one.
 
 The spec reaches the reviewers as a file: write a fetched issue body or pasted text to one, together with anything else the reviewers must not reopen (linked issues, a PR's prior review discussion).
 
